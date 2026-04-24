@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Outbox schema and migration contract"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Run event to outbox payload boundary"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse migration and JSON row patterns"}

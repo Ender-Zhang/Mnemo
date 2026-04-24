@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify outbox migration and API contracts"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify outbox payload boundary"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify no duplicate row parsing logic"}
