@@ -15,6 +15,7 @@ from ..providers import OpenAIProviderAdapter, ProviderConfig
 from ..runtime import result_as_dict, run_local, stream_local
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import run_provider, stream_provider
+from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolRegistry, tool_specs_as_json_schema
 
@@ -40,6 +41,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_dream(args)
         if args.command == "prompt":
             return _cmd_prompt(args)
+        if args.command == "skills":
+            return _cmd_skills(args)
         if args.command == "tools":
             return _cmd_tools(args)
         parser.print_help()
@@ -115,6 +118,24 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(prompt_inspect_parser)
     prompt_inspect_parser.add_argument("run_id")
     prompt_inspect_parser.add_argument("--json", action="store_true")
+
+    skills_parser = subparsers.add_parser("skills", help="Scan, list, view, and promote skills")
+    skills_subparsers = skills_parser.add_subparsers(dest="skills_command")
+    skills_scan_parser = skills_subparsers.add_parser("scan", help="Scan Agent Skills roots")
+    _add_state_dir(skills_scan_parser)
+    skills_scan_parser.add_argument("--root", action="append", default=[], help="Additional skill root")
+    skills_scan_parser.add_argument("--json", action="store_true")
+    skills_list_parser = skills_subparsers.add_parser("list", help="List known skills")
+    _add_state_dir(skills_list_parser)
+    skills_list_parser.add_argument("--json", action="store_true")
+    skills_view_parser = skills_subparsers.add_parser("view", help="View a skill")
+    _add_state_dir(skills_view_parser)
+    skills_view_parser.add_argument("name")
+    skills_view_parser.add_argument("--json", action="store_true")
+    skills_promote_parser = skills_subparsers.add_parser("promote", help="Promote a draft skill to SKILL.md")
+    _add_state_dir(skills_promote_parser)
+    skills_promote_parser.add_argument("name")
+    skills_promote_parser.add_argument("--json", action="store_true")
 
     tools_parser = subparsers.add_parser("tools", help="Print available tool specs")
     tools_parser.add_argument("--json", action="store_true")
@@ -258,6 +279,48 @@ def _cmd_prompt_inspect(args: argparse.Namespace) -> int:
             f"tokens={block['token_estimate']}"
         )
     return 0
+
+
+def _cmd_skills(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    store.initialize()
+    roots = [*default_skill_roots(args.state_dir), *args.root] if hasattr(args, "root") else default_skill_roots(args.state_dir)
+    service = SkillService(store, roots=roots)
+
+    if args.skills_command == "scan":
+        result = {"skills": service.scan()}
+    elif args.skills_command == "list":
+        result = {"skills": service.list()}
+    elif args.skills_command == "view":
+        skill = service.view(args.name)
+        if not skill:
+            raise MnemoError(f"skill not found: {args.name}")
+        result = {"skill": skill}
+    elif args.skills_command == "promote":
+        result = service.promote(args.name)
+    else:
+        raise MnemoError("skills command requires a subcommand")
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_skills_result(result)
+    return 0
+
+
+def _print_skills_result(result: dict) -> None:
+    if "skills" in result:
+        for skill in result["skills"]:
+            print(f"{skill['name']} [{skill.get('status', 'scanned')}]: {skill.get('description', '')}")
+        return
+    if "skill" in result:
+        skill = result["skill"]
+        print(f"# {skill['name']}")
+        print(skill.get("description", ""))
+        print()
+        print(skill.get("body", ""))
+        return
+    print(dumps(result))
 
 
 def _cmd_tools(args: argparse.Namespace) -> int:

@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/10-evolution-loops.md", "reason": "Skill self-evolution lifecycle"}
+{"file": "design/02-skills-tools.md", "reason": "Skills compatibility and filesystem lifecycle"}

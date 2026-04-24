@@ -145,6 +145,7 @@ class StateStore:
                     body TEXT NOT NULL,
                     status TEXT NOT NULL,
                     source TEXT NOT NULL,
+                    path TEXT,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
                 );
@@ -191,6 +192,7 @@ class StateStore:
                 "INSERT OR REPLACE INTO schema_meta(key, value) VALUES(?, ?)",
                 ("schema_version", str(SCHEMA_VERSION)),
             )
+            _ensure_column(conn, "skills", "path", "TEXT")
 
     def create_conversation(self, title: str | None = None) -> str:
         now = time.time()
@@ -531,7 +533,16 @@ class StateStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def upsert_skill(self, name: str, description: str, body: str, source: str = "generated") -> str:
+    def upsert_skill(
+        self,
+        name: str,
+        description: str,
+        body: str,
+        source: str = "generated",
+        *,
+        status: str = "draft",
+        path: str | None = None,
+    ) -> str:
         now = time.time()
         skill_id = new_id("skill")
         with self.connect() as conn:
@@ -540,32 +551,55 @@ class StateStore:
                 skill_id = existing["id"]
                 conn.execute(
                     """
-                    UPDATE skills SET description = ?, body = ?, source = ?, status = ?, updated_at = ?
+                    UPDATE skills SET description = ?, body = ?, source = ?, status = ?, path = ?, updated_at = ?
                     WHERE id = ?
                     """,
-                    (description, body, source, "draft", now, skill_id),
+                    (description, body, source, status, path, now, skill_id),
                 )
             else:
                 conn.execute(
                     """
-                    INSERT INTO skills(id, name, description, body, status, source, created_at, updated_at)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO skills(id, name, description, body, status, source, path, created_at, updated_at)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (skill_id, name, description, body, "draft", source, now, now),
+                    (skill_id, name, description, body, status, source, path, now, now),
                 )
         return skill_id
+
+    def update_skill_status(
+        self,
+        name: str,
+        status: str,
+        *,
+        source: str | None = None,
+        path: str | None = None,
+    ) -> None:
+        updates = ["status = ?", "updated_at = ?"]
+        params: list[Any] = [status, time.time()]
+        if source is not None:
+            updates.append("source = ?")
+            params.append(source)
+        if path is not None:
+            updates.append("path = ?")
+            params.append(path)
+        params.append(name)
+        with self.connect() as conn:
+            conn.execute(
+                f"UPDATE skills SET {', '.join(updates)} WHERE name = ?",
+                params,
+            )
 
     def list_skills(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
-                "SELECT id, name, description, status, source FROM skills ORDER BY name"
+                "SELECT id, name, description, status, source, path FROM skills ORDER BY name"
             ).fetchall()
         return [dict(row) for row in rows]
 
     def get_skill(self, name: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT id, name, description, body, status, source FROM skills WHERE name = ?",
+                "SELECT id, name, description, body, status, source, path FROM skills WHERE name = ?",
                 (name,),
             ).fetchone()
         return dict(row) if row else None
@@ -622,3 +656,9 @@ def _memory_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["evidence"] = loads(result.pop("evidence_json"), [])
     return result
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")

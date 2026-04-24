@@ -136,6 +136,30 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_skills_scan_view_and_promote_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "skill-root"
+            skill_dir = root / "writer"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: writer\ndescription: Write concise notes\n---\nUse short notes.",
+                encoding="utf-8",
+            )
+
+            scan = _run_cli(["skills", "scan", "--state-dir", tmp, "--root", str(root), "--json"])
+            self.assertEqual(scan.returncode, 0, scan.stderr)
+            self.assertIn("writer", {skill["name"] for skill in json.loads(scan.stdout)["skills"]})
+
+            view = _run_cli(["skills", "view", "writer", "--state-dir", tmp, "--json"])
+            self.assertEqual(view.returncode, 0, view.stderr)
+            self.assertIn("Use short notes.", json.loads(view.stdout)["skill"]["body"])
+
+            promote = _run_cli(["skills", "promote", "writer", "--state-dir", tmp, "--json"])
+            self.assertEqual(promote.returncode, 0, promote.stderr)
+            path = Path(json.loads(promote.stdout)["path"])
+            self.assertTrue(path.exists())
+            self.assertEqual(path.name, "SKILL.md")
+
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()

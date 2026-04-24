@@ -64,9 +64,9 @@ This file tracks implementation status against the design package. Keep it updat
 ## Skills And Evolution
 
 - [x] Skill draft storage and list/view tools.
-- [~] Skill proposal tool exists, but no filesystem `SKILL.md` lifecycle yet.
-- [ ] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
-- [ ] Progressive skill index/summary/full load.
+- [x] Skill proposal tool exists with generated `SKILL.md` promotion.
+- [~] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
+- [~] Progressive skill index/summary/full load.
 - [ ] Skill usage tracking and outcome scoring.
 - [ ] Skill patch/proposal review lifecycle.
 - [ ] SOP crystallization from successful runs.
@@ -132,3 +132,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-24-implement-provider-backed-runtime`: OpenAI-compatible provider config, adapter, runtime bridge, CLI selection, timeout errors, and fake-server tests implemented.
 - [~] `04-24-implement-prompt-assembly-foundation`: PromptBlock, PromptAssembler, provider runtime integration, and prompt inspect CLI are in progress.
 - [~] `04-24-implement-memory-engine-foundation`: memory pages, promotion/rejection, stable search, and deterministic DreamCycle are in progress.
+- [~] `04-24-implement-skills-filesystem-lifecycle`: Agent Skills scanner, skill service, and generated `SKILL.md` promotion are in progress.
