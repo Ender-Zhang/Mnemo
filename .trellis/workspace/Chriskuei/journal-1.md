@@ -1079,3 +1079,37 @@ Added GitHub Actions CI for source tests, package build, wheel install smoke, CL
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: Generated tool alias installation
+
+**Date**: 2026-04-25
+**Task**: Generated tool alias installation
+**Branch**: `main`
+
+### Summary
+
+Added durable generated tool manifests, safe alias installation/uninstall tools, runtime registry loading, CLI listing, schema migration, and regression tests for tools self-evolution.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c854500` | (see git log) |
+| `84a4d27` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
