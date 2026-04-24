@@ -8,7 +8,7 @@ from ..core.models import ChatEvent, RunRequest, RunResult, ToolResult
 from ..providers import ProviderAdapter, ProviderRunInput
 from ..prompt import PromptAssembler
 from ..storage import StateStore
-from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
+from ..tools import ToolHarness, ToolRegistry, compact_tool_result, tool_specs_as_json_schema
 from .common import (
     action_card,
     make_chat_event_emitter,
@@ -210,13 +210,7 @@ def _tool_result_message(result: ToolResult) -> dict[str, Any]:
     return {
         "role": "tool",
         "tool_call_id": result.call_id,
-        "content": _json_dumps(
-            {
-                "ok": result.ok,
-                "result": result.result,
-                "error": result.error,
-            }
-        ),
+        "content": _json_dumps(compact_tool_result(result)),
     }
 
 

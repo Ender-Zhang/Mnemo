@@ -44,12 +44,37 @@ class ToolCallEnvelope:
 
 
 @dataclass(frozen=True)
+class ToolPermission:
+    allowed: bool
+    risk: RiskLevel
+    reason: str
+
+
+@dataclass(frozen=True)
+class ToolExecutionPolicy:
+    allowed_risks: tuple[RiskLevel, ...] = ("read", "write")
+    allowed_tools: tuple[str, ...] = ()
+    denied_tools: tuple[str, ...] = ()
+
+    def check(self, spec: "ToolSpec") -> ToolPermission:
+        if spec.name in self.denied_tools:
+            return ToolPermission(False, spec.risk, f"tool is denied by policy: {spec.name}")
+        if self.allowed_tools and spec.name not in self.allowed_tools:
+            return ToolPermission(False, spec.risk, f"tool is outside the allowed tool set: {spec.name}")
+        if spec.risk not in self.allowed_risks:
+            return ToolPermission(False, spec.risk, f"tool risk is not allowed: {spec.risk}")
+        return ToolPermission(True, spec.risk, "allowed")
+
+
+@dataclass(frozen=True)
 class ToolResult:
     call_id: str
     name: str
     ok: bool
     result: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    summary: str = ""
+    evidence: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

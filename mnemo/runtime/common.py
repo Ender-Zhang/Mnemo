@@ -46,6 +46,8 @@ def action_card(registry: ToolRegistry, call: ToolCallEnvelope) -> dict[str, Any
 
 
 def tool_result_summary(result: ToolResult) -> str:
+    if result.summary:
+        return result.summary
     if not result.ok:
         return result.error or "Tool call failed."
     if result.name == "memory_write_candidate":
@@ -60,6 +62,19 @@ def tool_result_summary(result: ToolResult) -> str:
 
 
 def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[ChatEvent]:
+    if result.evidence:
+        yield emit(
+            "source.attached",
+            {
+                "source": {
+                    "source_id": result.call_id,
+                    "kind": "tool_result",
+                    "title": result.name,
+                    "summary": tool_result_summary(result),
+                    "evidence": result.evidence,
+                }
+            },
+        )
     if not result.ok:
         return
     if result.name == "memory_write_candidate":

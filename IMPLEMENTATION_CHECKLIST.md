@@ -44,8 +44,8 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
 - [ ] External tools: web/search/browser, shell, file read/write/patch, app connectors.
-- [ ] Lightweight permission gate for read/write/external/admin.
-- [ ] Tool result compression and evidence cards.
+- [x] Lightweight permission gate for read/write/external/admin.
+- [x] Tool result compression and evidence cards.
 - [ ] Generated tool lifecycle and evaluation gate.
 
 ## Memory
@@ -92,7 +92,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [ ] Inline action cards.
 - [ ] Inline artifact cards and artifact viewer.
 - [ ] Inline decision cards.
-- [ ] Event replay/resume with `sinceEventId`.
+- [~] Event replay/resume with `sinceEventId`.
 - [~] Streaming transport API.
 
 ## Provider And Model Integration
@@ -133,4 +133,5 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-24-implement-prompt-assembly-foundation`: PromptBlock, PromptAssembler, provider runtime integration, and prompt inspect CLI are in progress.
 - [~] `04-24-implement-memory-engine-foundation`: memory pages, promotion/rejection, stable search, and deterministic DreamCycle are in progress.
 - [~] `04-24-implement-skills-filesystem-lifecycle`: Agent Skills scanner, skill service, and generated `SKILL.md` promotion are in progress.
-- [~] `04-24-implement-event-replay-foundation`: JSONL trace mirror, event replay CLI, and trace summary are in progress.
+- [x] `04-24-implement-event-replay-foundation`: JSONL trace mirror, event replay CLI, and trace summary are implemented.
+- [~] `04-24-implement-tool-boundary-cards`: Tool permission policy, compact model tool results, and evidence cards are in progress.
