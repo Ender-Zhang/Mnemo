@@ -807,3 +807,37 @@ Implemented model-directed run trace crystallization into draft skill candidates
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Memory safety eval suite
+
+**Date**: 2026-04-25
+**Task**: Memory safety eval suite
+**Branch**: `main`
+
+### Summary
+
+Added deterministic memory safety harness suite covering candidate-first writes, conflict guardrails, compact memory payloads, and duplicate reinforcement; updated CLI tests, checklist, and memory contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5b87ab` | (see git log) |
+| `800611a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
