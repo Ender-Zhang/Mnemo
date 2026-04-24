@@ -38,6 +38,31 @@ class SkillService:
     def view(self, name: str) -> dict[str, Any] | None:
         return self.store.get_skill(name)
 
+    def review(self, name: str) -> dict[str, Any]:
+        skill = self.store.get_skill(name)
+        if not skill:
+            raise ValueError(f"Skill not found: {name}")
+
+        usage = _skill_usage_stats(self.store).get(name, {})
+        if skill.get("status") == "active":
+            return {
+                "name": name,
+                "status": "active",
+                "errors": [],
+                "usage": _compact_usage(usage),
+                "reason": "already_active",
+            }
+
+        errors = _skill_review_errors(skill, usage)
+        status = "ready" if not errors else f"blocked:{errors[0]}"
+        self.store.update_skill_status(name, status)
+        return {
+            "name": name,
+            "status": status,
+            "errors": errors,
+            "usage": _compact_usage(usage),
+        }
+
     def promote(self, name: str) -> dict[str, Any]:
         skill = self.store.get_skill(name)
         if not skill:
@@ -128,6 +153,34 @@ def _skill_rank(skill: dict[str, Any], stats: dict[str, dict[str, Any]]) -> tupl
         -int(usage.get("uses", 0)),
         str(skill["name"]),
     )
+
+
+def _skill_review_errors(skill: dict[str, Any], usage: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    name = str(skill.get("name") or "").strip()
+    description = str(skill.get("description") or "").strip()
+    body = str(skill.get("body") or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{1,63}", name):
+        errors.append("invalid_name")
+    if len(description) < 8:
+        errors.append("missing_description")
+    if len(body) < 20:
+        errors.append("body_too_short")
+    if int(usage.get("outcomes", 0)) > 0 and float(usage.get("avg_score", 0.0)) < 0:
+        errors.append("negative_usage")
+    if int(usage.get("failures", 0)) > int(usage.get("successes", 0)) and int(usage.get("successes", 0)) == 0:
+        errors.append("negative_usage")
+    return list(dict.fromkeys(errors))
+
+
+def _compact_usage(usage: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "uses": int(usage.get("uses", 0)),
+        "outcomes": int(usage.get("outcomes", 0)),
+        "successes": int(usage.get("successes", 0)),
+        "failures": int(usage.get("failures", 0)),
+        "avg_score": round(float(usage.get("avg_score", 0.0)), 3),
+    }
 
 
 def _skill_metadata(skill: dict[str, Any]) -> dict[str, Any]:

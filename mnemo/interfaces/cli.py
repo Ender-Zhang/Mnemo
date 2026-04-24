@@ -134,7 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     prompt_inspect_parser.add_argument("run_id")
     prompt_inspect_parser.add_argument("--json", action="store_true")
 
-    skills_parser = subparsers.add_parser("skills", help="Scan, list, view, and promote skills")
+    skills_parser = subparsers.add_parser("skills", help="Scan, list, review, view, and promote skills")
     skills_subparsers = skills_parser.add_subparsers(dest="skills_command")
     skills_scan_parser = skills_subparsers.add_parser("scan", help="Scan Agent Skills roots")
     _add_state_dir(skills_scan_parser)
@@ -147,6 +147,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(skills_view_parser)
     skills_view_parser.add_argument("name")
     skills_view_parser.add_argument("--json", action="store_true")
+    skills_review_parser = skills_subparsers.add_parser("review", help="Review a draft skill candidate")
+    _add_state_dir(skills_review_parser)
+    skills_review_parser.add_argument("name")
+    skills_review_parser.add_argument("--json", action="store_true")
     skills_promote_parser = skills_subparsers.add_parser("promote", help="Promote a draft skill to SKILL.md")
     _add_state_dir(skills_promote_parser)
     skills_promote_parser.add_argument("name")
@@ -391,6 +395,8 @@ def _cmd_skills(args: argparse.Namespace) -> int:
         if not skill:
             raise MnemoError(f"skill not found: {args.name}")
         result = {"skill": skill}
+    elif args.skills_command == "review":
+        result = service.review(args.name)
     elif args.skills_command == "promote":
         result = service.promote(args.name)
     else:

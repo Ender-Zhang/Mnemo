@@ -68,7 +68,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
 - [x] Progressive skill index/summary/full load.
 - [x] Skill usage tracking and outcome scoring.
-- [ ] Skill patch/proposal review lifecycle.
+- [~] Skill patch/proposal review lifecycle: proposal review gate exists; patch-specific diff/apply remains pending.
 - [ ] SOP crystallization from successful runs.
 - [ ] Skill eval harness.
 
@@ -148,3 +148,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-25-implement-tool-candidate-eval-gate`: tool candidate status lifecycle, eval result recording, and readiness review gate are implemented.
 - [x] `04-25-implement-daily-l1-memory-snapshot`: daily compact active-memory snapshot compilation, prompt injection, and runtime loading are implemented.
 - [x] `04-25-implement-w0-working-memory-pipeline`: model-marked working notes can enter DreamCycle as candidate-first memory updates.
+- [~] `04-25-implement-skill-review-lifecycle`: generated skill candidates can be reviewed to `ready` or `blocked:*` before explicit promotion.

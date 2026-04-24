@@ -35,6 +35,7 @@
 | Shell command timeout | Return failed tool result with timeout error | Standard tool test when added |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
+| Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new tool by defining `ToolSpec`, registering a handler, and adding summary/evidence projection.
@@ -46,6 +47,7 @@
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
 - Working note retention metadata: assert stored metadata and compact result remain small.
+- Skill review: assert status is persisted and compact result omits full skill body.
 - Local path tools: assert workspace scoping and traversal rejection.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 

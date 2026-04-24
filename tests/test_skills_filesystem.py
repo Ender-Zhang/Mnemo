@@ -177,6 +177,48 @@ class SkillFilesystemTests(unittest.TestCase):
             self.assertEqual(cards[0]["usage"]["avg_score"], 0.9)
             self.assertNotIn("body", cards[0])
 
+    def test_review_marks_valid_draft_ready_and_invalid_draft_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            store.upsert_skill(
+                "writer",
+                "Draft concise project notes",
+                "Use short sentences and preserve concrete file references.",
+                status="draft",
+            )
+            store.upsert_skill("bad", "", "tiny", status="draft")
+
+            ready = SkillService(store).review("writer")
+            blocked = SkillService(store).review("bad")
+
+            self.assertEqual(ready["status"], "ready")
+            self.assertEqual(store.get_skill("writer")["status"], "ready")
+            self.assertTrue(blocked["status"].startswith("blocked:"))
+            self.assertIn("missing_description", blocked["errors"])
+            self.assertIn("body_too_short", blocked["errors"])
+
+    def test_review_blocks_negative_usage_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skills")
+            mission_id = store.create_mission(conversation_id, "skill review")
+            run_id = store.create_run(conversation_id, mission_id, "review")
+            store.upsert_skill(
+                "writer",
+                "Draft concise project notes",
+                "Use short sentences and preserve concrete file references.",
+                status="draft",
+            )
+            store.record_skill_usage(run_id, "writer", "outcome", outcome="failure", score=-0.6)
+
+            review = SkillService(store).review("writer")
+
+            self.assertEqual(review["status"], "blocked:negative_usage")
+            self.assertIn("negative_usage", review["errors"])
+            self.assertEqual(review["usage"]["failures"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

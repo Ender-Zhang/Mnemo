@@ -172,6 +172,10 @@ class CliTests(unittest.TestCase):
             self.assertEqual(view.returncode, 0, view.stderr)
             self.assertIn("Use short notes.", json.loads(view.stdout)["skill"]["body"])
 
+            review = _run_cli(["skills", "review", "writer", "--state-dir", tmp, "--json"])
+            self.assertEqual(review.returncode, 0, review.stderr)
+            self.assertIn(json.loads(review.stdout)["status"], {"ready", "active"})
+
             promote = _run_cli(["skills", "promote", "writer", "--state-dir", tmp, "--json"])
             self.assertEqual(promote.returncode, 0, promote.stderr)
             path = Path(json.loads(promote.stdout)["path"])

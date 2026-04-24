@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "Verify review lifecycle contract"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Verify provider-native tool shape"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification"}
