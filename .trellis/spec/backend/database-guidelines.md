@@ -14,6 +14,8 @@
 - `StateStore.enqueue_outbox_event(topic: str, payload: dict[str, Any], *, aggregate_id: str | None = None, available_at: float | None = None) -> str`
 - `StateStore.list_outbox_events(status: str | None = "pending", *, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.mark_outbox_event(event_id: str, status: str, *, error: str | None = None) -> None`
+- `StateStore.export_state(archive_path: str | Path) -> dict[str, Any]`
+- `StateStore.import_state(archive_path: str | Path, *, replace: bool = False) -> dict[str, Any]`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
@@ -33,6 +35,10 @@
 - `list_outbox_events(status="pending")` returns only pending rows whose `available_at` is due, ordered by `available_at`, `created_at`, then `id`.
 - `mark_outbox_event(..., status="failed")` increments `attempts` and records `last_error`.
 - `mark_outbox_event(..., status="sent")` clears `last_error` and leaves `attempts` unchanged.
+- `export_state()` writes a zip archive with a `manifest.json`, current `state.db`, and managed state directories: `wiki`, `skills`, `runs`, and `artifacts`.
+- `import_state()` validates the manifest, rejects archives from newer schema versions, rejects unsafe paths, and migrates the restored database through `initialize()`.
+- Import into non-empty managed state requires `replace=True`.
+- Replace mode removes only managed Mnemo paths, not unrelated files in the state directory.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -45,15 +51,20 @@
 | Future outbox availability | Exclude future pending rows from due pending list | `tests/test_storage.py` |
 | Failed outbox mark | Increment attempts and store error | `tests/test_storage.py` |
 | Invalid outbox status | Raise `ValueError` | `tests/test_storage.py` |
+| Backup round trip | Export and import state with queryable memory, run events, outbox, and managed files | `tests/test_storage.py`, `tests/test_cli.py` |
+| Non-empty import target | Reject unless `replace=True` | `tests/test_storage.py` |
+| Unsafe archive path | Reject path traversal or unsupported archive members before extraction | `tests/test_storage.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new schema change by appending one `SchemaMigration` and bumping `SCHEMA_VERSION`.
 - Good: make migrations idempotent with `CREATE ... IF NOT EXISTS` or `_ensure_column`.
 - Good: consume pending outbox events through `list_outbox_events()` and mark delivery through `mark_outbox_event()`.
+- Good: keep backup archives limited to managed state paths and validate every member before extraction.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
 - Bad: overwrite `schema_meta.schema_version` without recording the migration ledger.
 - Bad: poll `run_events` directly from daemon code when outbox delivery state is needed.
+- Bad: extract zip members directly with `extractall()`.
 
 ### 6. Tests Required
 - Fresh initialization records all migrations.
@@ -62,4 +73,6 @@
 - Outbox table exists on fresh and upgraded state dirs.
 - Appending a run event creates a matching outbox event.
 - Outbox list and mark lifecycle is covered.
+- Backup export/import round-trip is covered.
+- Import target and archive safety failures are covered.
 - Existing storage round-trips still pass after migration changes.

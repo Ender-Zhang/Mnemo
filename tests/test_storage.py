@@ -3,8 +3,10 @@ from __future__ import annotations
 import sqlite3
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
+from mnemo.core.jsonutil import dumps
 from mnemo.storage import SCHEMA_VERSION, StateStore
 
 
@@ -295,6 +297,86 @@ class StateStoreTests(unittest.TestCase):
 
             self.assertEqual([case["id"] for case in writer_cases], [writer_case])
             self.assertEqual(reader_cases[0]["case"]["skill_candidate"], "reader")
+
+    def test_export_and_import_state_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            archive = root / "mnemo-backup.zip"
+            store = StateStore(source)
+            store.initialize()
+            conversation_id = store.create_conversation("backup")
+            mission_id = store.create_mission(conversation_id, "backup mission")
+            run_id = store.create_run(conversation_id, mission_id, "backup")
+            store.append_event(run_id, "backup.test", {"ok": True})
+            candidate_id = store.add_memory_candidate(run_id, "Backup round trip preference", confidence=0.9)
+            page_id = store.upsert_memory_page(
+                "Backup Round Trip",
+                "Backup round trip preference",
+                source_candidate_id=candidate_id,
+            )
+            (source / "wiki" / "prefs.md").write_text("Backup round trip preference", encoding="utf-8")
+
+            exported = store.export_state(archive)
+
+            self.assertTrue(archive.exists())
+            self.assertEqual(exported["schema_version"], SCHEMA_VERSION)
+            with zipfile.ZipFile(archive, "r") as exported_archive:
+                names = set(exported_archive.namelist())
+            self.assertIn("manifest.json", names)
+            self.assertIn("state.db", names)
+            self.assertIn("wiki/prefs.md", names)
+
+            restored = StateStore(target)
+            imported = restored.import_state(archive)
+
+            self.assertEqual(imported["schema_version"], SCHEMA_VERSION)
+            self.assertEqual(restored.get_memory_page(page_id)["title"], "Backup Round Trip")
+            self.assertEqual(restored.get_run_events(run_id)[0]["payload"], {"ok": True})
+            outbox = restored.list_outbox_events()
+            self.assertEqual(outbox[0]["topic"], "backup.test")
+            self.assertEqual((target / "wiki" / "prefs.md").read_text(encoding="utf-8"), "Backup round trip preference")
+
+    def test_import_state_rejects_non_empty_target_without_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            archive = root / "mnemo-backup.zip"
+            StateStore(source).export_state(archive)
+            target_store = StateStore(target)
+            target_store.initialize()
+
+            with self.assertRaisesRegex(ValueError, "state directory is not empty"):
+                target_store.import_state(archive)
+
+            imported = target_store.import_state(archive, replace=True)
+            self.assertEqual(imported["schema_version"], SCHEMA_VERSION)
+
+    def test_import_state_rejects_unsafe_archive_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "malicious.zip"
+            target = root / "target"
+            with zipfile.ZipFile(archive, "w") as malicious:
+                malicious.writestr(
+                    "manifest.json",
+                    dumps(
+                        {
+                            "kind": "mnemo_state_export",
+                            "schema_version": SCHEMA_VERSION,
+                            "exported_at": 1.0,
+                            "files": ["../escape.txt"],
+                        }
+                    ),
+                )
+                malicious.writestr("../escape.txt", "bad")
+
+            with self.assertRaisesRegex(ValueError, "unsupported path|unsafe path"):
+                StateStore(target).import_state(archive, replace=True)
+
+            self.assertFalse((root / "escape.txt").exists())
 
 def _columns(db_path: Path, table: str) -> set[str]:
     conn = sqlite3.connect(db_path)

@@ -263,6 +263,30 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["api_key"], "***")
         self.assertNotIn("secret-value", config.stdout)
 
+    def test_backup_export_and_import_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            target = root / "target"
+            archive = root / "mnemo-backup.zip"
+
+            run = _run_cli(["run", "remember: BackupCLI preference", "--state-dir", str(source), "--json"])
+            self.assertEqual(run.returncode, 0, run.stderr)
+
+            export = _run_cli(["backup", "export", str(archive), "--state-dir", str(source), "--json"])
+            self.assertEqual(export.returncode, 0, export.stderr)
+            export_payload = json.loads(export.stdout)
+            self.assertTrue(Path(export_payload["archive_path"]).exists())
+            self.assertGreaterEqual(export_payload["file_count"], 1)
+
+            imported = _run_cli(["backup", "import", str(archive), "--state-dir", str(target), "--json"])
+            self.assertEqual(imported.returncode, 0, imported.stderr)
+            self.assertGreaterEqual(json.loads(imported.stdout)["file_count"], 1)
+
+            search = _run_cli(["memory", "search", "BackupCLI", "--state-dir", str(target), "--json"])
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertTrue(json.loads(search.stdout)["matches"])
+
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()

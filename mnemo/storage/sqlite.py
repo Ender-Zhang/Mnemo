@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import shutil
 import sqlite3
 import time
+import zipfile
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -12,6 +14,10 @@ from ..core.jsonutil import dumps, loads
 
 
 SCHEMA_VERSION = 3
+EXPORT_KIND = "mnemo_state_export"
+EXPORT_MANIFEST = "manifest.json"
+MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
+MANAGED_STATE_FILES = ("state.db",)
 
 
 @dataclass(frozen=True)
@@ -42,7 +48,7 @@ class StateStore:
 
     def initialize(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
-        for child in ("wiki", "skills", "runs", "artifacts"):
+        for child in MANAGED_STATE_DIRS:
             (self.state_dir / child).mkdir(parents=True, exist_ok=True)
 
         with self.connect() as conn:
@@ -223,6 +229,52 @@ class StateStore:
                 """
             )
             _apply_schema_migrations(conn)
+
+    def export_state(self, archive_path: str | Path) -> dict[str, Any]:
+        self.initialize()
+        target = Path(archive_path).expanduser().resolve()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        files = list(_iter_export_files(self.state_dir, target))
+        manifest = {
+            "kind": EXPORT_KIND,
+            "schema_version": self.schema_version(),
+            "exported_at": time.time(),
+            "files": [item.as_posix() for item in files],
+        }
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(EXPORT_MANIFEST, dumps(manifest))
+            for relative_path in files:
+                archive.write(self.state_dir / relative_path, relative_path.as_posix())
+        return {
+            "archive_path": str(target),
+            "schema_version": manifest["schema_version"],
+            "file_count": len(files),
+            "manifest": manifest,
+        }
+
+    def import_state(self, archive_path: str | Path, *, replace: bool = False) -> dict[str, Any]:
+        source = Path(archive_path).expanduser().resolve()
+        if not source.exists():
+            raise ValueError(f"backup archive not found: {source}")
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with zipfile.ZipFile(source, "r") as archive:
+                manifest = _read_export_manifest(archive)
+                members = _safe_archive_members(archive, self.state_dir, manifest)
+                if _has_managed_state(self.state_dir) and not replace:
+                    raise ValueError("state directory is not empty; pass replace=True to import")
+                if replace:
+                    _remove_managed_state(self.state_dir)
+                extracted = _safe_extract_archive(archive, self.state_dir, members)
+        except zipfile.BadZipFile as exc:
+            raise ValueError("backup archive is not a valid zip file") from exc
+        self.initialize()
+        return {
+            "archive_path": str(source),
+            "schema_version": self.schema_version(),
+            "file_count": len(extracted),
+            "manifest": manifest,
+        }
 
     def schema_version(self) -> int:
         with self.connect() as conn:
@@ -1072,6 +1124,103 @@ def _outbox_event_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["payload"] = loads(result.pop("payload_json"), {})
     return result
+
+
+def _iter_export_files(state_dir: Path, archive_path: Path) -> Iterable[Path]:
+    archive_path = archive_path.resolve()
+    for filename in MANAGED_STATE_FILES:
+        path = state_dir / filename
+        if path.is_file() and path.resolve() != archive_path:
+            yield Path(filename)
+    for dirname in MANAGED_STATE_DIRS:
+        root = state_dir / dirname
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and path.resolve() != archive_path:
+                yield path.relative_to(state_dir)
+
+
+def _read_export_manifest(archive: zipfile.ZipFile) -> dict[str, Any]:
+    try:
+        raw_manifest = archive.read(EXPORT_MANIFEST).decode("utf-8")
+    except KeyError as exc:
+        raise ValueError("backup archive is missing manifest.json") from exc
+    manifest = loads(raw_manifest, {})
+    if not isinstance(manifest, dict) or manifest.get("kind") != EXPORT_KIND:
+        raise ValueError("backup archive manifest is invalid")
+    schema_version = manifest.get("schema_version")
+    if not isinstance(schema_version, int):
+        raise ValueError("backup archive schema_version is invalid")
+    if schema_version > SCHEMA_VERSION:
+        raise ValueError("backup archive schema_version is newer than this runtime")
+    files = manifest.get("files")
+    if not isinstance(files, list) or any(not isinstance(item, str) for item in files):
+        raise ValueError("backup archive file list is invalid")
+    return manifest
+
+
+def _has_managed_state(state_dir: Path) -> bool:
+    return any((state_dir / filename).exists() for filename in MANAGED_STATE_FILES) or any(
+        (state_dir / dirname).exists() and any((state_dir / dirname).iterdir())
+        for dirname in MANAGED_STATE_DIRS
+    )
+
+
+def _remove_managed_state(state_dir: Path) -> None:
+    for filename in MANAGED_STATE_FILES:
+        path = state_dir / filename
+        if path.exists():
+            path.unlink()
+    for dirname in MANAGED_STATE_DIRS:
+        path = state_dir / dirname
+        if path.exists():
+            shutil.rmtree(path)
+
+
+def _safe_archive_members(archive: zipfile.ZipFile, state_dir: Path, manifest: dict[str, Any]) -> list[zipfile.ZipInfo]:
+    root = state_dir.resolve()
+    members: list[zipfile.ZipInfo] = []
+    expected_files = set(manifest["files"])
+    actual_files: set[str] = set()
+    for member in archive.infolist():
+        if member.filename == EXPORT_MANIFEST or member.is_dir():
+            continue
+        relative_path = Path(member.filename)
+        if not _is_managed_export_path(relative_path):
+            raise ValueError(f"backup archive contains unsupported path: {member.filename}")
+        target = (root / relative_path).resolve()
+        if not target.is_relative_to(root):
+            raise ValueError(f"backup archive contains unsafe path: {member.filename}")
+        actual_files.add(relative_path.as_posix())
+        members.append(member)
+    if actual_files != expected_files:
+        raise ValueError("backup archive manifest does not match archive contents")
+    return members
+
+
+def _safe_extract_archive(
+    archive: zipfile.ZipFile,
+    state_dir: Path,
+    members: list[zipfile.ZipInfo],
+) -> list[str]:
+    extracted: list[str] = []
+    for member in members:
+        relative_path = Path(member.filename)
+        target = state_dir / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open(member, "r") as source, target.open("wb") as destination:
+            shutil.copyfileobj(source, destination)
+        extracted.append(relative_path.as_posix())
+    return extracted
+
+
+def _is_managed_export_path(path: Path) -> bool:
+    if path.is_absolute() or ".." in path.parts or not path.parts:
+        return False
+    if len(path.parts) == 1:
+        return path.parts[0] in MANAGED_STATE_FILES
+    return path.parts[0] in MANAGED_STATE_DIRS
 
 
 def _eval_case_targets_tool(case: dict[str, Any], tool_name: str) -> bool:

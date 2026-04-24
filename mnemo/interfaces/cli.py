@@ -50,6 +50,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_web(args)
         if args.command == "harness":
             return _cmd_harness(args)
+        if args.command == "backup":
+            return _cmd_backup(args)
         if args.command == "config":
             return _cmd_config(args)
         parser.print_help()
@@ -202,6 +204,18 @@ def build_parser() -> argparse.ArgumentParser:
     harness_replay_parser.add_argument("--json", action="store_true")
     harness_list_parser = harness_subparsers.add_parser("list", help="List built-in eval suites")
     harness_list_parser.add_argument("--json", action="store_true")
+
+    backup_parser = subparsers.add_parser("backup", help="Export or import Mnemo state")
+    backup_subparsers = backup_parser.add_subparsers(dest="backup_command")
+    backup_export_parser = backup_subparsers.add_parser("export", help="Export state to a zip archive")
+    _add_state_dir(backup_export_parser)
+    backup_export_parser.add_argument("archive_path")
+    backup_export_parser.add_argument("--json", action="store_true")
+    backup_import_parser = backup_subparsers.add_parser("import", help="Import state from a zip archive")
+    _add_state_dir(backup_import_parser)
+    backup_import_parser.add_argument("archive_path")
+    backup_import_parser.add_argument("--replace", action="store_true", help="Replace existing managed state")
+    backup_import_parser.add_argument("--json", action="store_true")
 
     config_parser = subparsers.add_parser("config", help="Inspect resolved runtime configuration")
     config_subparsers = config_parser.add_subparsers(dest="config_command")
@@ -519,6 +533,30 @@ def _cmd_config(args: argparse.Namespace) -> int:
     else:
         for key in ("state_dir", "provider", "base_url", "model", "api_key_env", "api_key", "timeout_s", "config_path"):
             print(f"{key}={payload.get(key)}")
+    return 0
+
+
+def _cmd_backup(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    try:
+        if args.backup_command == "export":
+            result = store.export_state(args.archive_path)
+            action = "exported"
+        elif args.backup_command == "import":
+            result = store.import_state(args.archive_path, replace=args.replace)
+            action = "imported"
+        else:
+            raise MnemoError("backup command requires a subcommand")
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    print(
+        f"State {action}: {result['archive_path']} "
+        f"(schema_version={result['schema_version']} files={result['file_count']})"
+    )
     return 0
 
 

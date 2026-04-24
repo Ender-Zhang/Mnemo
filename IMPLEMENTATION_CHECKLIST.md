@@ -125,7 +125,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Event outbox.
 - [x] Config file and env override model.
 - [ ] Daemon status command.
-- [ ] Backup/export/import.
+- [x] Backup/export/import.
 
 ## Current Trellis Focus
 
@@ -154,3 +154,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-memory-safety-evals`: deterministic memory safety harness suite covers candidate-first writes, conflict guardrails, compact payloads, and duplicate reinforcement.
 - [x] `04-25-implement-sqlite-schema-migrations`: SQLite migration ledger, schema version API, idempotent initialization, and legacy column upgrades are implemented.
 - [x] `04-25-implement-event-outbox`: SQLite outbox migration, run-event mirroring, enqueue/list/mark APIs, and storage tests are implemented.
+- [x] `04-25-implement-backup-export-import`: zip state backup, validated import/replace, CLI commands, and round-trip safety tests are implemented.
