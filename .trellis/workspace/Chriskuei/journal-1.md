@@ -103,3 +103,36 @@ Implemented OpenAI-compatible provider configuration, chat completions adapter, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Prompt assembly foundation
+
+**Date**: 2026-04-24
+**Task**: Prompt assembly foundation
+**Branch**: `main`
+
+### Summary
+
+Added PromptBlock and PromptAssembler, provider runtime prompt integration, prompt.assembled metadata, prompt inspect CLI, and prompt tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7be0731` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
