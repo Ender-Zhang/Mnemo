@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~673 | Active |
+| `journal-1.md` | ~707 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-04-25 | W0 working memory pipeline | `dc412af`, `6b4285a` | `main` |
 | 20 | 2026-04-25 | Daily L1 memory snapshot | `f699f5d`, `5542aa7` | `main` |
 | 19 | 2026-04-25 | Tool candidate eval gate | `e631177`, `00bd36a` | `main` |
 | 18 | 2026-04-25 | Skill usage scoring | `b54e161`, `499a217` | `main` |

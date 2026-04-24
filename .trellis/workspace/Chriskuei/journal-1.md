@@ -671,3 +671,37 @@ Implemented compact active-memory L1 snapshot compilation/loading, DreamCycle sn
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: W0 working memory pipeline
+
+**Date**: 2026-04-25
+**Task**: W0 working memory pipeline
+**Branch**: `main`
+
+### Summary
+
+Implemented model-marked working note retention, DreamCycle W0-to-memory-candidate ingestion, working note lifecycle storage, tests, and backend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dc412af` | (see git log) |
+| `6b4285a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
