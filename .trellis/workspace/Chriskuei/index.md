@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 34
+- **Total Sessions**: 35
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1149 | Active |
+| `journal-1.md` | ~1183 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 35 | 2026-04-25 | Provider smoke command | `f915a99`, `fd8d309` | `main` |
 | 34 | 2026-04-25 | Web event resume by event id | `aa12eb2`, `1068ddc` | `main` |
 | 33 | 2026-04-25 | Generated tool alias installation | `c854500`, `84a4d27` | `main` |
 | 32 | 2026-04-25 | CI package install smoke tests | `b802ef1`, `d9caf65` | `main` |

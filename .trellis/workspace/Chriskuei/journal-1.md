@@ -1147,3 +1147,37 @@ Added sinceEventId replay for web chat events, browser last_event_id persistence
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: Provider smoke command
+
+**Date**: 2026-04-25
+**Task**: Provider smoke command
+**Branch**: `main`
+
+### Summary
+
+Added mnemo config smoke for OpenAI-compatible and Anthropic provider endpoint checks, OpenAI /models probing, redacted output, fake-server tests, and backend specs/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f915a99` | (see git log) |
+| `fd8d309` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
