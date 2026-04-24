@@ -705,3 +705,37 @@ Implemented model-marked working note retention, DreamCycle W0-to-memory-candida
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Skill review lifecycle
+
+**Date**: 2026-04-25
+**Task**: Skill review lifecycle
+**Branch**: `main`
+
+### Summary
+
+Implemented SkillService review gate, skill_review_candidate tool, CLI review command, review tests, checklist, and backend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `49b97a7` | (see git log) |
+| `66c379b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
