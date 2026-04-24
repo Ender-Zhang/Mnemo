@@ -6,6 +6,7 @@ import sys
 from typing import Sequence
 
 from .. import __version__
+from ..core.config import ConfigOverrides, DEFAULT_PROVIDER, DEFAULT_STATE_DIR, resolve_runtime_config
 from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps
@@ -20,10 +21,6 @@ from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolRegistry, tool_specs_as_json_schema
 from .web import WebServerConfig, serve_web
-
-
-DEFAULT_STATE_DIR = "~/.mnemo"
-DEFAULT_PROVIDER = "local"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -53,6 +50,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_web(args)
         if args.command == "harness":
             return _cmd_harness(args)
+        if args.command == "config":
+            return _cmd_config(args)
         parser.print_help()
         return 0
     except MnemoError as exc:
@@ -89,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
     run_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
     run_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
+    run_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
     events_parser = subparsers.add_parser("events", help="Print RunLedger events for a run")
     _add_state_dir(events_parser)
@@ -170,6 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
     web_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
     web_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
+    web_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
     harness_parser = subparsers.add_parser("harness", help="Run lightweight replay and eval harnesses")
     harness_subparsers = harness_parser.add_subparsers(dest="harness_command")
@@ -186,6 +187,19 @@ def build_parser() -> argparse.ArgumentParser:
     harness_replay_parser.add_argument("--json", action="store_true")
     harness_list_parser = harness_subparsers.add_parser("list", help="List built-in eval suites")
     harness_list_parser.add_argument("--json", action="store_true")
+
+    config_parser = subparsers.add_parser("config", help="Inspect resolved runtime configuration")
+    config_subparsers = config_parser.add_subparsers(dest="config_command")
+    config_inspect_parser = config_subparsers.add_parser("inspect", help="Print resolved configuration")
+    _add_state_dir(config_inspect_parser)
+    config_inspect_parser.add_argument("--provider", choices=["local", "openai-compatible"], default=None)
+    config_inspect_parser.add_argument("--base-url")
+    config_inspect_parser.add_argument("--model")
+    config_inspect_parser.add_argument("--api-key")
+    config_inspect_parser.add_argument("--api-key-env")
+    config_inspect_parser.add_argument("--timeout-s", type=float)
+    config_inspect_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+    config_inspect_parser.add_argument("--json", action="store_true")
     return parser
 
 
@@ -209,24 +223,24 @@ def _cmd_run(args: argparse.Namespace) -> int:
         raise MnemoError("--json and --stream cannot be used together")
 
     message = " ".join(args.message)
+    config = _runtime_config_from_args(args)
     request = RunRequest(
         message=message,
-        state_dir=args.state_dir,
+        state_dir=config.state_dir,
         conversation_id=args.conversation_id,
         mission_id=args.mission_id,
     )
-    provider_name = _provider_name(args)
     if args.stream:
         event_stream = (
             stream_local(request)
-            if provider_name == "local"
+            if config.provider == "local"
             else stream_provider(request, _openai_compatible_adapter(args, stream=True))
         )
         for event in event_stream:
             print(dumps(chat_event_as_dict(event)), flush=True)
         return 0
 
-    result = run_local(request) if provider_name == "local" else run_provider(request, _openai_compatible_adapter(args))
+    result = run_local(request) if config.provider == "local" else run_provider(request, _openai_compatible_adapter(args))
     if args.json:
         print(dumps(result_as_dict(result)))
         return 0
@@ -413,28 +427,23 @@ def _cmd_tools(args: argparse.Namespace) -> int:
 
 
 def _cmd_web(args: argparse.Namespace) -> int:
-    provider_name = _provider_name(args)
-    base_url = args.base_url or os.environ.get("MNEMO_BASE_URL")
-    model = args.model or os.environ.get("MNEMO_MODEL")
-    api_key_env = args.api_key_env or os.environ.get("MNEMO_API_KEY_ENV")
-    api_key = args.api_key or (os.environ.get(api_key_env) if api_key_env else os.environ.get("MNEMO_API_KEY"))
-    timeout_s = args.timeout_s or _env_float("MNEMO_TIMEOUT_S") or 30.0
+    config = _runtime_config_from_args(args)
 
-    if provider_name == "openai-compatible" and not base_url:
+    if config.provider == "openai-compatible" and not config.base_url:
         raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
-    if provider_name == "openai-compatible" and not model:
+    if config.provider == "openai-compatible" and not config.model:
         raise MnemoError("openai-compatible provider requires --model or MNEMO_MODEL")
 
     serve_web(
         WebServerConfig(
-            state_dir=args.state_dir,
+            state_dir=config.state_dir,
             host=args.host,
             port=args.port,
-            provider=provider_name,
-            base_url=base_url,
-            model=model,
-            api_key=api_key,
-            timeout_s=timeout_s,
+            provider=config.provider,
+            base_url=config.base_url,
+            model=config.model,
+            api_key=config.api_key,
+            timeout_s=config.timeout_s,
         )
     )
     return 0
@@ -472,6 +481,19 @@ def _cmd_harness(args: argparse.Namespace) -> int:
     raise MnemoError("harness command requires a subcommand")
 
 
+def _cmd_config(args: argparse.Namespace) -> int:
+    if args.config_command != "inspect":
+        raise MnemoError("config command requires a subcommand")
+    config = _runtime_config_from_args(args)
+    payload = config.redacted()
+    if args.json:
+        print(dumps(payload))
+    else:
+        for key in ("state_dir", "provider", "base_url", "model", "api_key_env", "api_key", "timeout_s", "config_path"):
+            print(f"{key}={payload.get(key)}")
+    return 0
+
+
 def _print_harness_report(report: dict, *, json_output: bool) -> int:
     if json_output:
         print(dumps(report))
@@ -488,37 +510,41 @@ def _print_harness_report(report: dict, *, json_output: bool) -> int:
 
 
 def _provider_name(args: argparse.Namespace) -> str:
-    return args.provider or os.environ.get("MNEMO_PROVIDER") or DEFAULT_PROVIDER
+    return _runtime_config_from_args(args).provider
 
 
 def _openai_compatible_adapter(args: argparse.Namespace, *, stream: bool = False) -> OpenAIProviderAdapter:
-    base_url = args.base_url or os.environ.get("MNEMO_BASE_URL")
-    model = args.model or os.environ.get("MNEMO_MODEL")
-    api_key_env = args.api_key_env or os.environ.get("MNEMO_API_KEY_ENV")
-    api_key = args.api_key or (os.environ.get(api_key_env) if api_key_env else os.environ.get("MNEMO_API_KEY"))
-    timeout_s = args.timeout_s or _env_float("MNEMO_TIMEOUT_S") or 30.0
+    config = _runtime_config_from_args(args)
 
-    if not base_url:
+    if not config.base_url:
         raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
-    if not model:
+    if not config.model:
         raise MnemoError("openai-compatible provider requires --model or MNEMO_MODEL")
 
     return OpenAIProviderAdapter(
         ProviderConfig(
-            base_url=base_url,
-            model=model,
-            api_key=api_key,
-            timeout_s=timeout_s,
+            base_url=config.base_url,
+            model=config.model,
+            api_key=config.api_key,
+            timeout_s=config.timeout_s,
             stream=stream,
         )
     )
 
 
-def _env_float(name: str) -> float | None:
-    value = os.environ.get(name)
-    if not value:
-        return None
-    try:
-        return float(value)
-    except ValueError as exc:
-        raise MnemoError(f"{name} must be a number") from exc
+def _runtime_config_from_args(args: argparse.Namespace):
+    state_dir = getattr(args, "state_dir", None)
+    if state_dir == DEFAULT_STATE_DIR:
+        state_dir = None
+    return resolve_runtime_config(
+        ConfigOverrides(
+            state_dir=state_dir,
+            provider=getattr(args, "provider", None),
+            base_url=getattr(args, "base_url", None),
+            model=getattr(args, "model", None),
+            api_key=getattr(args, "api_key", None),
+            api_key_env=getattr(args, "api_key_env", None),
+            timeout_s=getattr(args, "timeout_s", None),
+            config_path=getattr(args, "config", None),
+        )
+    )

@@ -123,7 +123,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [ ] Schema migrations.
 - [x] JSONL trace mirror.
 - [ ] Event outbox.
-- [ ] Config file and env override model.
+- [x] Config file and env override model.
 - [ ] Daemon status command.
 - [ ] Backup/export/import.
 
@@ -140,3 +140,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-25-implement-skills-metadata-compatibility`: common Agent Skills metadata parsing and compact card projection are in progress.
 - [~] `04-25-implement-single-chat-web-frontend`: stdlib web server, single chat UI, NDJSON stream transport, and replay endpoint are in progress.
 - [~] `04-25-implement-eval-harness-foundation`: built-in personalization golden cases, smoke suite, and replay harness CLI are in progress.
+- [~] `04-25-implement-config-resolver`: shared runtime config resolver, redacted inspect CLI, and provider config refactor are in progress.

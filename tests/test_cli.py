@@ -196,6 +196,14 @@ class CliTests(unittest.TestCase):
             self.assertTrue(replay_payload["completed"])
             self.assertGreater(replay_payload["event_count"], 0)
 
+    def test_config_inspect_redacts_api_key(self) -> None:
+        config = _run_cli(["config", "inspect", "--api-key", "secret-value", "--json"])
+
+        self.assertEqual(config.returncode, 0, config.stderr)
+        payload = json.loads(config.stdout)
+        self.assertEqual(payload["api_key"], "***")
+        self.assertNotIn("secret-value", config.stdout)
+
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
