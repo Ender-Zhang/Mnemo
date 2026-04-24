@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "Suite verifies skill self-evolution contracts."}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Skill evolution is exposed through provider-native tools and compact evidence."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature spans harness, service, CLI, checklist, and tests."}
