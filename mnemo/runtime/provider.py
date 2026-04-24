@@ -5,8 +5,10 @@ from typing import Any
 
 from ..core.errors import MnemoError
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolResult
+from ..memory import MemoryEngine
 from ..providers import ProviderAdapter, ProviderRunInput
 from ..prompt import PromptAssembler
+from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, compact_tool_result, tool_specs_as_json_schema
 from .common import (
@@ -63,6 +65,8 @@ class ProviderAgentRuntime:
             request.message,
             mission=mission,
             tool_specs=self.registry.specs(),
+            memory_cards=MemoryEngine(store).context_cards(request.message, limit=5),
+            skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
         )
 
         ledger.append(

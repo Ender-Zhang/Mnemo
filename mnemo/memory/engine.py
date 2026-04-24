@@ -47,6 +47,9 @@ class MemoryEngine:
             )
         return results
 
+    def context_cards(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        return [_context_card(item) for item in self.search(query, limit=limit)]
+
     def promote_candidate(self, candidate_id: str) -> dict[str, Any]:
         candidate = self._get_candidate(candidate_id)
         if not candidate:
@@ -156,12 +159,39 @@ def _candidate_title(candidate: dict[str, Any]) -> str:
     return f"{dimension}: {title_body}"
 
 
+def _context_card(item: dict[str, Any]) -> dict[str, Any]:
+    if item["type"] == "page":
+        return {
+            "id": item["id"],
+            "type": "page",
+            "title": item["title"],
+            "summary": _truncate(item["content"]),
+            "confidence": item.get("confidence"),
+            "status": item.get("status"),
+        }
+    return {
+        "id": item["id"],
+        "type": "candidate",
+        "title": item.get("dimension") or "memory candidate",
+        "summary": _truncate(item["claim"]),
+        "confidence": item.get("confidence"),
+        "status": item.get("status"),
+    }
+
+
 def _fingerprint(value: str) -> str:
     return re.sub(r"\W+", "", value.casefold())
 
 
 def _normalize_space(value: str) -> str:
     return " ".join(value.strip().split())
+
+
+def _truncate(value: str, limit: int = 220) -> str:
+    compact = _normalize_space(value)
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 1].rstrip() + "..."
 
 
 def _status_reason(reason: str) -> str:

@@ -78,7 +78,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] PromptBlock model.
 - [x] PromptAssembler with stable prefix and dynamic tail.
 - [~] Tool card/schema budget separation.
-- [ ] Skill and memory progressive disclosure.
+- [x] Skill and memory progressive disclosure.
 - [x] KV-cache-first prompt assembly ordering.
 - [x] Prompt inspection command.
 - [ ] Context compression.
@@ -135,3 +135,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-24-implement-skills-filesystem-lifecycle`: Agent Skills scanner, skill service, and generated `SKILL.md` promotion are in progress.
 - [x] `04-24-implement-event-replay-foundation`: JSONL trace mirror, event replay CLI, and trace summary are implemented.
 - [~] `04-24-implement-tool-boundary-cards`: Tool permission policy, compact model tool results, and evidence cards are in progress.
+- [~] `04-24-implement-prompt-progressive-context`: Memory/skill compact indexes and runtime prompt injection are in progress.

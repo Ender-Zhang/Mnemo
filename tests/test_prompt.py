@@ -86,6 +86,50 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertTrue(all("content" not in block for block in metadata["blocks"]))
         self.assertNotIn("sk-test-secret", str(metadata))
 
+    def test_memory_and_skill_indexes_are_progressive_blocks(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "Help with writing",
+            tool_specs=[_tool("memory_search"), _tool("skill_view")],
+            memory_cards=[
+                {
+                    "id": "mempg_1",
+                    "type": "page",
+                    "title": "preference",
+                    "summary": "User prefers concise updates",
+                    "confidence": 0.9,
+                    "status": "active",
+                }
+            ],
+            skill_cards=[
+                {
+                    "name": "writer",
+                    "description": "Draft concise prose",
+                    "status": "active",
+                }
+            ],
+        )
+
+        self.assertEqual(
+            [block.id for block in prompt.blocks],
+            [
+                "system.identity",
+                "developer.operating_principles",
+                "tools.cards",
+                "memory.index",
+                "skills.index",
+                "mission.continuation",
+                "turn.current_user_message",
+            ],
+        )
+        memory = next(block for block in prompt.blocks if block.id == "memory.index")
+        skills = next(block for block in prompt.blocks if block.id == "skills.index")
+        self.assertIn("memory_read", memory.content)
+        self.assertIn("mempg_1", memory.content)
+        self.assertIn("skill_view", skills.content)
+        self.assertIn("writer", skills.content)
+        self.assertEqual(memory.cache_policy, "turn")
+        self.assertEqual(skills.cache_policy, "daily")
+
 
 def _tool(name: str) -> ToolSpec:
     return ToolSpec(

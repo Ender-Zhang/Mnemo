@@ -105,6 +105,30 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertEqual(len(provider.requests), 2)
             self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")
 
+    def test_provider_runtime_adds_progressive_memory_and_skill_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("context")
+            mission_id = store.create_mission(conversation_id, "context tests")
+            seed_run_id = store.create_run(conversation_id, mission_id, "seed")
+            store.add_memory_candidate(seed_run_id, "User prefers concise writing", confidence=0.8)
+            store.upsert_skill("writer", "Draft concise prose", "Full skill body", status="active")
+            provider = FakeProvider([[ProviderEvent(type="text_delta", text="Ready"), ProviderEvent(type="completed")]])
+
+            list(
+                ProviderAgentRuntime(provider).stream(
+                    RunRequest(message="concise writing", state_dir=tmp, conversation_id=conversation_id)
+                )
+            )
+
+            prompt_text = "\n".join(message["content"] for message in provider.requests[0].messages)
+            self.assertIn("Relevant memory index", prompt_text)
+            self.assertIn("User prefers concise writing", prompt_text)
+            self.assertIn("Available skill index", prompt_text)
+            self.assertIn("writer [active]", prompt_text)
+            self.assertNotIn("Full skill body", prompt_text)
+
 
 class FakeProvider:
     name = "fake"

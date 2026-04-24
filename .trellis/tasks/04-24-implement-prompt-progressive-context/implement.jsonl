@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/prompt/assembly.py", "reason": "Prompt block assembly"}
+{"file": "mnemo/runtime/provider.py", "reason": "Provider prompt input"}
+{"file": "mnemo/memory/engine.py", "reason": "Memory context cards"}
+{"file": "mnemo/skills/service.py", "reason": "Skill context cards"}

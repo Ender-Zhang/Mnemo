@@ -29,6 +29,9 @@ class SkillService:
     def list(self) -> list[dict[str, Any]]:
         return self.store.list_skills()
 
+    def context_cards(self, limit: int = 12) -> list[dict[str, Any]]:
+        return [_skill_context_card(skill) for skill in self.store.list_skills()[:limit]]
+
     def view(self, name: str) -> dict[str, Any] | None:
         return self.store.get_skill(name)
 
@@ -68,6 +71,16 @@ def _skill_file_as_dict(skill: SkillFile) -> dict[str, Any]:
         "path": str(skill.path),
         "source_root": str(skill.source_root),
         "metadata": skill.metadata,
+    }
+
+
+def _skill_context_card(skill: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": skill["name"],
+        "description": skill.get("description", ""),
+        "status": skill.get("status", "unknown"),
+        "source": skill.get("source", ""),
+        "path": skill.get("path"),
     }
 
 

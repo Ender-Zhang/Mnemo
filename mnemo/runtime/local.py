@@ -7,6 +7,9 @@ from typing import Any
 from ..core.errors import MnemoError
 from ..core.ids import new_id
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolCallEnvelope, ToolResult
+from ..memory import MemoryEngine
+from ..prompt import PromptAssembler
+from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
 from .common import (
@@ -80,13 +83,20 @@ class LocalAgentRuntime:
                 "summary": "已恢复当前对话和任务状态。",
             },
         )
+        mission = store.get_mission(mission_id) or {}
+        assembled_prompt = PromptAssembler().assemble(
+            request.message,
+            mission=mission,
+            tool_specs=self.registry.specs(),
+            memory_cards=MemoryEngine(store).context_cards(request.message, limit=5),
+            skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
+        )
         ledger.append(
             run_id,
             "prompt.assembled",
             {
+                **assembled_prompt.metadata(),
                 "mode": "full",
-                "stable_prefix": ["mnemo_core", "tool_bundle"],
-                "dynamic_tail": ["mission_checkpoint", "current_turn"],
                 "tool_count": len(self.registry.specs()),
                 "tools": [spec["name"] for spec in tool_specs_as_json_schema(self.registry.specs())],
             },

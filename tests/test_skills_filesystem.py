@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mnemo.skills import load_skill_file, scan_skill_files
+from mnemo.skills import SkillService, load_skill_file, scan_skill_files
+from mnemo.storage import StateStore
 
 
 class SkillFilesystemTests(unittest.TestCase):
@@ -70,6 +71,18 @@ class SkillFilesystemTests(unittest.TestCase):
 
             self.assertEqual([skill.name for skill in skills], ["alpha", "beta"])
             self.assertEqual([skill.source_root for skill in skills], [root, root])
+
+    def test_skill_context_cards_omit_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            store.upsert_skill("writer", "Draft concise notes", "Full skill body", status="active")
+
+            cards = SkillService(store).context_cards()
+
+            self.assertEqual(cards[0]["name"], "writer")
+            self.assertEqual(cards[0]["description"], "Draft concise notes")
+            self.assertNotIn("body", cards[0])
 
 
 if __name__ == "__main__":

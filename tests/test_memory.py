@@ -60,6 +60,22 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertIn(("page", page_id), typed_ids)
             self.assertIn(("candidate", candidate_id), typed_ids)
 
+    def test_context_cards_are_compact(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            store.add_memory_candidate(
+                run_id,
+                "User prefers very compact context cards for model prompts",
+                dimension="preferences",
+                confidence=0.75,
+            )
+
+            cards = MemoryEngine(store).context_cards("compact context", limit=5)
+
+            self.assertEqual(cards[0]["type"], "candidate")
+            self.assertIn("summary", cards[0])
+            self.assertNotIn("evidence", cards[0])
+
     def test_dream_consolidate_promotes_confident_drafts_and_skips_low_confidence(
         self,
     ) -> None:

@@ -68,17 +68,27 @@ class PromptAssembler:
         mission: dict[str, Any] | None = None,
         checkpoint: dict[str, Any] | None = None,
         tool_specs: Sequence[ToolSpec] | None = None,
+        memory_cards: Sequence[dict[str, Any]] | None = None,
+        skill_cards: Sequence[dict[str, Any]] | None = None,
     ) -> AssembledPrompt:
         checkpoint = _resolve_checkpoint(mission, checkpoint)
         tools = tuple(sorted(tool_specs or (), key=lambda spec: spec.name))
-        blocks = (
+        blocks = [
             self._system_identity(),
             self._operating_principles(),
             self._tool_cards(tools),
-            self._mission_continuation(mission or {}, checkpoint),
-            self._current_turn(current_user_message),
+        ]
+        if memory_cards:
+            blocks.append(self._memory_index(memory_cards))
+        if skill_cards:
+            blocks.append(self._skill_index(skill_cards))
+        blocks.extend(
+            [
+                self._mission_continuation(mission or {}, checkpoint),
+                self._current_turn(current_user_message),
+            ]
         )
-        return AssembledPrompt(blocks=blocks)
+        return AssembledPrompt(blocks=tuple(blocks))
 
     def _system_identity(self) -> PromptBlock:
         content = "\n".join(
@@ -158,6 +168,44 @@ class PromptAssembler:
             cache_policy="stable",
             cache_segment="tool_bundle",
             priority=30,
+            can_drop=True,
+        )
+
+    def _memory_index(self, cards: Sequence[dict[str, Any]]) -> PromptBlock:
+        lines = [
+            "Relevant memory index:",
+            "Use memory_search or memory_read if you need details beyond these cards.",
+        ]
+        lines.extend(f"- {_memory_card_text(card)}" for card in cards)
+        return _block(
+            id="memory.index",
+            role="developer",
+            layer="memory",
+            title="Memory Index",
+            content="\n".join(lines),
+            source="memory",
+            cache_policy="turn",
+            cache_segment="turn",
+            priority=32,
+            can_drop=True,
+        )
+
+    def _skill_index(self, cards: Sequence[dict[str, Any]]) -> PromptBlock:
+        lines = [
+            "Available skill index:",
+            "Use skill_view only when the full skill body is useful for this turn.",
+        ]
+        lines.extend(f"- {_skill_card_text(card)}" for card in cards)
+        return _block(
+            id="skills.index",
+            role="developer",
+            layer="skill",
+            title="Skills Index",
+            content="\n".join(lines),
+            source="skills",
+            cache_policy="daily",
+            cache_segment="daily_context",
+            priority=34,
             can_drop=True,
         )
 
@@ -245,6 +293,33 @@ def _stable_value(value: Any) -> str:
     if isinstance(value, str):
         return value
     return dumps(value)
+
+
+def _memory_card_text(card: dict[str, Any]) -> str:
+    confidence = _confidence_text(card.get("confidence"))
+    status = card.get("status") or "unknown"
+    return (
+        f"{card.get('id', '')} [{card.get('type', 'memory')}, {status}{confidence}] "
+        f"{_compact(card.get('title', 'Memory'))}: {_compact(card.get('summary', ''))}"
+    )
+
+
+def _skill_card_text(card: dict[str, Any]) -> str:
+    status = card.get("status") or "unknown"
+    return f"{card.get('name', '')} [{status}]: {_compact(card.get('description', ''))}"
+
+
+def _confidence_text(value: Any) -> str:
+    if isinstance(value, int | float):
+        return f", confidence={value:.2f}"
+    return ""
+
+
+def _compact(value: Any, limit: int = 180) -> str:
+    text = " ".join(str(value or "").strip().split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "..."
 
 
 def _estimate_tokens(content: str) -> int:
