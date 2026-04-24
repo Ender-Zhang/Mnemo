@@ -22,6 +22,8 @@
 - `ToolResult.result`: full persisted payload for ledger and replay.
 - `ToolResult.summary` and `ToolResult.evidence`: compact model/UI payloads.
 - `ToolContext.workspace_root`: resolved root for local file and shell tools.
+- OpenAI-compatible adapters convert `tool_calls[].function` into `ToolCallEnvelope`.
+- Anthropic adapters convert `tool_use` content blocks into `ToolCallEnvelope` and return tool results as `tool_result` content blocks.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
 - `working_note` with `retention="memory_candidate"` stores metadata for DreamCycle; it does not create a memory candidate synchronously.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
@@ -36,6 +38,8 @@
 | Binary file read | Return failed tool result, no decoded payload | Standard tool test when added |
 | Shell command timeout | Return failed tool result with timeout error | Standard tool test when added |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
+| Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
+| Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
@@ -56,6 +60,7 @@
 - Skill eval case: assert eval status is persisted and compact result omits full skill body.
 - Local path tools: assert workspace scoping and traversal rejection.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
+- Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
 
 ### 7. Wrong vs Correct
 #### Wrong

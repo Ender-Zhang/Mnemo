@@ -99,7 +99,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] Provider adapter boundary exists.
 - [x] OpenAI-compatible chat completions adapter.
-- [ ] Anthropic adapter.
+- [x] Anthropic adapter.
 - [x] Provider config from environment/CLI without persisting secrets.
 - [x] Model/tool loop with provider-native tool call schema.
 - [x] Streaming response parser.
@@ -156,3 +156,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-event-outbox`: SQLite outbox migration, run-event mirroring, enqueue/list/mark APIs, and storage tests are implemented.
 - [x] `04-25-implement-backup-export-import`: zip state backup, validated import/replace, CLI commands, and round-trip safety tests are implemented.
 - [x] `04-25-implement-daemon-queue-recovery`: persisted run queue, single-instance daemon lock, drain/status/recover CLI, and crash recovery tests are implemented.
+- [x] `04-25-implement-anthropic-provider-adapter`: Anthropic Messages API adapter, streaming/tool-use normalization, CLI/web provider wiring, and fake-server tests are implemented.

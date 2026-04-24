@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
-from ..providers import OpenAIProviderAdapter, ProviderConfig
+from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
 from ..runtime import stream_local, stream_provider
 from ..runtime.ledger import RunLedger
 from ..storage import StateStore
@@ -28,6 +28,9 @@ class WebServerConfig:
     model: str | None = None
     api_key: str | None = None
     timeout_s: float = 30.0
+
+
+_ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 
 
 def build_http_server(config: WebServerConfig) -> HTTPServer:
@@ -188,6 +191,20 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
         provider = OpenAIProviderAdapter(
             ProviderConfig(
                 base_url=config.base_url,
+                model=config.model,
+                api_key=config.api_key,
+                timeout_s=config.timeout_s,
+                stream=True,
+            )
+        )
+        yield from stream_provider(request, provider)
+        return
+    if config.provider == "anthropic":
+        if not config.model:
+            raise ValueError("anthropic provider requires model")
+        provider = AnthropicProviderAdapter(
+            ProviderConfig(
+                base_url=config.base_url or _ANTHROPIC_DEFAULT_BASE_URL,
                 model=config.model,
                 api_key=config.api_key,
                 timeout_s=config.timeout_s,

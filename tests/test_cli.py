@@ -89,6 +89,41 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(prompt["blocks"][0]["id"], "system.identity")
 
+    def test_run_with_anthropic_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with FakeChatServer(
+                {
+                    "id": "msg_cli",
+                    "model": "claude-fake",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Anthropic reply"}],
+                    "stop_reason": "end_turn",
+                }
+            ) as server:
+                run = _run_cli(
+                    [
+                        "run",
+                        "hello anthropic",
+                        "--state-dir",
+                        tmp,
+                        "--provider",
+                        "anthropic",
+                        "--base-url",
+                        server.base_url,
+                        "--model",
+                        "claude-fake",
+                        "--json",
+                    ]
+                )
+
+            self.assertEqual(run.returncode, 0, run.stderr)
+            payload = json.loads(run.stdout)
+            self.assertEqual(payload["response"], "Anthropic reply")
+            self.assertEqual(server.requests[0]["path"], "/messages")
+            self.assertEqual(server.requests[0]["body"]["model"], "claude-fake")
+            self.assertEqual(server.requests[0]["body"]["messages"][-1]["role"], "user")
+            self.assertIn("system", server.requests[0]["body"])
+
     def test_run_stream_with_provider_timeout_emits_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with FakeChatServer(

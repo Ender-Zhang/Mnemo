@@ -13,7 +13,7 @@ from ..core.jsonutil import dumps
 from ..core.models import RunRequest
 from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
-from ..providers import OpenAIProviderAdapter, ProviderConfig
+from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderAdapter, ProviderConfig
 from ..runtime import DaemonRunner, result_as_dict, run_local, run_provider, stream_local
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
@@ -21,6 +21,9 @@ from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolRegistry, tool_specs_as_json_schema
 from .web import WebServerConfig, serve_web
+
+
+_ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -83,7 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--stream", action="store_true", help="Print newline-delimited ChatEvent JSON")
     run_parser.add_argument(
         "--provider",
-        choices=["local", "openai-compatible"],
+        choices=["local", "openai-compatible", "anthropic"],
         default=None,
         help="Runtime provider (default: local, or MNEMO_PROVIDER)",
     )
@@ -180,7 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("--port", type=int, default=8765)
     web_parser.add_argument(
         "--provider",
-        choices=["local", "openai-compatible"],
+        choices=["local", "openai-compatible", "anthropic"],
         default=None,
         help="Runtime provider (default: local, or MNEMO_PROVIDER)",
     )
@@ -220,7 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_run_parser.add_argument("--limit", type=int, default=1)
     daemon_run_parser.add_argument("--stale-after-s", type=float, default=900.0)
     daemon_run_parser.add_argument("--worker-id")
-    daemon_run_parser.add_argument("--provider", choices=["local", "openai-compatible"], default=None)
+    daemon_run_parser.add_argument("--provider", choices=["local", "openai-compatible", "anthropic"], default=None)
     daemon_run_parser.add_argument("--base-url")
     daemon_run_parser.add_argument("--model")
     daemon_run_parser.add_argument("--api-key")
@@ -252,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     config_subparsers = config_parser.add_subparsers(dest="config_command")
     config_inspect_parser = config_subparsers.add_parser("inspect", help="Print resolved configuration")
     _add_state_dir(config_inspect_parser)
-    config_inspect_parser.add_argument("--provider", choices=["local", "openai-compatible"], default=None)
+    config_inspect_parser.add_argument("--provider", choices=["local", "openai-compatible", "anthropic"], default=None)
     config_inspect_parser.add_argument("--base-url")
     config_inspect_parser.add_argument("--model")
     config_inspect_parser.add_argument("--api-key")
@@ -291,16 +294,12 @@ def _cmd_run(args: argparse.Namespace) -> int:
         mission_id=args.mission_id,
     )
     if args.stream:
-        event_stream = (
-            stream_local(request)
-            if config.provider == "local"
-            else stream_provider(request, _openai_compatible_adapter(args, stream=True))
-        )
+        event_stream = stream_local(request) if config.provider == "local" else stream_provider(request, _provider_adapter(args, stream=True))
         for event in event_stream:
             print(dumps(chat_event_as_dict(event)), flush=True)
         return 0
 
-    result = run_local(request) if config.provider == "local" else run_provider(request, _openai_compatible_adapter(args))
+    result = run_local(request) if config.provider == "local" else run_provider(request, _provider_adapter(args))
     if args.json:
         print(dumps(result_as_dict(result)))
         return 0
@@ -502,10 +501,7 @@ def _cmd_tools(args: argparse.Namespace) -> int:
 def _cmd_web(args: argparse.Namespace) -> int:
     config = _runtime_config_from_args(args)
 
-    if config.provider == "openai-compatible" and not config.base_url:
-        raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
-    if config.provider == "openai-compatible" and not config.model:
-        raise MnemoError("openai-compatible provider requires --model or MNEMO_MODEL")
+    _validate_provider_config(config)
 
     serve_web(
         WebServerConfig(
@@ -607,7 +603,7 @@ def _queued_executor(args: argparse.Namespace):
     config = _runtime_config_from_args(args)
     if config.provider == "local":
         return run_local
-    adapter = _openai_compatible_adapter(args)
+    adapter = _provider_adapter(args)
 
     def execute(request: RunRequest):
         return run_provider(request, adapter)
@@ -682,9 +678,24 @@ def _provider_name(args: argparse.Namespace) -> str:
     return _runtime_config_from_args(args).provider
 
 
+def _provider_adapter(args: argparse.Namespace, *, stream: bool = False) -> ProviderAdapter:
+    config = _runtime_config_from_args(args)
+    _validate_provider_config(config)
+    if config.provider == "anthropic":
+        return AnthropicProviderAdapter(
+            ProviderConfig(
+                base_url=config.base_url or _ANTHROPIC_DEFAULT_BASE_URL,
+                model=config.model or "",
+                api_key=config.api_key,
+                timeout_s=config.timeout_s,
+                stream=stream,
+            )
+        )
+    return _openai_compatible_adapter(args, stream=stream)
+
+
 def _openai_compatible_adapter(args: argparse.Namespace, *, stream: bool = False) -> OpenAIProviderAdapter:
     config = _runtime_config_from_args(args)
-
     if not config.base_url:
         raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
     if not config.model:
@@ -699,6 +710,22 @@ def _openai_compatible_adapter(args: argparse.Namespace, *, stream: bool = False
             stream=stream,
         )
     )
+
+
+def _validate_provider_config(config) -> None:
+    if config.provider == "local":
+        return
+    if config.provider == "openai-compatible":
+        if not config.base_url:
+            raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
+        if not config.model:
+            raise MnemoError("openai-compatible provider requires --model or MNEMO_MODEL")
+        return
+    if config.provider == "anthropic":
+        if not config.model:
+            raise MnemoError("anthropic provider requires --model or MNEMO_MODEL")
+        return
+    raise MnemoError(f"unsupported provider: {config.provider}")
 
 
 def _runtime_config_from_args(args: argparse.Namespace):
