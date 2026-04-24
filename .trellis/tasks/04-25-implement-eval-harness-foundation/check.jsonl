@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "tests/test_harness.py", "reason": "Harness unit tests"}
+{"file": "tests/test_cli.py", "reason": "Harness CLI tests"}

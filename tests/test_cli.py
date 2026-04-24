@@ -178,6 +178,24 @@ class CliTests(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(path.name, "SKILL.md")
 
+    def test_harness_eval_and_replay_commands(self) -> None:
+        eval_run = _run_cli(["harness", "eval", "personalization-core", "--json"])
+        self.assertEqual(eval_run.returncode, 0, eval_run.stderr)
+        eval_payload = json.loads(eval_run.stdout)
+        self.assertTrue(eval_payload["passed"])
+        self.assertEqual(eval_payload["case_count"], 3)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _run_cli(["run", "remember: harness cli replay", "--state-dir", tmp, "--json"])
+            self.assertEqual(run.returncode, 0, run.stderr)
+            run_id = json.loads(run.stdout)["run_id"]
+
+            replay = _run_cli(["harness", "replay", run_id, "--state-dir", tmp, "--json"])
+            self.assertEqual(replay.returncode, 0, replay.stderr)
+            replay_payload = json.loads(replay.stdout)
+            self.assertTrue(replay_payload["completed"])
+            self.assertGreater(replay_payload["event_count"], 0)
+
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()

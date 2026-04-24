@@ -10,6 +10,7 @@ from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
+from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
 from ..providers import OpenAIProviderAdapter, ProviderConfig
 from ..runtime import result_as_dict, run_local, stream_local
@@ -50,6 +51,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_tools(args)
         if args.command == "web":
             return _cmd_web(args)
+        if args.command == "harness":
+            return _cmd_harness(args)
         parser.print_help()
         return 0
     except MnemoError as exc:
@@ -167,6 +170,22 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
     web_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
     web_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
+
+    harness_parser = subparsers.add_parser("harness", help="Run lightweight replay and eval harnesses")
+    harness_subparsers = harness_parser.add_subparsers(dest="harness_command")
+    harness_eval_parser = harness_subparsers.add_parser("eval", help="Run a built-in eval suite")
+    harness_eval_parser.add_argument("suite", nargs="?", default="personalization-core")
+    harness_eval_parser.add_argument("--state-dir", default=None, help="Optional state root for temporary eval runs")
+    harness_eval_parser.add_argument("--json", action="store_true")
+    harness_smoke_parser = harness_subparsers.add_parser("smoke", help="Run the smoke eval suite")
+    harness_smoke_parser.add_argument("--state-dir", default=None, help="Optional state root for temporary eval runs")
+    harness_smoke_parser.add_argument("--json", action="store_true")
+    harness_replay_parser = harness_subparsers.add_parser("replay", help="Summarize a run replay trace")
+    _add_state_dir(harness_replay_parser)
+    harness_replay_parser.add_argument("run_id")
+    harness_replay_parser.add_argument("--json", action="store_true")
+    harness_list_parser = harness_subparsers.add_parser("list", help="List built-in eval suites")
+    harness_list_parser.add_argument("--json", action="store_true")
     return parser
 
 
@@ -419,6 +438,53 @@ def _cmd_web(args: argparse.Namespace) -> int:
         )
     )
     return 0
+
+
+def _cmd_harness(args: argparse.Namespace) -> int:
+    if args.harness_command == "eval":
+        try:
+            report = EvalHarness(state_dir=args.state_dir).run_suite(args.suite)
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
+        return _print_harness_report(report.as_dict(), json_output=args.json)
+    if args.harness_command == "smoke":
+        report = EvalHarness(state_dir=args.state_dir).run_suite("smoke")
+        return _print_harness_report(report.as_dict(), json_output=args.json)
+    if args.harness_command == "replay":
+        result = replay_summary(args.state_dir, args.run_id)
+        if args.json:
+            print(dumps(result))
+            return 0 if result["completed"] else 1
+        print(
+            f"run={result['run_id']} completed={result['completed']} "
+            f"events={result['event_count']} chat_events={result['chat_event_count']}"
+        )
+        print(result["trace_path"])
+        return 0 if result["completed"] else 1
+    if args.harness_command == "list":
+        suites = list_suites()
+        if args.json:
+            print(dumps({"suites": suites}))
+        else:
+            for suite in suites:
+                print(suite)
+        return 0
+    raise MnemoError("harness command requires a subcommand")
+
+
+def _print_harness_report(report: dict, *, json_output: bool) -> int:
+    if json_output:
+        print(dumps(report))
+    else:
+        status = "passed" if report["passed"] else "failed"
+        print(
+            f"{report['suite']}: {status} "
+            f"({report['passed_count']}/{report['case_count']} cases)"
+        )
+        for case in report["cases"]:
+            marker = "ok" if case["passed"] else "fail"
+            print(f"- {marker} {case['case_id']}: {case['name']}")
+    return 0 if report["passed"] else 1
 
 
 def _provider_name(args: argparse.Namespace) -> str:

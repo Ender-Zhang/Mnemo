@@ -34,7 +34,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] True streaming provider delta support.
 - [~] Timeout/retry/cancellation policy.
 - [ ] Daemon, queue, single-instance lock, crash recovery.
-- [ ] Replay harness.
+- [x] Replay harness.
 
 ## Tools
 
@@ -59,7 +59,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [ ] W0 working memory to long-term candidate pipeline.
 - [x] DreamCycle idle memory consolidation.
 - [ ] Daily compiled L1 cache-friendly memory snapshot.
-- [ ] Memory eval cases and regression gates.
+- [~] Memory eval cases and regression gates.
 
 ## Skills And Evolution
 
@@ -109,7 +109,7 @@ This file tracks implementation status against the design package. Keep it updat
 ## Evaluation And Harness
 
 - [x] Basic unit tests.
-- [ ] Golden personalization cases.
+- [x] Golden personalization cases.
 - [x] Runtime smoke replay tests.
 - [ ] Memory safety tests.
 - [ ] Skill evolution tests.
@@ -139,3 +139,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-25-implement-openai-streaming-provider`: OpenAI-compatible SSE parser, streamed deltas, and streamed tool-call chunks are in progress.
 - [~] `04-25-implement-skills-metadata-compatibility`: common Agent Skills metadata parsing and compact card projection are in progress.
 - [~] `04-25-implement-single-chat-web-frontend`: stdlib web server, single chat UI, NDJSON stream transport, and replay endpoint are in progress.
+- [~] `04-25-implement-eval-harness-foundation`: built-in personalization golden cases, smoke suite, and replay harness CLI are in progress.

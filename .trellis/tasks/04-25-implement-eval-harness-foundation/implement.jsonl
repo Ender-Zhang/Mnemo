@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/runtime/local.py", "reason": "Deterministic runtime under test"}
+{"file": "mnemo/runtime/ledger.py", "reason": "Replay trace source"}
+{"file": "mnemo/interfaces/cli.py", "reason": "Harness CLI"}
+{"file": "mnemo/evals/harness.py", "reason": "Eval harness implementation"}
