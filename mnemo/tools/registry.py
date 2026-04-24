@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import asdict, replace
+from pathlib import Path
 from typing import Any
 
 from ..core.errors import NotFoundError, ToolError
@@ -10,17 +11,19 @@ from ..core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolPermission,
 from ..memory import MemoryEngine
 from ..runtime.ledger import RunLedger
 from ..storage import StateStore
+from .standard import STANDARD_TOOL_SPECS, standard_tool_evidence, standard_tool_handlers, standard_tool_summary
 
 
 ToolHandler = Callable[[dict[str, Any], "ToolContext"], dict[str, Any]]
 
 
 class ToolContext:
-    def __init__(self, *, store: StateStore, ledger: RunLedger, run_id: str, mission_id: str):
+    def __init__(self, *, store: StateStore, ledger: RunLedger, run_id: str, mission_id: str, workspace_root: Path):
         self.store = store
         self.ledger = ledger
         self.run_id = run_id
         self.mission_id = mission_id
+        self.workspace_root = workspace_root
 
 
 def _schema(required: list[str], properties: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -165,7 +168,7 @@ LEARNING_TOOL_SPECS = [
 
 class ToolRegistry:
     def __init__(self) -> None:
-        self._specs = {spec.name: spec for spec in [*CORE_TOOL_SPECS, *LEARNING_TOOL_SPECS]}
+        self._specs = {spec.name: spec for spec in [*CORE_TOOL_SPECS, *STANDARD_TOOL_SPECS, *LEARNING_TOOL_SPECS]}
         self._handlers: dict[str, ToolHandler] = {
             "memory_search": self._memory_search,
             "memory_read": self._memory_read,
@@ -174,6 +177,7 @@ class ToolRegistry:
             "skill_view": self._skill_view,
             "artifact_update": self._artifact_update,
             "ask_user": self._ask_user,
+            **standard_tool_handlers(),
             "memory_write_candidate": self._memory_write_candidate,
             "skill_propose_candidate": self._skill_propose_candidate,
             "tool_propose_candidate": self._tool_propose_candidate,
@@ -298,11 +302,13 @@ class ToolHarness:
         ledger: RunLedger,
         registry: ToolRegistry | None = None,
         policy: ToolExecutionPolicy | None = None,
+        workspace_root: str | Path | None = None,
     ):
         self.store = store
         self.ledger = ledger
         self.registry = registry or ToolRegistry()
         self.policy = policy or ToolExecutionPolicy()
+        self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
 
     def execute(self, call: ToolCallEnvelope, *, run_id: str, mission_id: str) -> ToolResult:
         spec = self.registry.spec(call.name)
@@ -323,7 +329,13 @@ class ToolHarness:
         if not permission.allowed:
             return self._deny(call, spec, permission, run_id, started_at)
 
-        context = ToolContext(store=self.store, ledger=self.ledger, run_id=run_id, mission_id=mission_id)
+        context = ToolContext(
+            store=self.store,
+            ledger=self.ledger,
+            run_id=run_id,
+            mission_id=mission_id,
+            workspace_root=self.workspace_root,
+        )
         try:
             result = _with_boundary_payload(self.registry.execute(call, context))
             ended_at = time.time()
@@ -492,6 +504,9 @@ def _tool_summary(result: ToolResult) -> str:
         return "Artifact updated."
     if result.name == "ask_user":
         return "User decision requested."
+    standard_summary = standard_tool_summary(result)
+    if standard_summary:
+        return standard_summary
     if result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
         return "Learning candidate recorded."
     if result.name == "learning_discard":
@@ -547,6 +562,9 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
     if result.name == "ask_user":
         decision = result.result.get("decision") or {}
         return [_evidence("decision", result.call_id, str(decision.get("question") or "Decision request"))]
+    standard_evidence = standard_tool_evidence(result)
+    if standard_evidence is not None:
+        return standard_evidence
     return []
 
 

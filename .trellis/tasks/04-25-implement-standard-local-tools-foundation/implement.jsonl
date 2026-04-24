@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/tools/registry.py", "reason": "tool registry and harness implementation"}
+{"file": "tests/test_tools.py", "reason": "existing tool harness tests"}
+{"file": "mnemo/runtime/provider.py", "reason": "provider tool loop consumes tool specs and compact results"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "tool results cross runtime/storage/model boundaries"}
+{"file": "mnemo/tools/standard.py", "reason": "standard local tool specs and handlers"}
+{"file": "tests/test_standard_tools.py", "reason": "standard tool behavior and policy tests"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "executable tool harness contract"}

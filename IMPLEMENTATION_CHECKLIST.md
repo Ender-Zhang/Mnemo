@@ -43,7 +43,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Core tool specs: `memory_search`, `memory_read`, `working_note`, `skills_list`, `skill_view`, `artifact_update`, `ask_user`.
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
-- [ ] External tools: web/search/browser, shell, file read/write/patch, app connectors.
+- [~] External tools: workspace file search/read/write, HTTP fetch, and shell execution exist; browser/app connectors and patch-specialized tools remain.
 - [x] Lightweight permission gate for read/write/external/admin.
 - [x] Tool result compression and evidence cards.
 - [ ] Generated tool lifecycle and evaluation gate.
@@ -141,3 +141,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-25-implement-single-chat-web-frontend`: stdlib web server, single chat UI, NDJSON stream transport, and replay endpoint are in progress.
 - [~] `04-25-implement-eval-harness-foundation`: built-in personalization golden cases, smoke suite, and replay harness CLI are in progress.
 - [~] `04-25-implement-config-resolver`: shared runtime config resolver, redacted inspect CLI, and provider config refactor are in progress.
+- [x] `04-25-implement-standard-local-tools-foundation`: workspace-scoped file tools, policy-gated web fetch, and policy-gated shell execution are implemented.
