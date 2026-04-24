@@ -335,3 +335,36 @@ Added OpenAI-compatible SSE parsing, true streamed assistant deltas, streamed to
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Skills metadata compatibility
+
+**Date**: 2026-04-25
+**Task**: Skills metadata compatibility
+**Branch**: `main`
+
+### Summary
+
+Added common Agent Skills metadata parsing for allowed-tools, allowed_tools, arguments, scope, path, and source; projected compact metadata into skill context cards without exposing bodies; added parser/card tests and checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9f49957` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
