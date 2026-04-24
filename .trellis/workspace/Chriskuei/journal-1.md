@@ -739,3 +739,37 @@ Implemented SkillService review gate, skill_review_candidate tool, CLI review co
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Skill eval harness
+
+**Date**: 2026-04-25
+**Task**: Skill eval harness
+**Branch**: `main`
+
+### Summary
+
+Implemented skill-targeted eval cases, skill_run_eval_case tool, CLI skill eval command, review gating from linked evals, tests, checklist, and backend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `61f79d7` | (see git log) |
+| `dff0a2b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
