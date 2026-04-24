@@ -17,7 +17,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Local deterministic runtime for offline tests and harness development.
 - [x] SQLite state directory with conversations, missions, runs, events, tools, candidates, artifacts.
 - [x] RunLedger append/read facade.
-- [x] Unit smoke tests for storage, runtime, CLI, provider placeholders.
+- [x] Unit smoke tests for storage, runtime, CLI, and provider adapters.
 
 ## Runtime And Streaming
 
@@ -28,11 +28,11 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Tool/action projection events: `action.queued`, `action.started`, `action.completed`.
 - [x] Learning chip projection for memory candidates.
 - [x] Artifact card projection for artifact updates.
-- [~] Provider adapter interface exists.
-- [ ] OpenAI-compatible provider-backed runtime.
-- [ ] Provider-native tool calls bridged into ToolHarness.
+- [x] Provider adapter interface exists.
+- [x] OpenAI-compatible provider-backed runtime.
+- [x] Provider-native tool calls bridged into ToolHarness.
 - [ ] True streaming provider delta support.
-- [ ] Timeout/retry/cancellation policy.
+- [~] Timeout/retry/cancellation policy.
 - [ ] Daemon, queue, single-instance lock, crash recovery.
 - [ ] Replay harness.
 
@@ -97,13 +97,13 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Provider And Model Integration
 
-- [~] Provider adapter boundary exists.
-- [ ] OpenAI-compatible chat completions adapter.
+- [x] Provider adapter boundary exists.
+- [x] OpenAI-compatible chat completions adapter.
 - [ ] Anthropic adapter.
-- [ ] Provider config from environment/CLI without persisting secrets.
-- [ ] Model/tool loop with provider-native tool call schema.
+- [x] Provider config from environment/CLI without persisting secrets.
+- [x] Model/tool loop with provider-native tool call schema.
 - [ ] Streaming response parser.
-- [ ] Provider error normalization.
+- [x] Provider error normalization.
 - [ ] Local endpoint smoke command using user-provided credentials.
 
 ## Evaluation And Harness
@@ -113,7 +113,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [ ] Runtime smoke replay tests.
 - [ ] Memory safety tests.
 - [ ] Skill evolution tests.
-- [ ] Provider fake server tests.
+- [x] Provider fake server tests.
 - [ ] CLI and package install tests in CI.
 
 ## Persistence And Operations
@@ -129,4 +129,4 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Current Trellis Focus
 
-- [~] `04-24-implement-provider-backed-runtime`: implement OpenAI-compatible provider config, adapter, streaming bridge, timeout handling, and fake-server tests.
+- [x] `04-24-implement-provider-backed-runtime`: OpenAI-compatible provider config, adapter, runtime bridge, CLI selection, timeout errors, and fake-server tests implemented.

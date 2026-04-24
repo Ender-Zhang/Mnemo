@@ -15,3 +15,28 @@ class ToolError(MnemoError):
 
 class NotFoundError(MnemoError):
     """Raised when a requested entity does not exist."""
+
+
+class ProviderError(MnemoError):
+    """Base error for expected provider adapter failures."""
+
+
+class ProviderTimeoutError(ProviderError):
+    """Raised when a provider request exceeds its timeout."""
+
+
+class ProviderConnectionError(ProviderError):
+    """Raised when a provider cannot be reached."""
+
+
+class ProviderStatusError(ProviderError):
+    """Raised when a provider returns a non-success HTTP status."""
+
+    def __init__(self, status_code: int, body: str | None = None) -> None:
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"provider returned HTTP {status_code}")
+
+
+class ProviderPayloadError(ProviderError):
+    """Raised when a provider response cannot be parsed or normalized."""

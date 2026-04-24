@@ -3,8 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from mnemo.core.models import RunRequest
-from mnemo.runtime import run_local, stream_local
+from mnemo.core.models import RunRequest, ToolCallEnvelope
+from mnemo.providers import ProviderEvent
+from mnemo.runtime import ProviderAgentRuntime, run_local, stream_local
 from mnemo.storage import StateStore
 
 
@@ -58,6 +59,61 @@ class LocalRuntimeTests(unittest.TestCase):
             ledger_events = store.get_run_events(events[-1].run_id)
             self.assertIn("chat.event", [event["event_type"] for event in ledger_events])
             self.assertEqual(events[-1].data["result"]["tool_results"][0]["name"], "memory_write_candidate")
+
+    def test_provider_runtime_streams_text_response(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider([[ProviderEvent(type="text_delta", text="Hello from model"), ProviderEvent(type="completed")]])
+            events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="hello", state_dir=tmp)))
+
+            event_types = [event.type for event in events]
+            self.assertIn("assistant.delta", event_types)
+            self.assertEqual(events[-1].type, "run.completed")
+            self.assertEqual(events[-1].data["result"]["response"], "Hello from model")
+            self.assertEqual(provider.requests[0].messages[-1]["content"], "hello")
+
+    def test_provider_runtime_executes_tool_rounds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="memory_write_candidate",
+                                arguments={"claim": "User likes tool loops"},
+                                call_id="call_fake",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="text_delta", text="Recorded."), ProviderEvent(type="completed")],
+                ]
+            )
+            events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="remember via model", state_dir=tmp)))
+            event_types = [event.type for event in events]
+
+            self.assertIn("action.queued", event_types)
+            self.assertIn("action.completed", event_types)
+            self.assertIn("learning.chip", event_types)
+            self.assertEqual(events[-1].data["result"]["response"], "Recorded.")
+            self.assertEqual(len(provider.requests), 2)
+            self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")
+
+
+class FakeProvider:
+    name = "fake"
+
+    def __init__(self, rounds: list[list[ProviderEvent]]) -> None:
+        self.rounds = rounds
+        self.requests = []
+
+    def stream(self, request):
+        self.requests.append(request)
+        if not self.rounds:
+            return [ProviderEvent(type="completed")]
+        return self.rounds.pop(0)
 
 
 if __name__ == "__main__":

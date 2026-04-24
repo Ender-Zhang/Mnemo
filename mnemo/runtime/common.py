@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+from collections.abc import Callable, Iterator
+from dataclasses import asdict
+from typing import Any
+
+from ..core.events import chat_event_as_dict, new_chat_event
+from ..core.models import ChatEvent, ChatEventType, RunResult, ToolCallEnvelope, ToolResult
+from ..tools import ToolRegistry
+from .ledger import RunLedger
+
+
+EmitChatEvent = Callable[[ChatEventType, dict[str, Any] | None], ChatEvent]
+
+
+def make_chat_event_emitter(
+    *,
+    ledger: RunLedger,
+    run_id: str,
+    conversation_id: str,
+    mission_id: str,
+) -> EmitChatEvent:
+    def emit(event_type: ChatEventType, data: dict[str, Any] | None = None) -> ChatEvent:
+        event = new_chat_event(
+            event_type,
+            run_id=run_id,
+            conversation_id=conversation_id,
+            mission_id=mission_id,
+            data=data or {},
+        )
+        ledger.append(run_id, "chat.event", chat_event_as_dict(event))
+        return event
+
+    return emit
+
+
+def action_card(registry: ToolRegistry, call: ToolCallEnvelope) -> dict[str, Any]:
+    spec = registry.spec(call.name)
+    return {
+        "action_id": call.call_id,
+        "title": call.name,
+        "summary": spec.description,
+        "risk": spec.risk,
+        "provider": call.provider,
+    }
+
+
+def tool_result_summary(result: ToolResult) -> str:
+    if not result.ok:
+        return result.error or "Tool call failed."
+    if result.name == "memory_write_candidate":
+        return "记忆候选已记录，等待后续学习流程评估。"
+    if result.name == "memory_search":
+        return f"找到 {len(result.result.get('matches', []))} 条候选。"
+    if result.name == "working_note":
+        return "工作笔记已记录。"
+    if result.name == "artifact_update":
+        return "产物已更新。"
+    return "工具调用已完成。"
+
+
+def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[ChatEvent]:
+    if not result.ok:
+        return
+    if result.name == "memory_write_candidate":
+        yield emit(
+            "learning.chip",
+            {
+                "item": {
+                    "item_id": result.result["candidate_id"],
+                    "kind": "memory",
+                    "status": "draft",
+                    "summary": "可能学到一个偏好或事实。",
+                }
+            },
+        )
+    elif result.name == "artifact_update":
+        yield emit(
+            "artifact.card",
+            {
+                "artifact": {
+                    "artifact_id": result.result["artifact_id"],
+                    "title": "Draft Artifact",
+                    "kind": "markdown",
+                }
+            },
+        )
+
+
+def result_as_dict(result: RunResult) -> dict[str, Any]:
+    return {
+        "conversation_id": result.conversation_id,
+        "mission_id": result.mission_id,
+        "run_id": result.run_id,
+        "response": result.response,
+        "tool_results": [asdict(tool_result) for tool_result in result.tool_results],
+    }
+
+
+def run_result_from_dict(value: dict[str, Any]) -> RunResult:
+    return RunResult(
+        conversation_id=value["conversation_id"],
+        mission_id=value["mission_id"],
+        run_id=value["run_id"],
+        response=value["response"],
+        tool_results=[
+            ToolResult(
+                call_id=item["call_id"],
+                name=item["name"],
+                ok=item["ok"],
+                result=item.get("result") or {},
+                error=item.get("error"),
+            )
+            for item in value.get("tool_results", [])
+        ],
+    )

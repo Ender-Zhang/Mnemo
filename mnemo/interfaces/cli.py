@@ -10,13 +10,16 @@ from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
+from ..providers import OpenAIProviderAdapter, ProviderConfig
 from ..runtime import result_as_dict, run_local, stream_local
+from ..runtime.provider import run_provider, stream_provider
 from ..runtime.ledger import RunLedger
 from ..storage import StateStore
 from ..tools import ToolRegistry, tool_specs_as_json_schema
 
 
 DEFAULT_STATE_DIR = "~/.mnemo"
+DEFAULT_PROVIDER = "local"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -57,6 +60,17 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--mission-id")
     run_parser.add_argument("--json", action="store_true", help="Print structured run result")
     run_parser.add_argument("--stream", action="store_true", help="Print newline-delimited ChatEvent JSON")
+    run_parser.add_argument(
+        "--provider",
+        choices=["local", "openai-compatible"],
+        default=None,
+        help="Runtime provider (default: local, or MNEMO_PROVIDER)",
+    )
+    run_parser.add_argument("--base-url", help="OpenAI-compatible base URL, or MNEMO_BASE_URL")
+    run_parser.add_argument("--model", help="Provider model name, or MNEMO_MODEL")
+    run_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
+    run_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
+    run_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
 
     events_parser = subparsers.add_parser("events", help="Print RunLedger events for a run")
     _add_state_dir(events_parser)
@@ -94,14 +108,18 @@ def _cmd_run(args: argparse.Namespace) -> int:
         conversation_id=args.conversation_id,
         mission_id=args.mission_id,
     )
+    provider_name = _provider_name(args)
     if args.stream:
-        for event in stream_local(request):
+        event_stream = (
+            stream_local(request)
+            if provider_name == "local"
+            else stream_provider(request, _openai_compatible_adapter(args))
+        )
+        for event in event_stream:
             print(dumps(chat_event_as_dict(event)), flush=True)
         return 0
 
-    result = run_local(
-        request
-    )
+    result = run_local(request) if provider_name == "local" else run_provider(request, _openai_compatible_adapter(args))
     if args.json:
         print(dumps(result_as_dict(result)))
         return 0
@@ -135,3 +153,39 @@ def _cmd_tools(args: argparse.Namespace) -> int:
     for tool in tools:
         print(f"{tool['name']} [{tool['risk']}]: {tool['description']}")
     return 0
+
+
+def _provider_name(args: argparse.Namespace) -> str:
+    return args.provider or os.environ.get("MNEMO_PROVIDER") or DEFAULT_PROVIDER
+
+
+def _openai_compatible_adapter(args: argparse.Namespace) -> OpenAIProviderAdapter:
+    base_url = args.base_url or os.environ.get("MNEMO_BASE_URL")
+    model = args.model or os.environ.get("MNEMO_MODEL")
+    api_key_env = args.api_key_env or os.environ.get("MNEMO_API_KEY_ENV")
+    api_key = args.api_key or (os.environ.get(api_key_env) if api_key_env else os.environ.get("MNEMO_API_KEY"))
+    timeout_s = args.timeout_s or _env_float("MNEMO_TIMEOUT_S") or 30.0
+
+    if not base_url:
+        raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
+    if not model:
+        raise MnemoError("openai-compatible provider requires --model or MNEMO_MODEL")
+
+    return OpenAIProviderAdapter(
+        ProviderConfig(
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            timeout_s=timeout_s,
+        )
+    )
+
+
+def _env_float(name: str) -> float | None:
+    value = os.environ.get(name)
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError as exc:
+        raise MnemoError(f"{name} must be a number") from exc

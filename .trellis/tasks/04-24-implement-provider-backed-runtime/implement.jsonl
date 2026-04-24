@@ -1,2 +1,4 @@
 {"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
 {"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/07-runtime-harness.md", "reason": "Provider-backed runtime must preserve RuntimeHarness and RunLedger contracts"}
+{"file": "design/11-prompt-system.md", "reason": "Provider-native tool-call and prompt assembly constraints"}

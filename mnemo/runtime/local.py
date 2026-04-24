@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from dataclasses import asdict
 from typing import Any
 
-from ..core.errors import MnemoError, NotFoundError
-from ..core.events import chat_event_as_dict, new_chat_event
+from ..core.errors import MnemoError
 from ..core.ids import new_id
-from ..core.models import ChatEvent, ChatEventType, RunRequest, RunResult, ToolCallEnvelope, ToolResult
+from ..core.models import ChatEvent, RunRequest, RunResult, ToolCallEnvelope, ToolResult
 from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
+from .common import (
+    action_card,
+    make_chat_event_emitter,
+    project_tool_result,
+    result_as_dict,
+    run_result_from_dict,
+    tool_result_summary,
+)
 from .ledger import RunLedger
+from .state import resolve_conversation, resolve_mission
 
 
 class LocalAgentRuntime:
@@ -29,7 +36,7 @@ class LocalAgentRuntime:
         final_result: RunResult | None = None
         for event in self.stream(request):
             if event.type == "run.completed":
-                final_result = _run_result_from_dict(event.data["result"])
+                final_result = run_result_from_dict(event.data["result"])
         if final_result is None:
             raise MnemoError("run did not produce a completion event")
         return final_result
@@ -40,20 +47,15 @@ class LocalAgentRuntime:
         ledger = RunLedger(store)
         harness = ToolHarness(store=store, ledger=ledger, registry=self.registry)
 
-        conversation_id = self._resolve_conversation(store, request)
-        mission_id = self._resolve_mission(store, conversation_id, request)
+        conversation_id = resolve_conversation(store, request, title=_short_title(request.message))
+        mission_id = resolve_mission(store, conversation_id, request, brief=_short_title(request.message, limit=120))
         run_id = store.create_run(conversation_id, mission_id, request.message)
-
-        def emit(event_type: ChatEventType, data: dict[str, Any] | None = None) -> ChatEvent:
-            event = new_chat_event(
-                event_type,
-                run_id=run_id,
-                conversation_id=conversation_id,
-                mission_id=mission_id,
-                data=data or {},
-            )
-            ledger.append(run_id, "chat.event", chat_event_as_dict(event))
-            return event
+        emit = make_chat_event_emitter(
+            ledger=ledger,
+            run_id=run_id,
+            conversation_id=conversation_id,
+            mission_id=mission_id,
+        )
 
         ledger.append(
             run_id,
@@ -95,7 +97,7 @@ class LocalAgentRuntime:
         tool_results: list[ToolResult] = []
         try:
             for call in tool_calls:
-                action = self._action_card(call)
+                action = action_card(self.registry, call)
                 yield emit("action.queued", {"action": action, "provider_call_id": call.call_id})
                 yield emit("action.started", {"action": action})
                 result = harness.execute(call, run_id=run_id, mission_id=mission_id)
@@ -105,11 +107,11 @@ class LocalAgentRuntime:
                     {
                         "action_id": call.call_id,
                         "outcome": "success" if result.ok else "failed",
-                        "summary": self._tool_result_summary(result),
+                        "summary": tool_result_summary(result),
                         "tool_name": result.name,
                     },
                 )
-                for projected in self._project_tool_result(result, emit):
+                for projected in project_tool_result(result, emit):
                     yield projected
 
             response = self._render_response(request.message, tool_results)
@@ -135,27 +137,6 @@ class LocalAgentRuntime:
             ledger.append(run_id, "run.completed", {"status": "failed", "error": str(exc)})
             store.complete_run(run_id, response, status="failed")
             raise
-
-    def _resolve_conversation(self, store: StateStore, request: RunRequest) -> str:
-        if not request.conversation_id:
-            return store.create_conversation(title=_short_title(request.message))
-        if not store.get_conversation(request.conversation_id):
-            raise NotFoundError(f"conversation not found: {request.conversation_id}")
-        return request.conversation_id
-
-    def _resolve_mission(self, store: StateStore, conversation_id: str, request: RunRequest) -> str:
-        if request.mission_id:
-            mission = store.get_mission(request.mission_id)
-            if not mission:
-                raise NotFoundError(f"mission not found: {request.mission_id}")
-            if mission["conversation_id"] != conversation_id:
-                raise MnemoError("mission does not belong to the selected conversation")
-            return request.mission_id
-
-        latest = store.latest_active_mission(conversation_id)
-        if latest:
-            return str(latest["id"])
-        return store.create_mission(conversation_id, brief=_short_title(request.message, limit=120))
 
     def _plan_local_tool_calls(self, message: str) -> list[ToolCallEnvelope]:
         calls: list[ToolCallEnvelope] = []
@@ -229,60 +210,6 @@ class LocalAgentRuntime:
                 parts.append(f"{result.name} completed.")
         return " ".join(parts)
 
-    def _action_card(self, call: ToolCallEnvelope) -> dict[str, Any]:
-        spec = self.registry.spec(call.name)
-        return {
-            "action_id": call.call_id,
-            "title": call.name,
-            "summary": spec.description,
-            "risk": spec.risk,
-            "provider": call.provider,
-        }
-
-    def _tool_result_summary(self, result: ToolResult) -> str:
-        if not result.ok:
-            return result.error or "Tool call failed."
-        if result.name == "memory_write_candidate":
-            return "记忆候选已记录，等待后续学习流程评估。"
-        if result.name == "memory_search":
-            return f"找到 {len(result.result.get('matches', []))} 条候选。"
-        if result.name == "working_note":
-            return "工作笔记已记录。"
-        if result.name == "artifact_update":
-            return "产物已更新。"
-        return "工具调用已完成。"
-
-    def _project_tool_result(
-        self,
-        result: ToolResult,
-        emit: Any,
-    ) -> Iterator[ChatEvent]:
-        if not result.ok:
-            return
-        if result.name == "memory_write_candidate":
-            yield emit(
-                "learning.chip",
-                {
-                    "item": {
-                        "item_id": result.result["candidate_id"],
-                        "kind": "memory",
-                        "status": "draft",
-                        "summary": "可能学到一个偏好或事实。",
-                    }
-                },
-            )
-        elif result.name == "artifact_update":
-            yield emit(
-                "artifact.card",
-                {
-                    "artifact": {
-                        "artifact_id": result.result["artifact_id"],
-                        "title": "Draft Artifact",
-                        "kind": "markdown",
-                    }
-                },
-            )
-
     def _checkpoint(
         self,
         store: StateStore,
@@ -341,32 +268,3 @@ def _extract_prefixed_values(message: str, prefixes: list[str]) -> list[str]:
             if value:
                 values.append(value)
     return values
-
-
-def result_as_dict(result: RunResult) -> dict[str, Any]:
-    return {
-        "conversation_id": result.conversation_id,
-        "mission_id": result.mission_id,
-        "run_id": result.run_id,
-        "response": result.response,
-        "tool_results": [asdict(tool_result) for tool_result in result.tool_results],
-    }
-
-
-def _run_result_from_dict(value: dict[str, Any]) -> RunResult:
-    return RunResult(
-        conversation_id=value["conversation_id"],
-        mission_id=value["mission_id"],
-        run_id=value["run_id"],
-        response=value["response"],
-        tool_results=[
-            ToolResult(
-                call_id=item["call_id"],
-                name=item["name"],
-                ok=item["ok"],
-                result=item.get("result") or {},
-                error=item.get("error"),
-            )
-            for item in value.get("tool_results", [])
-        ],
-    )
