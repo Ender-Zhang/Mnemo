@@ -90,6 +90,77 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual(sent_tool["function"]["description"], "Search memory")
         self.assertEqual(sent_tool["function"]["parameters"], tool.input_schema)
 
+    def test_openai_provider_parses_streamed_text_deltas(self) -> None:
+        with FakeOpenAIStreamServer(
+            [
+                {"id": "chatcmpl_stream", "model": "test-model", "choices": [{"delta": {"content": "Hel"}}]},
+                {
+                    "id": "chatcmpl_stream",
+                    "model": "test-model",
+                    "choices": [{"delta": {"content": "lo"}, "finish_reason": "stop"}],
+                },
+            ]
+        ) as server:
+            adapter = OpenAIProviderAdapter(ProviderConfig(base_url=server.base_url, model="test-model", stream=True))
+
+            events = list(adapter.stream(ProviderRunInput(messages=[{"role": "user", "content": "Hi"}], tools=[])))
+
+        self.assertEqual([event.type for event in events], ["text_delta", "text_delta", "completed"])
+        self.assertEqual([event.text for event in events[:2]], ["Hel", "lo"])
+        self.assertEqual(events[-1].metadata["id"], "chatcmpl_stream")
+        self.assertTrue(server.requests[0]["body"]["stream"])
+
+    def test_openai_provider_parses_streamed_tool_call_chunks(self) -> None:
+        tool = ToolSpec(
+            name="memory_search",
+            description="Search memory",
+            risk="read",
+            input_schema={"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        )
+        with FakeOpenAIStreamServer(
+            [
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "id": "call_stream",
+                                        "type": "function",
+                                        "function": {"name": "memory_search", "arguments": "{\"query\":"},
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "choices": [
+                        {
+                            "delta": {
+                                "tool_calls": [
+                                    {
+                                        "index": 0,
+                                        "function": {"arguments": " \"direct answers\"}"},
+                                    }
+                                ]
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ]
+                },
+            ]
+        ) as server:
+            adapter = OpenAIProviderAdapter(ProviderConfig(base_url=server.base_url, model="test-model", stream=True))
+
+            events = list(adapter.stream(ProviderRunInput(messages=[{"role": "user", "content": "Search"}], tools=[tool])))
+
+        self.assertEqual([event.type for event in events], ["tool_call", "completed"])
+        self.assertEqual(events[0].tool_call.name, "memory_search")
+        self.assertEqual(events[0].tool_call.arguments, {"query": "direct answers"})
+        self.assertTrue(server.requests[0]["body"]["stream"])
+
     def test_openai_provider_raises_status_error(self) -> None:
         with FakeOpenAIServer({"error": {"message": "rate limited"}}, status=429) as server:
             adapter = OpenAIProviderAdapter(ProviderConfig(base_url=server.base_url, model="test-model"))
@@ -176,6 +247,62 @@ class FakeOpenAIServer:
                     self.wfile.flush()
                 except BrokenPipeError:
                     pass
+                self.close_connection = True
+
+            def log_message(self, format: str, *args: Any) -> None:
+                return None
+
+        return Handler
+
+
+class FakeOpenAIStreamServer:
+    def __init__(self, chunks: list[dict[str, Any]], status: int = 200) -> None:
+        self.chunks = chunks
+        self.status = status
+        self.requests: list[dict[str, Any]] = []
+        self._server = DaemonThreadingHTTPServer(("127.0.0.1", 0), self._handler())
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def base_url(self) -> str:
+        host, port = self._server.server_address
+        return f"http://{host}:{port}"
+
+    def __enter__(self) -> FakeOpenAIStreamServer:
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=1)
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        fake_server = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                raw_body = self.rfile.read(length)
+                fake_server.requests.append(
+                    {
+                        "path": self.path,
+                        "headers": dict(self.headers),
+                        "body": json.loads(raw_body.decode("utf-8")),
+                    }
+                )
+
+                response_body = b"".join(
+                    f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
+                    for chunk in fake_server.chunks
+                ) + b"data: [DONE]\n\n"
+                self.send_response(fake_server.status)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(response_body)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(response_body)
+                self.wfile.flush()
                 self.close_connection = True
 
             def log_message(self, format: str, *args: Any) -> None:

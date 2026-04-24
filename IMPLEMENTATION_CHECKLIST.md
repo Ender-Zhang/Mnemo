@@ -31,7 +31,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider adapter interface exists.
 - [x] OpenAI-compatible provider-backed runtime.
 - [x] Provider-native tool calls bridged into ToolHarness.
-- [ ] True streaming provider delta support.
+- [x] True streaming provider delta support.
 - [~] Timeout/retry/cancellation policy.
 - [ ] Daemon, queue, single-instance lock, crash recovery.
 - [ ] Replay harness.
@@ -102,7 +102,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [ ] Anthropic adapter.
 - [x] Provider config from environment/CLI without persisting secrets.
 - [x] Model/tool loop with provider-native tool call schema.
-- [ ] Streaming response parser.
+- [x] Streaming response parser.
 - [x] Provider error normalization.
 - [~] Local endpoint smoke command using user-provided credentials.
 
@@ -136,3 +136,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-24-implement-event-replay-foundation`: JSONL trace mirror, event replay CLI, and trace summary are implemented.
 - [~] `04-24-implement-tool-boundary-cards`: Tool permission policy, compact model tool results, and evidence cards are in progress.
 - [~] `04-24-implement-prompt-progressive-context`: Memory/skill compact indexes and runtime prompt injection are in progress.
+- [~] `04-25-implement-openai-streaming-provider`: OpenAI-compatible SSE parser, streamed deltas, and streamed tool-call chunks are in progress.

@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/providers/base.py", "reason": "OpenAI-compatible provider adapter"}
+{"file": "mnemo/runtime/provider.py", "reason": "Runtime provider event loop"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI stream provider config"}

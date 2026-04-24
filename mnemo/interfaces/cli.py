@@ -182,7 +182,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         event_stream = (
             stream_local(request)
             if provider_name == "local"
-            else stream_provider(request, _openai_compatible_adapter(args))
+            else stream_provider(request, _openai_compatible_adapter(args, stream=True))
         )
         for event in event_stream:
             print(dumps(chat_event_as_dict(event)), flush=True)
@@ -378,7 +378,7 @@ def _provider_name(args: argparse.Namespace) -> str:
     return args.provider or os.environ.get("MNEMO_PROVIDER") or DEFAULT_PROVIDER
 
 
-def _openai_compatible_adapter(args: argparse.Namespace) -> OpenAIProviderAdapter:
+def _openai_compatible_adapter(args: argparse.Namespace, *, stream: bool = False) -> OpenAIProviderAdapter:
     base_url = args.base_url or os.environ.get("MNEMO_BASE_URL")
     model = args.model or os.environ.get("MNEMO_MODEL")
     api_key_env = args.api_key_env or os.environ.get("MNEMO_API_KEY_ENV")
@@ -396,6 +396,7 @@ def _openai_compatible_adapter(args: argparse.Namespace) -> OpenAIProviderAdapte
             model=model,
             api_key=api_key,
             timeout_s=timeout_s,
+            stream=stream,
         )
     )
 

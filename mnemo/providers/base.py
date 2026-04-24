@@ -58,30 +58,37 @@ class OpenAIProviderAdapter:
         self.config = config
 
     def stream(self, request: ProviderRunInput) -> Iterable[ProviderEvent]:
+        if self.config.stream:
+            yield from self._stream_chat_completions(request)
+            return
         payload = self._post_chat_completions(request)
         yield from self._events_from_payload(payload, request.tools)
 
-    def _post_chat_completions(self, request: ProviderRunInput) -> dict[str, Any]:
-        request_payload: dict[str, Any] = {
+    def _request_payload(self, request: ProviderRunInput, *, stream: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": _normalize_chat_messages(request.messages),
-            "stream": False,
+            "stream": stream,
         }
         if request.tools:
-            request_payload["tools"] = [_tool_spec_to_openai_tool(tool) for tool in request.tools]
+            payload["tools"] = [_tool_spec_to_openai_tool(tool) for tool in request.tools]
+        return payload
 
+    def _request_headers(self, *, stream: bool) -> dict[str, str]:
         headers = {
-            "Accept": "application/json",
+            "Accept": "text/event-stream" if stream else "application/json",
             "Connection": "close",
             "Content-Type": "application/json",
         }
         if self.config.api_key:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
+        return headers
 
+    def _post_chat_completions(self, request: ProviderRunInput) -> dict[str, Any]:
         http_request = urllib_request.Request(
             _chat_completions_url(self.config.base_url),
-            data=json.dumps(request_payload).encode("utf-8"),
-            headers=headers,
+            data=json.dumps(self._request_payload(request, stream=False)).encode("utf-8"),
+            headers=self._request_headers(stream=False),
             method="POST",
         )
 
@@ -107,6 +114,60 @@ class OpenAIProviderAdapter:
         if not isinstance(parsed, dict):
             raise ProviderPayloadError("provider returned a non-object JSON payload")
         return parsed
+
+    def _stream_chat_completions(self, request: ProviderRunInput) -> Iterable[ProviderEvent]:
+        http_request = urllib_request.Request(
+            _chat_completions_url(self.config.base_url),
+            data=json.dumps(self._request_payload(request, stream=True)).encode("utf-8"),
+            headers=self._request_headers(stream=True),
+            method="POST",
+        )
+
+        risk_by_tool_name = {tool.name: tool.risk for tool in request.tools}
+        tool_call_chunks: dict[int, dict[str, Any]] = {}
+        last_payload: dict[str, Any] = {}
+        last_choice: dict[str, Any] = {}
+
+        try:
+            with urllib_request.urlopen(http_request, timeout=self.config.timeout_s) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line.removeprefix("data:").strip()
+                    if data == "[DONE]":
+                        break
+                    payload = _loads_stream_chunk(data)
+                    choice = _stream_choice(payload)
+                    if choice is None:
+                        continue
+                    last_payload = payload
+                    last_choice = choice
+                    delta = choice.get("delta") or {}
+                    if not isinstance(delta, dict):
+                        raise ProviderPayloadError("provider stream delta is not an object")
+
+                    content = delta.get("content")
+                    if content:
+                        if not isinstance(content, str):
+                            raise ProviderPayloadError("provider stream content is not a string")
+                        yield ProviderEvent(type="text_delta", text=content)
+
+                    _accumulate_stream_tool_calls(delta.get("tool_calls"), tool_call_chunks)
+        except urllib_error.HTTPError as exc:
+            raise ProviderStatusError(exc.code, _read_error_body(exc)) from exc
+        except urllib_error.URLError as exc:
+            if _is_timeout(exc.reason):
+                raise ProviderTimeoutError("provider request timed out") from exc
+            raise ProviderConnectionError("provider is unreachable") from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise ProviderTimeoutError("provider request timed out") from exc
+        except OSError as exc:
+            raise ProviderConnectionError("provider is unreachable") from exc
+
+        for tool_call in _parse_stream_tool_calls(tool_call_chunks, risk_by_tool_name, self.name):
+            yield ProviderEvent(type="tool_call", tool_call=tool_call)
+        yield ProviderEvent(type="completed", metadata=_completion_metadata(last_payload, last_choice, self.name))
 
     def _events_from_payload(self, payload: dict[str, Any], tools: Sequence[ToolSpec]) -> Iterable[ProviderEvent]:
         choice = _first_choice(payload)
@@ -180,6 +241,91 @@ def _first_choice(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(choice, dict):
         raise ProviderPayloadError("provider response choices[0] is not an object")
     return choice
+
+
+def _loads_stream_chunk(data: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(data)
+    except json.JSONDecodeError as exc:
+        raise ProviderPayloadError("provider stream returned invalid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ProviderPayloadError("provider stream returned a non-object JSON payload")
+    return parsed
+
+
+def _stream_choice(payload: dict[str, Any]) -> dict[str, Any] | None:
+    choices = payload.get("choices")
+    if choices == []:
+        return None
+    if not isinstance(choices, list) or not choices:
+        raise ProviderPayloadError("provider stream chunk missing choices")
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise ProviderPayloadError("provider stream choices[0] is not an object")
+    return choice
+
+
+def _accumulate_stream_tool_calls(value: Any, chunks: dict[int, dict[str, Any]]) -> None:
+    if value is None:
+        return
+    if not isinstance(value, list):
+        raise ProviderPayloadError("provider stream tool_calls is not a list")
+
+    for item in value:
+        if not isinstance(item, dict):
+            raise ProviderPayloadError("provider stream tool call chunk is not an object")
+        index = _stream_tool_call_index(item.get("index"), chunks)
+        chunk = chunks.setdefault(index, {"id": "", "type": "function", "name": "", "arguments": ""})
+
+        call_id = item.get("id")
+        if isinstance(call_id, str) and call_id:
+            chunk["id"] = call_id
+        tool_type = item.get("type")
+        if isinstance(tool_type, str) and tool_type:
+            chunk["type"] = tool_type
+
+        function = item.get("function") or {}
+        if not isinstance(function, dict):
+            raise ProviderPayloadError("provider stream tool call function is not an object")
+        name = function.get("name")
+        if isinstance(name, str) and name:
+            chunk["name"] = name
+        arguments = function.get("arguments")
+        if isinstance(arguments, str):
+            chunk["arguments"] += arguments
+
+
+def _stream_tool_call_index(value: Any, chunks: dict[int, dict[str, Any]]) -> int:
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return len(chunks)
+    raise ProviderPayloadError("provider stream tool call index is not an integer")
+
+
+def _parse_stream_tool_calls(
+    chunks: dict[int, dict[str, Any]],
+    risk_by_tool_name: dict[str, str],
+    provider_name: str,
+) -> list[ToolCallEnvelope]:
+    calls: list[ToolCallEnvelope] = []
+    for index in sorted(chunks):
+        chunk = chunks[index]
+        calls.append(
+            _parse_openai_tool_call(
+                {
+                    "id": chunk.get("id"),
+                    "type": chunk.get("type") or "function",
+                    "function": {
+                        "name": chunk.get("name"),
+                        "arguments": chunk.get("arguments") or "{}",
+                    },
+                },
+                risk_by_tool_name,
+                provider_name,
+            )
+        )
+    return calls
 
 
 def _parse_openai_tool_call(

@@ -108,22 +108,26 @@ class ProviderAgentRuntime:
 
         try:
             for tool_round in range(self.max_tool_rounds + 1):
-                provider_events = list(
-                    self.provider.stream(
-                        ProviderRunInput(
-                            messages=messages,
-                            tools=self.registry.specs(),
-                            metadata={"run_id": run_id, "tool_round": tool_round},
-                        )
+                tool_calls = []
+                completed = []
+                assistant_parts: list[str] = []
+                for provider_event in self.provider.stream(
+                    ProviderRunInput(
+                        messages=messages,
+                        tools=self.registry.specs(),
+                        metadata={"run_id": run_id, "tool_round": tool_round},
                     )
-                )
-                tool_calls = [event.tool_call for event in provider_events if event.type == "tool_call" and event.tool_call]
-                assistant_text = "".join(event.text or "" for event in provider_events if event.type == "text_delta")
-                completed = [event for event in provider_events if event.type == "completed"]
+                ):
+                    if provider_event.type == "text_delta" and provider_event.text:
+                        assistant_parts.append(provider_event.text)
+                        response_parts.append(provider_event.text)
+                        yield emit("assistant.delta", {"text": provider_event.text})
+                    elif provider_event.type == "tool_call" and provider_event.tool_call:
+                        tool_calls.append(provider_event.tool_call)
+                    elif provider_event.type == "completed":
+                        completed.append(provider_event)
 
-                if assistant_text:
-                    response_parts.append(assistant_text)
-                    yield emit("assistant.delta", {"text": assistant_text})
+                assistant_text = "".join(assistant_parts)
 
                 ledger.append(
                     run_id,
