@@ -909,3 +909,37 @@ Implemented SQLite event outbox migration, run-event mirroring in append_event, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Backup export import
+
+**Date**: 2026-04-25
+**Task**: Backup export import
+**Branch**: `main`
+
+### Summary
+
+Implemented zip-based state backup/export/import with manifest validation, replace guardrails, CLI commands, tests, and storage contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f4dae3` | (see git log) |
+| `7ab6347` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
