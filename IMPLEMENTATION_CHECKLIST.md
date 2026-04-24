@@ -59,7 +59,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] W0 working memory to long-term candidate pipeline.
 - [x] DreamCycle idle memory consolidation.
 - [x] Daily compiled L1 cache-friendly memory snapshot.
-- [~] Memory eval cases and regression gates.
+- [x] Memory eval cases and regression gates.
 
 ## Skills And Evolution
 
@@ -111,7 +111,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Basic unit tests.
 - [x] Golden personalization cases.
 - [x] Runtime smoke replay tests.
-- [ ] Memory safety tests.
+- [x] Memory safety tests.
 - [ ] Skill evolution tests.
 - [x] Provider fake server tests.
 - [ ] CLI and package install tests in CI.
@@ -151,3 +151,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-25-implement-skill-review-lifecycle`: generated skill candidates can be reviewed to `ready` or `blocked:*` before explicit promotion.
 - [x] `04-25-implement-skill-eval-harness`: linked skill eval cases can run, persist pass/fail results, and gate skill review.
 - [x] `04-25-implement-sop-crystallization-from-runs`: completed runs with successful compact tool traces can become draft skill candidates without raw payload leakage.
+- [x] `04-25-implement-memory-safety-evals`: deterministic memory safety harness suite covers candidate-first writes, conflict guardrails, compact payloads, and duplicate reinforcement.

@@ -15,6 +15,8 @@
 - `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
 - `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
+- `EvalHarness.run_suite("memory-safety") -> SuiteReport`
+- CLI: `mnemo harness eval memory-safety --json`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.add_working_note(mission_id: str, run_id: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
@@ -36,6 +38,8 @@
 - L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
 - L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
 - Prompt-facing snapshots must omit raw evidence and full page content.
+- The `memory-safety` eval suite must remain deterministic and local.
+- The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -49,6 +53,7 @@
 | W0 note without memory retention | Mark note `skipped:ephemeral`, create no candidate | `tests/test_memory.py` |
 | Missing or invalid snapshot file | Return `None` | `tests/test_memory.py` |
 | Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
+| Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: use links to preserve why memory changed.
@@ -63,6 +68,7 @@
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
 - Search/context cards remain compact and omit raw evidence.
 - L1 snapshot compile/load behavior is covered, including invalid files.
+- Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
 
 ### 7. Wrong vs Correct
 #### Wrong

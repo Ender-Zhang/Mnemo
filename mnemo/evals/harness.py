@@ -6,6 +6,7 @@ import tempfile
 from typing import Any
 
 from ..core.models import RunRequest
+from ..memory import MemoryEngine
 from ..runtime import stream_local
 from ..runtime.ledger import RunLedger
 from ..storage import StateStore
@@ -77,6 +78,9 @@ class EvalHarness:
         self.state_dir = Path(state_dir).expanduser().resolve() if state_dir else None
 
     def run_suite(self, suite: str) -> SuiteReport:
+        if suite == "memory-safety":
+            return self._run_memory_safety_suite()
+
         cases = _suite_cases(suite)
         case_reports = [self.run_case(case) for case in cases]
         passed_count = sum(1 for report in case_reports if report.passed)
@@ -149,9 +153,227 @@ class EvalHarness:
         root.mkdir(parents=True, exist_ok=True)
         return tempfile.TemporaryDirectory(prefix=f"{case_id}-", dir=root)
 
+    def _run_memory_safety_suite(self) -> SuiteReport:
+        case_reports = [
+            self._memory_candidate_first_case(),
+            self._memory_conflict_guardrail_case(),
+            self._memory_compact_payload_case(),
+            self._memory_duplicate_reinforcement_case(),
+        ]
+        passed_count = sum(1 for report in case_reports if report.passed)
+        return SuiteReport(
+            suite="memory-safety",
+            passed=passed_count == len(case_reports),
+            case_count=len(case_reports),
+            passed_count=passed_count,
+            failed_count=len(case_reports) - passed_count,
+            cases=case_reports,
+        )
+
+    def _memory_candidate_first_case(self) -> CaseReport:
+        case_id = "memory-candidate-first"
+        with self._case_state_dir(case_id) as state_dir:
+            message = "remember: User prefers candidate-first memory"
+            events = list(stream_local(RunRequest(message=message, state_dir=state_dir)))
+            completed = events[-1]
+            result = completed.data["result"]
+            store = StateStore(state_dir)
+            store.initialize()
+            candidates = store.list_memory_candidates(status=None)
+            pages = store.list_memory_pages(status=None)
+            tool_names = [tool["name"] for tool in result.get("tool_results", [])]
+            event_types = [event.type for event in events]
+            assertions = _assert_step(
+                EvalStep(
+                    message=message,
+                    expect_tool_names=("memory_write_candidate",),
+                    expect_event_types=("learning.chip", "run.completed"),
+                ),
+                state_dir=state_dir,
+                run_id=result["run_id"],
+                response=result["response"],
+                event_types=event_types,
+                tool_names=tool_names,
+                tool_results=result.get("tool_results", []),
+                mission_id=result["mission_id"],
+                previous_mission_id=None,
+            )
+            assertions.extend(
+                [
+                    _assertion("candidate_created", len(candidates) == 1, f"candidates={len(candidates)}"),
+                    _assertion("stable_pages_not_created", pages == [], f"pages={len(pages)}"),
+                    _assertion(
+                        "candidate_remains_draft",
+                        candidates and candidates[0].get("status") == "draft",
+                        str(candidates[0].get("status") if candidates else None),
+                    ),
+                ]
+            )
+            return _single_step_case_report(
+                case_id,
+                "Memory Candidate First",
+                StepReport(
+                    message=message,
+                    run_id=result["run_id"],
+                    conversation_id=result["conversation_id"],
+                    mission_id=result["mission_id"],
+                    response=result["response"],
+                    event_types=event_types,
+                    tool_names=tool_names,
+                    assertions=assertions,
+                ),
+            )
+
+    def _memory_conflict_guardrail_case(self) -> CaseReport:
+        case_id = "memory-conflict-guardrail"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            page_id = store.upsert_memory_page(
+                "preferences: updates",
+                "User prefers concise updates",
+                confidence=0.9,
+            )
+            conflict_id = store.add_memory_candidate(
+                run_id,
+                "User dislikes concise updates",
+                dimension="preferences",
+                confidence=0.95,
+            )
+
+            result = MemoryEngine(store).dream_consolidate(min_confidence=0.7)
+            candidate = store.get_memory_candidate(conflict_id) or {}
+            page = store.get_memory_page(page_id) or {}
+            links = store.list_memory_links(conflict_id)
+            assertions = [
+                _assertion("conflict_reported", len(result["conflicts"]) == 1, str(result["conflicts"])),
+                _assertion(
+                    "candidate_needs_review",
+                    candidate.get("status") == "needs_review:conflict",
+                    str(candidate.get("status")),
+                ),
+                _assertion(
+                    "active_page_unchanged",
+                    page.get("content") == "User prefers concise updates",
+                    str(page.get("content")),
+                ),
+                _assertion("not_promoted", result["promoted"] == [], str(result["promoted"])),
+                _assertion(
+                    "conflict_link_created",
+                    len(links) == 1
+                    and links[0].get("relation") == "conflicts_with"
+                    and links[0].get("target_id") == page_id,
+                    str(links),
+                ),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Memory Conflict Guardrail",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _memory_compact_payload_case(self) -> CaseReport:
+        case_id = "memory-compact-payload"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            raw_evidence_secret = "RAW_EVIDENCE_SECRET_TOKEN"
+            full_body_tail = "FULL_PAGE_BODY_TAIL_TOKEN"
+            store.add_memory_candidate(
+                run_id,
+                "User prefers compact memory cards",
+                dimension="preferences",
+                confidence=0.72,
+                evidence=[{"kind": "raw_message", "text": raw_evidence_secret}],
+            )
+            store.upsert_memory_page(
+                "preferences: compact payload",
+                "User prefers compact memory payloads. " + ("summary detail " * 40) + full_body_tail,
+                confidence=0.91,
+            )
+
+            engine = MemoryEngine(store)
+            cards = engine.context_cards("compact", limit=10)
+            snapshot = engine.compile_l1_snapshot(limit=10)
+            compact_payload = {"cards": cards, "snapshot": snapshot}
+            compact_text = str(compact_payload)
+            assertions = [
+                _assertion("cards_omit_evidence", all("evidence" not in card for card in cards), str(cards)),
+                _assertion("cards_omit_full_content_key", all("content" not in card for card in cards), str(cards)),
+                _assertion("cards_omit_raw_evidence", raw_evidence_secret not in compact_text, compact_text),
+                _assertion(
+                    "snapshot_omits_full_content_key",
+                    all(
+                        "content" not in item and "source_candidate_id" not in item
+                        for item in snapshot.get("items", [])
+                    ),
+                    str(snapshot),
+                ),
+                _assertion("snapshot_omits_full_page_tail", full_body_tail not in str(snapshot), str(snapshot)),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Memory Compact Payload",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _memory_duplicate_reinforcement_case(self) -> CaseReport:
+        case_id = "memory-duplicate-reinforcement"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            page_id = store.upsert_memory_page(
+                "preferences: updates",
+                "User prefers direct updates",
+                confidence=0.7,
+            )
+            duplicate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers direct updates",
+                dimension="preferences",
+                confidence=0.86,
+            )
+
+            result = MemoryEngine(store).dream_consolidate(min_confidence=0.7)
+            page = store.get_memory_page(page_id) or {}
+            links = store.list_memory_links(duplicate_id)
+            rejected_statuses = [item.get("status") for item in result["rejected"]]
+            assertions = [
+                _assertion("duplicate_rejected", "rejected:duplicate" in rejected_statuses, str(result["rejected"])),
+                _assertion("confidence_reinforced", float(page.get("confidence", 0)) > 0.86, str(page.get("confidence"))),
+                _assertion(
+                    "reinforcement_link_created",
+                    len(links) == 1
+                    and links[0].get("relation") == "reinforces"
+                    and links[0].get("target_id") == page_id,
+                    str(links),
+                ),
+                _assertion("no_extra_promotion", result["promoted"] == [], str(result["promoted"])),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Memory Duplicate Reinforcement",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
 
 def list_suites() -> list[str]:
-    return sorted(_BUILTIN_SUITES)
+    return sorted([*_BUILTIN_SUITES, "memory-safety"])
 
 
 def replay_summary(state_dir: str | Path, run_id: str) -> dict[str, Any]:
@@ -248,6 +470,48 @@ def _memory_match_count(tool_results: list[dict[str, Any]]) -> int:
             if isinstance(matches, list):
                 return len(matches)
     return 0
+
+
+def _assertion(name: str, passed: bool, detail: str) -> AssertionResult:
+    return AssertionResult(name=name, passed=bool(passed), detail=detail)
+
+
+def _store_with_run(state_dir: str | Path, case_id: str) -> tuple[StateStore, str, str, str]:
+    store = StateStore(state_dir)
+    store.initialize()
+    conversation_id = store.create_conversation(case_id)
+    mission_id = store.create_mission(conversation_id, case_id)
+    run_id = store.create_run(conversation_id, mission_id, case_id)
+    return store, run_id, conversation_id, mission_id
+
+
+def _single_step_case_report(case_id: str, name: str, step_report: StepReport) -> CaseReport:
+    return CaseReport(
+        case_id=case_id,
+        name=name,
+        passed=step_report.passed,
+        steps=[step_report],
+    )
+
+
+def _synthetic_step_report(
+    case_id: str,
+    *,
+    run_id: str,
+    conversation_id: str,
+    mission_id: str,
+    assertions: list[AssertionResult],
+) -> StepReport:
+    return StepReport(
+        message=case_id,
+        run_id=run_id,
+        conversation_id=conversation_id,
+        mission_id=mission_id,
+        response="",
+        event_types=[],
+        tool_names=[],
+        assertions=assertions,
+    )
 
 
 def _suite_cases(suite: str) -> tuple[EvalCase, ...]:
