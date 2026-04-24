@@ -87,13 +87,13 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] Backend `ChatEvent` stream contract started.
 - [x] Action and learning events are representable in stream.
-- [ ] User-facing single-chat web frontend.
-- [ ] Universal composer.
-- [ ] Inline action cards.
-- [ ] Inline artifact cards and artifact viewer.
-- [ ] Inline decision cards.
+- [x] User-facing single-chat web frontend.
+- [x] Universal composer.
+- [x] Inline action cards.
+- [~] Inline artifact cards and artifact viewer.
+- [x] Inline decision cards.
 - [~] Event replay/resume with `sinceEventId`.
-- [~] Streaming transport API.
+- [x] Streaming transport API.
 
 ## Provider And Model Integration
 
@@ -138,3 +138,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-24-implement-prompt-progressive-context`: Memory/skill compact indexes and runtime prompt injection are in progress.
 - [~] `04-25-implement-openai-streaming-provider`: OpenAI-compatible SSE parser, streamed deltas, and streamed tool-call chunks are in progress.
 - [~] `04-25-implement-skills-metadata-compatibility`: common Agent Skills metadata parsing and compact card projection are in progress.
+- [~] `04-25-implement-single-chat-web-frontend`: stdlib web server, single chat UI, NDJSON stream transport, and replay endpoint are in progress.

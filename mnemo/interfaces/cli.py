@@ -18,6 +18,7 @@ from ..runtime.provider import run_provider, stream_provider
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolRegistry, tool_specs_as_json_schema
+from .web import WebServerConfig, serve_web
 
 
 DEFAULT_STATE_DIR = "~/.mnemo"
@@ -47,6 +48,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_skills(args)
         if args.command == "tools":
             return _cmd_tools(args)
+        if args.command == "web":
+            return _cmd_web(args)
         parser.print_help()
         return 0
     except MnemoError as exc:
@@ -148,6 +151,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     tools_parser = subparsers.add_parser("tools", help="Print available tool specs")
     tools_parser.add_argument("--json", action="store_true")
+
+    web_parser = subparsers.add_parser("web", help="Run the Mnemo single-chat web UI")
+    _add_state_dir(web_parser)
+    web_parser.add_argument("--host", default="127.0.0.1")
+    web_parser.add_argument("--port", type=int, default=8765)
+    web_parser.add_argument(
+        "--provider",
+        choices=["local", "openai-compatible"],
+        default=None,
+        help="Runtime provider (default: local, or MNEMO_PROVIDER)",
+    )
+    web_parser.add_argument("--base-url", help="OpenAI-compatible base URL, or MNEMO_BASE_URL")
+    web_parser.add_argument("--model", help="Provider model name, or MNEMO_MODEL")
+    web_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
+    web_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
+    web_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
     return parser
 
 
@@ -371,6 +390,34 @@ def _cmd_tools(args: argparse.Namespace) -> int:
         return 0
     for tool in tools:
         print(f"{tool['name']} [{tool['risk']}]: {tool['description']}")
+    return 0
+
+
+def _cmd_web(args: argparse.Namespace) -> int:
+    provider_name = _provider_name(args)
+    base_url = args.base_url or os.environ.get("MNEMO_BASE_URL")
+    model = args.model or os.environ.get("MNEMO_MODEL")
+    api_key_env = args.api_key_env or os.environ.get("MNEMO_API_KEY_ENV")
+    api_key = args.api_key or (os.environ.get(api_key_env) if api_key_env else os.environ.get("MNEMO_API_KEY"))
+    timeout_s = args.timeout_s or _env_float("MNEMO_TIMEOUT_S") or 30.0
+
+    if provider_name == "openai-compatible" and not base_url:
+        raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
+    if provider_name == "openai-compatible" and not model:
+        raise MnemoError("openai-compatible provider requires --model or MNEMO_MODEL")
+
+    serve_web(
+        WebServerConfig(
+            state_dir=args.state_dir,
+            host=args.host,
+            port=args.port,
+            provider=provider_name,
+            base_url=base_url,
+            model=model,
+            api_key=api_key,
+            timeout_s=timeout_s,
+        )
+    )
     return 0
 
 

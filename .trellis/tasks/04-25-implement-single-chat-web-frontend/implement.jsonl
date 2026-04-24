@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "Web command entrypoint"}
+{"file": "mnemo/interfaces/web.py", "reason": "HTTP streaming interface"}
+{"file": "mnemo/interfaces/web_assets/index.html", "reason": "Single chat shell"}
+{"file": "mnemo/interfaces/web_assets/app.js", "reason": "ChatEvent stream rendering"}
+{"file": "mnemo/interfaces/web_assets/app.css", "reason": "User-facing chat styling"}

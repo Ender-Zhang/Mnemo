@@ -18,6 +18,9 @@ where = ["."]
 include = ["mnemo*"]
 exclude = ["tests*", "design*"]
 
+[tool.setuptools.package-data]
+"mnemo.interfaces" = ["web_assets/*"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
