@@ -112,7 +112,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Golden personalization cases.
 - [x] Runtime smoke replay tests.
 - [x] Memory safety tests.
-- [ ] Skill evolution tests.
+- [x] Skill evolution tests.
 - [x] Provider fake server tests.
 - [ ] CLI and package install tests in CI.
 
@@ -157,3 +157,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-backup-export-import`: zip state backup, validated import/replace, CLI commands, and round-trip safety tests are implemented.
 - [x] `04-25-implement-daemon-queue-recovery`: persisted run queue, single-instance daemon lock, drain/status/recover CLI, and crash recovery tests are implemented.
 - [x] `04-25-implement-anthropic-provider-adapter`: Anthropic Messages API adapter, streaming/tool-use normalization, CLI/web provider wiring, and fake-server tests are implemented.
+- [x] `04-25-implement-skill-evolution-eval-suite`: harness-level skill evolution suite covers crystallization, eval review gates, compact cards, and CLI eval/list coverage.

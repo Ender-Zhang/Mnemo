@@ -64,6 +64,7 @@
 | Eval tool | Return compact summary/evidence without body | `tests/test_tools.py` |
 | Skill cards | Include compact usage stats and omit body | `tests/test_skills_filesystem.py` |
 | Storage stats | Count uses/views/outcomes and average scored events | `tests/test_storage.py` |
+| Harness regression | Built-in `skill-evolution` suite covers crystallization, eval gates, and compact cards | `tests/test_harness.py`, `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: model calls `skill_record_outcome` after observing whether a skill helped.
@@ -85,6 +86,7 @@
 - Skill service tests for crystallized draft body shape and rejection paths.
 - Skill service tests for running linked eval cases and review gating.
 - Skill service tests for ready and blocked review states.
+- Harness suite `skill-evolution`: assert crystallization omits raw payloads, eval pass enables review, failed or missing evals block review, and context cards omit bodies.
 
 ### 7. Wrong vs Correct
 #### Wrong

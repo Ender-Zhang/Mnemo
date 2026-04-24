@@ -275,9 +275,16 @@ class CliTests(unittest.TestCase):
         self.assertTrue(memory_safety_payload["passed"])
         self.assertEqual(memory_safety_payload["case_count"], 4)
 
+        skill_evolution = _run_cli(["harness", "eval", "skill-evolution", "--json"])
+        self.assertEqual(skill_evolution.returncode, 0, skill_evolution.stderr)
+        skill_evolution_payload = json.loads(skill_evolution.stdout)
+        self.assertTrue(skill_evolution_payload["passed"])
+        self.assertEqual(skill_evolution_payload["case_count"], 4)
+
         suite_list = _run_cli(["harness", "list", "--json"])
         self.assertEqual(suite_list.returncode, 0, suite_list.stderr)
         self.assertIn("memory-safety", json.loads(suite_list.stdout)["suites"])
+        self.assertIn("skill-evolution", json.loads(suite_list.stdout)["suites"])
 
         with tempfile.TemporaryDirectory() as tmp:
             run = _run_cli(["run", "remember: harness cli replay", "--state-dir", tmp, "--json"])

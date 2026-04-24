@@ -35,6 +35,24 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertIn("candidate_needs_review", assertion_names)
         self.assertIn("snapshot_omits_full_page_tail", assertion_names)
 
+    def test_skill_evolution_suite_passes(self) -> None:
+        report = EvalHarness().run_suite("skill-evolution")
+
+        self.assertTrue(report.passed)
+        self.assertEqual(report.case_count, 4)
+        self.assertEqual(report.failed_count, 0)
+        self.assertIn("skill-evolution", list_suites())
+        assertion_names = {
+            assertion.name
+            for case in report.cases
+            for step in case.steps
+            for assertion in step.assertions
+        }
+        self.assertIn("crystallized_body_omits_raw_payload", assertion_names)
+        self.assertIn("skill_review_uses_passed_eval", assertion_names)
+        self.assertIn("skill_review_blocks_failed_eval", assertion_names)
+        self.assertIn("skill_cards_omit_full_body_secret", assertion_names)
+
     def test_replay_summary_reads_jsonl_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             events = list(stream_local(RunRequest(message="remember: harness replay", state_dir=tmp)))

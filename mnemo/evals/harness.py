@@ -9,6 +9,7 @@ from ..core.models import RunRequest
 from ..memory import MemoryEngine
 from ..runtime import stream_local
 from ..runtime.ledger import RunLedger
+from ..skills import SkillService
 from ..storage import StateStore
 
 
@@ -80,6 +81,8 @@ class EvalHarness:
     def run_suite(self, suite: str) -> SuiteReport:
         if suite == "memory-safety":
             return self._run_memory_safety_suite()
+        if suite == "skill-evolution":
+            return self._run_skill_evolution_suite()
 
         cases = _suite_cases(suite)
         case_reports = [self.run_case(case) for case in cases]
@@ -163,6 +166,23 @@ class EvalHarness:
         passed_count = sum(1 for report in case_reports if report.passed)
         return SuiteReport(
             suite="memory-safety",
+            passed=passed_count == len(case_reports),
+            case_count=len(case_reports),
+            passed_count=passed_count,
+            failed_count=len(case_reports) - passed_count,
+            cases=case_reports,
+        )
+
+    def _run_skill_evolution_suite(self) -> SuiteReport:
+        case_reports = [
+            self._skill_crystallization_case(),
+            self._skill_eval_review_ready_case(),
+            self._skill_review_gate_case(),
+            self._skill_compact_cards_case(),
+        ]
+        passed_count = sum(1 for report in case_reports if report.passed)
+        return SuiteReport(
+            suite="skill-evolution",
             passed=passed_count == len(case_reports),
             case_count=len(case_reports),
             passed_count=passed_count,
@@ -371,9 +391,164 @@ class EvalHarness:
                 ),
             )
 
+    def _skill_crystallization_case(self) -> CaseReport:
+        case_id = "skill-crystallization"
+        with self._case_state_dir(case_id) as state_dir:
+            raw_secret = "RAW_SKILL_SECRET_PAYLOAD"
+            events = list(stream_local(RunRequest(message=f"artifact: {raw_secret}", state_dir=state_dir)))
+            result = events[-1].data["result"]
+            store = StateStore(state_dir)
+            store.initialize()
+            service = SkillService(store)
+            crystallized = service.crystallize_from_run(
+                result["run_id"],
+                "artifact-sop",
+                description="Capture artifact workflow",
+            )
+            skill = store.get_skill("artifact-sop") or {}
+            body = str(skill.get("body") or "")
+            assertions = [
+                _assertion("crystallized_skill_draft", crystallized["status"] == "draft", str(crystallized)),
+                _assertion("crystallized_source_run_linked", result["run_id"] in body, body),
+                _assertion("crystallized_tool_names_compact", crystallized["tool_names"] == ["artifact_update"], str(crystallized)),
+                _assertion("crystallized_body_omits_raw_payload", raw_secret not in body, body),
+                _assertion("crystallized_source_metadata", skill.get("source") == f"run:{result['run_id']}:crystallized", str(skill)),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Skill Crystallization",
+                StepReport(
+                    message=f"artifact: {raw_secret}",
+                    run_id=result["run_id"],
+                    conversation_id=result["conversation_id"],
+                    mission_id=result["mission_id"],
+                    response=result["response"],
+                    event_types=[event.type for event in events],
+                    tool_names=[tool["name"] for tool in result.get("tool_results", [])],
+                    assertions=assertions,
+                ),
+            )
+
+    def _skill_eval_review_ready_case(self) -> CaseReport:
+        case_id = "skill-eval-review-ready"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            store.upsert_skill(
+                "writer",
+                "Draft concise notes",
+                "Use short notes. Prefer concise updates. Include evidence references.",
+                status="draft",
+            )
+            case_id_value = store.add_eval_case(
+                run_id,
+                "writer smoke",
+                {
+                    "skill_name": "writer",
+                    "body_contains": "Use short notes",
+                    "description_contains": "concise",
+                    "min_body_chars": 30,
+                },
+            )
+            service = SkillService(store)
+            eval_result = service.run_eval_case(case_id_value)
+            review = service.review("writer")
+            assertions = [
+                _assertion("skill_eval_passed", eval_result["status"] == "passed", str(eval_result)),
+                _assertion("skill_review_ready", review["status"] == "ready", str(review)),
+                _assertion(
+                    "skill_review_uses_passed_eval",
+                    review["evals"]["passed_eval_case_ids"] == [case_id_value],
+                    str(review["evals"]),
+                ),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Skill Eval Review Ready",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _skill_review_gate_case(self) -> CaseReport:
+        case_id = "skill-review-gates"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            store.upsert_skill(
+                "pending-writer",
+                "Draft concise notes",
+                "Use short notes. Prefer concise updates. Include evidence references.",
+                status="draft",
+            )
+            store.add_eval_case(run_id, "pending writer smoke", {"skill_name": "pending-writer", "body_contains": "Use"})
+            service = SkillService(store)
+            pending_review = service.review("pending-writer")
+
+            store.upsert_skill(
+                "failed-writer",
+                "Draft concise notes",
+                "Use short notes. Prefer concise updates. Include evidence references.",
+                status="draft",
+            )
+            failed_case_id = store.add_eval_case(
+                run_id,
+                "failed writer smoke",
+                {"skill_name": "failed-writer", "body_contains": "missing text"},
+            )
+            service.run_eval_case(failed_case_id)
+            failed_review = service.review("failed-writer")
+            assertions = [
+                _assertion("skill_review_blocks_missing_eval", pending_review["status"] == "blocked:missing_eval", str(pending_review)),
+                _assertion("skill_review_blocks_failed_eval", failed_review["status"] == "blocked:failed_eval", str(failed_review)),
+                _assertion("skill_review_reports_failed_eval_id", failed_case_id in failed_review["evals"]["failed_eval_case_ids"], str(failed_review)),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Skill Review Gates",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _skill_compact_cards_case(self) -> CaseReport:
+        case_id = "skill-compact-cards"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            full_body_secret = "FULL_SKILL_BODY_SECRET"
+            store.upsert_skill("alpha", "Lower scoring skill", "Alpha body " + full_body_secret, status="active")
+            store.upsert_skill("zeta", "Higher scoring skill", "Zeta body " + full_body_secret, status="active")
+            store.record_skill_usage(run_id, "alpha", "outcome", outcome="failure", score=-0.5)
+            store.record_skill_usage(run_id, "zeta", "outcome", outcome="success", score=0.9)
+            cards = SkillService(store).context_cards()
+            card_text = str(cards)
+            assertions = [
+                _assertion("skill_cards_rank_by_usage", [card["name"] for card in cards[:2]] == ["zeta", "alpha"], str(cards)),
+                _assertion("skill_cards_include_usage_stats", cards[0].get("usage", {}).get("successes") == 1, str(cards[0])),
+                _assertion("skill_cards_omit_body", all("body" not in card for card in cards), str(cards)),
+                _assertion("skill_cards_omit_full_body_secret", full_body_secret not in card_text, card_text),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Skill Compact Cards",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
 
 def list_suites() -> list[str]:
-    return sorted([*_BUILTIN_SUITES, "memory-safety"])
+    return sorted([*_BUILTIN_SUITES, "memory-safety", "skill-evolution"])
 
 
 def replay_summary(state_dir: str | Path, run_id: str) -> dict[str, Any]:
