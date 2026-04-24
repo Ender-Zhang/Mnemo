@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "Generated tool lifecycle contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Tool registry and compact result contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "SQLite migration/storage context"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer feature checklist"}
