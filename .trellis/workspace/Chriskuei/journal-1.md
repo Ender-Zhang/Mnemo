@@ -169,3 +169,36 @@ Added stable memory pages, links, promotion/rejection, deterministic DreamCycle 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Skills filesystem lifecycle
+
+**Date**: 2026-04-24
+**Task**: Skills filesystem lifecycle
+**Branch**: `main`
+
+### Summary
+
+Added Agent Skills-compatible filesystem scanner, skill service, generated SKILL.md promotion, skills CLI, storage path metadata, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b4bd3a6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

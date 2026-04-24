@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-04-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~171 | Active |
+| `journal-1.md` | ~204 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-04-24 | Skills filesystem lifecycle | `b4bd3a6` | `main` |
 | 5 | 2026-04-24 | Memory engine foundation | `9df719d` | `main` |
 | 4 | 2026-04-24 | Prompt assembly foundation | `7be0731` | `main` |
 | 3 | 2026-04-24 | Provider backed runtime | `fdbe8fa` | `main` |
