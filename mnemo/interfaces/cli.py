@@ -13,7 +13,7 @@ from ..core.jsonutil import dumps
 from ..core.models import RunRequest
 from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
-from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderAdapter, ProviderConfig
+from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderAdapter, ProviderConfig, ProviderRunInput
 from ..runtime import DaemonRunner, result_as_dict, run_local, run_provider, stream_local
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
@@ -264,6 +264,17 @@ def build_parser() -> argparse.ArgumentParser:
     config_inspect_parser.add_argument("--timeout-s", type=float)
     config_inspect_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
     config_inspect_parser.add_argument("--json", action="store_true")
+    config_smoke_parser = config_subparsers.add_parser("smoke", help="Smoke test the configured provider endpoint")
+    _add_state_dir(config_smoke_parser)
+    config_smoke_parser.add_argument("--provider", choices=["openai-compatible", "anthropic"], default=None)
+    config_smoke_parser.add_argument("--base-url")
+    config_smoke_parser.add_argument("--model")
+    config_smoke_parser.add_argument("--api-key")
+    config_smoke_parser.add_argument("--api-key-env")
+    config_smoke_parser.add_argument("--timeout-s", type=float)
+    config_smoke_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+    config_smoke_parser.add_argument("--message", default="Hello, introduce yourself in one sentence.")
+    config_smoke_parser.add_argument("--json", action="store_true")
     return parser
 
 
@@ -558,6 +569,8 @@ def _cmd_harness(args: argparse.Namespace) -> int:
 
 
 def _cmd_config(args: argparse.Namespace) -> int:
+    if args.config_command == "smoke":
+        return _cmd_config_smoke(args)
     if args.config_command != "inspect":
         raise MnemoError("config command requires a subcommand")
     config = _runtime_config_from_args(args)
@@ -568,6 +581,38 @@ def _cmd_config(args: argparse.Namespace) -> int:
         for key in ("state_dir", "provider", "base_url", "model", "api_key_env", "api_key", "timeout_s", "config_path"):
             print(f"{key}={payload.get(key)}")
     return 0
+
+
+def _cmd_config_smoke(args: argparse.Namespace) -> int:
+    config = _runtime_config_from_args(args)
+    _validate_provider_config(config)
+    if config.provider == "local":
+        raise MnemoError("config smoke requires --provider openai-compatible or anthropic")
+
+    if config.provider == "openai-compatible":
+        adapter = _openai_adapter_from_config(config)
+        models = _openai_models_smoke(adapter)
+    else:
+        adapter = _anthropic_adapter_from_config(config)
+        models = {"ok": True, "skipped": True, "reason": "Anthropic-compatible model listing is not probed"}
+
+    chat = _provider_chat_smoke(adapter, args.message)
+    result = {
+        "ok": bool(models.get("ok")) and bool(chat.get("ok")),
+        "provider": config.provider,
+        "model": config.model,
+        "base_url": config.base_url,
+        "models": models,
+        "chat": chat,
+        "config": config.redacted(),
+    }
+    if args.json:
+        print(dumps(result))
+        return 0 if result["ok"] else 1
+    print(f"provider={result['provider']} model={result['model']} ok={result['ok']}")
+    print(f"models={models.get('status', 'skipped')} count={models.get('count', 0)}")
+    print(f"chat={chat.get('status')} preview={chat.get('response_preview', '')}")
+    return 0 if result["ok"] else 1
 
 
 def _cmd_daemon(args: argparse.Namespace) -> int:
@@ -689,25 +734,20 @@ def _provider_adapter(args: argparse.Namespace, *, stream: bool = False) -> Prov
     config = _runtime_config_from_args(args)
     _validate_provider_config(config)
     if config.provider == "anthropic":
-        return AnthropicProviderAdapter(
-            ProviderConfig(
-                base_url=config.base_url or _ANTHROPIC_DEFAULT_BASE_URL,
-                model=config.model or "",
-                api_key=config.api_key,
-                timeout_s=config.timeout_s,
-                stream=stream,
-            )
-        )
+        return _anthropic_adapter_from_config(config, stream=stream)
     return _openai_compatible_adapter(args, stream=stream)
 
 
 def _openai_compatible_adapter(args: argparse.Namespace, *, stream: bool = False) -> OpenAIProviderAdapter:
     config = _runtime_config_from_args(args)
+    return _openai_adapter_from_config(config, stream=stream)
+
+
+def _openai_adapter_from_config(config, *, stream: bool = False) -> OpenAIProviderAdapter:
     if not config.base_url:
         raise MnemoError("openai-compatible provider requires --base-url or MNEMO_BASE_URL")
     if not config.model:
         raise MnemoError("openai-compatible provider requires --model or MNEMO_MODEL")
-
     return OpenAIProviderAdapter(
         ProviderConfig(
             base_url=config.base_url,
@@ -717,6 +757,57 @@ def _openai_compatible_adapter(args: argparse.Namespace, *, stream: bool = False
             stream=stream,
         )
     )
+
+
+def _anthropic_adapter_from_config(config, *, stream: bool = False) -> AnthropicProviderAdapter:
+    return AnthropicProviderAdapter(
+        ProviderConfig(
+            base_url=config.base_url or _ANTHROPIC_DEFAULT_BASE_URL,
+            model=config.model or "",
+            api_key=config.api_key,
+            timeout_s=config.timeout_s,
+            stream=stream,
+        )
+    )
+
+
+def _openai_models_smoke(adapter: OpenAIProviderAdapter) -> dict[str, Any]:
+    payload = adapter.list_models()
+    data = payload.get("data") or []
+    model_ids: list[str] = []
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and isinstance(item.get("id"), str):
+                model_ids.append(item["id"])
+    return {
+        "ok": True,
+        "status": "passed",
+        "count": len(model_ids),
+        "ids": model_ids[:20],
+    }
+
+
+def _provider_chat_smoke(adapter: ProviderAdapter, message: str) -> dict[str, Any]:
+    response_parts: list[str] = []
+    metadata: dict[str, Any] = {}
+    for event in adapter.stream(
+        ProviderRunInput(
+            messages=[{"role": "user", "content": message}],
+            tools=[],
+            metadata={"source": "config_smoke"},
+        )
+    ):
+        if event.type == "text_delta" and event.text:
+            response_parts.append(event.text)
+        elif event.type == "completed":
+            metadata = event.metadata
+    response = "".join(response_parts).strip()
+    return {
+        "ok": True,
+        "status": "passed",
+        "response_preview": response[:240],
+        "metadata": metadata,
+    }
 
 
 def _validate_provider_config(config) -> None:

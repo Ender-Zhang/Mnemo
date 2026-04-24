@@ -104,7 +104,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Model/tool loop with provider-native tool call schema.
 - [x] Streaming response parser.
 - [x] Provider error normalization.
-- [~] Local endpoint smoke command using user-provided credentials.
+- [x] Local endpoint smoke command using user-provided credentials.
 
 ## Evaluation And Harness
 
@@ -161,3 +161,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-04-25-implement-ci-package-install-tests`: GitHub Actions CI runs source tests, builds distributions, installs the wheel, and smoke-tests CLI entrypoints plus packaged web assets.
 - [x] `04-25-implement-generated-tool-installation`: ready generated tool candidates can install as safe aliases to existing tools, load into runtime registries, execute through the harness, and uninstall cleanly.
 - [x] `04-25-implement-web-event-resume-since-event-id`: web replay supports `sinceEventId`, the client stores `last_event_id`, de-duplicates events, and rehydrates the last run.
+- [x] `04-25-implement-provider-smoke-command`: `mnemo config smoke` checks OpenAI-compatible `/models` plus chat, Anthropic chat, redacted output, and provider error exits.

@@ -354,6 +354,92 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["api_key"], "***")
         self.assertNotIn("secret-value", config.stdout)
 
+    def test_config_smoke_checks_openai_models_and_chat_without_leaking_key(self) -> None:
+        with FakeChatServer(
+            {
+                "id": "chatcmpl_smoke",
+                "model": "fake-model",
+                "choices": [{"message": {"content": "Smoke reply"}, "finish_reason": "stop"}],
+            },
+            models_response={"data": [{"id": "fake-model"}, {"id": "other-model"}]},
+        ) as server:
+            smoke = _run_cli(
+                [
+                    "config",
+                    "smoke",
+                    "--provider",
+                    "openai-compatible",
+                    "--base-url",
+                    server.base_url,
+                    "--model",
+                    "fake-model",
+                    "--api-key",
+                    "secret-value",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(smoke.returncode, 0, smoke.stderr)
+        payload = json.loads(smoke.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["models"]["count"], 2)
+        self.assertEqual(payload["models"]["ids"][0], "fake-model")
+        self.assertEqual(payload["chat"]["response_preview"], "Smoke reply")
+        self.assertEqual(payload["config"]["api_key"], "***")
+        self.assertNotIn("secret-value", smoke.stdout)
+        self.assertEqual([request["path"] for request in server.requests], ["/models", "/chat/completions"])
+        self.assertEqual(server.requests[0]["headers"]["Authorization"], "Bearer secret-value")
+
+    def test_config_smoke_checks_anthropic_chat(self) -> None:
+        with FakeChatServer(
+            {
+                "id": "msg_smoke",
+                "model": "claude-fake",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Anthropic smoke"}],
+                "stop_reason": "end_turn",
+            }
+        ) as server:
+            smoke = _run_cli(
+                [
+                    "config",
+                    "smoke",
+                    "--provider",
+                    "anthropic",
+                    "--base-url",
+                    server.base_url,
+                    "--model",
+                    "claude-fake",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(smoke.returncode, 0, smoke.stderr)
+        payload = json.loads(smoke.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["models"]["skipped"])
+        self.assertEqual(payload["chat"]["response_preview"], "Anthropic smoke")
+        self.assertEqual(server.requests[0]["path"], "/messages")
+
+    def test_config_smoke_returns_nonzero_for_provider_status_error(self) -> None:
+        with FakeChatServer({"error": {"message": "unavailable"}}, status=503) as server:
+            smoke = _run_cli(
+                [
+                    "config",
+                    "smoke",
+                    "--provider",
+                    "openai-compatible",
+                    "--base-url",
+                    server.base_url,
+                    "--model",
+                    "fake-model",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(smoke.returncode, 1)
+        self.assertIn("provider returned HTTP 503", smoke.stderr)
+
     def test_backup_export_and_import_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -426,9 +512,18 @@ def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 class FakeChatServer:
-    def __init__(self, response: dict[str, Any], delay_s: float = 0.0) -> None:
+    def __init__(
+        self,
+        response: dict[str, Any],
+        delay_s: float = 0.0,
+        *,
+        models_response: dict[str, Any] | None = None,
+        status: int = 200,
+    ) -> None:
         self.response = response
         self.delay_s = delay_s
+        self.models_response = models_response or {"data": []}
+        self.status = status
         self.requests: list[dict[str, Any]] = []
         self._server = DaemonThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
@@ -451,6 +546,16 @@ class FakeChatServer:
         fake_server = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                fake_server.requests.append(
+                    {
+                        "path": self.path,
+                        "headers": dict(self.headers),
+                        "body": None,
+                    }
+                )
+                self._send_json(fake_server.models_response)
+
             def do_POST(self) -> None:
                 if fake_server.delay_s:
                     import time
@@ -465,8 +570,11 @@ class FakeChatServer:
                         "body": json.loads(raw_body.decode("utf-8")),
                     }
                 )
-                response_body = json.dumps(fake_server.response).encode("utf-8")
-                self.send_response(200)
+                self._send_json(fake_server.response)
+
+            def _send_json(self, payload: dict[str, Any]) -> None:
+                response_body = json.dumps(payload).encode("utf-8")
+                self.send_response(fake_server.status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(response_body)))
                 self.send_header("Connection", "close")

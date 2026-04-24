@@ -59,6 +59,14 @@ class OpenAIProviderAdapter:
     def __init__(self, config: ProviderConfig) -> None:
         self.config = config
 
+    def list_models(self) -> dict[str, Any]:
+        http_request = urllib_request.Request(
+            _models_url(self.config.base_url),
+            headers=self._request_headers(stream=False),
+            method="GET",
+        )
+        return _read_json_response(http_request, timeout_s=self.config.timeout_s)
+
     def stream(self, request: ProviderRunInput) -> Iterable[ProviderEvent]:
         if self.config.stream:
             yield from self._stream_chat_completions(request)
@@ -352,8 +360,36 @@ def _chat_completions_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/chat/completions"
 
 
+def _models_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/models"
+
+
 def _anthropic_messages_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/messages"
+
+
+def _read_json_response(http_request: urllib_request.Request, *, timeout_s: float) -> dict[str, Any]:
+    try:
+        with urllib_request.urlopen(http_request, timeout=timeout_s) as response:
+            response_body = response.read()
+    except urllib_error.HTTPError as exc:
+        raise ProviderStatusError(exc.code, _read_error_body(exc)) from exc
+    except urllib_error.URLError as exc:
+        if _is_timeout(exc.reason):
+            raise ProviderTimeoutError("provider request timed out") from exc
+        raise ProviderConnectionError("provider is unreachable") from exc
+    except (TimeoutError, socket.timeout) as exc:
+        raise ProviderTimeoutError("provider request timed out") from exc
+    except OSError as exc:
+        raise ProviderConnectionError("provider is unreachable") from exc
+
+    try:
+        parsed = json.loads(response_body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ProviderPayloadError("provider returned invalid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ProviderPayloadError("provider returned a non-object JSON payload")
+    return parsed
 
 
 def _tool_spec_to_openai_tool(spec: ToolSpec) -> dict[str, Any]:
