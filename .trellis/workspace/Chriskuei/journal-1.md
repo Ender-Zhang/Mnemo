@@ -1011,3 +1011,37 @@ Implemented Anthropic Messages API adapter, streaming and tool-use normalization
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Skill evolution eval suite
+
+**Date**: 2026-04-25
+**Task**: Skill evolution eval suite
+**Branch**: `main`
+
+### Summary
+
+Added built-in skill-evolution harness suite for crystallization safety, eval review gates, compact cards, CLI coverage, and updated skill contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `85941cc` | (see git log) |
+| `850ce32` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
