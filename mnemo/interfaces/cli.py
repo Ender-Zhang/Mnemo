@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Sequence
 
-from . import __version__
-from .errors import MnemoError
-from .jsonutil import dumps
-from .ledger import RunLedger
-from .models import RunRequest
-from .runtime import result_as_dict, run_local
-from .storage import StateStore
-from .tools import ToolRegistry, tool_specs_as_json_schema
+from .. import __version__
+from ..core.errors import MnemoError
+from ..core.events import chat_event_as_dict
+from ..core.jsonutil import dumps
+from ..core.models import RunRequest
+from ..runtime import result_as_dict, run_local, stream_local
+from ..runtime.ledger import RunLedger
+from ..storage import StateStore
+from ..tools import ToolRegistry, tool_specs_as_json_schema
 
 
 DEFAULT_STATE_DIR = "~/.mnemo"
@@ -35,6 +37,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except MnemoError as exc:
         print(f"mnemo: {exc}", file=sys.stderr)
         return 1
+    except BrokenPipeError:
+        sys.stdout = open(os.devnull, "w")
+        return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -51,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--conversation-id")
     run_parser.add_argument("--mission-id")
     run_parser.add_argument("--json", action="store_true", help="Print structured run result")
+    run_parser.add_argument("--stream", action="store_true", help="Print newline-delimited ChatEvent JSON")
 
     events_parser = subparsers.add_parser("events", help="Print RunLedger events for a run")
     _add_state_dir(events_parser)
@@ -78,14 +84,23 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
+    if args.json and args.stream:
+        raise MnemoError("--json and --stream cannot be used together")
+
     message = " ".join(args.message)
+    request = RunRequest(
+        message=message,
+        state_dir=args.state_dir,
+        conversation_id=args.conversation_id,
+        mission_id=args.mission_id,
+    )
+    if args.stream:
+        for event in stream_local(request):
+            print(dumps(chat_event_as_dict(event)), flush=True)
+        return 0
+
     result = run_local(
-        RunRequest(
-            message=message,
-            state_dir=args.state_dir,
-            conversation_id=args.conversation_id,
-            mission_id=args.mission_id,
-        )
+        request
     )
     if args.json:
         print(dumps(result_as_dict(result)))

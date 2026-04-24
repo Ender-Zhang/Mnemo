@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import asdict
 from typing import Any
 
-from .errors import MnemoError, NotFoundError
-from .ids import new_id
+from ..core.errors import MnemoError, NotFoundError
+from ..core.events import chat_event_as_dict, new_chat_event
+from ..core.ids import new_id
+from ..core.models import ChatEvent, ChatEventType, RunRequest, RunResult, ToolCallEnvelope, ToolResult
+from ..storage import StateStore
+from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
 from .ledger import RunLedger
-from .models import RunRequest, RunResult, ToolCallEnvelope, ToolResult
-from .storage import StateStore
-from .tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
 
 
 class LocalAgentRuntime:
@@ -24,6 +26,15 @@ class LocalAgentRuntime:
         self.registry = registry or ToolRegistry()
 
     def run(self, request: RunRequest) -> RunResult:
+        final_result: RunResult | None = None
+        for event in self.stream(request):
+            if event.type == "run.completed":
+                final_result = _run_result_from_dict(event.data["result"])
+        if final_result is None:
+            raise MnemoError("run did not produce a completion event")
+        return final_result
+
+    def stream(self, request: RunRequest) -> Iterator[ChatEvent]:
         store = StateStore(request.state_dir)
         store.initialize()
         ledger = RunLedger(store)
@@ -33,6 +44,17 @@ class LocalAgentRuntime:
         mission_id = self._resolve_mission(store, conversation_id, request)
         run_id = store.create_run(conversation_id, mission_id, request.message)
 
+        def emit(event_type: ChatEventType, data: dict[str, Any] | None = None) -> ChatEvent:
+            event = new_chat_event(
+                event_type,
+                run_id=run_id,
+                conversation_id=conversation_id,
+                mission_id=mission_id,
+                data=data or {},
+            )
+            ledger.append(run_id, "chat.event", chat_event_as_dict(event))
+            return event
+
         ledger.append(
             run_id,
             "request.received",
@@ -41,6 +63,19 @@ class LocalAgentRuntime:
                 "mission_id": mission_id,
                 "message": request.message,
                 "source": "cli",
+            },
+        )
+        yield emit(
+            "turn.started",
+            {
+                "turn_id": run_id,
+                "input_summary": _short_title(request.message, limit=100),
+            },
+        )
+        yield emit(
+            "conversation.hydrated",
+            {
+                "summary": "已恢复当前对话和任务状态。",
             },
         )
         ledger.append(
@@ -54,28 +89,49 @@ class LocalAgentRuntime:
                 "tools": [spec["name"] for spec in tool_specs_as_json_schema(self.registry.specs())],
             },
         )
+        yield emit("status.updated", {"text": "正在处理请求。", "tone": "working"})
 
         tool_calls = self._plan_local_tool_calls(request.message)
         tool_results: list[ToolResult] = []
         try:
             for call in tool_calls:
-                tool_results.append(harness.execute(call, run_id=run_id, mission_id=mission_id))
+                action = self._action_card(call)
+                yield emit("action.queued", {"action": action, "provider_call_id": call.call_id})
+                yield emit("action.started", {"action": action})
+                result = harness.execute(call, run_id=run_id, mission_id=mission_id)
+                tool_results.append(result)
+                yield emit(
+                    "action.completed",
+                    {
+                        "action_id": call.call_id,
+                        "outcome": "success" if result.ok else "failed",
+                        "summary": self._tool_result_summary(result),
+                        "tool_name": result.name,
+                    },
+                )
+                for projected in self._project_tool_result(result, emit):
+                    yield projected
 
             response = self._render_response(request.message, tool_results)
             checkpoint = self._checkpoint(store, mission_id, request.message, response, run_id, tool_results)
             store.update_mission_checkpoint(mission_id, checkpoint)
+            if response:
+                yield emit("assistant.delta", {"text": response})
+                yield emit("assistant.message", {"text": response, "final": True})
             ledger.append(run_id, "assistant.response", {"text": response})
             ledger.append(run_id, "run.completed", {"status": "completed"})
             store.complete_run(run_id, response)
-            return RunResult(
+            result = RunResult(
                 conversation_id=conversation_id,
                 mission_id=mission_id,
                 run_id=run_id,
                 response=response,
                 tool_results=tool_results,
             )
+            yield emit("run.completed", {"status": "completed", "result": result_as_dict(result)})
         except Exception as exc:
             response = f"Run failed: {exc}"
+            yield emit("run.error", {"error": str(exc)})
             ledger.append(run_id, "run.completed", {"status": "failed", "error": str(exc)})
             store.complete_run(run_id, response, status="failed")
             raise
@@ -173,6 +229,60 @@ class LocalAgentRuntime:
                 parts.append(f"{result.name} completed.")
         return " ".join(parts)
 
+    def _action_card(self, call: ToolCallEnvelope) -> dict[str, Any]:
+        spec = self.registry.spec(call.name)
+        return {
+            "action_id": call.call_id,
+            "title": call.name,
+            "summary": spec.description,
+            "risk": spec.risk,
+            "provider": call.provider,
+        }
+
+    def _tool_result_summary(self, result: ToolResult) -> str:
+        if not result.ok:
+            return result.error or "Tool call failed."
+        if result.name == "memory_write_candidate":
+            return "记忆候选已记录，等待后续学习流程评估。"
+        if result.name == "memory_search":
+            return f"找到 {len(result.result.get('matches', []))} 条候选。"
+        if result.name == "working_note":
+            return "工作笔记已记录。"
+        if result.name == "artifact_update":
+            return "产物已更新。"
+        return "工具调用已完成。"
+
+    def _project_tool_result(
+        self,
+        result: ToolResult,
+        emit: Any,
+    ) -> Iterator[ChatEvent]:
+        if not result.ok:
+            return
+        if result.name == "memory_write_candidate":
+            yield emit(
+                "learning.chip",
+                {
+                    "item": {
+                        "item_id": result.result["candidate_id"],
+                        "kind": "memory",
+                        "status": "draft",
+                        "summary": "可能学到一个偏好或事实。",
+                    }
+                },
+            )
+        elif result.name == "artifact_update":
+            yield emit(
+                "artifact.card",
+                {
+                    "artifact": {
+                        "artifact_id": result.result["artifact_id"],
+                        "title": "Draft Artifact",
+                        "kind": "markdown",
+                    }
+                },
+            )
+
     def _checkpoint(
         self,
         store: StateStore,
@@ -209,6 +319,10 @@ def run_local(request: RunRequest) -> RunResult:
     return LocalAgentRuntime().run(request)
 
 
+def stream_local(request: RunRequest) -> Iterator[ChatEvent]:
+    return LocalAgentRuntime().stream(request)
+
+
 def _short_title(text: str, limit: int = 60) -> str:
     compact = " ".join(text.strip().split())
     if not compact:
@@ -237,3 +351,22 @@ def result_as_dict(result: RunResult) -> dict[str, Any]:
         "response": result.response,
         "tool_results": [asdict(tool_result) for tool_result in result.tool_results],
     }
+
+
+def _run_result_from_dict(value: dict[str, Any]) -> RunResult:
+    return RunResult(
+        conversation_id=value["conversation_id"],
+        mission_id=value["mission_id"],
+        run_id=value["run_id"],
+        response=value["response"],
+        tool_results=[
+            ToolResult(
+                call_id=item["call_id"],
+                name=item["name"],
+                ok=item["ok"],
+                result=item.get("result") or {},
+                error=item.get("error"),
+            )
+            for item in value.get("tool_results", [])
+        ],
+    )

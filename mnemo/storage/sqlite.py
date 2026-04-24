@@ -5,11 +5,18 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
-from .ids import new_id
-from .jsonutil import dumps, loads
+from ..core.ids import new_id
+from ..core.jsonutil import dumps, loads
 
 
 SCHEMA_VERSION = 1
+
+
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> bool:
+        result = super().__exit__(exc_type, exc_value, traceback)
+        self.close()
+        return result
 
 
 class StateStore:
@@ -19,7 +26,7 @@ class StateStore:
 
     def connect(self) -> sqlite3.Connection:
         self.state_dir.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
         return conn

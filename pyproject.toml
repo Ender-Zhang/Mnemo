@@ -11,11 +11,13 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
-mnemo = "mnemo.cli:main"
+mnemo = "mnemo.interfaces.cli:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["mnemo*"]
+exclude = ["tests*", "design*"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
 testpaths = ["tests"]

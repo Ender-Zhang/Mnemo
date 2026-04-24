@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .storage import StateStore
+from ..storage import StateStore
 
 
 class RunLedger:

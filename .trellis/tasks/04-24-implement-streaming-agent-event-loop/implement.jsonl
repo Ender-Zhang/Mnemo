@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/07-runtime-harness.md", "reason": "Runtime harness and provider-native tool-loop contract"}
+{"file": "design/08-frontend-chat.md", "reason": "Chat UI event/action display requirements"}
+{"file": "design/11-prompt-system.md", "reason": "Prompt/tool-call assembly and streaming output constraints"}

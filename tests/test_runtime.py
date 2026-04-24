@@ -3,8 +3,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 
-from mnemo.models import RunRequest
-from mnemo.runtime import run_local
+from mnemo.core.models import RunRequest
+from mnemo.runtime import run_local, stream_local
 from mnemo.storage import StateStore
 
 
@@ -41,6 +41,23 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertEqual(first.mission_id, second.mission_id)
             self.assertEqual(second.tool_results[0].name, "memory_search")
             self.assertEqual(len(second.tool_results[0].result["matches"]), 1)
+
+    def test_streaming_events_include_actions_and_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            events = list(stream_local(RunRequest(message="remember: stream actions", state_dir=tmp)))
+            event_types = [event.type for event in events]
+
+            self.assertIn("turn.started", event_types)
+            self.assertIn("action.queued", event_types)
+            self.assertIn("action.started", event_types)
+            self.assertIn("action.completed", event_types)
+            self.assertIn("learning.chip", event_types)
+            self.assertEqual(event_types[-1], "run.completed")
+
+            store = StateStore(tmp)
+            ledger_events = store.get_run_events(events[-1].run_id)
+            self.assertIn("chat.event", [event["event_type"] for event in ledger_events])
+            self.assertEqual(events[-1].data["result"]["tool_results"][0]["name"], "memory_write_candidate")
 
 
 if __name__ == "__main__":
