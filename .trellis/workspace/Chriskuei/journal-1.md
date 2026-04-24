@@ -368,3 +368,36 @@ Added common Agent Skills metadata parsing for allowed-tools, allowed_tools, arg
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Single chat web frontend
+
+**Date**: 2026-04-25
+**Task**: Single chat web frontend
+**Branch**: `main`
+
+### Summary
+
+Added stdlib web server, single-chat HTML/CSS/JS UI, /api/chat NDJSON ChatEvent streaming, /api/events replay endpoint, multi-turn browser state, packaging data, web CLI command, tests, and checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ffa0752` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
