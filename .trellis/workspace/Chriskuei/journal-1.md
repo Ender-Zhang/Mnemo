@@ -235,3 +235,37 @@ Added JSONL trace mirror, RunLedger replay APIs, chat event replay, events --sin
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Tool boundary cards
+
+**Date**: 2026-04-24
+**Task**: Tool boundary cards
+**Branch**: `main`
+
+### Summary
+
+Added lightweight ToolExecutionPolicy enforcement, compact model-facing tool results, source evidence cards, ToolRegistry registration for generated integrations, tests, checklist updates, and archived the Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fd57913` | (see git log) |
+| `1cca9f2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

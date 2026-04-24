@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-04-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~237 | Active |
+| `journal-1.md` | ~271 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-04-24 | Tool boundary cards | `fd57913`, `1cca9f2` | `main` |
 | 7 | 2026-04-24 | Event replay foundation | `56a7076` | `main` |
 | 6 | 2026-04-24 | Skills filesystem lifecycle | `b4bd3a6` | `main` |
 | 5 | 2026-04-24 | Memory engine foundation | `9df719d` | `main` |
