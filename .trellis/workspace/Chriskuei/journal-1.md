@@ -401,3 +401,36 @@ Added stdlib web server, single-chat HTML/CSS/JS UI, /api/chat NDJSON ChatEvent 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Eval harness foundation
+
+**Date**: 2026-04-25
+**Task**: Eval harness foundation
+**Branch**: `main`
+
+### Summary
+
+Added lightweight harness package, built-in personalization-core golden cases, smoke suite, replay summary command, harness CLI, tests, checklist updates, and Trellis task tracking.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b105d86` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
