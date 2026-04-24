@@ -875,3 +875,37 @@ Implemented lightweight SQLite schema migration ledger, schema version API, idem
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Event outbox
+
+**Date**: 2026-04-25
+**Task**: Event outbox
+**Branch**: `main`
+
+### Summary
+
+Implemented SQLite event outbox migration, run-event mirroring in append_event, enqueue/list/mark storage APIs, storage tests, database contracts, and checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f6a5bb9` | (see git log) |
+| `cd38e50` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
