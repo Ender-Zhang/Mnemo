@@ -841,3 +841,37 @@ Added deterministic memory safety harness suite covering candidate-first writes,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: SQLite schema migrations
+
+**Date**: 2026-04-25
+**Task**: SQLite schema migrations
+**Branch**: `main`
+
+### Summary
+
+Implemented lightweight SQLite schema migration ledger, schema version API, idempotent initialization, legacy column upgrades, storage tests, database spec, and checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dc2a598` | (see git log) |
+| `500e00e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
