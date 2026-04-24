@@ -70,3 +70,36 @@ Added ChatEvent streaming, CLI NDJSON stream mode, provider adapter boundaries, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Provider backed runtime
+
+**Date**: 2026-04-24
+**Task**: Provider backed runtime
+**Branch**: `main`
+
+### Summary
+
+Implemented OpenAI-compatible provider configuration, chat completions adapter, provider-backed runtime bridge, CLI provider selection, timeout/error handling, tool-call loop integration, and fake-server tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fdbe8fa` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
