@@ -70,6 +70,10 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertEqual(events[-1].type, "run.completed")
             self.assertEqual(events[-1].data["result"]["response"], "Hello from model")
             self.assertEqual(provider.requests[0].messages[-1]["content"], "hello")
+            self.assertEqual(
+                [message["role"] for message in provider.requests[0].messages],
+                ["system", "developer", "developer", "developer", "user"],
+            )
 
     def test_provider_runtime_executes_tool_rounds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -6,6 +6,7 @@ from typing import Any
 from ..core.errors import MnemoError
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolResult
 from ..providers import ProviderAdapter, ProviderRunInput
+from ..prompt import PromptAssembler
 from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
 from .common import (
@@ -57,6 +58,12 @@ class ProviderAgentRuntime:
             conversation_id=conversation_id,
             mission_id=mission_id,
         )
+        mission = store.get_mission(mission_id) or {}
+        assembled_prompt = PromptAssembler().assemble(
+            request.message,
+            mission=mission,
+            tool_specs=self.registry.specs(),
+        )
 
         ledger.append(
             run_id,
@@ -82,9 +89,8 @@ class ProviderAgentRuntime:
             run_id,
             "prompt.assembled",
             {
+                **assembled_prompt.metadata(),
                 "mode": "full",
-                "stable_prefix": ["mnemo_core", "tool_bundle"],
-                "dynamic_tail": ["mission_checkpoint", "current_turn"],
                 "tool_count": len(self.registry.specs()),
                 "tools": [spec["name"] for spec in tool_specs_as_json_schema(self.registry.specs())],
                 "provider": self.provider.name,
@@ -92,7 +98,7 @@ class ProviderAgentRuntime:
         )
         yield emit("status.updated", {"text": "正在调用模型。", "tone": "working"})
 
-        messages = [{"role": "user", "content": request.message}]
+        messages = assembled_prompt.messages()
         response_parts: list[str] = []
         tool_results: list[ToolResult] = []
 

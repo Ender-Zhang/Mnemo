@@ -74,13 +74,13 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Prompt And Context
 
-- [~] Runtime records a minimal `prompt.assembled` event.
-- [ ] PromptBlock model.
-- [ ] PromptAssembler with stable prefix and dynamic tail.
-- [ ] Tool card/schema budget separation.
+- [x] Runtime records `prompt.assembled` metadata.
+- [x] PromptBlock model.
+- [x] PromptAssembler with stable prefix and dynamic tail.
+- [~] Tool card/schema budget separation.
 - [ ] Skill and memory progressive disclosure.
-- [ ] KV-cache-first prompt assembly ordering.
-- [ ] Prompt inspection command.
+- [x] KV-cache-first prompt assembly ordering.
+- [x] Prompt inspection command.
 - [ ] Context compression.
 
 ## Frontend Experience
@@ -104,7 +104,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Model/tool loop with provider-native tool call schema.
 - [ ] Streaming response parser.
 - [x] Provider error normalization.
-- [ ] Local endpoint smoke command using user-provided credentials.
+- [~] Local endpoint smoke command using user-provided credentials.
 
 ## Evaluation And Harness
 
@@ -130,3 +130,4 @@ This file tracks implementation status against the design package. Keep it updat
 ## Current Trellis Focus
 
 - [x] `04-24-implement-provider-backed-runtime`: OpenAI-compatible provider config, adapter, runtime bridge, CLI selection, timeout errors, and fake-server tests implemented.
+- [~] `04-24-implement-prompt-assembly-foundation`: PromptBlock, PromptAssembler, provider runtime integration, and prompt inspect CLI are in progress.

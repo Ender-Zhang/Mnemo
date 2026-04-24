@@ -64,7 +64,7 @@ class OpenAIProviderAdapter:
     def _post_chat_completions(self, request: ProviderRunInput) -> dict[str, Any]:
         request_payload: dict[str, Any] = {
             "model": self.config.model,
-            "messages": list(request.messages),
+            "messages": _normalize_chat_messages(request.messages),
             "stream": False,
         }
         if request.tools:
@@ -243,3 +243,13 @@ def _completion_metadata(payload: dict[str, Any], choice: dict[str, Any], provid
     if isinstance(usage, dict):
         metadata["usage"] = usage
     return metadata
+
+
+def _normalize_chat_messages(messages: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for message in messages:
+        item = dict(message)
+        if item.get("role") == "developer":
+            item["role"] = "system"
+        normalized.append(item)
+    return normalized

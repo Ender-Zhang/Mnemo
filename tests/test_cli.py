@@ -73,6 +73,19 @@ class CliTests(unittest.TestCase):
             payload = json.loads(run.stdout)
             self.assertEqual(payload["response"], "Provider reply")
             self.assertEqual(server.requests[0]["body"]["model"], "fake-model")
+            self.assertEqual(
+                [message["role"] for message in server.requests[0]["body"]["messages"]],
+                ["system", "system", "system", "system", "user"],
+            )
+
+            inspect = _run_cli(["prompt", "inspect", payload["run_id"], "--state-dir", tmp, "--json"])
+            self.assertEqual(inspect.returncode, 0, inspect.stderr)
+            prompt = json.loads(inspect.stdout)["prompt"]
+            self.assertEqual(
+                prompt["stable_prefix"],
+                ["system.identity", "developer.operating_principles", "tools.cards"],
+            )
+            self.assertEqual(prompt["blocks"][0]["id"], "system.identity")
 
     def test_run_stream_with_provider_timeout_emits_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

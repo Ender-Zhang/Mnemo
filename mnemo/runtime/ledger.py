@@ -16,3 +16,9 @@ class RunLedger:
 
     def events(self, run_id: str) -> list[dict[str, Any]]:
         return self.store.get_run_events(run_id)
+
+    def latest(self, run_id: str, event_type: str) -> dict[str, Any] | None:
+        for event in reversed(self.events(run_id)):
+            if event["event_type"] == event_type:
+                return event
+        return None

@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/11-prompt-system.md", "reason": "Prompt assembly design and KV-cache ordering"}
+{"file": "design/07-runtime-harness.md", "reason": "Runtime prompt.assembled and provider loop integration"}

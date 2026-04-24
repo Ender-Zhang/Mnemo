@@ -12,8 +12,8 @@ from ..core.jsonutil import dumps
 from ..core.models import RunRequest
 from ..providers import OpenAIProviderAdapter, ProviderConfig
 from ..runtime import result_as_dict, run_local, stream_local
-from ..runtime.provider import run_provider, stream_provider
 from ..runtime.ledger import RunLedger
+from ..runtime.provider import run_provider, stream_provider
 from ..storage import StateStore
 from ..tools import ToolRegistry, tool_specs_as_json_schema
 
@@ -33,6 +33,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_run(args)
         if args.command == "events":
             return _cmd_events(args)
+        if args.command == "prompt":
+            return _cmd_prompt(args)
         if args.command == "tools":
             return _cmd_tools(args)
         parser.print_help()
@@ -76,6 +78,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(events_parser)
     events_parser.add_argument("run_id")
     events_parser.add_argument("--json", action="store_true")
+
+    prompt_parser = subparsers.add_parser("prompt", help="Inspect prompt assembly metadata")
+    prompt_subparsers = prompt_parser.add_subparsers(dest="prompt_command")
+    prompt_inspect_parser = prompt_subparsers.add_parser("inspect", help="Inspect a run's prompt assembly")
+    _add_state_dir(prompt_inspect_parser)
+    prompt_inspect_parser.add_argument("run_id")
+    prompt_inspect_parser.add_argument("--json", action="store_true")
 
     tools_parser = subparsers.add_parser("tools", help="Print available tool specs")
     tools_parser.add_argument("--json", action="store_true")
@@ -142,6 +151,34 @@ def _cmd_events(args: argparse.Namespace) -> int:
 
     for event in events:
         print(f"{event['seq']:03d} {event['event_type']} {dumps(event['payload'])}")
+    return 0
+
+
+def _cmd_prompt(args: argparse.Namespace) -> int:
+    if args.prompt_command == "inspect":
+        return _cmd_prompt_inspect(args)
+    raise MnemoError("prompt command requires a subcommand")
+
+
+def _cmd_prompt_inspect(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    store.initialize()
+    ledger = RunLedger(store)
+    event = ledger.latest(args.run_id, "prompt.assembled")
+    if not event:
+        raise MnemoError(f"prompt assembly not found for run: {args.run_id}")
+    payload = event["payload"]
+    if args.json:
+        print(dumps({"run_id": args.run_id, "prompt": payload}))
+        return 0
+
+    print(f"Prompt for run {args.run_id}")
+    print(f"mode={payload.get('mode', 'unknown')} total_tokens={payload.get('total_token_estimate', 0)}")
+    for block in payload.get("blocks", []):
+        print(
+            f"- {block['id']} role={block['role']} cache={block['cache_policy']} "
+            f"tokens={block['token_estimate']}"
+        )
     return 0
 
 
