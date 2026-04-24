@@ -501,3 +501,37 @@ Added workspace-scoped file search/read/write tools, policy-gated HTTP fetch and
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Prompt context compression
+
+**Date**: 2026-04-25
+**Task**: Prompt context compression
+**Branch**: `main`
+
+### Summary
+
+Added PromptAssembler token budgeting, optional block dropping with metadata, mission checkpoint compaction, prompt assembly code-spec, and focused prompt tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b21f198` | (see git log) |
+| `189ea00` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
