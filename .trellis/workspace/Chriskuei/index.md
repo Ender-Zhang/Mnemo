@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
+- **Total Sessions**: 29
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~945 | Active |
+| `journal-1.md` | ~979 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 29 | 2026-04-25 | Daemon queue recovery | `5a726f7`, `92ca8b8` | `main` |
 | 28 | 2026-04-25 | Backup export import | `3f4dae3`, `7ab6347` | `main` |
 | 27 | 2026-04-25 | Event outbox | `f6a5bb9`, `cd38e50` | `main` |
 | 26 | 2026-04-25 | SQLite schema migrations | `dc2a598`, `500e00e` | `main` |

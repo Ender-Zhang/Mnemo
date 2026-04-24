@@ -943,3 +943,37 @@ Implemented zip-based state backup/export/import with manifest validation, repla
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Daemon queue recovery
+
+**Date**: 2026-04-25
+**Task**: Daemon queue recovery
+**Branch**: `main`
+
+### Summary
+
+Implemented persisted run queue, daemon drain/status/recover CLI, single-instance lock, stale job recovery, tests, and storage contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5a726f7` | (see git log) |
+| `92ca8b8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
