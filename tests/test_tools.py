@@ -70,6 +70,106 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertIn("evidence", compact)
             self.assertNotIn("result", compact)
 
+    def test_skill_view_records_usage_and_outcome_tool_records_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            store.upsert_skill("writer", "Draft concise notes", "Full skill body", status="active")
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            viewed = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_view",
+                    arguments={"name": "writer"},
+                    call_id="call_skill_view",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            outcome = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_record_outcome",
+                    arguments={
+                        "name": "writer",
+                        "outcome": "success",
+                        "score": 0.75,
+                        "evidence": [{"kind": "test"}],
+                    },
+                    call_id="call_skill_outcome",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            usage = store.list_skill_usage("writer")
+
+            self.assertTrue(viewed.ok)
+            self.assertTrue(outcome.ok)
+            self.assertEqual([event["event_type"] for event in usage], ["outcome", "viewed"])
+            self.assertEqual(usage[0]["score"], 0.75)
+            self.assertEqual(usage[0]["evidence"], [{"kind": "test"}])
+            self.assertIn("Recorded skill outcome", outcome.summary)
+
+    def test_skill_record_outcome_rejects_out_of_range_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_record_outcome",
+                    arguments={"name": "writer", "outcome": "success", "score": 2},
+                    call_id="call_skill_bad_score",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("between -1 and 1", result.error or "")
+            self.assertEqual(store.list_skill_usage("writer"), [])
+
+    def test_skill_view_missing_skill_does_not_record_usage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_view",
+                    arguments={"name": "missing"},
+                    call_id="call_skill_missing",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(store.list_skill_usage("missing"), [])
+
+    def test_skill_record_outcome_defaults_score_from_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_record_outcome",
+                    arguments={"name": "writer", "outcome": "failure"},
+                    call_id="call_skill_default_score",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            usage = store.list_skill_usage("writer")
+            self.assertTrue(result.ok)
+            self.assertEqual(usage[0]["score"], -1.0)
+
 
 def _store_with_run(tmp: str) -> tuple[StateStore, str, str]:
     store = StateStore(tmp)

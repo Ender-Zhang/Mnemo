@@ -22,6 +22,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Tool Harness Contracts](./tool-harness.md) | Provider-native tool specs, policy gates, and compact results | Active |
 | [Prompt Assembly Contracts](./prompt-assembly.md) | Cache-friendly prompt ordering, context budgeting, and metadata | Active |
 | [Memory Engine Contracts](./memory-engine.md) | Candidate consolidation, reinforcement, conflict signals, and provenance links | Active |
+| [Skill Evolution Contracts](./skill-evolution.md) | Skill usage/outcome signals, compact cards, and model-driven evolution | Active |
 
 ---
 

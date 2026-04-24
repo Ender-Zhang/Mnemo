@@ -30,7 +30,10 @@ class SkillService:
         return self.store.list_skills()
 
     def context_cards(self, limit: int = 12) -> list[dict[str, Any]]:
-        return [_skill_context_card(skill) for skill in self.store.list_skills()[:limit]]
+        skills = self.store.list_skills()
+        usage_stats = _skill_usage_stats(self.store)
+        ranked = sorted(skills, key=lambda skill: _skill_rank(skill, usage_stats))
+        return [_skill_context_card(skill, usage_stats.get(skill["name"])) for skill in ranked[:limit]]
 
     def view(self, name: str) -> dict[str, Any] | None:
         return self.store.get_skill(name)
@@ -74,7 +77,7 @@ def _skill_file_as_dict(skill: SkillFile) -> dict[str, Any]:
     }
 
 
-def _skill_context_card(skill: dict[str, Any]) -> dict[str, Any]:
+def _skill_context_card(skill: dict[str, Any], usage: dict[str, Any] | None = None) -> dict[str, Any]:
     metadata = _skill_metadata(skill)
     card = {
         "name": skill["name"],
@@ -97,7 +100,34 @@ def _skill_context_card(skill: dict[str, Any]) -> dict[str, Any]:
     if not card.get("path") and "path" in metadata:
         card["path"] = metadata["path"]
 
+    if usage:
+        card["usage"] = {
+            "uses": usage.get("uses", 0),
+            "views": usage.get("views", 0),
+            "outcomes": usage.get("outcomes", 0),
+            "successes": usage.get("successes", 0),
+            "failures": usage.get("failures", 0),
+            "avg_score": round(float(usage.get("avg_score", 0.0)), 3),
+        }
+
     return card
+
+
+def _skill_usage_stats(store: StateStore) -> dict[str, dict[str, Any]]:
+    stats = getattr(store, "skill_usage_stats", None)
+    if not stats:
+        return {}
+    return stats()
+
+
+def _skill_rank(skill: dict[str, Any], stats: dict[str, dict[str, Any]]) -> tuple[float, int, int, str]:
+    usage = stats.get(skill["name"], {})
+    return (
+        -float(usage.get("avg_score", 0.0)),
+        -int(usage.get("successes", 0)),
+        -int(usage.get("uses", 0)),
+        str(skill["name"]),
+    )
 
 
 def _skill_metadata(skill: dict[str, Any]) -> dict[str, Any]:

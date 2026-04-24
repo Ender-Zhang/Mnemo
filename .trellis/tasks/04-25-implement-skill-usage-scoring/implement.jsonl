@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/storage/sqlite.py", "reason": "skill usage persistence"}
+{"file": "mnemo/skills/service.py", "reason": "skill context cards and stats"}
+{"file": "mnemo/tools/registry.py", "reason": "skill tools and compact evidence"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "tool contract for new skill outcome tool"}
+{"file": "tests/test_skills_filesystem.py", "reason": "skill service card tests"}
+{"file": "tests/test_tools.py", "reason": "tool harness tests"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "skill signals cross storage/tool/prompt boundaries"}
+{"file": "tests/test_storage.py", "reason": "storage tests"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "executable skill evolution contract"}

@@ -155,6 +155,28 @@ class SkillFilesystemTests(unittest.TestCase):
             self.assertNotIn("body", cards[0])
             self.assertIn("Full body should only be loaded by skill_view.", viewed["body"])
 
+    def test_skill_context_cards_include_usage_stats_and_rank_by_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skills")
+            mission_id = store.create_mission(conversation_id, "skill ranking")
+            run_id = store.create_run(conversation_id, mission_id, "rank skills")
+            store.upsert_skill("alpha", "Lower scoring skill", "Alpha body", status="active")
+            store.upsert_skill("zeta", "Higher scoring skill", "Zeta body", status="active")
+            store.record_skill_usage(run_id, "alpha", "outcome", outcome="failure", score=-0.5)
+            store.record_skill_usage(run_id, "zeta", "viewed")
+            store.record_skill_usage(run_id, "zeta", "outcome", outcome="success", score=0.9)
+
+            cards = SkillService(store).context_cards()
+
+            self.assertEqual([card["name"] for card in cards], ["zeta", "alpha"])
+            self.assertEqual(cards[0]["usage"]["uses"], 2)
+            self.assertEqual(cards[0]["usage"]["views"], 1)
+            self.assertEqual(cards[0]["usage"]["successes"], 1)
+            self.assertEqual(cards[0]["usage"]["avg_score"], 0.9)
+            self.assertNotIn("body", cards[0])
+
 
 if __name__ == "__main__":
     unittest.main()

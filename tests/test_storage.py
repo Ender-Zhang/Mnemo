@@ -55,6 +55,41 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(matches[0]["id"], candidate_id)
             self.assertEqual(store.get_memory_candidate(candidate_id)["claim"], matches[0]["claim"])
 
+    def test_skill_usage_events_and_stats(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("test")
+            mission_id = store.create_mission(conversation_id, "test mission")
+            run_id = store.create_run(conversation_id, mission_id, "skill")
+            store.upsert_skill("writer", "Draft concise notes", "Body", status="active")
+
+            view_id = store.record_skill_usage(
+                run_id,
+                "writer",
+                "viewed",
+                evidence=[{"kind": "tool_call"}],
+            )
+            outcome_id = store.record_skill_usage(
+                run_id,
+                "writer",
+                "outcome",
+                outcome="success",
+                score=0.8,
+                evidence=[{"kind": "user_feedback"}],
+            )
+
+            usage = store.list_skill_usage("writer")
+            stats = store.skill_usage_stats()["writer"]
+
+            self.assertEqual({event["id"] for event in usage}, {view_id, outcome_id})
+            self.assertEqual(usage[0]["evidence"], [{"kind": "user_feedback"}])
+            self.assertEqual(stats["uses"], 2)
+            self.assertEqual(stats["views"], 1)
+            self.assertEqual(stats["outcomes"], 1)
+            self.assertEqual(stats["successes"], 1)
+            self.assertEqual(stats["avg_score"], 0.8)
+
 
 if __name__ == "__main__":
     unittest.main()

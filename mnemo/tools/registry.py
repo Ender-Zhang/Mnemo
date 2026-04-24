@@ -10,6 +10,7 @@ from ..core.errors import NotFoundError, ToolError
 from ..core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolPermission, ToolResult, ToolSpec
 from ..memory import MemoryEngine
 from ..runtime.ledger import RunLedger
+from ..skills import SkillService
 from ..storage import StateStore
 from .standard import STANDARD_TOOL_SPECS, standard_tool_evidence, standard_tool_handlers, standard_tool_summary
 
@@ -158,6 +159,24 @@ LEARNING_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="skill_record_outcome",
+        description="Record the observed outcome of using a skill so future skill selection can improve.",
+        risk="write",
+        input_schema=_schema(
+            ["name", "outcome"],
+            {
+                "name": {"type": "string"},
+                "outcome": {"type": "string", "enum": ["success", "failure", "neutral"]},
+                "score": {"type": "number", "minimum": -1, "maximum": 1},
+                "evidence": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "default": [],
+                },
+            },
+        ),
+    ),
+    ToolSpec(
         name="learning_discard",
         description="Record that no useful learning candidate should be produced from this evidence.",
         risk="write",
@@ -182,6 +201,7 @@ class ToolRegistry:
             "skill_propose_candidate": self._skill_propose_candidate,
             "tool_propose_candidate": self._tool_propose_candidate,
             "eval_propose_case": self._eval_propose_case,
+            "skill_record_outcome": self._skill_record_outcome,
             "learning_discard": self._learning_discard,
         }
 
@@ -226,13 +246,19 @@ class ToolRegistry:
         return {"note_id": note_id}
 
     def _skills_list(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-        return {"skills": context.store.list_skills()}
+        return {"skills": SkillService(context.store).context_cards(limit=50)}
 
     def _skill_view(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         name = _require_str(args, "name")
         skill = context.store.get_skill(name)
         if not skill:
             raise NotFoundError(f"skill not found: {name}")
+        context.store.record_skill_usage(
+            context.run_id,
+            name,
+            "viewed",
+            evidence=[{"kind": "tool_call", "call": "skill_view"}],
+        )
         return {"skill": skill}
 
     def _artifact_update(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
@@ -287,6 +313,19 @@ class ToolRegistry:
             _require_dict(args, "case"),
         )
         return {"case_id": case_id, "status": "draft"}
+
+    def _skill_record_outcome(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        name = _require_str(args, "name")
+        outcome = _require_outcome(args, "outcome")
+        event_id = context.store.record_skill_usage(
+            context.run_id,
+            name,
+            "outcome",
+            outcome=outcome,
+            score=_outcome_score(args, outcome),
+            evidence=args.get("evidence") or [],
+        )
+        return {"event_id": event_id, "name": name, "outcome": outcome}
 
     def _learning_discard(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         reason = _require_str(args, "reason")
@@ -507,6 +546,8 @@ def _tool_summary(result: ToolResult) -> str:
     standard_summary = standard_tool_summary(result)
     if standard_summary:
         return standard_summary
+    if result.name == "skill_record_outcome":
+        return f"Recorded skill outcome: {result.result.get('name', 'unknown')} {result.result.get('outcome', '')}."
     if result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
         return "Learning candidate recorded."
     if result.name == "learning_discard":
@@ -557,6 +598,15 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
     if result.name == "skill_view":
         skill = result.result.get("skill") or {}
         return [_evidence("skill", skill.get("id") or skill.get("name"), str(skill.get("name") or "Skill"))]
+    if result.name == "skill_record_outcome":
+        return [
+            {
+                "kind": "skill_outcome",
+                "id": str(result.result.get("event_id") or ""),
+                "title": str(result.result.get("name") or "Skill"),
+                "outcome": result.result.get("outcome"),
+            }
+        ]
     if result.name == "artifact_update":
         return [_evidence("artifact", result.result.get("artifact_id"), "Artifact")]
     if result.name == "ask_user":
@@ -591,6 +641,25 @@ def _require_str(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ToolError(f"missing string argument: {key}")
     return value.strip()
+
+
+def _require_outcome(args: dict[str, Any], key: str) -> str:
+    value = _require_str(args, key)
+    if value not in {"success", "failure", "neutral"}:
+        raise ToolError(f"invalid outcome: {value}")
+    return value
+
+
+def _outcome_score(args: dict[str, Any], outcome: str) -> float:
+    if "score" not in args:
+        return {"success": 1.0, "failure": -1.0, "neutral": 0.0}[outcome]
+    try:
+        score = float(args["score"])
+    except (TypeError, ValueError) as exc:
+        raise ToolError("score must be a number") from exc
+    if score < -1 or score > 1:
+        raise ToolError("score must be between -1 and 1")
+    return score
 
 
 def _optional_str(args: dict[str, Any], key: str) -> str | None:

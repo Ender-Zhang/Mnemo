@@ -67,7 +67,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Skill proposal tool exists with generated `SKILL.md` promotion.
 - [~] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
 - [x] Progressive skill index/summary/full load.
-- [ ] Skill usage tracking and outcome scoring.
+- [x] Skill usage tracking and outcome scoring.
 - [ ] Skill patch/proposal review lifecycle.
 - [ ] SOP crystallization from successful runs.
 - [ ] Skill eval harness.
@@ -144,3 +144,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-standard-local-tools-foundation`: workspace-scoped file tools, policy-gated web fetch, and policy-gated shell execution are implemented.
 - [x] `04-25-implement-prompt-context-compression`: prompt token budget, optional block dropping, checkpoint compaction, and dropped-block metadata are implemented.
 - [x] `04-25-implement-memory-conflict-reinforcement`: duplicate reinforcement, conflict review routing, and memory link provenance are implemented.
+- [x] `04-25-implement-skill-usage-scoring`: skill usage events, outcome scoring, compact card stats, and deterministic skill ranking are implemented.

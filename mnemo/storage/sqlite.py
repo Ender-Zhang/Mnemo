@@ -150,6 +150,18 @@ class StateStore:
                     updated_at REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS skill_usage_events (
+                    id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL REFERENCES runs(id),
+                    skill_id TEXT REFERENCES skills(id),
+                    skill_name TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    outcome TEXT,
+                    score REAL,
+                    evidence_json TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS tool_candidates (
                     id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL REFERENCES runs(id),
@@ -186,6 +198,8 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_memory_pages_content ON memory_pages(content);
                 CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
                 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
+                CREATE INDEX IF NOT EXISTS idx_skill_usage_skill_name ON skill_usage_events(skill_name, created_at);
+                CREATE INDEX IF NOT EXISTS idx_skill_usage_run ON skill_usage_events(run_id);
                 """
             )
             conn.execute(
@@ -611,6 +625,110 @@ class StateStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def record_skill_usage(
+        self,
+        run_id: str,
+        skill_name: str,
+        event_type: str,
+        *,
+        outcome: str | None = None,
+        score: float | None = None,
+        evidence: Iterable[dict[str, Any]] | None = None,
+    ) -> str:
+        event_id = new_id("skuse")
+        with self.connect() as conn:
+            skill = conn.execute("SELECT id FROM skills WHERE name = ?", (skill_name,)).fetchone()
+            conn.execute(
+                """
+                INSERT INTO skill_usage_events(
+                    id, run_id, skill_id, skill_name, event_type, outcome, score, evidence_json, created_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    run_id,
+                    skill["id"] if skill else None,
+                    skill_name,
+                    event_type,
+                    outcome,
+                    score,
+                    dumps(list(evidence or [])),
+                    time.time(),
+                ),
+            )
+        return event_id
+
+    def list_skill_usage(
+        self,
+        skill_name: str | None = None,
+        *,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, run_id, skill_id, skill_name, event_type, outcome, score, evidence_json, created_at
+            FROM skill_usage_events
+        """
+        params: list[Any] = []
+        if skill_name:
+            sql += " WHERE skill_name = ?"
+            params.append(skill_name)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_skill_usage_from_row(row) for row in rows]
+
+    def skill_usage_stats(self) -> dict[str, dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT skill_name, event_type, outcome, score, created_at
+                FROM skill_usage_events
+                ORDER BY created_at ASC
+                """
+            ).fetchall()
+
+        stats: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            skill_name = str(row["skill_name"])
+            item = stats.setdefault(
+                skill_name,
+                {
+                    "uses": 0,
+                    "views": 0,
+                    "outcomes": 0,
+                    "successes": 0,
+                    "failures": 0,
+                    "neutral": 0,
+                    "score_total": 0.0,
+                    "score_count": 0,
+                    "last_used_at": None,
+                },
+            )
+            item["uses"] += 1
+            if row["event_type"] == "viewed":
+                item["views"] += 1
+            if row["outcome"]:
+                item["outcomes"] += 1
+                if row["outcome"] == "success":
+                    item["successes"] += 1
+                elif row["outcome"] == "failure":
+                    item["failures"] += 1
+                elif row["outcome"] == "neutral":
+                    item["neutral"] += 1
+            if row["score"] is not None:
+                item["score_total"] += float(row["score"])
+                item["score_count"] += 1
+            item["last_used_at"] = row["created_at"]
+
+        for item in stats.values():
+            score_count = int(item.pop("score_count"))
+            score_total = float(item.pop("score_total"))
+            item["avg_score"] = score_total / score_count if score_count else 0.0
+        return stats
+
     def add_tool_candidate(self, run_id: str, name: str, spec: dict[str, Any]) -> str:
         candidate_id = new_id("tc")
         with self.connect() as conn:
@@ -660,6 +778,12 @@ class StateStore:
 
 
 def _memory_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["evidence"] = loads(result.pop("evidence_json"), [])
+    return result
+
+
+def _skill_usage_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["evidence"] = loads(result.pop("evidence_json"), [])
     return result
