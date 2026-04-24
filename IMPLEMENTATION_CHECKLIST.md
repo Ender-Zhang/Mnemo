@@ -92,7 +92,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Inline action cards.
 - [~] Inline artifact cards and artifact viewer.
 - [x] Inline decision cards.
-- [~] Event replay/resume with `sinceEventId`.
+- [x] Event replay/resume with `sinceEventId`.
 - [x] Streaming transport API.
 
 ## Provider And Model Integration
@@ -160,3 +160,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-skill-evolution-eval-suite`: harness-level skill evolution suite covers crystallization, eval review gates, compact cards, and CLI eval/list coverage.
 - [x] `04-25-04-25-implement-ci-package-install-tests`: GitHub Actions CI runs source tests, builds distributions, installs the wheel, and smoke-tests CLI entrypoints plus packaged web assets.
 - [x] `04-25-implement-generated-tool-installation`: ready generated tool candidates can install as safe aliases to existing tools, load into runtime registries, execute through the harness, and uninstall cleanly.
+- [x] `04-25-implement-web-event-resume-since-event-id`: web replay supports `sinceEventId`, the client stores `last_event_id`, de-duplicates events, and rehydrates the last run.

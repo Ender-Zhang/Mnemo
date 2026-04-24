@@ -30,6 +30,7 @@
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
+- `RunLedger.chat_events_after_event_id(run_id: str, event_id: str | None) -> list[dict[str, Any]]`
 
 ### 3. Contracts
 - `StateStore.initialize()` creates state directories and all current SQLite tables.
@@ -58,6 +59,8 @@
 - Daemon code must execute queued work through the existing `RunRequest` runtime path.
 - `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled status.
 - Generated tool implementations are data, not executable code.
+- Chat replay by `event_id` is derived from persisted `chat.event` payloads in run order.
+- Unknown chat `event_id` returns all chat events for the run so clients can safely rehydrate.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -77,6 +80,7 @@
 | Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
 | Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
+| Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new schema change by appending one `SchemaMigration` and bumping `SCHEMA_VERSION`.
@@ -85,6 +89,7 @@
 - Good: keep backup archives limited to managed state paths and validate every member before extraction.
 - Good: drain queued work through the same runtime entry points used by CLI/web runs.
 - Good: install generated tools by persisting a manifest row and loading it through `ToolRegistry.from_store()`.
+- Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
 - Bad: overwrite `schema_meta.schema_version` without recording the migration ledger.
@@ -103,4 +108,5 @@
 - Import target and archive safety failures are covered.
 - Queue lifecycle, daemon drain, single-instance lock, and stale recovery are covered.
 - Generated tool manifest round-trip and migration coverage are covered.
+- Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.

@@ -37,6 +37,15 @@ class RunLedger:
             if event["event_type"] == "chat.event"
         ]
 
+    def chat_events_after_event_id(self, run_id: str, event_id: str | None) -> list[dict[str, Any]]:
+        events = self.chat_events(run_id)
+        if not event_id:
+            return events
+        for index, event in enumerate(events):
+            if event.get("event_id") == event_id:
+                return events[index + 1 :]
+        return events
+
     def trace_path(self, run_id: str) -> Path:
         return self.store.state_dir / "runs" / f"{run_id}.jsonl"
 

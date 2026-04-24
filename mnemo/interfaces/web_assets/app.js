@@ -2,6 +2,8 @@ const state = {
   conversationId: localStorage.getItem("mnemo.conversation_id") || "",
   missionId: localStorage.getItem("mnemo.mission_id") || "",
   lastRunId: localStorage.getItem("mnemo.last_run_id") || "",
+  lastEventId: localStorage.getItem("mnemo.last_event_id") || "",
+  renderedEventIds: new Set(),
   busy: false,
   assistantNode: null,
   actions: new Map(),
@@ -29,11 +31,18 @@ reset.addEventListener("click", () => {
   state.conversationId = "";
   state.missionId = "";
   state.lastRunId = "";
+  state.lastEventId = "";
+  state.renderedEventIds.clear();
   localStorage.removeItem("mnemo.conversation_id");
   localStorage.removeItem("mnemo.mission_id");
   localStorage.removeItem("mnemo.last_run_id");
+  localStorage.removeItem("mnemo.last_event_id");
   timeline.replaceChildren();
   setStatus("Ready");
+});
+
+window.addEventListener("online", () => {
+  resumeLastRun();
 });
 
 async function runTurn(message) {
@@ -66,8 +75,28 @@ async function runTurn(message) {
     state.busy = false;
     send.disabled = false;
     state.assistantNode = null;
+    await resumeLastRun({ incremental: true });
     setStatus("Ready");
     input.focus();
+  }
+}
+
+async function resumeLastRun(options = {}) {
+  if (!state.lastRunId || state.busy) return;
+  const incremental = Boolean(options.incremental);
+  const params = new URLSearchParams({ run_id: state.lastRunId, chat: "1" });
+  if (incremental && state.lastEventId) {
+    params.set("sinceEventId", state.lastEventId);
+  }
+  try {
+    const response = await fetch(`/api/events?${params.toString()}`);
+    if (!response.ok) return;
+    const payload = await response.json();
+    for (const event of payload.events || []) {
+      handleEvent(event);
+    }
+  } catch (_error) {
+    return;
   }
 }
 
@@ -92,6 +121,14 @@ async function readNdjson(stream, onEvent) {
 }
 
 function handleEvent(event) {
+  persistEventEnvelope(event);
+  if (event.event_id) {
+    if (state.renderedEventIds.has(event.event_id)) return;
+    state.renderedEventIds.add(event.event_id);
+    state.lastEventId = event.event_id;
+    localStorage.setItem("mnemo.last_event_id", state.lastEventId);
+  }
+
   switch (event.type) {
     case "turn.started":
       setStatus("Started");
@@ -133,6 +170,21 @@ function handleEvent(event) {
       break;
     default:
       break;
+  }
+}
+
+function persistEventEnvelope(event) {
+  if (event.conversation_id) {
+    state.conversationId = event.conversation_id;
+    localStorage.setItem("mnemo.conversation_id", state.conversationId);
+  }
+  if (event.mission_id) {
+    state.missionId = event.mission_id;
+    localStorage.setItem("mnemo.mission_id", state.missionId);
+  }
+  if (event.run_id) {
+    state.lastRunId = event.run_id;
+    localStorage.setItem("mnemo.last_run_id", state.lastRunId);
   }
 }
 
@@ -200,9 +252,11 @@ function persistRun(event) {
   state.conversationId = event.conversation_id || result.conversation_id || state.conversationId;
   state.missionId = event.mission_id || result.mission_id || state.missionId;
   state.lastRunId = event.run_id || result.run_id || state.lastRunId;
+  state.lastEventId = event.event_id || state.lastEventId;
   localStorage.setItem("mnemo.conversation_id", state.conversationId);
   localStorage.setItem("mnemo.mission_id", state.missionId);
   localStorage.setItem("mnemo.last_run_id", state.lastRunId);
+  localStorage.setItem("mnemo.last_event_id", state.lastEventId);
 }
 
 function addMessage(role, text) {
@@ -248,3 +302,4 @@ function scrollToEnd() {
 }
 
 input.focus();
+resumeLastRun();

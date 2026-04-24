@@ -59,6 +59,34 @@ class WebInterfaceTests(unittest.TestCase):
                 replay_events = json.loads(replay_body)["events"]
                 self.assertEqual(replay_events[0]["type"], "turn.started")
 
+                since_event_id = replay_events[0]["event_id"]
+                status, _, resumed_body = server.request(
+                    "GET",
+                    f"/api/events?run_id={run_id}&chat=1&sinceEventId={since_event_id}",
+                )
+                self.assertEqual(status, 200)
+                resumed_payload = json.loads(resumed_body)
+                self.assertEqual(resumed_payload["events"][0]["event_id"], replay_events[1]["event_id"])
+                self.assertEqual(resumed_payload["last_event_id"], replay_events[-1]["event_id"])
+
+                status, _, unknown_body = server.request(
+                    "GET",
+                    f"/api/events?run_id={run_id}&chat=1&sinceEventId=evt_missing",
+                )
+                self.assertEqual(status, 200)
+                unknown_events = json.loads(unknown_body)["events"]
+                self.assertEqual(unknown_events[0]["event_id"], replay_events[0]["event_id"])
+
+    def test_web_client_asset_persists_last_event_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request("GET", "/app.js")
+
+                self.assertEqual(status, 200)
+                self.assertIn("mnemo.last_event_id", body)
+                self.assertIn("sinceEventId", body)
+                self.assertIn("renderedEventIds", body)
+
 
 class RunningServer:
     def __init__(self, config: WebServerConfig) -> None:

@@ -129,12 +129,18 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 return
 
             since = _int_param(params, "since", 0)
+            since_event_id = _first_param(params, "sinceEventId")
             chat_only = _bool_param(params, "chat", True)
             store = StateStore(config.state_dir)
             store.initialize()
             ledger = RunLedger(store)
-            events = ledger.chat_events(run_id, since=since) if chat_only else ledger.events_since(run_id, since=since)
-            self._send_json({"events": events})
+            if chat_only and since_event_id:
+                events = ledger.chat_events_after_event_id(run_id, since_event_id)
+            elif chat_only:
+                events = ledger.chat_events(run_id, since=since)
+            else:
+                events = ledger.events_since(run_id, since=since)
+            self._send_json({"events": events, "last_event_id": _last_chat_event_id(events)})
 
         def _send_asset(self, name: str, content_type: str) -> None:
             try:
@@ -249,3 +255,11 @@ def _bool_param(params: dict[str, list[str]], key: str, default: bool) -> bool:
     if value is None:
         return default
     return value.casefold() in {"1", "true", "yes", "on"}
+
+
+def _last_chat_event_id(events: list[dict[str, Any]]) -> str | None:
+    for event in reversed(events):
+        event_id = event.get("event_id")
+        if isinstance(event_id, str) and event_id:
+            return event_id
+    return None
