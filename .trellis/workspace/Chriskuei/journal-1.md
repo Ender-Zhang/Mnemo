@@ -467,3 +467,37 @@ Added shared runtime config resolver, optional JSON config path, env/CLI precede
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Standard local tools foundation
+
+**Date**: 2026-04-25
+**Task**: Standard local tools foundation
+**Branch**: `main`
+
+### Summary
+
+Added workspace-scoped file search/read/write tools, policy-gated HTTP fetch and shell execution, standard tool tests, implementation checklist updates, and executable backend tool harness spec.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9fc9ad3` | (see git log) |
+| `ff8ef35` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

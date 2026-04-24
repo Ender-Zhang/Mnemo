@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 14
+- **Total Sessions**: 15
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~469 | Active |
+| `journal-1.md` | ~503 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 15 | 2026-04-25 | Standard local tools foundation | `9fc9ad3`, `ff8ef35` | `main` |
 | 14 | 2026-04-25 | Runtime config resolver | `f20e1cc` | `main` |
 | 13 | 2026-04-25 | Eval harness foundation | `b105d86` | `main` |
 | 12 | 2026-04-25 | Single chat web frontend | `ffa0752` | `main` |
