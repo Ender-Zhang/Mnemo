@@ -136,3 +136,36 @@ Added PromptBlock and PromptAssembler, provider runtime prompt integration, prom
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Memory engine foundation
+
+**Date**: 2026-04-24
+**Task**: Memory engine foundation
+**Branch**: `main`
+
+### Summary
+
+Added stable memory pages, links, promotion/rejection, deterministic DreamCycle consolidation, memory search CLI, dream CLI, and MemoryEngine tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9df719d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
