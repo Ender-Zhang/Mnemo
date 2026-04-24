@@ -269,3 +269,36 @@ Added lightweight ToolExecutionPolicy enforcement, compact model-facing tool res
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Progressive prompt context
+
+**Date**: 2026-04-25
+**Task**: Progressive prompt context
+**Branch**: `main`
+
+### Summary
+
+Added compact memory and skill prompt indexes, wired them into provider and local runtime prompt assembly, kept full skill bodies out of prompts, added memory/skill/runtime/prompt tests, and updated the implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `64ac371` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
