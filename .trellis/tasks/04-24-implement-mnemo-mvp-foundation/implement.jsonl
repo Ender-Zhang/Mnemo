@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/00-core-architecture.md", "reason": "Lean core and runtime boundaries"}
+{"file": "design/01-memory-engine.md", "reason": "Memory/W0/write pipeline source of truth"}
+{"file": "design/02-skills-tools.md", "reason": "Tool names, skill registry, candidate tools"}
+{"file": "design/07-runtime-harness.md", "reason": "Runtime harness and RunLedger"}
+{"file": "design/10-evolution-loops.md", "reason": "Learning packet and evolution tools"}
+{"file": "design/11-prompt-system.md", "reason": "Prompt/tool-call architecture"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer data contracts"}

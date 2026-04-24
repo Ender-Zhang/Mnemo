@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "design/07-runtime-harness.md", "reason": "Verify runtime acceptance"}
+{"file": "design/10-evolution-loops.md", "reason": "Verify learning candidates"}
