@@ -4,22 +4,25 @@ import time
 from collections.abc import Callable
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..core.errors import NotFoundError, ToolError
 from ..core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolPermission, ToolResult, ToolSpec
 from ..memory import MemoryEngine
-from ..runtime.ledger import RunLedger
 from ..skills import SkillService
 from ..storage import StateStore
+from .evolution import ToolEvolutionService
 from .standard import STANDARD_TOOL_SPECS, standard_tool_evidence, standard_tool_handlers, standard_tool_summary
+
+if TYPE_CHECKING:
+    from ..runtime.ledger import RunLedger
 
 
 ToolHandler = Callable[[dict[str, Any], "ToolContext"], dict[str, Any]]
 
 
 class ToolContext:
-    def __init__(self, *, store: StateStore, ledger: RunLedger, run_id: str, mission_id: str, workspace_root: Path):
+    def __init__(self, *, store: StateStore, ledger: "RunLedger", run_id: str, mission_id: str, workspace_root: Path):
         self.store = store
         self.ledger = ledger
         self.run_id = run_id
@@ -159,6 +162,30 @@ LEARNING_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="eval_record_result",
+        description="Record the result of a proposed eval case for memory, skill, or tool evolution.",
+        risk="write",
+        input_schema=_schema(
+            ["case_id", "status"],
+            {
+                "case_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["passed", "failed"]},
+                "result": {"type": "object", "default": {}},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="tool_review_candidate",
+        description="Review a generated tool candidate against spec validation and passed linked eval cases.",
+        risk="write",
+        input_schema=_schema(
+            ["candidate_id"],
+            {
+                "candidate_id": {"type": "string"},
+            },
+        ),
+    ),
+    ToolSpec(
         name="skill_record_outcome",
         description="Record the observed outcome of using a skill so future skill selection can improve.",
         risk="write",
@@ -201,6 +228,8 @@ class ToolRegistry:
             "skill_propose_candidate": self._skill_propose_candidate,
             "tool_propose_candidate": self._tool_propose_candidate,
             "eval_propose_case": self._eval_propose_case,
+            "eval_record_result": self._eval_record_result,
+            "tool_review_candidate": self._tool_review_candidate,
             "skill_record_outcome": self._skill_record_outcome,
             "learning_discard": self._learning_discard,
         }
@@ -314,6 +343,21 @@ class ToolRegistry:
         )
         return {"case_id": case_id, "status": "draft"}
 
+    def _eval_record_result(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        case_id = _require_str(args, "case_id")
+        status = _require_eval_status(args, "status")
+        if not context.store.get_eval_case(case_id):
+            raise NotFoundError(f"eval case not found: {case_id}")
+        context.store.update_eval_case_status(
+            case_id,
+            status,
+            result=args.get("result") if isinstance(args.get("result"), dict) else {},
+        )
+        return {"case_id": case_id, "status": status}
+
+    def _tool_review_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        return ToolEvolutionService(context.store).review_candidate(_require_str(args, "candidate_id"))
+
     def _skill_record_outcome(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         name = _require_str(args, "name")
         outcome = _require_outcome(args, "outcome")
@@ -338,7 +382,7 @@ class ToolHarness:
         self,
         *,
         store: StateStore,
-        ledger: RunLedger,
+        ledger: "RunLedger",
         registry: ToolRegistry | None = None,
         policy: ToolExecutionPolicy | None = None,
         workspace_root: str | Path | None = None,
@@ -548,6 +592,10 @@ def _tool_summary(result: ToolResult) -> str:
         return standard_summary
     if result.name == "skill_record_outcome":
         return f"Recorded skill outcome: {result.result.get('name', 'unknown')} {result.result.get('outcome', '')}."
+    if result.name == "eval_record_result":
+        return f"Recorded eval result: {result.result.get('status', 'unknown')}."
+    if result.name == "tool_review_candidate":
+        return f"Reviewed tool candidate: {result.result.get('status', 'unknown')}."
     if result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
         return "Learning candidate recorded."
     if result.name == "learning_discard":
@@ -607,6 +655,19 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "outcome": result.result.get("outcome"),
             }
         ]
+    if result.name == "eval_record_result":
+        return [_evidence("eval_case", result.result.get("case_id"), str(result.result.get("status") or "Eval result"))]
+    if result.name == "tool_review_candidate":
+        return [
+            {
+                "kind": "tool_candidate_review",
+                "id": str(result.result.get("candidate_id") or ""),
+                "title": str(result.result.get("name") or "Tool candidate"),
+                "status": result.result.get("status"),
+                "errors": result.result.get("errors", [])[:5],
+                "passed_eval_case_ids": result.result.get("passed_eval_case_ids", [])[:10],
+            }
+        ]
     if result.name == "artifact_update":
         return [_evidence("artifact", result.result.get("artifact_id"), "Artifact")]
     if result.name == "ask_user":
@@ -647,6 +708,13 @@ def _require_outcome(args: dict[str, Any], key: str) -> str:
     value = _require_str(args, key)
     if value not in {"success", "failure", "neutral"}:
         raise ToolError(f"invalid outcome: {value}")
+    return value
+
+
+def _require_eval_status(args: dict[str, Any], key: str) -> str:
+    value = _require_str(args, key)
+    if value not in {"passed", "failed"}:
+        raise ToolError(f"invalid eval status: {value}")
     return value
 
 

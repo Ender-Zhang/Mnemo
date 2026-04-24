@@ -170,6 +170,66 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertEqual(usage[0]["score"], -1.0)
 
+    def test_eval_result_and_tool_review_candidate_mark_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+            candidate = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_propose_candidate",
+                    arguments={
+                        "name": "reader",
+                        "spec": {
+                            "name": "reader",
+                            "description": "Read a resource",
+                            "risk": "read",
+                            "input_schema": {"type": "object", "properties": {}, "required": []},
+                        },
+                    },
+                    call_id="call_tool_candidate",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            eval_case = harness.execute(
+                ToolCallEnvelope(
+                    name="eval_propose_case",
+                    arguments={"name": "reader smoke", "case": {"tool_candidate": "reader"}},
+                    call_id="call_eval_case",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            eval_result = harness.execute(
+                ToolCallEnvelope(
+                    name="eval_record_result",
+                    arguments={"case_id": eval_case.result["case_id"], "status": "passed", "result": {"ok": True}},
+                    call_id="call_eval_result",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            review = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_review_candidate",
+                    arguments={"candidate_id": candidate.result["candidate_id"]},
+                    call_id="call_tool_review",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(eval_result.ok)
+            self.assertTrue(review.ok)
+            self.assertEqual(review.result["status"], "ready")
+            self.assertEqual(store.get_tool_candidate(candidate.result["candidate_id"])["status"], "ready")
+            self.assertIn(eval_case.result["case_id"], review.result["passed_eval_case_ids"])
+            self.assertIn("Reviewed tool candidate", review.summary)
+
 
 def _store_with_run(tmp: str) -> tuple[StateStore, str, str]:
     store = StateStore(tmp)

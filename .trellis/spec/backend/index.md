@@ -23,6 +23,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Prompt Assembly Contracts](./prompt-assembly.md) | Cache-friendly prompt ordering, context budgeting, and metadata | Active |
 | [Memory Engine Contracts](./memory-engine.md) | Candidate consolidation, reinforcement, conflict signals, and provenance links | Active |
 | [Skill Evolution Contracts](./skill-evolution.md) | Skill usage/outcome signals, compact cards, and model-driven evolution | Active |
+| [Tool Evolution Contracts](./tool-evolution.md) | Generated tool candidate lifecycle, eval results, and readiness gate | Active |
 
 ---
 

@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/storage/sqlite.py", "reason": "candidate and eval persistence"}
+{"file": "mnemo/tools/registry.py", "reason": "model-facing lifecycle tools"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "tool lifecycle contract"}
+{"file": "tests/test_tools.py", "reason": "tool harness tests"}
+{"file": "tests/test_storage.py", "reason": "storage lifecycle tests"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "candidate lifecycle crosses tools storage evals"}
+{"file": "mnemo/tools/evolution.py", "reason": "tool candidate review service"}
+{"file": "tests/test_tool_evolution.py", "reason": "tool evolution service tests"}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "executable tool evolution contract"}

@@ -90,6 +90,38 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(stats["successes"], 1)
             self.assertEqual(stats["avg_score"], 0.8)
 
+    def test_tool_candidates_and_eval_cases_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("test")
+            mission_id = store.create_mission(conversation_id, "test mission")
+            run_id = store.create_run(conversation_id, mission_id, "tools")
+
+            candidate_id = store.add_tool_candidate(
+                run_id,
+                "fetch_page",
+                {"description": "Fetch pages", "risk": "read", "input_schema": {"type": "object"}},
+            )
+            case_id = store.add_eval_case(
+                run_id,
+                "fetch_page smoke",
+                {"tool_candidate": "fetch_page", "assert": "returns text"},
+            )
+            store.update_tool_candidate_status(candidate_id, "ready")
+            store.update_eval_case_status(case_id, "passed", result={"ok": True})
+
+            candidate = store.get_tool_candidate(candidate_id)
+            cases = store.list_eval_cases(status="passed", tool_name="fetch_page")
+            listed = store.list_tool_candidates(status="ready")
+
+            self.assertEqual(candidate["status"], "ready")
+            self.assertEqual(candidate["spec"]["risk"], "read")
+            self.assertEqual(listed[0]["id"], candidate_id)
+            self.assertEqual(cases[0]["id"], case_id)
+            self.assertEqual(cases[0]["case"]["tool_candidate"], "fetch_page")
+            self.assertEqual(cases[0]["result"], {"ok": True})
+
 
 if __name__ == "__main__":
     unittest.main()

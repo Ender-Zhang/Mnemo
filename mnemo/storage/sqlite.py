@@ -177,6 +177,7 @@ class StateStore:
                     name TEXT NOT NULL,
                     case_json TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    result_json TEXT,
                     created_at REAL NOT NULL
                 );
 
@@ -207,6 +208,7 @@ class StateStore:
                 ("schema_version", str(SCHEMA_VERSION)),
             )
             _ensure_column(conn, "skills", "path", "TEXT")
+            _ensure_column(conn, "eval_cases", "result_json", "TEXT")
 
     def create_conversation(self, title: str | None = None) -> str:
         now = time.time()
@@ -738,6 +740,40 @@ class StateStore:
             )
         return candidate_id
 
+    def get_tool_candidate(self, candidate_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, run_id, name, spec_json, status, created_at
+                FROM tool_candidates
+                WHERE id = ?
+                """,
+                (candidate_id,),
+            ).fetchone()
+        return _tool_candidate_from_row(row) if row else None
+
+    def list_tool_candidates(self, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, run_id, name, spec_json, status, created_at
+            FROM tool_candidates
+        """
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_tool_candidate_from_row(row) for row in rows]
+
+    def update_tool_candidate_status(self, candidate_id: str, status: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE tool_candidates SET status = ? WHERE id = ?",
+                (status, candidate_id),
+            )
+
     def add_eval_case(self, run_id: str, name: str, case: dict[str, Any]) -> str:
         case_id = new_id("eval")
         with self.connect() as conn:
@@ -746,6 +782,55 @@ class StateStore:
                 (case_id, run_id, name, dumps(case), "draft", time.time()),
             )
         return case_id
+
+    def get_eval_case(self, case_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, run_id, name, case_json, status, result_json, created_at
+                FROM eval_cases
+                WHERE id = ?
+                """,
+                (case_id,),
+            ).fetchone()
+        return _eval_case_from_row(row) if row else None
+
+    def list_eval_cases(
+        self,
+        status: str | None = None,
+        *,
+        tool_name: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, run_id, name, case_json, status, result_json, created_at
+            FROM eval_cases
+        """
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        cases = [_eval_case_from_row(row) for row in rows]
+        if not tool_name:
+            return cases
+        return [case for case in cases if _eval_case_targets_tool(case, tool_name)]
+
+    def update_eval_case_status(
+        self,
+        case_id: str,
+        status: str,
+        *,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE eval_cases SET status = ?, result_json = COALESCE(?, result_json) WHERE id = ?",
+                (status, dumps(result) if result is not None else None, case_id),
+            )
 
     def upsert_artifact(self, mission_id: str, run_id: str, title: str, body: str, kind: str = "markdown") -> str:
         artifact_id = new_id("art")
@@ -787,6 +872,29 @@ def _skill_usage_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["evidence"] = loads(result.pop("evidence_json"), [])
     return result
+
+
+def _tool_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["spec"] = loads(result.pop("spec_json"), {})
+    return result
+
+
+def _eval_case_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["case"] = loads(result.pop("case_json"), {})
+    raw_result = result.pop("result_json", None)
+    result["result"] = loads(raw_result, {}) if raw_result else {}
+    return result
+
+
+def _eval_case_targets_tool(case: dict[str, Any], tool_name: str) -> bool:
+    payload = case.get("case") or {}
+    return tool_name in {
+        payload.get("tool_candidate"),
+        payload.get("tool_name"),
+        payload.get("name"),
+    }
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
