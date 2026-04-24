@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "RunLedger event replay storage context"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "ChatEvent stream and compact event contracts"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Frontend state persistence conventions"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer event resume flow"}

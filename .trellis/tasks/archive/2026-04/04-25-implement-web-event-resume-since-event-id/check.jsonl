@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Replay API validation context"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Frontend resume validation context"}
