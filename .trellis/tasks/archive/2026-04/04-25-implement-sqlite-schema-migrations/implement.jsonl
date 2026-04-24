@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "SQLite schema migration contracts"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Storage initialization crosses schema/API/tests"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing ensure_column/init patterns"}
