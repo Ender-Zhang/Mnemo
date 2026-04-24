@@ -302,3 +302,36 @@ Added compact memory and skill prompt indexes, wired them into provider and loca
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: OpenAI streaming provider
+
+**Date**: 2026-04-25
+**Task**: OpenAI streaming provider
+**Branch**: `main`
+
+### Summary
+
+Added OpenAI-compatible SSE parsing, true streamed assistant deltas, streamed tool-call chunk accumulation, CLI provider stream configuration, provider tests, and checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f62ae8c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

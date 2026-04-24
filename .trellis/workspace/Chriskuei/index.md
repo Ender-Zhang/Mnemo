@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~304 | Active |
+| `journal-1.md` | ~337 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-04-25 | OpenAI streaming provider | `f62ae8c` | `main` |
 | 9 | 2026-04-25 | Progressive prompt context | `64ac371` | `main` |
 | 8 | 2026-04-24 | Tool boundary cards | `fd57913`, `1cca9f2` | `main` |
 | 7 | 2026-04-24 | Event replay foundation | `56a7076` | `main` |
