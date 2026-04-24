@@ -53,11 +53,11 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Memory candidate writes with evidence/provenance.
 - [x] Memory candidate search/read.
 - [x] Stable memory is not directly mutated by normal task tools.
-- [ ] Memory engine pages/indexes beyond candidates.
-- [ ] Associative recall / LLM Wiki style memory graph.
+- [x] Memory engine pages/indexes beyond candidates.
+- [~] Associative recall / LLM Wiki style memory graph.
 - [ ] Conflict detection and confidence updates.
 - [ ] W0 working memory to long-term candidate pipeline.
-- [ ] DreamCycle idle memory consolidation.
+- [x] DreamCycle idle memory consolidation.
 - [ ] Daily compiled L1 cache-friendly memory snapshot.
 - [ ] Memory eval cases and regression gates.
 
@@ -131,3 +131,4 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] `04-24-implement-provider-backed-runtime`: OpenAI-compatible provider config, adapter, runtime bridge, CLI selection, timeout errors, and fake-server tests implemented.
 - [~] `04-24-implement-prompt-assembly-foundation`: PromptBlock, PromptAssembler, provider runtime integration, and prompt inspect CLI are in progress.
+- [~] `04-24-implement-memory-engine-foundation`: memory pages, promotion/rejection, stable search, and deterministic DreamCycle are in progress.

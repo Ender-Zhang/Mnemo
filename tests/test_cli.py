@@ -116,6 +116,26 @@ class CliTests(unittest.TestCase):
             self.assertEqual(events[-1]["type"], "run.error")
             self.assertIn("timed out", events[-1]["data"]["error"])
 
+    def test_memory_search_and_dream_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _run_cli(["run", "remember: User likes DreamCycle", "--state-dir", tmp, "--json"])
+            self.assertEqual(run.returncode, 0, run.stderr)
+
+            search_before = _run_cli(["memory", "search", "DreamCycle", "--state-dir", tmp, "--json"])
+            self.assertEqual(search_before.returncode, 0, search_before.stderr)
+            before_payload = json.loads(search_before.stdout)
+            self.assertEqual(before_payload["matches"][0]["type"], "candidate")
+
+            dream = _run_cli(["dream", "run", "--state-dir", tmp, "--min-confidence", "0.7", "--json"])
+            self.assertEqual(dream.returncode, 0, dream.stderr)
+            dream_payload = json.loads(dream.stdout)
+            self.assertEqual(len(dream_payload["promoted"]), 1)
+
+            search_after = _run_cli(["memory", "search", "DreamCycle", "--state-dir", tmp, "--json"])
+            self.assertEqual(search_after.returncode, 0, search_after.stderr)
+            after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
+            self.assertIn("page", after_types)
+
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()

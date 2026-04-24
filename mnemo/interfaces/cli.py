@@ -10,6 +10,7 @@ from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
+from ..memory import MemoryEngine
 from ..providers import OpenAIProviderAdapter, ProviderConfig
 from ..runtime import result_as_dict, run_local, stream_local
 from ..runtime.ledger import RunLedger
@@ -33,6 +34,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_run(args)
         if args.command == "events":
             return _cmd_events(args)
+        if args.command == "memory":
+            return _cmd_memory(args)
+        if args.command == "dream":
+            return _cmd_dream(args)
         if args.command == "prompt":
             return _cmd_prompt(args)
         if args.command == "tools":
@@ -78,6 +83,31 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(events_parser)
     events_parser.add_argument("run_id")
     events_parser.add_argument("--json", action="store_true")
+
+    memory_parser = subparsers.add_parser("memory", help="Search and curate memory")
+    memory_subparsers = memory_parser.add_subparsers(dest="memory_command")
+    memory_search_parser = memory_subparsers.add_parser("search", help="Search memory pages and candidates")
+    _add_state_dir(memory_search_parser)
+    memory_search_parser.add_argument("query", nargs="+")
+    memory_search_parser.add_argument("--limit", type=int, default=5)
+    memory_search_parser.add_argument("--json", action="store_true")
+    memory_promote_parser = memory_subparsers.add_parser("promote", help="Promote a memory candidate")
+    _add_state_dir(memory_promote_parser)
+    memory_promote_parser.add_argument("candidate_id")
+    memory_promote_parser.add_argument("--json", action="store_true")
+    memory_reject_parser = memory_subparsers.add_parser("reject", help="Reject a memory candidate")
+    _add_state_dir(memory_reject_parser)
+    memory_reject_parser.add_argument("candidate_id")
+    memory_reject_parser.add_argument("--reason", default="not durable")
+    memory_reject_parser.add_argument("--json", action="store_true")
+
+    dream_parser = subparsers.add_parser("dream", help="Run idle consolidation cycles")
+    dream_subparsers = dream_parser.add_subparsers(dest="dream_command")
+    dream_run_parser = dream_subparsers.add_parser("run", help="Run deterministic memory consolidation")
+    _add_state_dir(dream_run_parser)
+    dream_run_parser.add_argument("--limit", type=int, default=20)
+    dream_run_parser.add_argument("--min-confidence", type=float, default=0.7)
+    dream_run_parser.add_argument("--json", action="store_true")
 
     prompt_parser = subparsers.add_parser("prompt", help="Inspect prompt assembly metadata")
     prompt_subparsers = prompt_parser.add_subparsers(dest="prompt_command")
@@ -152,6 +182,54 @@ def _cmd_events(args: argparse.Namespace) -> int:
     for event in events:
         print(f"{event['seq']:03d} {event['event_type']} {dumps(event['payload'])}")
     return 0
+
+
+def _cmd_memory(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    store.initialize()
+    engine = MemoryEngine(store)
+
+    if args.memory_command == "search":
+        result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
+    elif args.memory_command == "promote":
+        result = engine.promote_candidate(args.candidate_id)
+    elif args.memory_command == "reject":
+        result = engine.reject_candidate(args.candidate_id, args.reason)
+    else:
+        raise MnemoError("memory command requires a subcommand")
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_memory_result(result)
+    return 0
+
+
+def _cmd_dream(args: argparse.Namespace) -> int:
+    if args.dream_command != "run":
+        raise MnemoError("dream command requires a subcommand")
+    store = StateStore(args.state_dir)
+    store.initialize()
+    result = MemoryEngine(store).dream_consolidate(limit=args.limit, min_confidence=args.min_confidence)
+    if args.json:
+        print(dumps(result))
+        return 0
+    print(
+        "DreamCycle completed: "
+        f"promoted={len(result['promoted'])} rejected={len(result['rejected'])} skipped={len(result['skipped'])}"
+    )
+    return 0
+
+
+def _print_memory_result(result: dict) -> None:
+    if "matches" in result:
+        for item in result["matches"]:
+            if item["type"] == "page":
+                print(f"page {item['id']}: {item['title']} ({item['confidence']:.2f})")
+            else:
+                print(f"candidate {item['id']}: {item['claim']} [{item['status']}]")
+        return
+    print(dumps(result))
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:

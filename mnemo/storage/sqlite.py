@@ -117,6 +117,27 @@ class StateStore:
                     created_at REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS memory_pages (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    scope TEXT NOT NULL,
+                    confidence REAL NOT NULL,
+                    status TEXT NOT NULL,
+                    source_candidate_id TEXT REFERENCES memory_candidates(id),
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS memory_links (
+                    id TEXT PRIMARY KEY,
+                    source_id TEXT NOT NULL,
+                    target_id TEXT NOT NULL,
+                    relation TEXT NOT NULL,
+                    weight REAL NOT NULL,
+                    created_at REAL NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS skills (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL UNIQUE,
@@ -159,6 +180,10 @@ class StateStore:
 
                 CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id, seq);
                 CREATE INDEX IF NOT EXISTS idx_memory_candidates_claim ON memory_candidates(claim);
+                CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status);
+                CREATE INDEX IF NOT EXISTS idx_memory_pages_title ON memory_pages(title);
+                CREATE INDEX IF NOT EXISTS idx_memory_pages_content ON memory_pages(content);
+                CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
                 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
                 """
             )
@@ -358,17 +383,32 @@ class StateStore:
                 (pattern, limit),
             ).fetchall()
         return [
-            {
-                "id": row["id"],
-                "claim": row["claim"],
-                "dimension": row["dimension"],
-                "scope": row["scope"],
-                "confidence": row["confidence"],
-                "status": row["status"],
-                "evidence": loads(row["evidence_json"], []),
-            }
+            _memory_candidate_from_row(row)
             for row in rows
         ]
+
+    def list_memory_candidates(self, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, run_id, claim, dimension, scope, confidence, status, evidence_json, created_at
+            FROM memory_candidates
+        """
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_memory_candidate_from_row(row) for row in rows]
+
+    def update_memory_candidate_status(self, candidate_id: str, status: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE memory_candidates SET status = ? WHERE id = ?",
+                (status, candidate_id),
+            )
 
     def get_memory_candidate(self, candidate_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -382,9 +422,114 @@ class StateStore:
             ).fetchone()
         if not row:
             return None
-        result = dict(row)
-        result["evidence"] = loads(result.pop("evidence_json"), [])
-        return result
+        return _memory_candidate_from_row(row)
+
+    def upsert_memory_page(
+        self,
+        title: str,
+        content: str,
+        *,
+        scope: str = "global",
+        source_candidate_id: str | None = None,
+        confidence: float = 0.7,
+        status: str = "active",
+    ) -> str:
+        now = time.time()
+        with self.connect() as conn:
+            existing = None
+            if source_candidate_id:
+                existing = conn.execute(
+                    "SELECT id FROM memory_pages WHERE source_candidate_id = ?",
+                    (source_candidate_id,),
+                ).fetchone()
+            if not existing:
+                existing = conn.execute(
+                    "SELECT id FROM memory_pages WHERE title = ? AND scope = ?",
+                    (title, scope),
+                ).fetchone()
+
+            if existing:
+                page_id = str(existing["id"])
+                conn.execute(
+                    """
+                    UPDATE memory_pages
+                    SET content = ?, confidence = ?, status = ?, source_candidate_id = COALESCE(?, source_candidate_id),
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (content, confidence, status, source_candidate_id, now, page_id),
+                )
+            else:
+                page_id = new_id("mempg")
+                conn.execute(
+                    """
+                    INSERT INTO memory_pages(
+                        id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (page_id, title, content, scope, confidence, status, source_candidate_id, now, now),
+                )
+        return page_id
+
+    def search_memory_pages(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        pattern = f"%{query}%"
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+                FROM memory_pages
+                WHERE status = 'active' AND (title LIKE ? OR content LIKE ?)
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (pattern, pattern, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_memory_page(self, page_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+                FROM memory_pages
+                WHERE id = ?
+                """,
+                (page_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def add_memory_link(
+        self,
+        source_id: str,
+        target_id: str,
+        relation: str,
+        *,
+        weight: float = 1.0,
+    ) -> str:
+        link_id = new_id("mlink")
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO memory_links(id, source_id, target_id, relation, weight, created_at)
+                VALUES(?, ?, ?, ?, ?, ?)
+                """,
+                (link_id, source_id, target_id, relation, weight, time.time()),
+            )
+        return link_id
+
+    def list_memory_links(self, source_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, source_id, target_id, relation, weight, created_at
+                FROM memory_links
+                WHERE source_id = ?
+                ORDER BY weight DESC, created_at DESC
+                """,
+                (source_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def upsert_skill(self, name: str, description: str, body: str, source: str = "generated") -> str:
         now = time.time()
@@ -471,3 +616,9 @@ class StateStore:
             }
             for row in rows
         ]
+
+
+def _memory_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["evidence"] = loads(result.pop("evidence_json"), [])
+    return result

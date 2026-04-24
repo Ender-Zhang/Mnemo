@@ -6,6 +6,7 @@ from typing import Any
 
 from ..core.errors import NotFoundError, ToolError
 from ..core.models import ToolCallEnvelope, ToolResult, ToolSpec
+from ..memory import MemoryEngine
 from ..runtime.ledger import RunLedger
 from ..storage import StateStore
 
@@ -201,7 +202,7 @@ class ToolRegistry:
     def _memory_search(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         query = _require_str(args, "query")
         limit = int(args.get("limit", 5))
-        return {"matches": context.store.search_memory_candidates(query, limit=limit)}
+        return {"matches": MemoryEngine(context.store).search(query, limit=limit)}
 
     def _memory_read(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         candidate_id = _require_str(args, "id")
