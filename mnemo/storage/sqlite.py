@@ -13,11 +13,12 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
 MANAGED_STATE_FILES = ("state.db",)
+QUEUE_STATUSES = ("pending", "running", "completed", "failed")
 
 
 @dataclass(frozen=True)
@@ -463,6 +464,198 @@ class StateStore:
                 """,
                 (status, error, time.time(), event_id),
             )
+
+    def enqueue_run_request(
+        self,
+        message: str,
+        *,
+        conversation_id: str | None = None,
+        mission_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        available_at: float | None = None,
+    ) -> str:
+        clean_message = " ".join(message.strip().split())
+        if not clean_message:
+            raise ValueError("queue message is required")
+        now = time.time()
+        queue_id = new_id("queue")
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO run_queue(
+                    id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                    worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                    last_error, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    queue_id,
+                    clean_message,
+                    conversation_id,
+                    mission_id,
+                    dumps(metadata or {}),
+                    "pending",
+                    0,
+                    None,
+                    None,
+                    now if available_at is None else available_at,
+                    None,
+                    None,
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+        return queue_id
+
+    def list_queue_items(self, status: str | None = None, *, limit: int = 50) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                   worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                   last_error, created_at, updated_at
+            FROM run_queue
+        """
+        params: list[Any] = []
+        if status:
+            if status not in QUEUE_STATUSES:
+                raise ValueError(f"invalid queue status: {status}")
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY created_at ASC, id ASC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_queue_item_from_row(row) for row in rows]
+
+    def claim_next_queue_item(self, worker_id: str) -> dict[str, Any] | None:
+        clean_worker_id = worker_id.strip() or "worker"
+        now = time.time()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id
+                FROM run_queue
+                WHERE status = 'pending' AND available_at <= ?
+                ORDER BY available_at ASC, created_at ASC, id ASC
+                LIMIT 1
+                """,
+                (now,),
+            ).fetchone()
+            if not row:
+                return None
+            queue_id = str(row["id"])
+            cursor = conn.execute(
+                """
+                UPDATE run_queue
+                SET status = 'running', attempts = attempts + 1, worker_id = ?, claimed_at = ?,
+                    heartbeat_at = ?, last_error = NULL, updated_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (clean_worker_id, now, now, now, queue_id),
+            )
+            if cursor.rowcount != 1:
+                return None
+            claimed = conn.execute(
+                """
+                SELECT id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                       worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                       last_error, created_at, updated_at
+                FROM run_queue
+                WHERE id = ?
+                """,
+                (queue_id,),
+            ).fetchone()
+        return _queue_item_from_row(claimed) if claimed else None
+
+    def heartbeat_queue_item(self, queue_id: str) -> None:
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE run_queue SET heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = 'running'",
+                (now, now, queue_id),
+            )
+
+    def complete_queue_item(
+        self,
+        queue_id: str,
+        status: str,
+        *,
+        run_id: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        if status not in {"completed", "failed"}:
+            raise ValueError(f"invalid queue completion status: {status}")
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE run_queue
+                SET status = ?, run_id = COALESCE(?, run_id), completed_at = ?, last_error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, run_id, now, None if status == "completed" else error, now, queue_id),
+            )
+
+    def recover_stale_queue_items(self, stale_after_s: float = 900.0) -> list[dict[str, Any]]:
+        now = time.time()
+        cutoff = now - max(0.0, float(stale_after_s))
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                       worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                       last_error, created_at, updated_at
+                FROM run_queue
+                WHERE status = 'running' AND COALESCE(heartbeat_at, claimed_at, updated_at) <= ?
+                ORDER BY claimed_at ASC, created_at ASC
+                """,
+                (cutoff,),
+            ).fetchall()
+            recovered_ids = [str(row["id"]) for row in rows]
+            for queue_id in recovered_ids:
+                conn.execute(
+                    """
+                    UPDATE run_queue
+                    SET status = 'pending', worker_id = NULL, claimed_at = NULL, heartbeat_at = NULL,
+                        last_error = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    ("recovered stale running job", now, queue_id),
+                )
+            if not recovered_ids:
+                return []
+            placeholders = ",".join("?" for _ in recovered_ids)
+            updated = conn.execute(
+                f"""
+                SELECT id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                       worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                       last_error, created_at, updated_at
+                FROM run_queue
+                WHERE id IN ({placeholders})
+                ORDER BY updated_at DESC, id ASC
+                """,
+                recovered_ids,
+            ).fetchall()
+        return [_queue_item_from_row(row) for row in updated]
+
+    def queue_stats(self) -> dict[str, Any]:
+        counts = {status: 0 for status in QUEUE_STATUSES}
+        with self.connect() as conn:
+            rows = conn.execute("SELECT status, COUNT(*) AS count FROM run_queue GROUP BY status").fetchall()
+            oldest = conn.execute(
+                "SELECT MIN(created_at) AS oldest_pending_at FROM run_queue WHERE status = 'pending'"
+            ).fetchone()
+        for row in rows:
+            status = str(row["status"])
+            if status in counts:
+                counts[status] = int(row["count"])
+        return {
+            "counts": counts,
+            "total": sum(counts.values()),
+            "oldest_pending_at": oldest["oldest_pending_at"] if oldest else None,
+        }
 
     def record_tool_call(
         self,
@@ -1126,6 +1319,12 @@ def _outbox_event_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return result
 
 
+def _queue_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json"), {})
+    return result
+
+
 def _iter_export_files(state_dir: Path, archive_path: Path) -> Iterable[Path]:
     archive_path = archive_path.resolve()
     for filename in MANAGED_STATE_FILES:
@@ -1299,10 +1498,41 @@ def _migration_event_outbox(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_run_queue(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS run_queue (
+            id TEXT PRIMARY KEY,
+            message TEXT NOT NULL,
+            conversation_id TEXT,
+            mission_id TEXT,
+            metadata_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            worker_id TEXT,
+            run_id TEXT,
+            available_at REAL NOT NULL,
+            claimed_at REAL,
+            heartbeat_at REAL,
+            completed_at REAL,
+            last_error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_run_queue_status_available
+            ON run_queue(status, available_at, created_at);
+        CREATE INDEX IF NOT EXISTS idx_run_queue_status_heartbeat
+            ON run_queue(status, heartbeat_at, claimed_at);
+        """
+    )
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
     SchemaMigration(3, "event_outbox", _migration_event_outbox),
+    SchemaMigration(4, "run_queue", _migration_run_queue),
 )
 
 

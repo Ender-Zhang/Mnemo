@@ -22,8 +22,9 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "runs").is_dir())
             self.assertTrue((Path(tmp) / "artifacts").is_dir())
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4])
             self.assertIn("event_outbox", _tables(Path(tmp) / "state.db"))
+            self.assertIn("run_queue", _tables(Path(tmp) / "state.db"))
 
     def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -35,8 +36,8 @@ class StateStoreTests(unittest.TestCase):
             second = store.applied_migrations()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in first], [1, 2, 3])
-            self.assertEqual([item["version"] for item in second], [1, 2, 3])
+            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4])
+            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4])
             self.assertEqual(len(first), len(second))
 
     def test_initialize_upgrades_legacy_schema_columns(self) -> None:
@@ -100,11 +101,12 @@ class StateStoreTests(unittest.TestCase):
             store.initialize()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4])
             self.assertIn("path", _columns(db_path, "skills"))
             self.assertIn("result_json", _columns(db_path, "eval_cases"))
             self.assertIn("metadata_json", _columns(db_path, "working_notes"))
             self.assertIn("event_outbox", _tables(db_path))
+            self.assertIn("run_queue", _tables(db_path))
             self.assertIsNone(store.get_skill("legacy")["path"])
             self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
             legacy_note = store.list_working_notes(status=None)[0]
@@ -168,6 +170,54 @@ class StateStoreTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "invalid outbox status"):
                 store.mark_outbox_event(event_id, "unknown")
+
+    def test_run_queue_lifecycle_and_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            queue_id = store.enqueue_run_request(
+                "remember: queued storage",
+                metadata={"source": "test"},
+            )
+
+            pending = store.list_queue_items(status="pending")
+            claimed = store.claim_next_queue_item("worker-1")
+            store.heartbeat_queue_item(queue_id)
+            store.complete_queue_item(queue_id, "completed", run_id="run_storage")
+            completed = store.list_queue_items(status="completed")
+
+            self.assertEqual(pending[0]["id"], queue_id)
+            self.assertEqual(pending[0]["metadata"], {"source": "test"})
+            self.assertEqual(claimed["status"], "running")
+            self.assertEqual(claimed["attempts"], 1)
+            self.assertEqual(completed[0]["run_id"], "run_storage")
+            self.assertEqual(store.queue_stats()["counts"]["completed"], 1)
+
+            stale_id = store.enqueue_run_request("remember: stale storage")
+            store.claim_next_queue_item("worker-2")
+            with store.connect() as conn:
+                conn.execute(
+                    "UPDATE run_queue SET claimed_at = 0, heartbeat_at = 0 WHERE id = ?",
+                    (stale_id,),
+                )
+            recovered = store.recover_stale_queue_items(stale_after_s=1.0)
+
+            self.assertEqual(recovered[0]["id"], stale_id)
+            self.assertEqual(recovered[0]["status"], "pending")
+            self.assertEqual(store.list_queue_items(status="pending")[0]["id"], stale_id)
+
+    def test_run_queue_rejects_invalid_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            queue_id = store.enqueue_run_request("valid")
+
+            with self.assertRaisesRegex(ValueError, "queue message is required"):
+                store.enqueue_run_request("   ")
+            with self.assertRaisesRegex(ValueError, "invalid queue status"):
+                store.list_queue_items(status="unknown")
+            with self.assertRaisesRegex(ValueError, "invalid queue completion status"):
+                store.complete_queue_item(queue_id, "running")
 
     def test_memory_candidate_search_and_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

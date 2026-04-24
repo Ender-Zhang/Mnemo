@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Sequence
+from typing import Any, Sequence
 
 from .. import __version__
 from ..core.config import ConfigOverrides, DEFAULT_PROVIDER, DEFAULT_STATE_DIR, resolve_runtime_config
@@ -14,9 +14,9 @@ from ..core.models import RunRequest
 from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
 from ..providers import OpenAIProviderAdapter, ProviderConfig
-from ..runtime import result_as_dict, run_local, stream_local
+from ..runtime import DaemonRunner, result_as_dict, run_local, run_provider, stream_local
 from ..runtime.ledger import RunLedger
-from ..runtime.provider import run_provider, stream_provider
+from ..runtime.provider import stream_provider
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolRegistry, tool_specs_as_json_schema
@@ -50,6 +50,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_web(args)
         if args.command == "harness":
             return _cmd_harness(args)
+        if args.command == "daemon":
+            return _cmd_daemon(args)
         if args.command == "backup":
             return _cmd_backup(args)
         if args.command == "config":
@@ -204,6 +206,35 @@ def build_parser() -> argparse.ArgumentParser:
     harness_replay_parser.add_argument("--json", action="store_true")
     harness_list_parser = harness_subparsers.add_parser("list", help="List built-in eval suites")
     harness_list_parser.add_argument("--json", action="store_true")
+
+    daemon_parser = subparsers.add_parser("daemon", help="Manage the lightweight run queue")
+    daemon_subparsers = daemon_parser.add_subparsers(dest="daemon_command")
+    daemon_enqueue_parser = daemon_subparsers.add_parser("enqueue", help="Queue a run request")
+    _add_state_dir(daemon_enqueue_parser)
+    daemon_enqueue_parser.add_argument("message", nargs="+")
+    daemon_enqueue_parser.add_argument("--conversation-id")
+    daemon_enqueue_parser.add_argument("--mission-id")
+    daemon_enqueue_parser.add_argument("--json", action="store_true")
+    daemon_run_parser = daemon_subparsers.add_parser("run", help="Drain queued run requests")
+    _add_state_dir(daemon_run_parser)
+    daemon_run_parser.add_argument("--limit", type=int, default=1)
+    daemon_run_parser.add_argument("--stale-after-s", type=float, default=900.0)
+    daemon_run_parser.add_argument("--worker-id")
+    daemon_run_parser.add_argument("--provider", choices=["local", "openai-compatible"], default=None)
+    daemon_run_parser.add_argument("--base-url")
+    daemon_run_parser.add_argument("--model")
+    daemon_run_parser.add_argument("--api-key")
+    daemon_run_parser.add_argument("--api-key-env")
+    daemon_run_parser.add_argument("--timeout-s", type=float)
+    daemon_run_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+    daemon_run_parser.add_argument("--json", action="store_true")
+    daemon_status_parser = daemon_subparsers.add_parser("status", help="Print queue and lock status")
+    _add_state_dir(daemon_status_parser)
+    daemon_status_parser.add_argument("--json", action="store_true")
+    daemon_recover_parser = daemon_subparsers.add_parser("recover", help="Requeue stale running jobs")
+    _add_state_dir(daemon_recover_parser)
+    daemon_recover_parser.add_argument("--stale-after-s", type=float, default=900.0)
+    daemon_recover_parser.add_argument("--json", action="store_true")
 
     backup_parser = subparsers.add_parser("backup", help="Export or import Mnemo state")
     backup_subparsers = backup_parser.add_subparsers(dest="backup_command")
@@ -534,6 +565,78 @@ def _cmd_config(args: argparse.Namespace) -> int:
         for key in ("state_dir", "provider", "base_url", "model", "api_key_env", "api_key", "timeout_s", "config_path"):
             print(f"{key}={payload.get(key)}")
     return 0
+
+
+def _cmd_daemon(args: argparse.Namespace) -> int:
+    if args.daemon_command == "enqueue":
+        runner = DaemonRunner(args.state_dir)
+        try:
+            queue_id = runner.enqueue(
+                " ".join(args.message),
+                conversation_id=args.conversation_id,
+                mission_id=args.mission_id,
+                metadata={"source": "cli"},
+            )
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
+        result = {"queue_id": queue_id, "status": "pending"}
+    elif args.daemon_command == "run":
+        config = _runtime_config_from_args(args)
+        runner = DaemonRunner(config.state_dir)
+        result = runner.drain(
+            _queued_executor(args),
+            limit=args.limit,
+            stale_after_s=args.stale_after_s,
+            worker_id=args.worker_id,
+        )
+    elif args.daemon_command == "status":
+        result = DaemonRunner(args.state_dir).status()
+    elif args.daemon_command == "recover":
+        result = DaemonRunner(args.state_dir).recover(stale_after_s=args.stale_after_s)
+    else:
+        raise MnemoError("daemon command requires a subcommand")
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_daemon_result(args.daemon_command, result)
+    return 0
+
+
+def _queued_executor(args: argparse.Namespace):
+    config = _runtime_config_from_args(args)
+    if config.provider == "local":
+        return run_local
+    adapter = _openai_compatible_adapter(args)
+
+    def execute(request: RunRequest):
+        return run_provider(request, adapter)
+
+    return execute
+
+
+def _print_daemon_result(command: str, result: dict[str, Any]) -> None:
+    if command == "enqueue":
+        print(f"Queued run {result['queue_id']}")
+        return
+    if command == "run":
+        print(
+            f"Daemon processed={len(result['processed'])} recovered={len(result['recovered'])} "
+            f"pending={result['stats']['counts']['pending']}"
+        )
+        return
+    if command == "status":
+        counts = result["queue"]["counts"]
+        lock = "locked" if result["lock"].get("locked") else "unlocked"
+        print(
+            f"Queue pending={counts['pending']} running={counts['running']} "
+            f"completed={counts['completed']} failed={counts['failed']} lock={lock}"
+        )
+        return
+    if command == "recover":
+        print(f"Recovered {len(result['recovered'])} queued run(s)")
+        return
+    print(dumps(result))
 
 
 def _cmd_backup(args: argparse.Namespace) -> int:

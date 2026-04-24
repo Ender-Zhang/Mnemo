@@ -17,6 +17,10 @@ class NotFoundError(MnemoError):
     """Raised when a requested entity does not exist."""
 
 
+class DaemonLockError(MnemoError):
+    """Raised when another daemon worker owns the state directory lock."""
+
+
 class ProviderError(MnemoError):
     """Base error for expected provider adapter failures."""
 

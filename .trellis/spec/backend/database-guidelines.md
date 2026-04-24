@@ -16,6 +16,13 @@
 - `StateStore.mark_outbox_event(event_id: str, status: str, *, error: str | None = None) -> None`
 - `StateStore.export_state(archive_path: str | Path) -> dict[str, Any]`
 - `StateStore.import_state(archive_path: str | Path, *, replace: bool = False) -> dict[str, Any]`
+- `StateStore.enqueue_run_request(message: str, *, conversation_id: str | None = None, mission_id: str | None = None, metadata: dict[str, Any] | None = None, available_at: float | None = None) -> str`
+- `StateStore.list_queue_items(status: str | None = None, *, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.claim_next_queue_item(worker_id: str) -> dict[str, Any] | None`
+- `StateStore.heartbeat_queue_item(queue_id: str) -> None`
+- `StateStore.complete_queue_item(queue_id: str, status: str, *, run_id: str | None = None, error: str | None = None) -> None`
+- `StateStore.recover_stale_queue_items(stale_after_s: float = 900.0) -> list[dict[str, Any]]`
+- `StateStore.queue_stats() -> dict[str, Any]`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
@@ -39,6 +46,12 @@
 - `import_state()` validates the manifest, rejects archives from newer schema versions, rejects unsafe paths, and migrates the restored database through `initialize()`.
 - Import into non-empty managed state requires `replace=True`.
 - Replace mode removes only managed Mnemo paths, not unrelated files in the state directory.
+- `run_queue` stores durable local work with `message`, optional conversation/mission ids, structured metadata, status, attempts, worker id, produced run id, timing fields, and last error.
+- Queue statuses are `pending`, `running`, `completed`, and `failed`.
+- Claiming a queue item moves one due pending row to `running`, increments `attempts`, and records worker/heartbeat timestamps.
+- Completing a queue item accepts only `completed` or `failed`; completed rows store the produced `run_id`, failed rows store `last_error`.
+- Stale recovery moves old `running` rows back to `pending` and clears worker/claim/heartbeat fields.
+- Daemon code must execute queued work through the existing `RunRequest` runtime path.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -54,17 +67,22 @@
 | Backup round trip | Export and import state with queryable memory, run events, outbox, and managed files | `tests/test_storage.py`, `tests/test_cli.py` |
 | Non-empty import target | Reject unless `replace=True` | `tests/test_storage.py` |
 | Unsafe archive path | Reject path traversal or unsupported archive members before extraction | `tests/test_storage.py` |
+| Queue lifecycle | Enqueue, claim, heartbeat, complete, and stats preserve expected state | `tests/test_storage.py` |
+| Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
+| Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new schema change by appending one `SchemaMigration` and bumping `SCHEMA_VERSION`.
 - Good: make migrations idempotent with `CREATE ... IF NOT EXISTS` or `_ensure_column`.
 - Good: consume pending outbox events through `list_outbox_events()` and mark delivery through `mark_outbox_event()`.
 - Good: keep backup archives limited to managed state paths and validate every member before extraction.
+- Good: drain queued work through the same runtime entry points used by CLI/web runs.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
 - Bad: overwrite `schema_meta.schema_version` without recording the migration ledger.
 - Bad: poll `run_events` directly from daemon code when outbox delivery state is needed.
 - Bad: extract zip members directly with `extractall()`.
+- Bad: create a second daemon worker for the same state directory without acquiring the local lock.
 
 ### 6. Tests Required
 - Fresh initialization records all migrations.
@@ -75,4 +93,5 @@
 - Outbox list and mark lifecycle is covered.
 - Backup export/import round-trip is covered.
 - Import target and archive safety failures are covered.
+- Queue lifecycle, daemon drain, single-instance lock, and stale recovery are covered.
 - Existing storage round-trips still pass after migration changes.

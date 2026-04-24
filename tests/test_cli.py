@@ -287,6 +287,39 @@ class CliTests(unittest.TestCase):
             self.assertEqual(search.returncode, 0, search.stderr)
             self.assertTrue(json.loads(search.stdout)["matches"])
 
+    def test_daemon_enqueue_status_run_and_recover_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            enqueue = _run_cli(["daemon", "enqueue", "remember: DaemonCLI preference", "--state-dir", tmp, "--json"])
+            self.assertEqual(enqueue.returncode, 0, enqueue.stderr)
+            queue_id = json.loads(enqueue.stdout)["queue_id"]
+
+            status = _run_cli(["daemon", "status", "--state-dir", tmp, "--json"])
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertEqual(json.loads(status.stdout)["queue"]["counts"]["pending"], 1)
+
+            run = _run_cli(["daemon", "run", "--state-dir", tmp, "--limit", "1", "--json"])
+            self.assertEqual(run.returncode, 0, run.stderr)
+            run_payload = json.loads(run.stdout)
+            self.assertEqual(run_payload["processed"][0]["id"], queue_id)
+            self.assertEqual(run_payload["processed"][0]["status"], "completed")
+
+            search = _run_cli(["memory", "search", "DaemonCLI", "--state-dir", tmp, "--json"])
+            self.assertEqual(search.returncode, 0, search.stderr)
+            self.assertTrue(json.loads(search.stdout)["matches"])
+
+            store = StateStore(tmp)
+            stale_id = store.enqueue_run_request("remember: stale daemon cli")
+            store.claim_next_queue_item("stale-worker")
+            with store.connect() as conn:
+                conn.execute(
+                    "UPDATE run_queue SET claimed_at = 0, heartbeat_at = 0 WHERE id = ?",
+                    (stale_id,),
+                )
+
+            recover = _run_cli(["daemon", "recover", "--state-dir", tmp, "--stale-after-s", "1", "--json"])
+            self.assertEqual(recover.returncode, 0, recover.stderr)
+            self.assertEqual(json.loads(recover.stdout)["recovered"][0]["id"], stale_id)
+
 
 def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
