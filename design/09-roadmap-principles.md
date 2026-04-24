@@ -6,13 +6,15 @@
 
 路线图按 Lean Core 重排。目标是先验证一个问题：用户只通过一个聊天框派活时，Mnemo 是否能跨轮执行、自然学习偏好、可回放地改进行为。
 
+Lean Core 只约束实现顺序和默认启用路径，不裁剪详细设计。尤其是 MemoryEngine 的十维本体、LLM Wiki、DreamCycle、写入事务和 L4 检索，是 Mnemo 的核心竞争力，必须作为详细规格保留。
+
 三条自演进闭环必须贯穿路线图：
 
 | Loop | 首次落地 | 完整增强 |
 |------|----------|----------|
 | Memory Evolution | Phase 0: W0 + MemoryWritePipeline + L1/L2/L4 | DreamCycle、tombstone、health cards、memory-safety eval |
-| Skills Evolution | Phase 2: SkillComposer + SOP candidate + minimal eval | SkillHarness、red-team、cross-client import/export、rollback |
-| Tools Evolution | Phase 4: ToolComposer extension | generated tool shadow run、tool eval、standard toolset promotion |
+| Skills Evolution | Phase 2: learning candidate tools + skill/SOP draft refinement | SkillHarness、red-team、cross-client import/export、rollback |
+| Tools Evolution | Phase 4: Generated tool extension | generated tool shadow run、tool eval、standard toolset promotion |
 
 ### Phase 0: Storage + Memory Baseline (2-3 周)
 
@@ -34,10 +36,10 @@
 + MnemoDaemon + single-instance lock + crash recovery
 + GatewayHarness: CLI/MCP/REST → AgentRequest
 + MissionStore: resolve/create/continue/fork/checkpoint
-+ AgentRunHarness(native runtime only)
++ AgentRunHarness(provider-native tool-call runtime only)
 + ContextEngine: search + prompt assembly + compression
-+ ActionEngine: tool registry + risk(read/write/external/admin) + result compression
-+ ModelDecisionEngine: context/tool/skill/action 语义裁决
++ ActionEngine: tool registry + ProviderToolAdapter + risk(read/write/external/admin) + result compression
++ Model-led tool loop: 模型通过 memory_search / skill_view / provider-native tool call 自主选择；关键选择只在高风险、外部 runtime、fork/压缩或 harness 场景写 `decision.recorded`
 + mnemo run / replay / daemon status CLI
 ```
 
@@ -47,14 +49,15 @@
 
 ```
 + SkillRegistry/SkillLoader: 兼容 Agent Skills / Claude Code SKILL.md
-+ SkillComposer: 从 W0.pending_obs 生成 interaction/domain skill 候选
-+ SOP candidate: 重复工具轨迹 → SOP skill 草稿
++ Learning packet MVP: 用户纠正、失败恢复、已接受输出、artifact diff 统一打包
++ Candidate tools: memory_write_candidate / skill_propose_candidate / tool_propose_candidate / eval_propose_case / learning_discard
++ Skill/SOP draft: 只处理模型已提出的候选，不按次数阈值自动挖掘
 + DreamCycle: idle/daily delta-only 记忆整理
 + Prompt cache: L1 + stable skill summaries
 + Minimal eval: runtime-smoke + 3-5 个 personalization golden cases
 ```
 
-**里程碑**: 同类任务重复 3-5 次后能生成可审核 skill/SOP 候选；带记忆版本比 no_memory 版本更符合用户偏好。
+**里程碑**: 系统能从同一 learning packet 中产生 0..N 个混合候选；带记忆/skill 候选版本比 no_memory 版本更符合用户偏好。频次只作为 evidence，不能替代模型判断。
 
 ### Phase 3: Primary Chat Frontend MVP (3 周)
 
@@ -78,10 +81,10 @@
 | Watch / Proactive | 用户明确要求长期关注 | `WatchEngine` + scheduled event + chat summary；不默认主动打扰 |
 | External Runtime | 代码/浏览器/第三方 harness 明显更强 | `RuntimeAdapter` + context capsule + external-harness eval |
 | Advanced Recall | FTS5/BM25/wiki links 召回质量不足 | vector recall + RRF/MMR + optional LLM spreading activation |
-| ToolComposer | SOP skill 仍无法降低成本 | 从稳定 SOP 晋升为 generated tool，带 shadow/eval/rollback |
+| Generated tools | SOP skill 仍无法降低成本 | 从稳定 SOP 晋升为 generated tool，带 shadow/eval/rollback |
 | Sub-Agent / AgentCard | 单 agent 明显无法并行完成 | `SubAgentSpawner` + `AgentCard` + ACP/OpenClaw 插件 |
 | Sense / Android | 用户需要设备感知入口 | Android Companion + SenseEngine + explicit permission |
-| Hook / Enterprise Sync | 需要企业策略或同步系统 | HookEngine 插件；pre/post/on hooks，不进入主路径 |
+| Sync / Enterprise Policy | 需要企业策略或同步系统 | 读取 SQLite outbox，以 adapter 方式接入，不进入主路径 |
 | Messaging / Calendar / Mail | 用户要 Mnemo 代发/排期/处理收件 | ToolProvider + Decision Card + standing authority |
 | Full Harness Suites | 多用户/多画像/发布前回归 | memory-safety、skill-evolution、external-harness、proactive-watch suites |
 
@@ -89,10 +92,10 @@
 
 保留的详细设计位置：
 - Watch / Proactive：§7、§21、§15.4。
-- ToolComposer：§13.4-§13.6。
+- Generated tools：§13.4-§13.6。
 - Sub-Agent / AgentCard：§14。
 - Sense / Android：§15。
-- Hook Engine：§22.11。
+- Extension Events：§22.11。
 - External RuntimeAdapter：§22.4。
 
 ---
@@ -116,7 +119,7 @@
 10. 每个 turn/scheduled task 都必须有 run_id/session_id/mission_id/trace_id
 11. 工具结果完整写 RunLedger，进入 prompt 的版本可裁剪
 12. daemon 重启必须恢复 running Mission、Inbox、pending observations 和 running run 状态
-13. 模型做语义裁决，规则只做候选生成、安全护栏和资源边界
+13. 模型在 agentic loop 中做语义选择，规则只做候选生成、安全护栏、schema 校验和资源边界
 
 自演进原则:
 14. Agent 生成候选，低风险可自动进入 shadow/available；active/promoted 必须过 eval gate，高风险写 Inbox 待用户异步确认
@@ -156,10 +159,9 @@
 |------|------|---------|
 | **ConversationRuntime** | 单一聊天入口和多轮执行 | GatewayHarness + MissionStore + AgentRunHarness；用户只见一个聊天框 |
 | **ContextEngine** | 检索、组装、压缩上下文 | MemorySearch + PromptAssembler + ContextCompressor + prompt cache |
-| **ActionEngine** | 执行工具并控制风险 | ToolRegistry + dispatch + read/write/external/admin 四级审批 + result compression |
+| **ActionEngine** | 执行工具并控制风险 | ToolRegistry + ProviderToolAdapter + dispatch + read/write/external/admin 四级审批 + result compression |
 | **MemoryEngine** | 个性化长期记忆与草稿层 | W0、L1/L2/L4、MemoryWritePipeline、DreamCycle、ConflictResolver |
 | **SkillEngine** | 主流 skill 兼容和自演进 | SkillRegistry/Loader/Composer；SOP candidate 先作为 skill，不直接造工具 |
-| **TraceEngine** | 可回放账本和最小评测 | RunLedger + deterministic replay + runtime-smoke/personalization golden cases |
 | **MnemoDatabase** | 本地真相源和并发层 | SQLite WAL + wiki Markdown + runs JSONL + atomic file write |
 | **Soul.md** | 用户关系契约 | 稳定人格/边界/沟通偏好；热重载但走注入扫描 |
 
@@ -171,8 +173,5 @@
 | **WatchEngine / ProactiveDaemon** | 插件 | 只有用户明确要求长期关注时启用 |
 | **SenseEngine / AndroidCompanion** | 延后 | 设备感知成本高，且容易增加打扰和隐私面 |
 | **SubAgentSpawner / AgentCard** | 延后 | 单 agent core 先跑通；多 agent 通过 RuntimeAdapter 接入 |
-| **HookEngine** | 插件 API | 企业策略/同步/reranker 需要时启用，不进入默认主路径 |
-| **ToolComposer** | 延后 | 先用 SOP skill 降低复杂度；稳定高频后再晋升 generated tool |
-| **ModelBroker** | 延后/内嵌 | 首发固定模型 + 少量 fallback；复杂路由等成本压力出现再拆出 |
-| **PersonalizationHarness 全量套件** | CI 扩展 | 首发只保留少量 golden cases，避免评测系统先于产品复杂化 |
+| **Generated tools** | 延后 | 先用 SOP skill 降低复杂度；稳定高频后再晋升 generated tool |
 | **Advanced Recall** | 可选增强 | 基础 wiki links 在 MemoryEngine；LLM spreading activation 后置 |

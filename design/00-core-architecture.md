@@ -40,16 +40,25 @@ Mnemo 是一个**个人 AI 操作系统**——不是一个 Chatbot，不是一�
 
 Mnemo 的架构必须克制：首发版本只保留一条能稳定闭环的 core path，其它能力做成 extension pack。判断标准是：如果没有它，用户还能不能在一个聊天框里派活、跨轮继续、得到产物、形成偏好学习。
 
-**Core path 只包含 6 个域**：
+这里的“精简”不是删掉记忆、prompt、harness 或 skills/tools 的细节，而是把它们从默认执行路径里解耦出来：
+
+- 记忆模块仍然保留十维本体、W0、L1/L2/L4、DreamCycle、LLM Wiki、联想召回、写入事务、并发和评测细节。
+- Prompt 系统仍然保留 OpenClaw/Hermes 借鉴、JSON/XML 边界、PromptBlock、缓存和模板细节。
+- Runtime Harness 仍然保留 Mission、多轮恢复、RunLedger、RuntimeAdapter、回放和 eval 细节。
+- Skills/Tools 仍然保留主流 Skills 操作兼容、自演进、SOP、tool candidate 和 generated tools 细节。
+- 真正瘦身的是“哪些组件每轮必经、哪些内容每轮进 prompt、哪些能力首发必须实现”。
+
+**Core path 只包含 5 个域**：
 
 | 核心域 | 职责 | 首发必须有 |
 |--------|------|------------|
 | **Conversation Runtime** | 单一聊天入口、多轮恢复、执行状态机、流式事件 | `GatewayHarness`、`MissionStore`、`AgentRunHarness` |
 | **Context Engine** | 记忆检索、上下文预算、prompt 组装、压缩 | `MemorySearchPipeline`、`PromptAssembler`、`ContextCompressor` |
-| **Memory Engine** | 十维个人本体、W0、写入管线、DreamCycle | L1/L2/L4、`MemoryWritePipeline`、`ReflectAgent` |
-| **Action Engine** | 工具注册、工具调用、轻量审批、结果压缩 | `ToolRegistry`、`ApprovalGate`、`ToolResultCompressor` |
-| **Skill Engine** | 兼容主流 skills，并从重复工作中生成 SOP/skill 候选 | `SkillRegistry`、`SkillLoader`、`SkillComposer` |
-| **Trace & Eval** | 可回放账本和最小个性化回归测试 | `RunLedger`、smoke/personalization eval |
+| **Memory Engine** | 十维个人本体、W0、写入管线、DreamCycle | L1/L2/L4、`MemoryWritePipeline`、learning candidate tools |
+| **Action Engine** | 工具注册、provider-native tool call 适配、轻量审批、结果压缩 | `ToolRegistry`、`ProviderToolAdapter`、`ToolHarness`、`ToolResultCompressor` |
+| **Skill Engine** | 兼容主流 skills，并精炼模型提出的 SOP/skill 候选 | `SkillRegistry`、`SkillLoader`、skill candidate tools |
+
+`RunLedger` 是横切基础设施，不作为第六个执行域；所有域都写事件，最小 eval/replay 直接消费这些事件。
 
 **Extension pack 延后或插件化**：
 
@@ -58,9 +67,7 @@ Mnemo 的架构必须克制：首发版本只保留一条能稳定闭环的 core
 | Watch / Proactive | 用户明确要求长期关注或定时任务 | 先作为简单 scheduled prompt，不做完整主动服务 OS |
 | Sense / Android | 需要设备感知、位置、通知策略 | 延后；不进 core runtime |
 | Sub-Agent / ACP / AgentCard | 任务复杂到需要多 agent 或对外能力描述 | 通过 `RuntimeAdapter` 插件接入 |
-| ToolComposer | 工具序列高度稳定，普通 skill/SOP 不够 | 延后；先只生成 SOP skill |
-| HookEngine | 企业策略、同步系统或实验 reranker 需要同步拦截 | 作为插件 API，不进入主执行路径 |
-| PersonalizationHarness 全量套件 | 开始规模化发布或多人 profile 回归 | 首发只保留 2-3 个 smoke/golden cases |
+| Generated tools | 工具序列高度稳定，普通 skill/SOP 不够 | 延后；先只生成 SOP skill |
 
 ### 1.4 竞品调研与 Mnemo 定位
 
@@ -105,10 +112,10 @@ Mnemo 的目标不是复制 OpenClaw、Hermes Agent 或 GenericAgent，而是吸
 ║                  │                                                           ║
 ║  ┌───────────────▼──────────────────────────────────────────────────────┐   ║
 ║  │ Agentic Loop Core                                                     │   ║
-║  │ ModelDecisionEngine → ContextEngine → ActionEngine → Observe/Queue   │   ║
+║  │ Model-led tool loop → ContextEngine → ActionEngine → Observe/Queue   │   ║
 ║  │                                                                       │   ║
 ║  │ ContextEngine = MemorySearch + PromptAssembler + ContextCompressor   │   ║
-║  │ ActionEngine  = ToolRegistry + ApprovalGate + ToolResultCompressor   │   ║
+║  │ ActionEngine  = ToolRegistry + ProviderToolAdapter + ToolHarness     │   ║
 ║  └───────────────┬──────────────────────────────────────────────────────┘   ║
 ║                  │                                                           ║
 ║  ┌───────────────▼──────────────────────────────────────────────────────┐   ║
@@ -123,39 +130,35 @@ Mnemo 的目标不是复制 OpenClaw、Hermes Agent 或 GenericAgent，而是吸
 ║  └──────────────────────────────────────────────────────────────────────┘   ║
 ║                                                                              ║
 ║  Extension Plane (plugins, not core path): Watch, Sense/Android, ACP,       ║
-║  SubAgents, HookEngine, ToolComposer, full harness suites, enterprise sync. ║
+║  SubAgents, generated tools, full harness suites, enterprise sync.          ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
 
 ### 2.1 持续运行优先
 
-Mnemo 的运行形态默认是一个本地 daemon，而不是“每次请求拼一次上下文”的库函数。SDK、MCP、CLI、Android Companion、外部 Agent 都只是入口；真正的状态机在 Continuous Runtime Harness 中。
+Mnemo 的运行形态默认是一个轻量本地 daemon，而不是“每次请求拼一次上下文”的库函数。SDK、MCP、CLI、Android Companion、外部 Agent 都只是入口；真正的状态机在 Continuous Runtime Harness 中。
 
 ```
 Inbound Event
-  ├─ user message / MCP call / scheduled event / extension event
+  ├─ user message / MCP call / optional scheduled event / optional extension event
   ▼
 GatewayHarness.normalize()
   ▼
 AgentRunHarness.run_turn()
-  ├─ resolve/create Mission + turn
-  ├─ hydrate Mission state + session + user profile snapshot
-  ├─ ContextEngine(L1/L2/L3, budget-aware)
-  ├─ model/tool loop through ActionEngine + RuntimeAdapter
-  ├─ collect observations into W0 + Mission checkpoint
-  ├─ ContextCompressor if pressure high
-  ├─ RunLedger.append(trace events)
-  └─ queue memory/skill updates
+  ├─ hydrate minimal Mission state + short context indexes
+  ├─ provider-native model/tool loop through ActionEngine
+  ├─ persist response, tool results, artifacts, checkpoint
+  └─ optionally queue learning packet / compression / Dream
   ▼
-Delivery + AsyncNotificationInbox + MemoryWriteBatcher.flush()
+Delivery + RunLedger.append()
 ```
 
 持续运行带来的设计约束：
-- 每个 turn 必须有 `run_id`、`session_id`、`mission_id`、`trace_id`，否则无法继续、回放和审计。
+- 每个 turn 必须有 `conversation_id`、`mission_id`、`run_id`；`trace_id` 可由 RunLedger 派生，只有外部 harness 或分布式追踪需要时显式生成。
 - `session` 是入口通道和消息流，`run` 是一次执行尝试，`Mission` 才是跨多轮持续存在的用户委托。
 - 每个工具结果必须进入 RunLedger，但进入 prompt 时可以被剪裁或摘要。
 - 每次记忆/技能/Soul/工具变更必须能追溯到具体 run 和 evidence quote。
-- daemon 重启后必须恢复 running Mission、pending Inbox、未 flush 的观察队列和 session locks。
+- daemon 重启后必须恢复 running Mission 和未完成 run；pending Inbox、观察队列和 session locks 只在对应能力启用时恢复。
 - 外部 harness 只能收到 context capsule，不得绕过暴露边界读取完整 L2/L4。
 
 ### 2.2 Lean Core 原则
@@ -163,9 +166,11 @@ Delivery + AsyncNotificationInbox + MemoryWriteBatcher.flush()
 Mnemo 的扩展性来自“窄内核 + 稳定事件协议”，而不是把所有能力都做成一等子系统。核心路径只回答四个问题：
 
 1. 这句话属于哪个对话焦点和 Mission？
-2. 当前 turn 需要哪些个人上下文、技能和工具？
-3. 模型决定怎么行动，工具结果如何回到模型？
+2. 当前 turn 默认暴露哪些短上下文、skill 索引和工具 affordance？
+3. 模型如何在运行中自由选择记忆、skill、工具和下一步？
 4. 本轮哪些信号要变成 checkpoint、记忆候选或 skill 候选？
+
+默认路径从一次模型调用开始。模型通过工具自己查询记忆、查看 skill、执行动作；工具调用优先沿用 OpenAI / Anthropic 等 provider 的原生 tool-call 语义。Mnemo 只把内部 `ToolRegistry` 编译成 provider schema，接收 provider 返回的 tool calls，执行后按 provider 要求回填 tool results；系统只在风险、预算、schema、缓存和账本边界上拦截。需要可审计对比时，把关键选择写成 RunLedger 的 `decision.recorded` 事件。
 
 因此首发内核保留：
 
@@ -173,28 +178,33 @@ Mnemo 的扩展性来自“窄内核 + 稳定事件协议”，而不是把所�
 |-------------|--------------|
 | `ConversationRuntime` | `GatewayHarness` + `MissionStore` + `AgentRunHarness` |
 | `ContextEngine` | Memory search、PromptAssembler、ContextCompressor、prompt cache |
-| `ActionEngine` | ToolRegistry、Tool dispatch、ApprovalGate、ToolResultCompressor |
+| `ActionEngine` | ToolRegistry、ProviderToolAdapter、ToolHarness、ApprovalGate、ToolResultCompressor |
 | `MemoryEngine` | W0、L1/L2/L4、MemoryWritePipeline、DreamCycle |
-| `SkillEngine` | SkillRegistry、SkillLoader、SkillComposer、SOP candidate |
-| `TraceEngine` | RunLedger、minimal replay、smoke/personalization eval |
+| `SkillEngine` | SkillRegistry、SkillLoader、skill/SOP candidate refinement |
+
+横切基础设施：
+
+| Infra | 职责 |
+|-------|------|
+| `RunLedger` | 每个 run 的 prompt、tool、memory、skill、artifact、decision、eval 事件 |
+| `Eval cases` | 少量 smoke/golden replay；完整 harness suite 后置 |
 
 降级为 extension 或 later 的组件：
 
 | 原组件 | 精简决策 |
 |--------|----------|
-| `ModelBroker` | 首发并入 `ModelDecisionEngine`，先用固定模型 + 少量 fallback；多模型成本优化后置 |
 | `MessageBus` | 首发用 SQLite event/outbox 表即可，不单独做总线系统 |
-| `HookEngine` | 插件 API，只有外部集成需要时启用，不进入默认执行路径 |
-| `PersonalizationHarness` 全量套件 | 首发只做 smoke + 3-5 个 golden case；规模化前再扩展 |
 | `SenseEngine` / `AndroidCompanion` | 设备感知延后；先支持用户显式 scheduled/Watch |
 | `SubAgentSpawner` / `AgentCard` | 多 agent 和对外能力描述延后；通过 `RuntimeAdapter` 接入 |
-| `ToolComposer` | 先不生成新工具，只生成 SOP skill；确有稳定高频流程再晋升工具 |
+| `Generated tools` | 先不生成新工具，只生成 SOP skill；确有稳定高频流程再晋升工具 |
 
 扩展点统一走三类接口：
 - `RuntimeAdapter`: 接 OpenClaw、Codex、ACP、外部 agent harness。
 - `ToolProvider`: 接文件、浏览器、消息、日历、代码、企业系统。
 - `EventPlugin`: 接 Watch、Sense、同步、通知和企业策略。
 
-> **精简原则**：Watch、Sense、Sub-Agent、ToolComposer、HookEngine、外部 runtime 等能力默认不进入 core path。真实场景反复触发后，再以 extension 方式接入或晋升为 core module。
+> **精简原则**：Watch、Sense、Sub-Agent、generated tools、外部 runtime 和同步/企业插件默认不进入 core path。真实场景反复触发后，再以 extension 方式接入或晋升为 core module。
+
+> **细节保留原则**：extension 不进入 core path，不代表删除设计。详细规格继续保留在各自章节，用来指导后续实现、harness case 和 prompt/tool 预算。
 
 ---

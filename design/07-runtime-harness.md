@@ -1,6 +1,6 @@
 # Runtime Harness
 
-> 持续运行 daemon、Mission 状态、多轮恢复、RuntimeAdapter、RunLedger、最小评测和 HookEngine。
+> 持续运行 daemon、Mission 状态、多轮恢复、RuntimeAdapter、RunLedger、最小评测和扩展事件。
 
 ## 22. Continuous Runtime Harness——持续运行系统
 
@@ -29,20 +29,16 @@ MnemoDaemon
 | `MnemoDaemon` | 长期进程，持有队列、socket、scheduler、watchdog | 启动配置、系统事件 | 可用的本地 runtime |
 | `GatewayHarness` | 将 CLI/MCP/REST/Android/外部 channel 统一为 `AgentRequest` | 原始请求 | 标准化请求 + source metadata |
 | `MissionStore` | 管理跨多轮 Mission、turn、artifact、decision 和 checkpoint | user intent + run state | durable mission state + continuation context |
-| `AgentRunHarness` | 执行一次 agent turn 或后台任务 | `AgentRequest` | `AgentRunResult` + trace + queued updates |
-| `ModelDecisionEngine` | 对 context/tool/memory/skill/action 做语义裁决 | 候选集 + policy constraints | `DecisionEnvelope` |
+| `AgentRunHarness` | 执行一次 agent turn 或后台任务，承载模型-工具循环 | `AgentRequest` | `AgentRunResult` + trace + queued updates |
 | `ContextEngine` | 合并检索、prompt 组装、压缩和缓存 | Mission context + candidates | budgeted prompt/context capsule |
 | `ActionEngine` | 合并工具选择、执行、轻量审批和结果压缩 | tool intent + policy | tool results + action events |
 | `RuntimeAdapter` | 屏蔽不同 agent runtime 差异 | prompt、tools、policy | model/tool loop 事件流 |
 | `Supervisor` | 崩溃恢复、并发限制、任务超时、队列重试 | run queue | 状态迁移和告警 |
 | `RunLedger` | 所有 run 的可回放事件账本 | run events | JSONL trace + SQLite index |
-| `ExtensionManager` | 可选加载 Watch、Sense、Hook、ACP、企业同步等插件 | plugin manifest + events | extension events / adapters |
 
-不再把 `ModelBroker`、`ApprovalGate`、`HookEngine`、`PersonalizationHarness` 都做成首发顶层组件：
-- `ModelBroker` 首发并入 `ModelDecisionEngine` 的 model policy。
+首发内核只保留必要的运行职责：
 - `ApprovalGate` 首发并入 `ActionEngine`，只保留 read/write/external/admin 四级风险。
-- `HookEngine` 作为 extension API，不进入默认执行链路。
-- `PersonalizationHarness` 是 CI/回归能力，不是 daemon 常驻模块。
+- 多画像/多用户回归是 CI 能力，不是 daemon 常驻模块。
 
 ### 22.2.1 Mission / Conversation State：多轮连续性
 
@@ -64,7 +60,7 @@ user follow-up
   → GatewayHarness.resolve_mission()
       - 内部显式 mission_id：直接恢复
       - 前端当前 conversation focus：默认继续
-      - 模糊输入："继续/改一下/刚才那个" → 模型基于 recent missions 裁决
+      - 模糊输入："继续/改一下/刚才那个" → 恢复最近 conversation focus；冲突时再让模型基于 recent missions 判断
       - 新意图：创建 Mission 或 fork child Mission
   → MissionStore.load_continuation_context()
       - mission.brief / current_plan / constraints
@@ -73,7 +69,7 @@ user follow-up
       - open decisions
       - recent turns summary + older turns searchable pointers
       - preference signals learned during this Mission
-  → ModelDecisionEngine 决定本轮是 continue / redirect / answer / fork / close
+  → AgentRunHarness 让模型在上下文中决定 continue / redirect / answer / fork / close
   → AgentRunHarness 执行
   → MissionStore.persist_turn_delta()
 ```
@@ -141,58 +137,37 @@ class AgentRunResult:
     error: str | None = None
 ```
 
-固定执行步骤：
+最小执行容器只有三段：
 
+```text
+1. hydrate_minimal_state
+   - 标准化入口请求，分配 run_id，并恢复 conversation_id / mission_id
+   - 注入 Mission checkpoint、短 L1/skill/tool index、open decisions、active artifacts
+   - 只做暴露边界、风险、token 预算过滤；不做语义路由
+
+2. provider_native_agentic_loop
+   - model call → provider-native tool calls → ToolHarness execution → provider-native tool results → model call
+   - 模型在 loop 中选择是否 memory_search、skill_view、调用工具、请求确认、继续探索或交付结果
+   - OpenAI/Anthropic/Gemini 等原生 tool call 是默认执行通道；XML/raw parser 只做 fallback
+   - ActionEngine 只处理 allowlist、schema、risk、轻量确认、结果压缩和 RunLedger 记录
+   - 高风险、外部 runtime、sub-agent、mission fork 或 harness 场景才写 `decision.recorded`
+
+3. persist_delta
+   - 写 assistant response、tool results、artifact delta、Mission checkpoint 和 RunLedger event
+   - 只有存在用户纠正、失败恢复、已接受输出或重要 artifact diff 时，才形成 learning packet
+   - token pressure 触发时才压缩；Mission 结束或空闲时才进入 DreamCycle
+   - 模型可在后台基于同一 packet 提出 0..N 个 memory/skill/tool/eval 候选，也可以 `learning_discard`
 ```
-1. accept_request
-   - GatewayHarness 将入口请求标准化
-   - 解析显式 `mission_id`；若没有，则基于当前前端上下文、recent missions 和模型裁决决定继续/新建/fork
-   - 分配 run_id/trace_id/turn_id
-   - 写 run_events: request.received + mission.created 或 mission.turn.started
 
-2. hydrate_mission
-   - 加载 session metadata、Mission brief、W0 mission checkpoint、recent turns summary
-   - 加载 active artifacts、open decisions、pending Inbox critical
-   - 若是外部 Agent 请求，只加载 disclosure policy 允许的 context
+Tool-call 回合不定义 Mnemo 私有 DSL：
 
-3. build_candidates
-   - ContextEngine 收集 L1/L2/session/search/skill/tool/scheduled 候选
-   - 轻量 policy 先过滤不可暴露、不可执行、超预算候选
-   - 写 run_events: candidates.built
+| Provider | Mnemo 发送 | Provider 返回 | Mnemo 回填 |
+|----------|------------|---------------|------------|
+| OpenAI | stable `tools` JSON Schema + `tool_choice:auto` 或受限选择 | response item / message 中的 function tool calls，含 call id 和 JSON arguments | 执行后发送对应 call id 的 function tool output |
+| Anthropic | stable `tools` input schema + `tool_choice:auto` | assistant content blocks 中的 `tool_use`，`stop_reason=tool_use` | 下一条 user message 以 `tool_result` blocks 对应 `tool_use_id` |
+| 其他 provider | 由 `ProviderToolAdapter` 编译成其原生 schema | 原生 tool event / function call | 原生 tool result envelope |
 
-4. model_decide
-   - ModelDecisionEngine 输出 DecisionEnvelope
-   - 记录 selected/rejected skills/tools/context，确定 summary/full/assets 加载级别
-   - SkillEngine 加载被选中的 `SKILL.md` 和必要资源
-   - ContextEngine 根据 selected candidates 组装 Layer 1/2/3
-   - RuntimeAdapter 根据 runtime 限制工具和上下文
-   - 写 run_events: decision.made + skill.selected + skill.loaded + prompt.assembled
-
-5. execute_loop
-   - model call → tool call → tool result → model call
-   - 每个工具调用先过 ActionEngine 内置轻量审批
-   - 工具结果完整写 RunLedger，进 prompt 的版本按预算剪裁
-
-6. observe_and_queue
-   - 抽取事实候选进入 W0.draft_facts
-   - 抽取偏好/纠正/重复行为进入 W0.pending_obs
-   - 抽取本轮 goal/plan/status/artifact/decision 变化，更新 Mission checkpoint
-   - 检测工具序列，先交 SOPCrystallizer 生成 SOP skill 候选；ToolComposer 只作为后续 extension
-
-7. compress_if_needed
-   - token pressure 达阈值时先 flush W0 pending signals
-   - 再执行 tool output prune + structured compression
-   - 压缩优先保留 Mission goal、open decisions、artifact refs 和失败原因
-
-8. finalize
-   - 写最终 assistant response
-   - 写 mission_turns.assistant_summary 和 missions.w0_checkpoint_json
-   - 更新 Mission status；若完成/取消/归档，再触发 W0 → Reflect/DreamCycle 蒸馏
-   - SkillHarness 写 skill.verified；必要时 SkillComposer 写 skill.patch.proposed
-   - MemoryWriteBatcher 按策略 flush 或保留到 mission_end / DreamCycle
-   - Inbox 写入低风险通知或高风险确认项
-   - 写 mission.state.updated + run.completed
-```
+内部规范化只发生在边界层：`ProviderToolAdapter` 把 provider tool call 转成 `{call_id, name, arguments, provider, risk, source}` 给 `ToolHarness`，并把执行结果转回 provider-native tool result。RunLedger 存规范 JSON；模型运行时看到的是 provider 原生回合，不需要写 XML 或 Mnemo 专用 action plan。
 
 ### 22.4 RuntimeAdapter：外部 Harness 桥接
 
@@ -332,7 +307,7 @@ class ReplayHarness:
 
 ### 22.7 Personalization Eval：先小后大
 
-Mnemo 的关键问题不是“能不能记住”，而是“记住以后是否让行为更符合这个人”。但评测系统不能比产品内核更重：首发只保留少量 golden cases，作为 TraceEngine 的 CI 能力；完整 `PersonalizationHarness` 在多人/多画像回归时再扩展。
+Mnemo 的关键问题不是“能不能记住”，而是“记住以后是否让行为更符合这个人”。但评测系统不能比产品内核更重：首发只保留少量 golden cases，直接消费 RunLedger；多人/多画像回归等完整评测套件后置。
 
 首发只跑三种变体：
 
@@ -353,20 +328,7 @@ MVP 门禁只看四个指标：
 
 扩展指标如 `multi_session_reasoning`、`temporal_reasoning`、`skill_reuse_lift`、`interruption_cost`、`unsafe_disclosure_count` 放到 extension suites，不阻塞 core MVP。
 
-```python
-class PersonalizationHarness:
-    SUITES = {
-        "runtime-smoke": "daemon 启动、队列、run ledger、基础工具回路",
-        "personalization-core": "偏好遵循、风格适配、用户画像引用边界",
-        "memory-core": "extension: 精确召回、多会话推理、时序推理",
-        "memory-safety": "extension: 过时记忆、冲突记忆、注入攻击",
-        "skill-evolution": "extension: interaction skill 和 SOP 晶化、召回、复用",
-        "proactive-watch": "extension: Watch 触发、打扰成本、静默退场",
-        "external-harness": "extension: OpenClaw/Codex/ACP capsule 最小披露",
-    }
-
-    def run_suite(self, suite: str, variants: list[str]) -> EvalReport: ...
-```
+扩展评测套件可以后续增加：`memory-core`、`memory-safety`、`skill-evolution`、`proactive-watch`、`external-harness`。它们是 CI/发布能力，不是 daemon 默认路径。
 
 回归门禁默认阈值：
 
@@ -411,8 +373,8 @@ harness:
 | PromptAssembler | 每个 run 的 `prompt.assembled` 事件记录 token 分布和加载页面 |
 | MissionStore | 在每轮开始前恢复 Mission checkpoint，在结束后持久化 turn delta |
 | MemoryWritePipeline | 所有 write_op 携带 `run_id` 和 evidence quote |
-| SkillComposer | 从 RunLedger 和 W0.pending_obs 获取观察，不直接读原始聊天文件 |
-| SOPCrystallizer | 从 `tool_calls` 表识别重复轨迹，生成 SOP 草稿 |
+| Skill candidate tools | 消费 learning packet 中的 skill candidates 和 evidence refs，不重扫原始聊天文件 |
+| SOP candidate tools | 只处理模型已提出的 SOP 候选；`tool_calls` 表只作为 evidence 来源 |
 | ContextCompressor | 压缩前触发 RunLedger checkpoint 和 W0 flush |
 | Inbox | ActionEngine 创建 action item，不在执行中阻塞低风险事项 |
 | Event outbox | run 状态变化、scheduled event、extension event 先写 SQLite outbox |
@@ -429,25 +391,27 @@ harness:
 4. RunLedger(JSONL + SQLite missions/mission_turns/runs/run_events/tool_calls)
 5. mnemo run / mnemo daemon status / mnemo harness replay
 6. runtime-smoke + 3-5 个 personalization golden cases
-7. MemoryWritePipeline 写入 run_id；SkillComposer 从 W0 + RunLedger 读取观察
+7. MemoryWritePipeline 写入 run_id；learning packet 可产生 memory/skill/tool/eval 候选
 ```
 
 达到该切片后，Mnemo 就具备 Hermes-like 的持续运行骨架；OpenClaw/Codex/ACP 适配可以作为下一阶段通过 `RuntimeAdapter` 增量接入。
 
-### 22.11 Hook Engine：同步拦截与插件扩展
+### 22.11 Extension Events：扩展事件
 
-Hook Engine 不是 core path。首发只需要 SQLite event outbox；当企业策略、Obsidian 同步、审计或实验性 reranker 需要同步拦截时，再启用 Hook Engine 插件。它用于那些必须在写入、编译、暴露、决策前完成的策略：隐私过滤、企业策略、外部同步、审计、实验性 reranker。
+首发不做独立插件管理系统。默认只需要 SQLite event outbox；Watch、同步、企业策略、实验性 reranker 等后续能力都从 outbox 读事件，再以 adapter 方式接入。
 
-语言无关 hook 定义：
+扩展只能改变候选、策略边界或副作用投影，不能替模型做语义选择，也不能直接写长期记忆、skill 或工具。
+
+语言无关 event 定义：
 
 ```ts
-type HookMode = "filter" | "action";
-type HookTiming = "pre" | "post" | "on";
+type ExtensionEventMode = "filter" | "action";
+type ExtensionEventTiming = "pre" | "post" | "on";
 
-interface HookSpec<I, O = I> {
+interface ExtensionEventSpec<I, O = I> {
   name: string;
-  timing: HookTiming;
-  mode: HookMode;
+  timing: ExtensionEventTiming;
+  mode: ExtensionEventMode;
   input: I;
   output?: O;
   timeoutMs: number;
@@ -455,19 +419,19 @@ interface HookSpec<I, O = I> {
 }
 ```
 
-核心 hook 点：
+核心扩展点：
 
-| Hook | 类型 | 用途 |
+| Event | 类型 | 用途 |
 |------|------|------|
 | `pre_memory_write` | filter | 写入前做隐私、注入、安全、质量检查 |
 | `post_memory_write` | action | 同步 index、Obsidian、审计日志 |
 | `pre_compile` | filter | 编译前过滤不可进入 L1 的页面 |
 | `post_compile` | action | 记录 compile cache、通知 daemon |
-| `on_context_candidates` | filter | 为 ModelDecisionEngine 增删候选 |
-| `on_decision` | filter | 对 DecisionEnvelope 做 policy 审查 |
+| `on_context_candidates` | filter | 为模型可见候选增删候选 |
+| `on_decision` | filter | 对 `decision.recorded` 做 policy 审查 |
 | `post_expose` | action | 记录对外暴露审计 |
 | `on_decay` | filter | 调整 stale/decay 提案 |
 
-Hook 可以改变候选集和策略边界，但不应代替模型做语义裁决。Hook 的正确定位是：扩展感知和治理能力，而不是把 agentic loop 退化成规则引擎。
+Extension event 可以改变候选集和策略边界，但不应代替模型做语义选择。它的正确定位是：扩展感知和治理能力，而不是把 agentic loop 退化成规则引擎。
 
 ---

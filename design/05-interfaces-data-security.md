@@ -13,7 +13,6 @@ Mnemo 对外提供的不是插件适配器，而是一个**完整的个人 AI OS
 ```ts
 interface MnemoCore {
   context(req: ContextRequest): ContextBlock;
-  decide(req: DecisionRequest): DecisionEnvelope;
   update(req: UpdateRequest): UpdateResult;
   recall(req: RecallRequest): AssociativeCluster;
   run(req: AgentRequest): AgentRunResult;
@@ -61,7 +60,7 @@ class MnemoClient:
         """
         会话结束后批量更新：
           · 新事实 → 写入对应 wiki 页面
-          · 观察 → 交给 SkillComposer 分析
+          · 观察 → 进入 learning packet 候选
           · 触发受影响 L1 段落的重新编译
         """
     
@@ -128,9 +127,6 @@ Mnemo 内置 MCP Server，任何支持 MCP 的 Agent（包括 Claude Code、Curs
 
 mnemo_context(intent, agent_role, budget_tokens)
   → 返回: system_prompt_block (可直接插入)
-
-mnemo_decide(task, candidates, constraints)
-  → 返回: DecisionEnvelope (selected/rejected/plan/risk/confidence)
 
 mnemo_update(facts, observations)
   → 返回: {updated_pages, triggered_compilations}
@@ -401,7 +397,7 @@ CREATE TABLE session_log (
 │   ├── sop/              ← SOP 晶化任务路径，每项为 SKILL.md 目录 (§4.7)
 │   └── _generated/
 ├── watches/
-├── patterns/             ← SkillComposer 的原始观察归档
+├── patterns/             ← learning packet 的观察归档
 ├── runs/                 ← RunLedger JSONL trace mirror
 ├── evals/                ← Harness suites, fixtures, reports
 ├── state.db              ← 包含 FTS5 indexes (§18)
@@ -597,8 +593,11 @@ CREATE INDEX idx_run_events_type ON run_events(event_type, timestamp DESC);
 CREATE TABLE IF NOT EXISTS tool_calls (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL REFERENCES runs(id),
+    provider TEXT,                  -- openai|anthropic|gemini|local|...
+    provider_call_id TEXT,          -- provider-native call id / tool_use_id
     tool_name TEXT NOT NULL,
     args_hash TEXT,
+    risk TEXT NOT NULL,             -- read|write|external|admin
     status TEXT NOT NULL,         -- success|error|blocked|approved|timeout
     started_at REAL NOT NULL,
     ended_at REAL,
@@ -649,15 +648,15 @@ CREATE INDEX idx_eval_results_variant ON harness_eval_results(variant, created_a
 | `mission.resumed` | Mission 从 pause/waiting 恢复执行 | 否 |
 | `mission.closed` | Mission 完成、取消或归档 | 否 |
 | `candidates.built` | 候选上下文/技能/工具/Watch 已生成 | 否 |
-| `decision.made` | ModelDecisionEngine 输出 DecisionEnvelope | 否 |
-| `skill.selected` | 模型选择或用户显式激活 skill，记录来源和理由 | 否 |
+| `decision.recorded` | 高风险、外部 runtime、fork/压缩或 harness 场景的关键选择记录 | 否 |
+| `skill.selected` | 模型选择或用户显式激活 skill，记录来源和依据 | 否 |
 | `skill.loaded` | SkillLoader 注入 summary/full/assets 的具体版本 | 否 |
 | `skill.verified` | SkillHarness 或任务验证步骤产出结果 | 否 |
-| `skill.patch.proposed` | SkillComposer 生成 skill 创建/修改候选 | 否 |
+| `skill.patch.proposed` | skill candidate tool 生成 skill 创建/修改候选 | 否 |
 | `skill.available` | skill 通过 lint/smoke 后进入低优先级候选集 | 否 |
 | `skill.activated` | skill 从 draft/shadow 晋升 active/promoted | 否 |
 | `skill.rolled_back` | skill 版本因回归或用户拒绝被回滚 | 否 |
-| `model.selected` | ModelBroker 选择模型和 fallback 信息 | 否 |
+| `model.selected` | runtime 选择模型和 fallback 信息 | 否 |
 | `prompt.assembled` | L1/L2/L3 组装摘要和 token 分布 | 否 |
 | `model.called` | 模型调用开始，记录 runtime/model/budget | 否 |
 | `model.delta` | 用户可见模型输出增量；不包含 chain-of-thought | 否 |
@@ -737,7 +736,7 @@ interface TaintedPayload<T> {
 Taint 规则：
 - 外部网页、工具结果、导入 skill、外部 runtime 返回值默认 `taint=external`，只能作为 quoted context。
 - tainted payload 不能直接成为 system/developer prompt、active memory、active skill 或 executable tool。
-- 写入 memory/skill/tool 前必须通过：schema validation → P60/安全审查 → evidence/provenance check → PolicyEngine → RunLedger event。
+- 写入 memory/skill/tool 前必须通过：schema validation → P60/安全审查 → evidence/provenance check → ActionEngine risk/profile check → RunLedger event。
 - tainted 内容生成的 tool call 不能直接执行；必须重新走 ToolHarness 的 allowlist、schema parse、risk guard。
 - 安全扫描命中不一定丢弃内容，但要降级为 safe summary 或候选，不能作为高置信事实。
 

@@ -112,6 +112,7 @@ type ChatEvent =
   | {type: "assistant.message"; text: string; final?: boolean}
   | {type: "status.updated"; text: string; tone?: "working" | "waiting" | "blocked" | "done"}
   | {type: "plan.updated"; steps: PlanStep[]; currentStepId?: string}
+  | {type: "action.queued"; action: ActionCard; providerCallId?: string}
   | {type: "action.started"; action: ActionCard}
   | {type: "action.progress"; actionId: string; text: string; percent?: number}
   | {type: "action.completed"; actionId: string; outcome: "success" | "failed" | "skipped"; summary: string}
@@ -199,7 +200,7 @@ Recall 不是单独的记忆浏览器。用户直接在聊天里问：
 |----------|----------|
 | Past Work | 继续、另起一版、比较 |
 | Artifact | 打开、复用、改写、发送 |
-| Decision | 查看当时理由、撤销、复用 |
+| Decision | 查看当时依据、撤销、复用 |
 | Knowledge | 引用、更新、忘记 |
 
 默认不展示原始长会话，只展示摘要、来源和可操作入口；用户要求证据时再展开。
@@ -262,7 +263,8 @@ RunLedger/runtime event 到前端事件的投影：
 | `mission.state.updated` | `status.updated` | 当前进展 |
 | `decision.made` | `plan.updated` | 做法摘要 |
 | `model.delta` | `assistant.delta` | 可读输出流 |
-| `tool.called` | `action.started` | 正在行动 |
+| provider native `tool_call` / `tool_use` | `action.queued` | 模型准备调用工具 |
+| `tool.called` | `action.started` | ToolHarness 开始执行 |
 | `tool.result` | `action.completed` / `source.attached` | 动作完成或证据就绪 |
 | `artifact.created` | `artifact.card` | 产物出现 |
 | `artifact.updated` | `artifact.delta` | 产物更新 |

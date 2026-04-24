@@ -129,7 +129,7 @@ dimension_exposure:
   │ working_note tool 写入; turn_end / mission_end 时:│
   │   → turn_scratch 丢弃或压缩                     │
   │   → mission_state 写 checkpoint, 可跨轮恢复     │
-  │   → pending_obs → ReflectAgent.extract()        │
+  │   → pending_obs → learning packet candidates     │
   │   → draft_facts → L2 草稿 confidence=0.5        │
   └─────────────────────────────────────────────────┘
 
@@ -395,7 +395,7 @@ Tombstone 只存最小必要信息，避免把用户要求删除的敏感内容�
                       ├─ YES → W0 draft_facts 队列 + 等待验证
                       │        (mission_end 或 DreamCycle 时提升为 L2 草稿 confidence=0.5)
                       └─ NO  → 是可执行行为规则/重复工具序列?
-                                ├─ YES → SkillComposer / SOPCrystallizer
+                                ├─ YES → 作为 learning packet 证据，由模型选择 skill/tool/eval 候选工具
                                 └─ NO  → 丢弃 (通用常识/可推理信息)
 ```
 
@@ -425,7 +425,7 @@ class WorkingMemory:
                    → turn 结束时写入 mission checkpoint，Mission 结束后再蒸馏或归档
     
     pending_obs:   本轮已收集但尚未批量写入的行为观察
-                   → turn 结束可批量归档，Mission 结束时交给 SkillComposer.batch_process()
+                   → turn 结束可批量归档，Mission 结束时进入 learning packet
                    → 可随时 flush（如 context 临近压缩触发前）
     
     draft_facts:   用户在本次对话中提及但尚未确认的新事实
@@ -449,8 +449,8 @@ class WorkingMemory:
     def add_draft_fact(self, dimension: str, content: str, confidence: float = 0.5) -> None:
         """追加待验证事实草稿"""
     
-    def flush_to_reflect(self) -> WorkingMemoryDump:
-        """Mission 结束或 DreamCycle 时将候选数据打包交给 ReflectAgent 处理"""
+    def flush_to_learning_packet(self) -> WorkingMemoryDump:
+        """Mission 结束或 DreamCycle 时将候选数据打包成 learning packet"""
     
     def checkpoint_mission(self, mission_id: str) -> MissionCheckpoint:
         """turn 结束时持久化 goal/plan/artifacts/open_decisions/task_state 摘要"""
@@ -647,7 +647,7 @@ class MemoryQualityFilter:
 | Quick Profile | 2 分钟内建立最小可用画像 | 模型生成 3-5 个低负担问题，用户可跳过 | L0 Profile + 骨架 L1 |
 | Smart Import | 从已有数字足迹推断初始记忆 | GitHub、dotfiles、编辑器配置、项目 manifest；每条推断需确认 | cognition/preferences/context 草稿 |
 | Guided Conversation | 首次会话补足关键维度 | 模型基于已有画像选择下一个最值得问的问题 | 高价值 L2 页面 |
-| Ambient Learning | 日常使用中静默积累 | AgentRunHarness 收集 observations，ReflectAgent 批量蒸馏 | pending_obs / draft_facts |
+| Ambient Learning | 日常使用中静默积累 | AgentRunHarness 收集 learning packet，模型按需提出候选 | pending_obs / draft_facts |
 | Gamified Discovery | 长期补全薄弱维度 | 记忆卡片、健康度建议、周期性验证 | 更高 coverage/freshness |
 
 **记忆卡片类型**:
@@ -660,7 +660,7 @@ class MemoryQualityFilter:
 | 连接卡 | 建立 wiki 交叉引用 | 两个页面相关但缺少显式链接 |
 | 反思卡 | 捕捉历史、模式、价值观 | 周期性回顾、重大事件后 |
 
-卡片不是固定规则轮播，而是由 `ModelDecisionEngine` 从 `MemoryHealthReport`、最近会话、Watch 状态和用户打扰成本中选择。用户可以回答、跳过、延后或永久关闭某类卡片。
+卡片不是固定规则轮播，而是由运行中的模型从 `MemoryHealthReport`、最近会话、Watch 状态和用户打扰成本中选择。用户可以回答、跳过、延后或永久关闭某类卡片。
 
 **Memory Health Score**:
 
@@ -678,7 +678,7 @@ memory_health:
 
 ### 3.14 DreamCycle：空闲期记忆整理
 
-DreamCycle 是 Mnemo 的低优先级后台记忆维护循环。它不是新建一个常驻大模型 agent，而是由 daemon 在空闲窗口编排 `ReflectAgent`、`MemoryWritePipeline`、`MemoryCompiler`、`MemoryHealthEngine`、`SkillComposer` 和轻量 harness eval。
+DreamCycle 是 Mnemo 的低优先级后台记忆维护循环。daemon 负责触发条件、预算、锁、暂停和账本；具体整理什么、怎么合并、是否建 link、是否提出 skill/tool 候选，由模型在一次受限的 Dream maintenance run 中决定。
 
 目标：每天把零散观察变成更短、更准、更有用的个人记忆，同时不打扰用户、不全量扫库、不把大量内容塞进 prompt。
 
@@ -705,19 +705,29 @@ dream_input:
   inbox_context: unresolved memory/skill confirmations
 ```
 
-**执行阶段**:
+**模型主导执行**:
+
+Dream 的 less-is-more 分工：
+
+| 层 | 负责什么 |
+|----|----------|
+| daemon | 何时运行、预算多少、是否暂停、只取增量、不阻塞用户 |
+| Memory tools | 检索 delta、读取 wiki、写候选 patch、跑质量/冲突检查 |
+| model | 规划本次维护重点，选择要处理的记忆/skill/tool 信号 |
+| RunLedger | 记录 plan、tool calls、patch、跳过原因、成本和 eval |
+
+系统不把每天维护写死成必须完整跑完的流水线。模型拿到 delta、预算和工具后，自主决定本轮优先级；预算不足时宁可少做，也不全量扫库。
 
 ```text
-DreamCycle
-  1. collect_delta        # 收集增量，不读全库
-  2. reflect_recent       # ReflectAgent 提取事实/矛盾/模式候选
-  3. write_batch          # MemoryWritePipeline 质量、冲突、隐私检查后批量写入
-  4. link_and_prune       # 补 wiki links、清孤儿指针、标记 stale
-  5. compile_context      # MemoryCompiler 更新 L0/L1 与 cache anchors
-  6. skill_mine           # SkillComposer/SOPCrystallizer 只处理高信号重复轨迹
-  7. health_cards         # MemoryHealthEngine 产出少量低打扰建议
-  8. replay_smoke         # 对关键 patch 跑轻量 replay/ablation
-  9. inbox_digest         # 只把需要用户确认的少数事项写 Inbox
+Dream maintenance run
+  1. daemon.collect_delta          # 收集增量，不读全库
+  2. model.plan                    # 选择本次维护重点和跳过项
+  3. model uses memory tools       # 读页、查证据、提 patch、建 link 候选
+  4. pipelines validate            # quality/conflict/privacy/schema/evidence
+  5. compile changed anchors       # 只重编受影响 L0/L1/cache anchors
+  6. optional mine skill/tool      # 只有高信号重复轨迹才处理
+  7. optional replay smoke         # 只对关键 patch 跑轻量 eval
+  8. inbox digest                  # 只把需要用户确认的少数事项写 Inbox
 ```
 
 **预算与降级**:
@@ -730,7 +740,7 @@ DreamCycle
 | max inbox items | 5 |
 | max prompt per call | 8k tokens |
 
-预算不足时按顺序保留：`write_batch` → `compile_context` → `health_cards`，跳过 `skill_mine` 和 `replay_smoke`。Dream 永远不能阻塞用户同步请求。
+预算不足时，daemon 给出硬边界，模型选择本轮最值得处理的事项。默认优先级是：用户明确要求记住/删除 → correction/conflict → active project/profile compile → wiki link maintenance → skill/tool signals → replay smoke。Dream 永远不能阻塞用户同步请求。
 
 **输出**:
 
@@ -739,7 +749,7 @@ DreamCycle
 - memory health report。
 - skill patch / `_generated` draft。
 - Inbox digest。
-- RunLedger dream trace：`dream.started`、`dream.delta_collected`、`dream.completed`。
+- RunLedger dream trace：`dream.started`、`dream.delta_collected`、`dream.plan_recorded`、`dream.completed`。
 
 **伪代码**:
 
@@ -832,14 +842,14 @@ MemorySearchPipeline
   4. Optional LLM Associate# Advanced Recall extension, 0-3 surprising pages
   5. Policy Filter         # exposure / stale / tombstone / task relevance
   6. Rank + Budget         # relevance × association_strength × freshness × token value
-  7. CandidateBuilder      # 交给 ModelDecisionEngine 裁决是否注入
+  7. Candidate handoff     # 交给运行中的模型决定是否展开/注入
 ```
 
 默认只启用 Step 1-3。Step 4 只有在以下条件满足时启用：
 - 当前任务明显需要创意联想、反思、长期模式或跨维度解释。
 - 直接召回置信不足，但 L1/links 暗示可能有相关页面。
 - token/cost budget 允许，且本轮不是低延迟路径。
-- ModelDecisionEngine 或 MemoryQueryPlanner 明确选择 `associate=true`。
+- 运行中的模型或 MemoryQueryPlanner 明确选择 `associate=true`。
 
 #### 3.15.4 AssociativeMemoryEngine 接口
 
@@ -948,7 +958,7 @@ DreamCycle.link_and_prune
 
 ```
 写入请求来源:
-  Agent 推断 / 用户确认 / ReflectAgent 蒸馏 / 联邦同步
+  Agent 推断 / 用户确认 / learning packet 候选 / 联邦同步
 
                     │
                     ▼
@@ -1355,11 +1365,11 @@ class WikiFileManager:
 ║            │                │                   │              │   ║
 ║            │                ▼                   ▼              │   ║
 ║            │   ┌─────────────────────────────────────────┐     │   ║
-║            │   │       ReflectAgent (Mission/Dream 触发)    │     │   ║
-║            │   │  1. 从 pending_obs 提取技能建议           │     │   ║
-║            │   │  2. 从 draft_facts 验证事实质量           │     │   ║
+║            │   │   Learning packet (Mission/Dream 触发)    │     │   ║
+║            │   │  1. pending_obs / draft_facts 作证据      │     │   ║
+║            │   │  2. 模型选择 0..N 个候选写入工具          │     │   ║
 ║            │   │  3. 冲突检测 + 质量过滤                   │     │   ║
-║            │   │  4. → MemoryWriteBatcher.queue()         │     │   ║
+║            │   │  4. memory 候选 → MemoryWriteBatcher     │     │   ║
 ║            │   └────────────────────┬────────────────────┘     │   ║
 ║            │                        │                           │   ║
 ║            │                        ▼                           │   ║

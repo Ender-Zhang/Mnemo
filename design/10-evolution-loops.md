@@ -9,16 +9,17 @@ Mnemo 的自演进不是“越用越多地写规则”，而是把用户派活�
 ```text
 User delegates work in one chat
   → AgentRunHarness executes
-  → RunLedger records decisions/tools/results
+  → RunLedger records prompt/tool/artifact/result events
   → W0 captures temporary state + observations
-  → DreamCycle / ReflectAgent mines signals
-  → ModelDecisionEngine judges what should evolve
-  → Candidate enters shadow/eval
-  → low-risk available or Decision/Inbox confirmation
-  → eval gate before active/promoted
-  → future runs recall/use it
-  → Harness measures whether it actually helped
+  → model receives a learning packet when useful
+  → model may propose 0..N mixed candidates
+  → candidate tools validate evidence/risk/schema
+  → low-risk candidates enter draft/shadow; high-risk items enter Inbox
+  → future runs may recall/use candidates
+  → replay/eval measures whether they actually helped
 ```
+
+Mnemo 不定义“先抽 memory、再抽 skill、再抽 tool”的 workflow。同一段执行轨迹可能同时产生多个候选，也可能一个都没有。系统提供统一 learning packet 和候选写入工具；模型自己判断要不要学、学成什么类型、是否需要后续校验。
 
 三条闭环：
 
@@ -26,22 +27,19 @@ User delegates work in one chat
 |------|----------|------|----------|
 | Memory Evolution | 用户事实、偏好、边界、长期上下文 | L2 wiki page、L1 index、tombstone、health card | [01-memory-engine.md](01-memory-engine.md) |
 | Skills Evolution | 这类任务该怎么做 | `SKILL.md`、SOP skill、skill patch | [02-skills-tools.md](02-skills-tools.md) |
-| Tools Evolution | 稳定机械工具链如何固化 | generated `.tool.yaml`、tool profile candidate | [02-skills-tools.md](02-skills-tools.md#134-tool-自演进机制toolcomposer) |
+| Tools Evolution | 稳定机械工具链如何固化 | generated `.tool.yaml`、tool profile candidate | [02-skills-tools.md](02-skills-tools.md#134-tool-自演进机制tool-candidate) |
 
 ## 2. Memory Evolution
 
 目标：让 Mnemo 越来越懂这个用户，但不把临时状态、错误推断、过时事实污染长期记忆。
 
 ```text
-conversation / tool result / artifact edit
-  → W0.pending_obs / W0.draft_facts
-  → ReflectAgent extracts candidates
-  → MemoryQualityFilter scores evidence
-  → ConflictResolver checks stale/conflict/tombstone
-  → MemoryWritePipeline writes L2 + audit log
-  → MemoryCompiler updates L1/L0
-  → MemorySearchPipeline recalls it in later runs
-  → Personalization eval measures wrong-memory / preference adherence
+learning packet
+  → model proposes memory candidates when durable user facts/preferences/boundaries exist
+  → memory_write_candidate validates evidence, scope, confidence and taint
+  → conflict/tombstone checks run only for memory candidates
+  → accepted candidates update L2 draft or write batch
+  → later compile updates L1/L0
 ```
 
 关键设计：
@@ -62,17 +60,12 @@ conversation / tool result / artifact edit
 目标：把重复任务的做法沉淀成模型可读的程序性记忆，同时保持主流 Agent Skills 兼容。
 
 ```text
-successful/repeated runs
-  → SkillComposer observes corrections, workflows, repeated traces
-  → model judges whether pattern is reusable
-  → draft SKILL.md in _generated/
-  → shadow mode: candidate can be evaluated but not trusted
-  → available mode: low-risk candidate can be considered with low priority
-  → SkillHarness lint / selection eval / replay eval
-  → active skill
-  → future ModelDecisionEngine selects/rejects it per task
-  → RunLedger records outcome
-  → patch / rollback if behavior regresses
+learning packet
+  → model proposes skill candidates when a reusable procedure appears
+  → skill_propose_candidate writes draft SKILL.md or patch with evidence refs
+  → shadow/eval applies only to skill candidates
+  → future model-led loop may view/select/reject it per task
+  → RunLedger records outcome and rollback evidence
 ```
 
 关键设计：
@@ -95,16 +88,11 @@ successful/repeated runs
 Tools Evolution 的正确顺序是：
 
 ```text
-repeated tool trajectory
-  → SOP skill candidate
-  → active SOP skill
-  → if still costly/noisy/repetitive
-  → ToolComposer proposes generated tool
-  → shadow tool dry run
-  → eval against historical RunLedger traces
-  → user/owner activation if risk is not low
-  → active generated tool
-  → optional standard toolset candidate after repeated success
+learning packet
+  → model proposes tool candidates only for stable mechanical sequences
+  → tool_propose_candidate writes spec draft with input/output/risk/evidence
+  → shadow dry-run/eval applies only to tool candidates
+  → activation requires risk review and rollback path
 ```
 
 关键设计：
@@ -123,6 +111,39 @@ repeated tool trajectory
 ## 5. 统一治理
 
 三条自演进闭环共用同一套治理：
+
+统一 learning packet：
+
+```yaml
+run_id: string
+mission_summary: string
+user_messages: []
+assistant_summary: string
+tool_calls: []
+tool_results_summary: []
+artifact_changes: []
+user_corrections: []
+accepted_outputs: []
+failures_or_retries: []
+candidate_context:
+  memory_hits: []
+  skills_viewed: []
+  tools_used: []
+budget:
+  max_candidates: 8
+```
+
+候选工具：
+
+| Tool | 用途 |
+|------|------|
+| `memory_write_candidate` | 写入事实、偏好、目标、边界、冲突或 tombstone 候选 |
+| `skill_propose_candidate` | 写入 SKILL.md 草稿或 patch 候选 |
+| `tool_propose_candidate` | 写入 generated tool spec 候选 |
+| `eval_propose_case` | 从失败、纠正或关键成功轨迹生成 replay/eval case |
+| `learning_discard` | 记录为什么不学习，避免下次重复分析 |
+
+模型可以一次调用多个候选工具，也可以完全不调用。系统只负责校验证据、风险、schema、权限和回滚条件。
 
 | 机制 | Memory | Skills | Tools |
 |------|--------|--------|-------|
@@ -143,7 +164,7 @@ repeated tool trajectory
 ## 6. 在设计包中的位置
 
 - 记忆自演进：见 [01-memory-engine.md](01-memory-engine.md) 的 W0、MemoryWritePipeline、DreamCycle、MemoryCompiler、tombstone。
-- Skills 自演进：见 [02-skills-tools.md](02-skills-tools.md) 的 SkillComposer、SkillHarness、SOP Skills、兼容层。
-- Tools 自演进：见 [02-skills-tools.md](02-skills-tools.md#134-tool-自演进机制toolcomposer) 的 ToolComposer、Generated Tools、Agent 自写工具。
+- Skills 自演进：见 [02-skills-tools.md](02-skills-tools.md) 的 skill candidate tools、SkillHarness、SOP Skills、兼容层。
+- Tools 自演进：见 [02-skills-tools.md](02-skills-tools.md#134-tool-自演进机制tool-candidate) 的 Tool Candidate、Generated Tools、Agent 自写工具。
 - 运行与审计：见 [07-runtime-harness.md](07-runtime-harness.md) 的 RunLedger、Mission checkpoint、Personalization Eval。
 - 路线图与原则：见 [09-roadmap-principles.md](09-roadmap-principles.md) 的 Phase 2、Extension Packs、核心原则。

@@ -1,6 +1,6 @@
 # Skills And Tools
 
-> Agent Skills 兼容、自演进技能、SOP 晶化、工具分层和 ToolComposer。
+> Agent Skills 兼容、自演进技能、SOP 晶化、工具分层和 generated tools。
 
 ## 4. 技能自演进子系统
 
@@ -24,13 +24,13 @@ Mnemo 的差异化不在于“也有 skills”，而在于 **skills 被用户记
 
 | 概念 | 回答的问题 | 存什么 | 运行时如何使用 |
 |------|------------|--------|----------------|
-| Memory | “这个用户/世界是什么样？” | 事实、偏好、关系、历史、边界 | 作为候选上下文，由模型裁决是否加载 |
+| Memory | “这个用户/世界是什么样？” | 事实、偏好、关系、历史、边界 | 作为候选上下文，由模型在 loop 中决定是否加载 |
 | Skill | “这类任务该怎么做？” | 触发条件、程序步骤、工具计划、验证点、失败恢复、例子 | 进入 prompt 指导模型执行 |
 | Tool | “系统能实际调用什么？” | API、CLI、函数、浏览器、文件系统能力 | 由模型或 harness 调用，结果写 RunLedger |
 | SOP | “重复任务的成熟路径是什么？” | 从成功 run 抽象出的参数化 procedure | 作为 skill 子类型被模型实例化和监控 |
 | Plugin / Adapter | “如何接入外部运行时？” | 协议、权限、生命周期、资源边界 | 给 RuntimeHarness 暴露能力 |
 
-一句话边界：**Skill 指导执行，Tool 负责执行，Memory 提供个性化事实，ModelDecisionEngine 做语义裁决。**
+一句话边界：**Skill 指导执行，Tool 负责执行，Memory 提供个性化事实，模型在 agentic loop 中做语义选择。**
 
 ### 4.2 技能目录与加载粒度
 
@@ -103,8 +103,8 @@ Mnemo 原生目录是 `~/.mnemo/skills/`，但必须兼容主流 Agent Skills �
 | 层级 | 进入上下文的内容 | 触发方式 |
 |------|------------------|----------|
 | L1 Skill Index | skill 名称、描述、类型、置信度、最近使用 | 常驻，几十行以内 |
-| L2 Skill Summary | frontmatter + “When to use / Procedure” 摘要 | CandidateBuilder 检索到候选 |
-| L3 Full Skill | 完整 `SKILL.md`、关键例子、模板片段 | ModelDecisionEngine 明确选择 |
+| L2 Skill Summary | frontmatter + “When to use / Procedure” 摘要 | skill_search / runtime 候选检索命中 |
+| L3 Full Skill | 完整 `SKILL.md`、关键例子、模板片段 | 模型明确调用 `skill_view` 或高风险/harness 场景需要 |
 | Asset Load | scripts、examples、long traces、eval fixtures | 执行步骤真正需要时加载 |
 
 这个设计避免把全部 skill 常驻塞进 prompt，同时保留模型按任务自主发现能力的空间。
@@ -230,20 +230,16 @@ Skill 不是“先规则匹配再执行”的分流表，而是 agentic loop 的
 
 ```
 request.received
-  → CandidateBuilder:
-      memories, skills, tools, watches, recent traces
-  → ModelDecisionEngine:
-      selected_skills, rejected_skills, tool_strategy, verification_plan
-  → SkillLoader:
-      progressive load selected SKILL.md + needed assets
   → PromptAssembler:
-      user request + selected memory + selected skills + tool affordances
+      user request + Mission + compact skill index + short tool affordances
   → AgentRunHarness:
-      model step → tool call → observation → model step → verification
+      model step → skill_view/memory_search/tool call → observation → model step → verification
+  → SkillLoader:
+      progressive load only when the model asks for SKILL.md or assets
   → RunLedger:
-      skill candidates, decisions, tool results, verification, observations
-  → ReflectAgent / SkillComposer:
-      update memory, propose skill patch, or create SOP draft
+      skill candidates, viewed skills, rejected/unused candidates, tool results, verification, observations
+  → Learning candidate tools:
+      model may write memory/skill/tool/eval candidates or discard
 ```
 
 语言无关接口：
@@ -282,11 +278,11 @@ interface SkillRuntime {
 - Registry 只生成候选，不做最终路由。
 - SkillLoader 只加载模型明确选择的内容，不偷偷改变任务目标。
 - Tool 调用仍由 AgentRunHarness 管理权限、超时、重试和审计。
-- 每次 skill 被选择、拒绝、加载、验证都写入 RunLedger，支持 replay 和 ablation eval。
+- 每次 skill 被查看、加载、用于输出、被模型拒绝或未使用，都尽量写入 RunLedger，支持 replay 和 ablation eval。
 
-### 4.5 Skill Composer：从执行轨迹中自演进
+### 4.5 Skill Candidate Refinement：从 learning candidate 中自演进
 
-Skill Composer 的输入不只是“用户喜欢什么风格”，还包括完整任务执行轨迹：
+Skill 候选精炼不单独重扫完整轨迹，也不定义“先抽 skill”的工作流。AgentRunHarness 把用户纠正、工具结果、artifact diff、失败恢复和已接受输出打成 learning packet；模型可以从同一个 packet 提出 0..N 个候选，其中 skill candidate 才进入精炼工具。
 
 | 信号 | 来源 | 可演进成什么 |
 |------|------|--------------|
@@ -299,15 +295,14 @@ Skill Composer 的输入不只是“用户喜欢什么风格”，还包括完�
 | preference_conflict | skill 与 memory 冲突 | 降级、拆分或请求异步确认 |
 
 ```ts
-interface SkillComposer {
-  observeRun(runId: string, ledger: RunLedgerView): Promise<SkillObservation[]>;
-  minePatterns(scope: MineScope): Promise<SkillDraft[]>;
-  proposePatch(skillId: string, evidence: Evidence[]): Promise<SkillPatch>;
+interface SkillCandidateTools {
+  refineCandidate(candidate: SkillCandidateProposal, evidence: Evidence[]): Promise<SkillDraft | SkillPatch>;
   evaluateDraft(draftId: string, harness: SkillHarness): Promise<SkillEvalReport>;
+  recordOutcome(runId: string, skillId: string, outcome: SkillOutcome): Promise<void>;
 }
 ```
 
-`SkillComposer` 由模型负责语义判断，规则只做候选聚合和安全阈值。例如“同类任务出现 3 次”只是触发候选挖掘，不等于自动生成；模型需要判断这些 run 是否真是同一 procedure、是否有足够验证、是否适合泛化。
+Skill candidate tools 由模型负责语义判断，规则只做证据校验、权限边界、schema 校验和回滚要求。例如“同类任务出现多次”只是 evidence，不等于自动生成；模型需要判断这些 run 是否真是同一 procedure、是否有足够验证、是否适合泛化。
 
 Skill patch 必须包含：
 
@@ -319,7 +314,7 @@ Skill patch 必须包含：
 
 ### 4.6 Skill Registry 与模型裁决
 
-`SkillRegistry` 是检索索引，不是路由系统。它负责把可能相关的 skills 找出来，把选择权交给 `ModelDecisionEngine`。
+`SkillRegistry` 是检索索引，不是路由系统。它负责把可能相关的 skills 找出来，把选择权交给运行中的模型。
 
 ```ts
 interface SkillRegistry {
@@ -342,7 +337,7 @@ L1 Skill Index 示例：
 - _generated: 4 draft, 2 shadow, 1 needs eval
 ```
 
-`ModelDecisionEngine` 收到候选后输出 `DecisionEnvelope`：
+普通执行中，模型通过 `skill_view` 和工具循环自然选择 skill；需要审计、harness 对比或高风险动作时，运行时可把选择写成 `decision.recorded` 事件：
 
 ```json
 {
@@ -515,7 +510,7 @@ Mnemo 的 skill 系统必须能被当作一个 Agent Skills-compatible client �
 | `disable-model-invocation` | extension | user-only slash skill | maps to explicit_only | maps to slash-only | `activation.mode=explicit_only` |
 | `user-invocable` | extension | controls slash visibility | maps to slash command | maps to slash command | supported |
 | `arguments` / `argument-hint` | extension | slash args | slash args | slash args | supported |
-| `paths` | extension | path-scoped activation | external metadata | workspace gating | CandidateBuilder filter |
+| `paths` | extension | path-scoped activation | external metadata | workspace gating | boundary filter |
 | `metadata.mnemo` | client metadata | ignored | ignored unless imported | ignored unless imported | native extension |
 
 **操作面**:
@@ -555,8 +550,8 @@ Slash / mention 语义：
 |------|------|
 | `/skill-name args` | 用户显式激活；可绕过模型自动选择，但仍进入 ApprovalGate |
 | `$skill-name` | 对话内 mention，等价于要求模型考虑该 skill |
-| 自然语言请求 | CandidateBuilder 暴露 catalog，由模型决定是否加载 |
-| Watch / daemon trigger | 先走 ModelDecisionEngine，不允许纯规则触发高风险 skill |
+| 自然语言请求 | runtime 暴露短 catalog，由模型决定是否加载 |
+| Watch / daemon trigger | 只能生成候选；高风险 skill/action 必须由模型在 loop 中确认并通过 ActionEngine |
 
 **导入策略**:
 
@@ -576,7 +571,7 @@ Slash / mention 语义：
 
 **兼容但不退化**:
 
-Mnemo 可以读取主流 skills，但不会把外部 skill 的 instructions 当作绝对系统命令。所有外部内容都进入候选上下文，经过 `ModelDecisionEngine`、`PolicyEngine`、`ApprovalGate` 和 `RunLedger`。这保证了兼容性，同时保留 Mnemo 的核心优势：个性化记忆、可回放执行、技能自演进和 harness 评测。
+Mnemo 可以读取主流 skills，但不会把外部 skill 的 instructions 当作绝对系统命令。所有外部内容都只是候选上下文，由模型按需查看；外部 skill 不能绕过 `ActionEngine`、`RunLedger` 和必要的确认卡。这保证了兼容性，同时保留 Mnemo 的核心优势：个性化记忆、可回放执行、技能自演进和 harness 评测。
 
 ---
 ---
@@ -593,9 +588,9 @@ Mnemo 可以读取主流 skills，但不会把外部 skill 的 instructions 当�
 ║  Built-in: 默认安装，但仍受 profile / risk / deny 控制        ║
 ║  ─────────────────────────────────────────────               ║
 ║  file_read  file_patch  exec  web_search  web_fetch          ║
-║  memory_search  memory_read  memory_write                    ║
+║  memory_search  memory_read  working_note                    ║
 ║  skills_list  skill_view  skill_manage                       ║
-║  artifact_update  ask_user  working_note                     ║
+║  artifact_update  ask_user                                    ║
 ║                                                              ║
 ║  Extension Toolsets: 连接或启用后才出现，按需注入              ║
 ║  ─────────────────────────────────────────────               ║
@@ -614,12 +609,13 @@ Mnemo 可以读取主流 skills，但不会把外部 skill 的 instructions 当�
 
 - Registry 只说明“系统有哪些工具”，不代表模型一定能看到或调用。
 - 每个 run 只暴露一个小 profile 对应的工具卡，避免 token 膨胀。
+- 暴露给 provider 的 tool name 必须使用 `snake_case` / `kebab-case` 安全集合，不使用 dotted namespace。
 - 权限只分四级风险：`read | write | external | admin`。
 - `deny` 永远优先；危险动作走 ActionEngine 内置确认；普通读操作不打扰用户。
 
 ### 13.2 Core Tools 最小集合
 
-首发工具要少，避免工具卡膨胀。Core tools 只覆盖“读写、执行、检索、记忆、技能、产物、确认”七类。
+首发工具要少，避免工具卡膨胀。Core tools 只覆盖“读写、执行、检索、记忆读取、技能、产物、确认”七类。长期记忆写入不作为普通 core tool 暴露，统一走候选写入工具。
 
 ```python
 CORE_TOOLS = {
@@ -630,13 +626,24 @@ CORE_TOOLS = {
     "web_fetch": "获取 URL 正文或链接摘要",
     "memory_search": "检索 L1/L2/L4，返回 bounded snippets",
     "memory_read": "读取允许暴露的记忆页面或 L1 指针",
-    "memory_write": "提交 MemoryFactCandidate，经写入管线处理",
     "skills_list": "列出 skill 索引和短摘要",
     "skill_view": "按需加载 SKILL.md 或 supporting file",
     "skill_manage": "创建/补丁 skill shadow copy，晋升需治理",
     "artifact_update": "创建或更新聊天内 artifact",
     "ask_user": "生成内联 Decision/clarification card",
     "working_note": "写 W0 turn_scratch/mission_state",
+}
+```
+
+Learning / Dream 阶段按需暴露的候选写入工具使用 provider-safe snake_case 名称：
+
+```python
+LEARNING_CANDIDATE_TOOLS = {
+    "memory_write_candidate": "提交 MemoryFactCandidate，经写入管线处理",
+    "skill_propose_candidate": "提交 SKILL.md 草稿或 patch 候选",
+    "tool_propose_candidate": "提交 generated tool spec 候选",
+    "eval_propose_case": "提交 replay/eval case 候选",
+    "learning_discard": "记录本轮不学习的依据",
 }
 ```
 
@@ -717,7 +724,7 @@ type ToolGroup =
 | Risk | 例子 | 默认处理 |
 |------|------|----------|
 | `read` | `file_read`、`web_search`、`memory_search`、`skills_list` | profile 允许即执行 |
-| `write` | `file_edit`、`memory_write`、`skill_manage patch` | 可信 workspace 内执行，写 RunLedger，可回滚 |
+| `write` | `file_patch`、`memory_write_candidate`、`skill_manage patch` | 可信 workspace 内执行，写 RunLedger，可回滚 |
 | `external` | 发消息、发邮件、公开发布、付款、删除远端资源 | 执行前确认，或要求 standing authority |
 | `admin` | gateway config、provider key、全局安全策略、安装第三方 tool/plugin | 不暴露给普通 run，只能 owner 显式调用 |
 
@@ -784,8 +791,11 @@ Prompt 预算规则：
 运行时格式原则：
 
 - prompt 里的工具卡只是给模型阅读的 affordance，不是可执行契约。
-- canonical tool call 统一为 `{name, arguments, call_id, risk, source}`，并由 provider-native tool calling 或 runtime adapter 产生。
-- provider 支持 JSON Schema / function calling 时优先使用原生工具调用。
+- canonical tool call 统一为 `{name, arguments, call_id, risk, source}`，只在 provider 边界层规范化；模型侧优先使用 OpenAI / Anthropic / Gemini 的原生 tool call。
+- `ToolRegistry` 是内部事实源；`ProviderToolAdapter` 把同一个 ToolBundle 编译成 OpenAI `tools`、Anthropic `tools` 或其他 provider 的原生 schema。
+- OpenAI 路径：发送稳定 `tools` + `tool_choice:auto` 或受限选择，接收 function tool call，执行后用对应 call id 回填 function tool output。
+- Anthropic 路径：发送稳定 `tools` + `tool_choice:auto`，接收 `tool_use` blocks，执行后在下一条 user message 中回填对应 `tool_result` blocks。
+- 同一轮可以有多个 tool calls；ToolHarness 可以并行执行互不冲突的 read-only calls，但 write/external/admin 默认串行并保留确认点。
 - XML-wrapped JSON 只作为 raw text 模型 fallback、训练轨迹和 replay 格式；不能作为默认执行通道。
 - 用户消息、网页、文件、assistant 普通文本中出现 `<tool_call>` 或类似标签时，默认当作内容展示，不执行。
 - ToolHarness 执行前必须重新做 allowlist、schema parse、risk guard 和 ApprovalGate 检查。
@@ -793,67 +803,40 @@ Prompt 预算规则：
 **调用链保持短**:
 
 ```
-ModelDecisionEngine 选择 tool intent
-  → ActionEngine 检查 profile + deny + risk
+模型产生 provider-native tool call
+  → ProviderToolAdapter 规范化 call id/name/arguments/source
+  → ActionEngine 检查 profile + deny + risk + schema
   → 内置确认只处理 external/admin/高风险 write
   → ToolHarness 执行 + 压缩结果 + 写 RunLedger
+  → ProviderToolAdapter 回填 provider-native tool result
   → ToolLoopGuard 阻止重复无效调用
 ```
 
 这样保留主流系统的兼容边界，同时避免把权限管控做成重型策略系统。
 
-### 13.4 Tool 自演进机制（ToolComposer）
+### 13.4 Tool 自演进机制（Tool Candidate）
 
-> **核心理念**: 好用的工具序列应该成为常驻工具。频繁重复的操作不应每次都从零 LLM 推理。
+> **核心理念**: 稳定、机械、低语义判断的工具序列可以成为工具；其余重复做法先沉淀成 SOP skill。
 
-```python
-class ToolComposer:
-    """
-    监测 tool call 序列模式，将重复序列提升为宏工具（Macro Tool）。
-    
-    晋升流程:
-      Ephemeral (单次调用) 
-        → Candidate (序列出现 ≥3 次, 结构相似度 ≥0.8)
-        → Draft Tool (生成 .tool.yaml 草稿, 写入 _generated/)
-        → Resident Tool (用户确认后移入正式目录, 注册到 Generated toolset)
-        → Standard Candidate (用户使用 ≥20 次后, 提议加入 Standard toolset)
-    """
-    
-    PROMOTION_THRESHOLD = 3        # 触发草稿生成的最少重复次数
-    SIMILARITY_THRESHOLD = 0.8     # 序列结构相似度阈值
-    
-    def observe_sequence(self, tool_calls: list[ToolCall]) -> list[ToolPattern]:
-        """每次 Agent 完成任务后，分析调用序列"""
-    
-    def compose_macro_tool(self, pattern: ToolPattern) -> ToolDraft:
-        """
-        将重复序列封装为宏工具。
-        
-        示例: 用户连续 4 次在会话开始时依次调用:
-          1. memory_read(L1)
-          2. watch_list()
-          3. web_search("今日 AI 新闻")
-          4. memory_read("context/current-projects")
-        
-        → 自动生成:
-          name: morning-context-load
-          description: 加载晨间上下文（L1记忆+关注点+AI新闻+当前项目）
-          steps:
-            - memory_read level=L1
-            - watch_list
-            - web_search query="today AI news"
-            - memory_read path="context/current-projects"
-          estimated_tokens_saved: ~800/调用
-        """
-    
-    def present_to_user(self, draft: ToolDraft) -> str:
-        """
-        格式化提案给用户:
-        "我注意到你在过去 4 次会话开始时都做了相同的 4 步操作。
-         建议将它保存为工具 `morning-context-load`，未来一条命令完成。
-         [查看详情] [确认激活] [忽略]"
-        """
+Tool 自演进不需要单独的规则引擎。执行结束后，同一份 learning packet 暴露 `tool_propose_candidate` 能力；模型只有在看到“稳定输入输出、固定副作用、低语义判断、可回滚、可评测”的证据时，才把某段工具链提议成 generated tool。
+
+```ts
+interface ToolCandidateTool {
+  proposeCandidate(input: {
+    runId: string;
+    name: string;
+    description: string;
+    inputSchema: JsonSchema;
+    outputSchema: JsonSchema;
+    risk: "read" | "write" | "external" | "admin";
+    evidenceRefs: EvidenceRef[];
+    rollbackPlan: string;
+    evalCases: string[];
+  }): Promise<ToolDraft>;
+}
 ```
+
+示例：模型可能把“读取 PR 列表并规范化 JSON 字段”提议成工具；但“PR 是否该合并”“如何向用户解释风险”仍留给模型。系统只检查 schema、权限、risk、eval 和 rollback，不按固定次数阈值自动晋升。
 
 ### 13.5 Tool 文件格式（Generated Tools）
 
@@ -911,7 +894,7 @@ output_template: |
 
 ### 13.6 Agent 自写工具
 
-Agent 不只能"提议宏工具"，还能在任务中**直接编写新工具**：
+Agent 不只能"提议宏工具"，还能在任务中**直接编写新工具**。这些动作仍通过 provider-native tool call 调用 Mnemo 暴露的 `skill_manage`、`file_write`、`tool_propose_candidate` 等工具；模型不手写 Mnemo 私有 XML 指令：
 
 ```python
 # 在 agentic loop 中，Agent 遇到重复且可自动化的模式时，可以：

@@ -20,27 +20,31 @@
 │     ├─ candidate skills/SOPs/tools     │
 │     └─ Active watches/sense snapshot   │
 │                                        │
-│  2. model_decide()                     │
-│     ├─ choose context slice            │
-│     ├─ choose plan/tool strategy       │
-│     ├─ choose memory/skill actions     │
-│     └─ output DecisionEnvelope         │
+│  2. assemble_initial_prompt()          │
+│     ├─ stable Soul / L1 / mission      │
+│     ├─ compact skill index             │
+│     ├─ short tool cards                │
+│     └─ optional high-confidence hits   │
 │                                        │
-│  3. llm_call(system_prompt, messages)  │
-│     │                                  │
-│     ▼                                  │
-│  4. tool_dispatch()                    │
+│  3. provider_native_model_call()       │
+│     ├─ answer / continue / confirm     │
+│     ├─ memory_search / skill_view      │
+│     ├─ native tool call(s)             │
+│     └─ optional decision.recorded      │
+│                                        │
+│  4. ProviderToolAdapter + ToolHarness  │
 │     ├─ memory_tools (read/write/search/associate) │
 │     ├─ skill_tools (list/view/activate/manage/eval)│
-│     ├─ tool_tools  (list/view/write/macro)│
+│     ├─ tool_tools  (list/view/write/candidate)│
 │     ├─ watch_tools (add/update)        │
 │     ├─ sense_tools (android_get/set)   │
 │     └─ external_tools (user-defined)   │
+│     └─ observation returns to step 3    │
 │                                        │
-│  5. post_turn_hooks()                  │
-│     ├─ skill_composer.observe_turn()   │ ← 自演进
-│     ├─ memory_sync()                   │ ← 记忆更新
-│     └─ watch_engine.check_triggers()  │ ← 关注点跟踪
+│  5. observe_and_queue()                │
+│     ├─ Mission checkpoint              │
+│     ├─ learning packet                 │
+│     └─ model may propose 0..N candidates│
 │                                        │
 │  6. compress_if_needed()               │
 │     └─ context_compressor.run()        │
@@ -50,43 +54,20 @@
  delivery → CLI / MCP / REST / Push(cron)
 ```
 
-### 5.2 Reflect Agent（自我反思循环）
+### 5.2 Learning Reflection（模型自主学习回合）
 
-```python
-class ReflectAgent:
-    """
-    后台运行的自我反思 Agent.
-    不直接响应用户; 负责蒸馏、演进、主动任务.
-    
-    触发时机:
-    - on_mission_idle/on_mission_end: Mission 空闲或结束后提取记忆候选
-    - dream_cycle: 空闲期批量蒸馏、编译、健康检查
-    - weekly_sun: 技能挖掘 + 本体论审计（由 DreamCycle 编排）
-    - watch_event: 关注点触发时
-    """
-    
-    REFLECT_PROMPT = """
-    You are performing a memory reflection. Review the recent conversation.
-    
-    Tasks:
-    1. EXTRACT: What new facts about the person should update their wiki?
-       Format: {"dimension": "...", "page": "...", "update": "..."}
-    
-    2. VALIDATE: Which existing memories were confirmed or contradicted?
-       Format: {"page_path": "...", "action": "confirm|contradict|stale"}
-    
-    3. PATTERN: Did you observe any interaction patterns worth noting?
-       Format: {"category": "...", "observation": "...", "signal_type": "..."}
-    
-    4. SKILL: Should any new personal skill be drafted?
-       Format: {"name": "...", "category": "...", "rules": [...]}
-    
-    Apply memory axioms:
-    - Only write facts the user confirmed or that are directly evidenced
-    - Do not write volatile state (current file path, today's date, etc.)
-    - Confidence = 0.5 for inferred, 0.9 for explicitly confirmed
-    """
+反思不是一个固定 extractor，也不是“memory → skill → tool”的串行流程。运行时只在 Mission idle/end、DreamCycle、用户纠正或压缩前，把近期轨迹整理成 learning packet，并把候选写入工具暴露给模型：
+
+```text
+learning packet
+  + memory_write_candidate
+  + skill_propose_candidate
+  + tool_propose_candidate
+  + eval_propose_case
+  + learning_discard
 ```
+
+模型可以一次提出多个候选，也可以一个都不提。系统只校验证据、schema、风险、权限和回滚条件；是否值得学习、学成记忆还是 skill/tool/eval case，由模型根据 packet 自主判断。
 
 ### 5.3 Context Compressor
 
@@ -96,14 +77,14 @@ class MnemoContextCompressor:
     上下文压缩器: 当 prompt_tokens > threshold 时触发.
     
     压缩策略:
-    1. 提取新记忆候选 (交 ReflectAgent 处理)
+    1. 保留可学习信号，必要时形成 learning packet
     2. 保留最近 N 轮 + 首 M 轮 (上下文锚点)
     3. 将中间对话压缩为单条摘要消息
     4. 保持技能观察记录 (写入 patterns/ 再清理)
     
     关键特性:
-    - 压缩时同步蒸馏记忆 (on_pre_compress 钩子)
-    - 压缩摘要不丢失技能观察信号
+    - 压缩时不直接写长期记忆，只保留 evidence refs 和候选信号
+    - 压缩摘要不丢失 memory/skill/tool/eval 候选证据
     """
     
     threshold_percent: float = 0.75   # prompt_tokens / context_length
@@ -153,57 +134,46 @@ class MnemoContextCompressor:
         """
 ```
 
-### 5.4 Model Decision Layer（模型裁决层）
+### 5.4 RunLedger Decision Records（决策记录）
 
-Mnemo 的核心循环不应把 “if coding then load cognition” 这类规则写死。规则只负责生成候选、约束边界、保证安全；真正的上下文选择、工具策略、记忆写入建议、技能复用判断，应交给模型在每个 run 中做裁决。
+Mnemo 的核心循环由模型通过工具和上下文自由展开。规则只负责生成候选、约束边界和保证安全；上下文选择、工具策略、记忆写入建议、技能复用判断，都发生在 agentic loop 中。
 
 **原则**:
 - 候选生成可以是确定性的：BM25、L1 pointer、embedding、recent watches、tool availability。
-- 裁决必须由模型完成：哪些候选真的有用、是否需要继续探测、是否应该写记忆、是否该调用 SOP。
+- 语义选择必须由模型完成：哪些候选真的有用、是否需要继续探测、是否应该写记忆、是否该调用 SOP。
 - 规则只做不可谈判的护栏：权限、隐私、token budget、危险工具、schema 校验、最大循环次数。
-- 所有模型裁决必须写入 RunLedger，支持回放和评测。
+- 默认不单独发起“决策模型调用”；模型在执行 loop 中选择工具和上下文。
+- 关键选择必须可从 RunLedger 重建；必要时写成 `decision.recorded` 事件，支持回放和评测。
+
+`decision.recorded` 的定位：
+
+| 场景 | 是否显式生成 | 原因 |
+|------|--------------|------|
+| 普通聊天/执行 | 否，RunLedger 从 tool calls 和 prompt blocks 重建 | 减少一次模型调用和 token |
+| 高风险 external/admin 动作 | 是 | 需要确认卡、风险说明和可审计依据 |
+| 外部 runtime / sub-agent | 是 | 需要 context capsule 和边界契约 |
+| 长任务压缩 / mission fork | 是 | 需要 checkpoint 和 continuation reason |
+| harness / ablation eval | 是 | 需要比较 selected/rejected context |
 
 语言无关接口：
 
 ```ts
-type DecisionTask =
-  | "context_route"
-  | "tool_strategy"
-  | "memory_write"
-  | "skill_reuse"
-  | "watch_action"
-  | "recovery";
-
-interface CandidateSet {
-  request: AgentRequest;
-  profile: ProfileCard;
-  memory: CandidateMemoryPage[];
-  skills: CandidateSkill[];
-  tools: ToolSpec[];
-  watches: WatchSnapshot[];
-  constraints: PolicyConstraint[];
-  budget: ContextBudget;
-}
-
-interface DecisionEnvelope {
-  task: DecisionTask;
-  selected: string[];
-  rejected: { id: string; reason: string }[];
-  plan: string;
-  confidence: number;
-  requiredApprovals: ApprovalRequest[];
+interface DecisionRecordEvent {
+  type: "decision.recorded";
+  runId: string;
+  reason: "external_action" | "subagent" | "runtime_capsule" | "mission_fork" | "compression" | "harness";
+  selected: { id: string; kind: "memory" | "skill" | "tool" | "artifact"; reason: string }[];
+  rejected: { id: string; kind: string; reason: string }[];
   risk: "low" | "medium" | "high";
-  auditNote: string;
+  confidence: number;
+  evidenceRefs: string[];
 }
 
-interface ModelDecisionEngine {
-  decide(task: DecisionTask, candidates: CandidateSet): DecisionEnvelope;
-}
 ```
 
-`DecisionEnvelope` 是 Mnemo 的关键中间产物。它不是 prompt 里的隐式思考，而是可审计的运行时决策记录：为什么加载这 2 个 L2 页面，为什么没加载 relationships，为什么选择 SOP 而不是重新探索。
+`decision.recorded` 不是单独子系统，只是 RunLedger 事件：为什么加载这 2 个 L2 页面，为什么没加载 relationships，为什么选择 SOP 而不是重新探索。
 
-**模型裁决示例**:
+**决策记录示例**:
 
 ```
 Task: context_route
@@ -353,30 +323,24 @@ class ModelContextManager:
         """当 used_tokens > MODEL_CONTEXTS[model] * 0.75 时触发压缩"""
 ```
 
-### 5.7 Model Broker（模型路由）
+### 5.7 Runtime Model Policy（模型策略）
 
-模型选择本身也应是可配置 broker，而不是“Python 类里写死模型名”。不同任务使用不同模型：编译/评测可用便宜或本地模型，用户交互和高风险裁决用高质量模型，敏感内容优先本地模型或脱敏摘要。
+首发不做独立模型路由系统。运行时只需要一个简单模型策略：默认主模型、少量 fallback、本地敏感任务选项，以及每次选择的账本记录。
 
 ```yaml
-model_broker:
-  default: high_quality
-  tasks:
-    decide.context_route: fast_reasoner
-    decide.memory_write: high_quality
-    decide.approval: high_quality
-    compile.l1: cost_effective
-    eval.judge: high_quality
-    search.rerank: fast_reasoner
-    sensitive.local_only: local_private
-
-  providers:
-    high_quality: {provider: anthropic|openai|gemini, model: "..."}
-    fast_reasoner: {provider: openai|gemini|local, model: "..."}
-    cost_effective: {provider: openrouter|local, model: "..."}
-    local_private: {provider: ollama|llama.cpp, model: "..."}
+model_policy:
+  default: primary
+  fallback: compact
+  local_for_sensitive: optional
+  background_maintenance: compact
 ```
 
-Model Broker 的输出也进入 RunLedger：`model.selected`、`reason`、`fallback_used`、`sensitive_redaction`、`cost`。
+模型策略只回答两个问题：
+
+- 这个 run 用哪个模型和 provider？
+- fallback、脱敏或本地执行是否发生？
+
+输出写入 RunLedger：`model.selected`、`fallback_used`、`sensitive_redaction`、`cost`。复杂的多模型成本优化、judge 模型和 per-task routing 等到成本压力出现后再扩展。
 
 ---
 ---
@@ -426,11 +390,12 @@ class PromptAssembler:
     - Layer 3: 可用预算 = max_context * 0.15 - L1 - L2
     
     组装策略:
-    1. CandidateBuilder 生成候选: L1 pointer / BM25 / embeddings / recent runs / watches
-    2. PolicyEngine 过滤不可暴露页面、危险工具和超预算候选
-    3. ModelDecisionEngine 裁决: 选择真正要注入的 L2 pages / skills / watches
-    4. PromptAssembler 只执行最终拼装和 token 裁剪，不做语义裁决
-    5. 所有 selected/rejected 候选写入 DecisionEnvelope 和 RunLedger
+    1. Runtime 收集候选: L1 pointer / BM25 / embeddings / recent runs / watches
+    2. ContextEngine/ActionEngine 过滤不可暴露页面、危险工具和超预算候选
+    3. 默认只注入稳定 L1、Mission、短 skill index、短工具卡和少量高置信候选
+    4. 模型在 loop 中通过 memory_search / skill_view / tool call 自主展开
+    5. PromptAssembler 只执行最终拼装和 token 裁剪，不做语义裁决
+    6. selected/viewed/rejected 候选从 tool loop 和 RunLedger 重建；需要时再写 decision.recorded
     """
     
     def assemble(
@@ -577,7 +542,7 @@ Mnemo 的 Soul.md 解决的问题更深：**这个 AI 伴侣对这个特定用�
 | 对比维度 | 常规 Agent 身份定义 | Mnemo Soul.md |
 |---------|-------------------|--------------|
 | 定义对象 | Agent 自身（名字、能力、执行原则） | 这个 AI 对这个用户是什么 |
-| 更新机制 | 固定配置；需要改代码 | 可被 SkillComposer 提议更新 |
+| 更新机制 | 固定配置；需要改代码 | 可由 learning candidate 提议更新 |
 | 个性化程度 | 所有用户一样 | 每个用户专属 |
 | 内容形式 | 结构化规则 | YAML frontmatter + 自然语言叙述 |
 
@@ -668,8 +633,8 @@ class SoulLoader:
 Soul.md 是少数**可以被 Agent 提议修改**但**必须由用户确认**的文件：
 
 ```
-触发: 当 SkillComposer 观察到 ≥5 次强信号指向"沟通契约应该更新"时
-例如: 用户 5 次明确要求"不要给我太多选项"
+触发: learning packet 中出现高置信、反复确认的沟通契约信号时
+例如: 用户多次明确要求"不要给我太多选项"
 → Agent 生成 Soul.md 更新提案:
   "我注意到你多次希望我直接给出建议而不是列出选项。
    建议更新 Soul.md 沟通风格条款：
