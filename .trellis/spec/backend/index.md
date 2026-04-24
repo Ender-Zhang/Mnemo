@@ -21,6 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Tool Harness Contracts](./tool-harness.md) | Provider-native tool specs, policy gates, and compact results | Active |
 | [Prompt Assembly Contracts](./prompt-assembly.md) | Cache-friendly prompt ordering, context budgeting, and metadata | Active |
+| [Memory Engine Contracts](./memory-engine.md) | Candidate consolidation, reinforcement, conflict signals, and provenance links | Active |
 
 ---
 

@@ -412,6 +412,13 @@ class StateStore:
                 (status, candidate_id),
             )
 
+    def update_memory_page_confidence(self, page_id: str, confidence: float) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE memory_pages SET confidence = ?, updated_at = ? WHERE id = ?",
+                (confidence, time.time(), page_id),
+            )
+
     def get_memory_candidate(self, candidate_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(

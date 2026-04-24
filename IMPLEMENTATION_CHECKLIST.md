@@ -55,7 +55,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Stable memory is not directly mutated by normal task tools.
 - [x] Memory engine pages/indexes beyond candidates.
 - [~] Associative recall / LLM Wiki style memory graph.
-- [ ] Conflict detection and confidence updates.
+- [x] Conflict detection and confidence updates.
 - [ ] W0 working memory to long-term candidate pipeline.
 - [x] DreamCycle idle memory consolidation.
 - [ ] Daily compiled L1 cache-friendly memory snapshot.
@@ -143,3 +143,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-25-implement-config-resolver`: shared runtime config resolver, redacted inspect CLI, and provider config refactor are in progress.
 - [x] `04-25-implement-standard-local-tools-foundation`: workspace-scoped file tools, policy-gated web fetch, and policy-gated shell execution are implemented.
 - [x] `04-25-implement-prompt-context-compression`: prompt token budget, optional block dropping, checkpoint compaction, and dropped-block metadata are implemented.
+- [x] `04-25-implement-memory-conflict-reinforcement`: duplicate reinforcement, conflict review routing, and memory link provenance are implemented.

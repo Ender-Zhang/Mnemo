@@ -121,6 +121,57 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(rejected[empty_id], "rejected:empty")
             self.assertEqual(rejected[duplicate_id], "rejected:duplicate")
 
+    def test_duplicate_candidate_reinforces_existing_page_confidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: updates",
+                "User prefers concise updates",
+                confidence=0.7,
+            )
+            duplicate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers concise updates",
+                dimension="preferences",
+                confidence=0.82,
+            )
+
+            result = MemoryEngine(store).dream_consolidate(min_confidence=0.7)
+
+            page = store.get_memory_page(page_id)
+            links = store.list_memory_links(duplicate_id)
+            self.assertEqual(result["rejected"][0]["candidate_id"], duplicate_id)
+            self.assertEqual(result["rejected"][0]["status"], "rejected:duplicate")
+            self.assertGreater(page["confidence"], 0.82)
+            self.assertEqual(links[0]["relation"], "reinforces")
+            self.assertEqual(links[0]["target_id"], page_id)
+
+    def test_conflicting_candidate_is_routed_to_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: updates",
+                "User prefers concise updates",
+                confidence=0.9,
+            )
+            conflict_id = store.add_memory_candidate(
+                run_id,
+                "User dislikes concise updates",
+                dimension="preferences",
+                confidence=0.95,
+            )
+
+            result = MemoryEngine(store).dream_consolidate(min_confidence=0.7)
+
+            candidate = store.get_memory_candidate(conflict_id)
+            links = store.list_memory_links(conflict_id)
+            self.assertEqual(result["conflicts"][0]["candidate_id"], conflict_id)
+            self.assertEqual(result["conflicts"][0]["conflict_page_id"], page_id)
+            self.assertEqual(candidate["status"], "needs_review:conflict")
+            self.assertEqual(links[0]["relation"], "conflicts_with")
+            self.assertEqual(links[0]["target_id"], page_id)
+            self.assertEqual(store.get_memory_page(page_id)["content"], "User prefers concise updates")
+
 
 def _store_with_run(tmp: str) -> tuple[StateStore, str]:
     store = StateStore(tmp)

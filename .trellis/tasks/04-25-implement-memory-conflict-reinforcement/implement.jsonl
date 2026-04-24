@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/memory/engine.py", "reason": "memory consolidation logic"}
+{"file": "tests/test_memory.py", "reason": "memory engine tests"}
+{"file": "mnemo/storage/sqlite.py", "reason": "memory page confidence and links persistence"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "avoid duplicating memory helpers"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "executable memory engine contract"}

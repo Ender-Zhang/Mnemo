@@ -94,6 +94,7 @@ class MemoryEngine:
         promoted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
+        conflicts: list[dict[str, Any]] = []
         seen_claims: set[str] = set()
 
         for candidate in sorted(
@@ -107,12 +108,20 @@ class MemoryEngine:
                 rejected.append(self.reject_candidate(candidate["id"], "empty"))
                 continue
 
-            if fingerprint in seen_claims or self._has_duplicate_page(claim):
+            duplicate_page = self._find_duplicate_page(claim)
+            if fingerprint in seen_claims or duplicate_page:
+                if duplicate_page:
+                    self._reinforce_page(candidate, duplicate_page)
                 rejected.append(self.reject_candidate(candidate["id"], "duplicate"))
                 continue
 
             seen_claims.add(fingerprint)
             confidence = float(candidate.get("confidence", 0.0))
+            conflict_page = self._find_conflicting_page(candidate)
+            if conflict_page:
+                conflicts.append(self._mark_conflict(candidate, conflict_page))
+                continue
+
             if confidence >= min_confidence:
                 promoted.append(self.promote_candidate(candidate["id"]))
             else:
@@ -128,6 +137,7 @@ class MemoryEngine:
             "promoted": promoted,
             "rejected": rejected,
             "skipped": skipped,
+            "conflicts": conflicts,
         }
 
     def _get_candidate(self, candidate_id: str) -> dict[str, Any] | None:
@@ -144,12 +154,60 @@ class MemoryEngine:
             return get_page(page_id)
         return None
 
-    def _has_duplicate_page(self, claim: str) -> bool:
+    def _find_duplicate_page(self, claim: str) -> dict[str, Any] | None:
         matches = self.store.search_memory_pages(claim, limit=1)
-        return any(
-            _fingerprint(page.get("content", "")) == _fingerprint(claim)
-            for page in matches
+        return next(
+            (
+                page
+                for page in matches
+                if _fingerprint(page.get("content", "")) == _fingerprint(claim)
+            ),
+            None,
         )
+
+    def _reinforce_page(self, candidate: dict[str, Any], page: dict[str, Any]) -> None:
+        page_confidence = float(page.get("confidence", 0.0))
+        candidate_confidence = float(candidate.get("confidence", 0.0))
+        confidence = min(1.0, max(page_confidence, candidate_confidence) + 0.05)
+        update_confidence = getattr(self.store, "update_memory_page_confidence", None)
+        if update_confidence:
+            update_confidence(page["id"], confidence)
+        self.store.add_memory_link(candidate["id"], page["id"], "reinforces", weight=confidence)
+
+    def _find_conflicting_page(self, candidate: dict[str, Any]) -> dict[str, Any] | None:
+        claim = _normalize_space(candidate.get("claim", ""))
+        if not claim:
+            return None
+        polarity = _polarity(claim)
+        if polarity == "neutral":
+            return None
+        queries = [
+            candidate.get("dimension") or "",
+            *_keywords(claim)[:4],
+        ]
+        seen: set[str] = set()
+        for query in queries:
+            if not query:
+                continue
+            for page in self.store.search_memory_pages(str(query), limit=10):
+                page_id = str(page.get("id"))
+                if page_id in seen:
+                    continue
+                seen.add(page_id)
+                if _is_conflict(claim, page.get("content", "")):
+                    return page
+        return None
+
+    def _mark_conflict(self, candidate: dict[str, Any], page: dict[str, Any]) -> dict[str, Any]:
+        status = "needs_review:conflict"
+        self.store.update_memory_candidate_status(candidate["id"], status)
+        self.store.add_memory_link(candidate["id"], page["id"], "conflicts_with", weight=float(candidate.get("confidence", 0.5)))
+        return {
+            "candidate_id": candidate["id"],
+            "status": status,
+            "conflict_page_id": page["id"],
+            "reason": "conflicts_with_active_memory",
+        }
 
 
 def _candidate_title(candidate: dict[str, Any]) -> str:
@@ -183,6 +241,34 @@ def _fingerprint(value: str) -> str:
     return re.sub(r"\W+", "", value.casefold())
 
 
+def _keywords(value: str) -> list[str]:
+    tokens = re.findall(r"[a-z0-9]+", value.casefold())
+    return [
+        token
+        for token in tokens
+        if len(token) > 2 and token not in _STOPWORDS
+    ]
+
+
+def _polarity(value: str) -> str:
+    text = f" {_normalize_space(value).casefold()} "
+    if any(marker in text for marker in _NEGATIVE_MARKERS):
+        return "negative"
+    if any(marker in text for marker in _POSITIVE_MARKERS):
+        return "positive"
+    return "neutral"
+
+
+def _is_conflict(left: str, right: str) -> bool:
+    left_polarity = _polarity(left)
+    right_polarity = _polarity(right)
+    if {left_polarity, right_polarity} != {"positive", "negative"}:
+        return False
+    left_keywords = set(_keywords(left))
+    right_keywords = set(_keywords(right))
+    return bool(left_keywords & right_keywords)
+
+
 def _normalize_space(value: str) -> str:
     return " ".join(value.strip().split())
 
@@ -197,3 +283,48 @@ def _truncate(value: str, limit: int = 220) -> str:
 def _status_reason(reason: str) -> str:
     normalized = re.sub(r"[^a-z0-9]+", "_", reason.casefold()).strip("_")
     return normalized or "unspecified"
+
+
+_POSITIVE_MARKERS = (
+    " prefer ",
+    " prefers ",
+    " like ",
+    " likes ",
+    " want ",
+    " wants ",
+    " use ",
+    " uses ",
+)
+_NEGATIVE_MARKERS = (
+    " dislike ",
+    " dislikes ",
+    " avoid ",
+    " avoids ",
+    " do not ",
+    " does not ",
+    " don't ",
+    " never ",
+    " hate ",
+    " hates ",
+)
+_STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "user",
+    "prefers",
+    "prefer",
+    "likes",
+    "like",
+    "dislikes",
+    "dislike",
+    "wants",
+    "want",
+    "uses",
+    "use",
+    "does",
+    "not",
+    "dont",
+    "never",
+}
