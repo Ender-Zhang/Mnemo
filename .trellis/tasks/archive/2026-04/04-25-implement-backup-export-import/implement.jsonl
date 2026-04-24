@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "State backup is a persistence contract."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "New helpers should reuse existing storage patterns."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature spans storage, archive format, CLI, and tests."}
