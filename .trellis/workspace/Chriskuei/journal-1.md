@@ -434,3 +434,36 @@ Added lightweight harness package, built-in personalization-core golden cases, s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Runtime config resolver
+
+**Date**: 2026-04-25
+**Task**: Runtime config resolver
+**Branch**: `main`
+
+### Summary
+
+Added shared runtime config resolver, optional JSON config path, env/CLI precedence, redacted config inspect CLI, provider config refactor for run/web, tests, and checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f20e1cc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
