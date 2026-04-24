@@ -22,9 +22,10 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "runs").is_dir())
             self.assertTrue((Path(tmp) / "artifacts").is_dir())
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5])
             self.assertIn("event_outbox", _tables(Path(tmp) / "state.db"))
             self.assertIn("run_queue", _tables(Path(tmp) / "state.db"))
+            self.assertIn("generated_tools", _tables(Path(tmp) / "state.db"))
 
     def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -36,8 +37,8 @@ class StateStoreTests(unittest.TestCase):
             second = store.applied_migrations()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4])
-            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4])
+            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4, 5])
+            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4, 5])
             self.assertEqual(len(first), len(second))
 
     def test_initialize_upgrades_legacy_schema_columns(self) -> None:
@@ -101,12 +102,13 @@ class StateStoreTests(unittest.TestCase):
             store.initialize()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5])
             self.assertIn("path", _columns(db_path, "skills"))
             self.assertIn("result_json", _columns(db_path, "eval_cases"))
             self.assertIn("metadata_json", _columns(db_path, "working_notes"))
             self.assertIn("event_outbox", _tables(db_path))
             self.assertIn("run_queue", _tables(db_path))
+            self.assertIn("generated_tools", _tables(db_path))
             self.assertIsNone(store.get_skill("legacy")["path"])
             self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
             legacy_note = store.list_working_notes(status=None)[0]
@@ -329,6 +331,40 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(cases[0]["id"], case_id)
             self.assertEqual(cases[0]["case"]["tool_candidate"], "fetch_page")
             self.assertEqual(cases[0]["result"], {"ok": True})
+
+    def test_generated_tools_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("test")
+            mission_id = store.create_mission(conversation_id, "test mission")
+            run_id = store.create_run(conversation_id, mission_id, "tools")
+            candidate_id = store.add_tool_candidate(
+                run_id,
+                "lookup_memory",
+                {"description": "Lookup memory", "risk": "read", "input_schema": {"type": "object"}},
+            )
+
+            tool_id = store.upsert_generated_tool(
+                candidate_id=candidate_id,
+                name="lookup_memory",
+                description="Lookup memory",
+                risk="read",
+                input_schema={"type": "object", "properties": {"term": {"type": "string"}}, "required": ["term"]},
+                implementation={
+                    "type": "alias",
+                    "target_tool": "memory_search",
+                    "argument_map": {"query": {"from": "term"}, "limit": {"const": 5}},
+                },
+            )
+            store.update_generated_tool_status("lookup_memory", "disabled")
+
+            tool = store.get_generated_tool("lookup_memory")
+            disabled = store.list_generated_tools(status="disabled")
+
+            self.assertEqual(tool["id"], tool_id)
+            self.assertEqual(tool["implementation"]["target_tool"], "memory_search")
+            self.assertEqual(disabled[0]["name"], "lookup_memory")
 
     def test_eval_cases_can_filter_by_skill_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

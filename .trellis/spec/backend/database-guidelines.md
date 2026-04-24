@@ -23,6 +23,10 @@
 - `StateStore.complete_queue_item(queue_id: str, status: str, *, run_id: str | None = None, error: str | None = None) -> None`
 - `StateStore.recover_stale_queue_items(stale_after_s: float = 900.0) -> list[dict[str, Any]]`
 - `StateStore.queue_stats() -> dict[str, Any]`
+- `StateStore.upsert_generated_tool(*, candidate_id: str, name: str, description: str, risk: str, input_schema: dict[str, Any], implementation: dict[str, Any], status: str = "active") -> str`
+- `StateStore.get_generated_tool(name: str) -> dict[str, Any] | None`
+- `StateStore.list_generated_tools(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.update_generated_tool_status(name: str, status: str) -> None`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
@@ -52,6 +56,8 @@
 - Completing a queue item accepts only `completed` or `failed`; completed rows store the produced `run_id`, failed rows store `last_error`.
 - Stale recovery moves old `running` rows back to `pending` and clears worker/claim/heartbeat fields.
 - Daemon code must execute queued work through the existing `RunRequest` runtime path.
+- `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled status.
+- Generated tool implementations are data, not executable code.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -70,6 +76,7 @@
 | Queue lifecycle | Enqueue, claim, heartbeat, complete, and stats preserve expected state | `tests/test_storage.py` |
 | Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
+| Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new schema change by appending one `SchemaMigration` and bumping `SCHEMA_VERSION`.
@@ -77,6 +84,7 @@
 - Good: consume pending outbox events through `list_outbox_events()` and mark delivery through `mark_outbox_event()`.
 - Good: keep backup archives limited to managed state paths and validate every member before extraction.
 - Good: drain queued work through the same runtime entry points used by CLI/web runs.
+- Good: install generated tools by persisting a manifest row and loading it through `ToolRegistry.from_store()`.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
 - Bad: overwrite `schema_meta.schema_version` without recording the migration ledger.
@@ -94,4 +102,5 @@
 - Backup export/import round-trip is covered.
 - Import target and archive safety failures are covered.
 - Queue lifecycle, daemon drain, single-instance lock, and stale recovery are covered.
+- Generated tool manifest round-trip and migration coverage are covered.
 - Existing storage round-trips still pass after migration changes.

@@ -364,6 +364,135 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertIn(eval_case.result["case_id"], review.result["passed_eval_case_ids"])
             self.assertIn("Reviewed tool candidate", review.summary)
 
+    def test_tool_install_candidate_registers_compact_generated_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            store.add_memory_candidate(run_id, "User prefers direct implementation updates", confidence=0.8)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+            candidate = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_propose_candidate",
+                    arguments={
+                        "name": "lookup_memory",
+                        "spec": {
+                            "name": "lookup_memory",
+                            "description": "Lookup memory with a focused argument name",
+                            "risk": "read",
+                            "input_schema": {
+                                "type": "object",
+                                "properties": {"term": {"type": "string"}},
+                                "required": ["term"],
+                                "additionalProperties": False,
+                            },
+                            "implementation": {
+                                "type": "alias",
+                                "target_tool": "memory_search",
+                                "argument_map": {"query": {"from": "term"}, "limit": {"const": 5}},
+                            },
+                        },
+                    },
+                    call_id="call_tool_candidate",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            eval_case = harness.execute(
+                ToolCallEnvelope(
+                    name="eval_propose_case",
+                    arguments={"name": "lookup smoke", "case": {"tool_candidate": "lookup_memory"}},
+                    call_id="call_eval_case",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            harness.execute(
+                ToolCallEnvelope(
+                    name="eval_record_result",
+                    arguments={"case_id": eval_case.result["case_id"], "status": "passed", "result": {"ok": True}},
+                    call_id="call_eval_result",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            harness.execute(
+                ToolCallEnvelope(
+                    name="tool_review_candidate",
+                    arguments={"candidate_id": candidate.result["candidate_id"]},
+                    call_id="call_tool_review",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            installed = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_install_candidate",
+                    arguments={"candidate_id": candidate.result["candidate_id"]},
+                    call_id="call_tool_install",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            generated = harness.execute(
+                ToolCallEnvelope(
+                    name="lookup_memory",
+                    arguments={"term": "direct implementation"},
+                    call_id="call_lookup",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact_install = compact_tool_result(installed)
+            compact_generated = compact_tool_result(generated)
+
+            self.assertTrue(installed.ok)
+            self.assertEqual(installed.result["status"], "installed")
+            self.assertEqual(store.get_generated_tool("lookup_memory")["status"], "active")
+            self.assertTrue(generated.ok)
+            self.assertEqual(generated.result["target_tool"], "memory_search")
+            self.assertEqual(len(generated.result["target_result"]["matches"]), 1)
+            self.assertEqual(compact_install["evidence"][0]["kind"], "generated_tool_install")
+            self.assertEqual(compact_generated["evidence"][0]["kind"], "generated_tool")
+            self.assertNotIn("implementation", str(compact_install))
+
+    def test_tool_uninstall_generated_disables_active_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            candidate_id = _install_alias_directly(store, run_id)
+            registry = ToolRegistry.from_store(store)
+            harness = ToolHarness(store=store, ledger=RunLedger(store), registry=registry)
+
+            uninstalled = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_uninstall_generated",
+                    arguments={"name": "lookup_memory"},
+                    call_id="call_tool_uninstall",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(uninstalled.ok)
+            self.assertEqual(store.get_generated_tool("lookup_memory")["status"], "disabled")
+            self.assertEqual(store.get_tool_candidate(candidate_id)["status"], "ready")
+            self.assertNotIn("lookup_memory", [spec.name for spec in registry.specs()])
+
+    def test_registry_from_store_exposes_active_generated_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, _mission_id = _store_with_run(tmp)
+            _install_alias_directly(store, run_id)
+
+            registry = ToolRegistry.from_store(store)
+
+            self.assertIn("lookup_memory", [spec.name for spec in registry.specs()])
+
 
 def _store_with_run(tmp: str) -> tuple[StateStore, str, str]:
     store = StateStore(tmp)
@@ -372,6 +501,48 @@ def _store_with_run(tmp: str) -> tuple[StateStore, str, str]:
     mission_id = store.create_mission(conversation_id, "tool tests")
     run_id = store.create_run(conversation_id, mission_id, "tool")
     return store, run_id, mission_id
+
+
+def _install_alias_directly(store: StateStore, run_id: str) -> str:
+    candidate_id = store.add_tool_candidate(
+        run_id,
+        "lookup_memory",
+        {
+            "name": "lookup_memory",
+            "description": "Lookup memory with a focused argument name",
+            "risk": "read",
+            "input_schema": {
+                "type": "object",
+                "properties": {"term": {"type": "string"}},
+                "required": ["term"],
+                "additionalProperties": False,
+            },
+            "implementation": {
+                "type": "alias",
+                "target_tool": "memory_search",
+                "argument_map": {"query": {"from": "term"}, "limit": {"const": 5}},
+            },
+        },
+    )
+    store.update_tool_candidate_status(candidate_id, "ready")
+    store.upsert_generated_tool(
+        candidate_id=candidate_id,
+        name="lookup_memory",
+        description="Lookup memory with a focused argument name",
+        risk="read",
+        input_schema={
+            "type": "object",
+            "properties": {"term": {"type": "string"}},
+            "required": ["term"],
+            "additionalProperties": False,
+        },
+        implementation={
+            "type": "alias",
+            "target_tool": "memory_search",
+            "argument_map": {"query": {"from": "term"}, "limit": {"const": 5}},
+        },
+    )
+    return candidate_id
 
 
 if __name__ == "__main__":

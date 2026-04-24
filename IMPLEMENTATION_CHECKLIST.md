@@ -46,7 +46,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] External tools: workspace file search/read/write, HTTP fetch, and shell execution exist; browser/app connectors and patch-specialized tools remain.
 - [x] Lightweight permission gate for read/write/external/admin.
 - [x] Tool result compression and evidence cards.
-- [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, and readiness gate exist; generated tool installation remains pending.
+- [x] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, and safe alias installation exist.
 
 ## Memory
 
@@ -145,7 +145,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-prompt-context-compression`: prompt token budget, optional block dropping, checkpoint compaction, and dropped-block metadata are implemented.
 - [x] `04-25-implement-memory-conflict-reinforcement`: duplicate reinforcement, conflict review routing, and memory link provenance are implemented.
 - [x] `04-25-implement-skill-usage-scoring`: skill usage events, outcome scoring, compact card stats, and deterministic skill ranking are implemented.
-- [~] `04-25-implement-tool-candidate-eval-gate`: tool candidate status lifecycle, eval result recording, and readiness review gate are implemented.
+- [x] `04-25-implement-tool-candidate-eval-gate`: tool candidate status lifecycle, eval result recording, readiness review gate, and safe alias installation are implemented.
 - [x] `04-25-implement-daily-l1-memory-snapshot`: daily compact active-memory snapshot compilation, prompt injection, and runtime loading are implemented.
 - [x] `04-25-implement-w0-working-memory-pipeline`: model-marked working notes can enter DreamCycle as candidate-first memory updates.
 - [~] `04-25-implement-skill-review-lifecycle`: generated skill candidates can be reviewed to `ready` or `blocked:*` before explicit promotion.
@@ -159,3 +159,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-anthropic-provider-adapter`: Anthropic Messages API adapter, streaming/tool-use normalization, CLI/web provider wiring, and fake-server tests are implemented.
 - [x] `04-25-implement-skill-evolution-eval-suite`: harness-level skill evolution suite covers crystallization, eval review gates, compact cards, and CLI eval/list coverage.
 - [x] `04-25-04-25-implement-ci-package-install-tests`: GitHub Actions CI runs source tests, builds distributions, installs the wheel, and smoke-tests CLI entrypoints plus packaged web assets.
+- [x] `04-25-implement-generated-tool-installation`: ready generated tool candidates can install as safe aliases to existing tools, load into runtime registries, execute through the harness, and uninstall cleanly.

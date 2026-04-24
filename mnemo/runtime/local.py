@@ -33,7 +33,7 @@ class LocalAgentRuntime:
     """
 
     def __init__(self, registry: ToolRegistry | None = None) -> None:
-        self.registry = registry or ToolRegistry()
+        self.registry = registry
 
     def run(self, request: RunRequest) -> RunResult:
         final_result: RunResult | None = None
@@ -48,7 +48,10 @@ class LocalAgentRuntime:
         store = StateStore(request.state_dir)
         store.initialize()
         ledger = RunLedger(store)
-        harness = ToolHarness(store=store, ledger=ledger, registry=self.registry)
+        registry = self.registry or ToolRegistry.from_store(store)
+        if self.registry is not None:
+            registry.load_generated_tools(store.list_generated_tools(status="active", limit=100))
+        harness = ToolHarness(store=store, ledger=ledger, registry=registry)
 
         conversation_id = resolve_conversation(store, request, title=_short_title(request.message))
         mission_id = resolve_mission(store, conversation_id, request, brief=_short_title(request.message, limit=120))
@@ -88,7 +91,7 @@ class LocalAgentRuntime:
         assembled_prompt = PromptAssembler().assemble(
             request.message,
             mission=mission,
-            tool_specs=self.registry.specs(),
+            tool_specs=registry.specs(),
             memory_snapshot=memory_engine.load_l1_snapshot(),
             memory_cards=memory_engine.context_cards(request.message, limit=5),
             skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
@@ -99,8 +102,8 @@ class LocalAgentRuntime:
             {
                 **assembled_prompt.metadata(),
                 "mode": "full",
-                "tool_count": len(self.registry.specs()),
-                "tools": [spec["name"] for spec in tool_specs_as_json_schema(self.registry.specs())],
+                "tool_count": len(registry.specs()),
+                "tools": [spec["name"] for spec in tool_specs_as_json_schema(registry.specs())],
             },
         )
         yield emit("status.updated", {"text": "正在处理请求。", "tone": "working"})
@@ -109,7 +112,7 @@ class LocalAgentRuntime:
         tool_results: list[ToolResult] = []
         try:
             for call in tool_calls:
-                action = action_card(self.registry, call)
+                action = action_card(registry, call)
                 yield emit("action.queued", {"action": action, "provider_call_id": call.call_id})
                 yield emit("action.started", {"action": action})
                 result = harness.execute(call, run_id=run_id, mission_id=mission_id)

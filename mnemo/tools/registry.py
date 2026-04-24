@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -11,7 +11,7 @@ from ..core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolPermission,
 from ..memory import MemoryEngine
 from ..skills import SkillService
 from ..storage import StateStore
-from .evolution import ToolEvolutionService
+from .evolution import ToolEvolutionService, validate_alias_implementation
 from .standard import STANDARD_TOOL_SPECS, standard_tool_evidence, standard_tool_handlers, standard_tool_summary
 
 if TYPE_CHECKING:
@@ -225,6 +225,28 @@ LEARNING_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="tool_install_candidate",
+        description="Install a ready generated tool candidate as an active alias to an existing tool.",
+        risk="write",
+        input_schema=_schema(
+            ["candidate_id"],
+            {
+                "candidate_id": {"type": "string"},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="tool_uninstall_generated",
+        description="Disable an installed generated tool by name without deleting its candidate history.",
+        risk="write",
+        input_schema=_schema(
+            ["name"],
+            {
+                "name": {"type": "string"},
+            },
+        ),
+    ),
+    ToolSpec(
         name="skill_record_outcome",
         description="Record the observed outcome of using a skill so future skill selection can improve.",
         risk="write",
@@ -252,7 +274,7 @@ LEARNING_TOOL_SPECS = [
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(self, *, generated_tools: Iterable[dict[str, Any]] | None = None) -> None:
         self._specs = {spec.name: spec for spec in [*CORE_TOOL_SPECS, *STANDARD_TOOL_SPECS, *LEARNING_TOOL_SPECS]}
         self._handlers: dict[str, ToolHandler] = {
             "memory_search": self._memory_search,
@@ -272,9 +294,16 @@ class ToolRegistry:
             "eval_propose_case": self._eval_propose_case,
             "eval_record_result": self._eval_record_result,
             "tool_review_candidate": self._tool_review_candidate,
+            "tool_install_candidate": self._tool_install_candidate,
+            "tool_uninstall_generated": self._tool_uninstall_generated,
             "skill_record_outcome": self._skill_record_outcome,
             "learning_discard": self._learning_discard,
         }
+        self.load_generated_tools(generated_tools or [])
+
+    @classmethod
+    def from_store(cls, store: StateStore) -> "ToolRegistry":
+        return cls(generated_tools=store.list_generated_tools(status="active", limit=100))
 
     def specs(self) -> list[ToolSpec]:
         return list(self._specs.values())
@@ -282,6 +311,41 @@ class ToolRegistry:
     def register(self, spec: ToolSpec, handler: ToolHandler) -> None:
         self._specs[spec.name] = spec
         self._handlers[spec.name] = handler
+
+    def load_generated_tools(self, generated_tools: Iterable[dict[str, Any]]) -> None:
+        for generated_tool in generated_tools:
+            if generated_tool.get("status") != "active":
+                continue
+            implementation = generated_tool.get("implementation") or {}
+            if implementation.get("type") != "alias":
+                continue
+            name = generated_tool.get("name")
+            if not isinstance(name, str) or name in self._specs:
+                continue
+            target_tool = implementation.get("target_tool")
+            if not isinstance(target_tool, str) or target_tool not in self._handlers:
+                continue
+            candidate = {
+                "name": generated_tool.get("name"),
+                "spec": {
+                    "name": generated_tool.get("name"),
+                    "description": generated_tool.get("description"),
+                    "risk": generated_tool.get("risk"),
+                    "input_schema": generated_tool.get("input_schema"),
+                    "implementation": implementation,
+                },
+            }
+            if validate_alias_implementation(candidate, self._specs):
+                continue
+            self.register(
+                ToolSpec(
+                    name=name,
+                    description=str(generated_tool["description"]),
+                    risk=generated_tool["risk"],
+                    input_schema=generated_tool["input_schema"],
+                ),
+                self._generated_alias_handler(generated_tool),
+            )
 
     def spec(self, name: str) -> ToolSpec:
         try:
@@ -420,6 +484,25 @@ class ToolRegistry:
     def _tool_review_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         return ToolEvolutionService(context.store).review_candidate(_require_str(args, "candidate_id"))
 
+    def _tool_install_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        result = ToolEvolutionService(context.store).install_candidate(
+            _require_str(args, "candidate_id"),
+            available_tools=self._specs,
+        )
+        if result.get("installed"):
+            installed = context.store.get_generated_tool(str(result["name"]))
+            if installed:
+                self.load_generated_tools([installed])
+        return result
+
+    def _tool_uninstall_generated(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        result = ToolEvolutionService(context.store).uninstall_generated_tool(_require_str(args, "name"))
+        name = str(result["name"])
+        if name in self._specs:
+            self._specs.pop(name)
+            self._handlers.pop(name, None)
+        return result
+
     def _skill_record_outcome(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         name = _require_str(args, "name")
         outcome = _require_outcome(args, "outcome")
@@ -438,6 +521,23 @@ class ToolRegistry:
         context.ledger.append(context.run_id, "learning.discarded", {"reason": reason})
         return {"discarded": True, "reason": reason}
 
+    def _generated_alias_handler(self, generated_tool: dict[str, Any]) -> ToolHandler:
+        name = str(generated_tool["name"])
+        implementation = generated_tool["implementation"]
+        target_tool = str(implementation["target_tool"])
+        argument_map = implementation.get("argument_map") or {}
+
+        def handler(args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+            target_args = _map_alias_arguments(args, argument_map)
+            target_result = self._handlers[target_tool](target_args, context)
+            return {
+                "generated_tool": name,
+                "target_tool": target_tool,
+                "target_result": target_result,
+            }
+
+        return handler
+
 
 class ToolHarness:
     def __init__(
@@ -451,7 +551,7 @@ class ToolHarness:
     ):
         self.store = store
         self.ledger = ledger
-        self.registry = registry or ToolRegistry()
+        self.registry = registry or ToolRegistry.from_store(store)
         self.policy = policy or ToolExecutionPolicy()
         self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
 
@@ -658,6 +758,12 @@ def _tool_summary(result: ToolResult) -> str:
         return f"Recorded eval result: {result.result.get('status', 'unknown')}."
     if result.name == "tool_review_candidate":
         return f"Reviewed tool candidate: {result.result.get('status', 'unknown')}."
+    if result.name == "tool_install_candidate":
+        return f"Installed tool candidate: {result.result.get('status', 'unknown')}."
+    if result.name == "tool_uninstall_generated":
+        return f"Uninstalled generated tool: {result.result.get('name', 'unknown')}."
+    if result.result.get("generated_tool") == result.name:
+        return f"Ran generated tool {result.name} via {result.result.get('target_tool', 'unknown')}."
     if result.name == "skill_review_candidate":
         return f"Reviewed skill candidate: {result.result.get('status', 'unknown')}."
     if result.name == "skill_crystallize_from_run":
@@ -734,6 +840,35 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "status": result.result.get("status"),
                 "errors": result.result.get("errors", [])[:5],
                 "passed_eval_case_ids": result.result.get("passed_eval_case_ids", [])[:10],
+            }
+        ]
+    if result.name == "tool_install_candidate":
+        return [
+            {
+                "kind": "generated_tool_install",
+                "id": str(result.result.get("tool_id") or result.result.get("candidate_id") or ""),
+                "title": str(result.result.get("name") or "Generated tool"),
+                "status": result.result.get("status"),
+                "target_tool": result.result.get("target_tool"),
+                "errors": result.result.get("errors", [])[:5],
+            }
+        ]
+    if result.name == "tool_uninstall_generated":
+        return [
+            {
+                "kind": "generated_tool_uninstall",
+                "id": str(result.result.get("name") or ""),
+                "title": str(result.result.get("name") or "Generated tool"),
+                "status": result.result.get("status"),
+            }
+        ]
+    if result.result.get("generated_tool") == result.name:
+        return [
+            {
+                "kind": "generated_tool",
+                "id": result.name,
+                "title": result.name,
+                "target_tool": result.result.get("target_tool"),
             }
         ]
     if result.name == "skill_review_candidate":
@@ -862,3 +997,36 @@ def _require_dict(args: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ToolError(f"missing object argument: {key}")
     return value
+
+
+def _map_alias_arguments(args: dict[str, Any], argument_map: dict[str, Any]) -> dict[str, Any]:
+    if not argument_map:
+        return dict(args)
+    mapped: dict[str, Any] = {}
+    for target_key, rule in argument_map.items():
+        if not isinstance(target_key, str) or not target_key:
+            raise ToolError("alias argument_map keys must be non-empty strings")
+        if isinstance(rule, str):
+            mapped[target_key] = _source_arg(args, rule, target_key)
+            continue
+        if not isinstance(rule, dict):
+            raise ToolError(f"alias rule for {target_key} must be a string or object")
+        if "const" in rule:
+            mapped[target_key] = rule["const"]
+            continue
+        source_key = rule.get("from")
+        if not isinstance(source_key, str) or not source_key:
+            raise ToolError(f"alias rule for {target_key} requires from or const")
+        if source_key in args:
+            mapped[target_key] = args[source_key]
+        elif "default" in rule:
+            mapped[target_key] = rule["default"]
+        else:
+            raise ToolError(f"missing alias source argument: {source_key}")
+    return mapped
+
+
+def _source_arg(args: dict[str, Any], source_key: str, target_key: str) -> Any:
+    if source_key not in args:
+        raise ToolError(f"missing alias source argument for {target_key}: {source_key}")
+    return args[source_key]

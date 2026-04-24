@@ -175,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     skills_promote_parser.add_argument("--json", action="store_true")
 
     tools_parser = subparsers.add_parser("tools", help="Print available tool specs")
+    tools_parser.add_argument("--state-dir", help="Optional state directory for installed generated tools")
     tools_parser.add_argument("--json", action="store_true")
 
     web_parser = subparsers.add_parser("web", help="Run the Mnemo single-chat web UI")
@@ -489,7 +490,13 @@ def _print_skills_result(result: dict) -> None:
 
 
 def _cmd_tools(args: argparse.Namespace) -> int:
-    tools = tool_specs_as_json_schema(ToolRegistry().specs())
+    if args.state_dir:
+        store = StateStore(args.state_dir)
+        store.initialize()
+        registry = ToolRegistry.from_store(store)
+    else:
+        registry = ToolRegistry()
+    tools = tool_specs_as_json_schema(registry.specs())
     if args.json:
         print(dumps({"tools": tools}))
         return 0

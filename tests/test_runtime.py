@@ -137,6 +137,61 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("writer [active]", prompt_text)
             self.assertNotIn("Full skill body", prompt_text)
 
+    def test_provider_runtime_exposes_active_generated_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("generated tools")
+            mission_id = store.create_mission(conversation_id, "generated tool prompt")
+            run_id = store.create_run(conversation_id, mission_id, "seed")
+            candidate_id = store.add_tool_candidate(
+                run_id,
+                "lookup_memory",
+                {
+                    "name": "lookup_memory",
+                    "description": "Lookup memory with a focused argument name",
+                    "risk": "read",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"term": {"type": "string"}},
+                        "required": ["term"],
+                        "additionalProperties": False,
+                    },
+                    "implementation": {
+                        "type": "alias",
+                        "target_tool": "memory_search",
+                        "argument_map": {"query": {"from": "term"}},
+                    },
+                },
+            )
+            store.upsert_generated_tool(
+                candidate_id=candidate_id,
+                name="lookup_memory",
+                description="Lookup memory with a focused argument name",
+                risk="read",
+                input_schema={
+                    "type": "object",
+                    "properties": {"term": {"type": "string"}},
+                    "required": ["term"],
+                    "additionalProperties": False,
+                },
+                implementation={
+                    "type": "alias",
+                    "target_tool": "memory_search",
+                    "argument_map": {"query": {"from": "term"}},
+                },
+            )
+            provider = FakeProvider([[ProviderEvent(type="text_delta", text="Ready"), ProviderEvent(type="completed")]])
+
+            list(
+                ProviderAgentRuntime(provider).stream(
+                    RunRequest(message="use generated tools", state_dir=tmp, conversation_id=conversation_id)
+                )
+            )
+
+            tool_names = [tool.name for tool in provider.requests[0].tools]
+            self.assertIn("lookup_memory", tool_names)
+
 
 class FakeProvider:
     name = "fake"

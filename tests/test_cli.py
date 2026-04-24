@@ -297,6 +297,55 @@ class CliTests(unittest.TestCase):
             self.assertTrue(replay_payload["completed"])
             self.assertGreater(replay_payload["event_count"], 0)
 
+    def test_tools_command_can_list_installed_generated_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("tools")
+            mission_id = store.create_mission(conversation_id, "tools")
+            run_id = store.create_run(conversation_id, mission_id, "tools")
+            candidate_id = store.add_tool_candidate(
+                run_id,
+                "lookup_memory",
+                {
+                    "name": "lookup_memory",
+                    "description": "Lookup memory with a focused argument name",
+                    "risk": "read",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"term": {"type": "string"}},
+                        "required": ["term"],
+                    },
+                    "implementation": {
+                        "type": "alias",
+                        "target_tool": "memory_search",
+                        "argument_map": {"query": {"from": "term"}},
+                    },
+                },
+            )
+            store.upsert_generated_tool(
+                candidate_id=candidate_id,
+                name="lookup_memory",
+                description="Lookup memory with a focused argument name",
+                risk="read",
+                input_schema={
+                    "type": "object",
+                    "properties": {"term": {"type": "string"}},
+                    "required": ["term"],
+                },
+                implementation={
+                    "type": "alias",
+                    "target_tool": "memory_search",
+                    "argument_map": {"query": {"from": "term"}},
+                },
+            )
+
+            listed = _run_cli(["tools", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            tool_names = {tool["name"] for tool in json.loads(listed.stdout)["tools"]}
+            self.assertIn("lookup_memory", tool_names)
+
     def test_config_inspect_redacts_api_key(self) -> None:
         config = _run_cli(["config", "inspect", "--api-key", "secret-value", "--json"])
 

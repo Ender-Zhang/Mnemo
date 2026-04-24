@@ -13,7 +13,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
@@ -197,6 +197,19 @@ class StateStore:
                     created_at REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS generated_tools (
+                    id TEXT PRIMARY KEY,
+                    candidate_id TEXT REFERENCES tool_candidates(id),
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT NOT NULL,
+                    risk TEXT NOT NULL,
+                    input_schema_json TEXT NOT NULL,
+                    implementation_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS eval_cases (
                     id TEXT PRIMARY KEY,
                     run_id TEXT NOT NULL REFERENCES runs(id),
@@ -227,6 +240,7 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
                 CREATE INDEX IF NOT EXISTS idx_skill_usage_skill_name ON skill_usage_events(skill_name, created_at);
                 CREATE INDEX IF NOT EXISTS idx_skill_usage_run ON skill_usage_events(run_id);
+                CREATE INDEX IF NOT EXISTS idx_generated_tools_status_name ON generated_tools(status, name);
                 """
             )
             _apply_schema_migrations(conn)
@@ -1188,6 +1202,101 @@ class StateStore:
                 (status, candidate_id),
             )
 
+    def upsert_generated_tool(
+        self,
+        *,
+        candidate_id: str,
+        name: str,
+        description: str,
+        risk: str,
+        input_schema: dict[str, Any],
+        implementation: dict[str, Any],
+        status: str = "active",
+    ) -> str:
+        now = time.time()
+        tool_id = new_id("gentool")
+        with self.connect() as conn:
+            existing = conn.execute("SELECT id FROM generated_tools WHERE name = ?", (name,)).fetchone()
+            if existing:
+                tool_id = str(existing["id"])
+                conn.execute(
+                    """
+                    UPDATE generated_tools
+                    SET candidate_id = ?, description = ?, risk = ?, input_schema_json = ?,
+                        implementation_json = ?, status = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        candidate_id,
+                        description,
+                        risk,
+                        dumps(input_schema),
+                        dumps(implementation),
+                        status,
+                        now,
+                        tool_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO generated_tools(
+                        id, candidate_id, name, description, risk, input_schema_json,
+                        implementation_json, status, created_at, updated_at
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        tool_id,
+                        candidate_id,
+                        name,
+                        description,
+                        risk,
+                        dumps(input_schema),
+                        dumps(implementation),
+                        status,
+                        now,
+                        now,
+                    ),
+                )
+        return tool_id
+
+    def get_generated_tool(self, name: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, candidate_id, name, description, risk, input_schema_json,
+                       implementation_json, status, created_at, updated_at
+                FROM generated_tools
+                WHERE name = ?
+                """,
+                (name,),
+            ).fetchone()
+        return _generated_tool_from_row(row) if row else None
+
+    def list_generated_tools(self, status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, candidate_id, name, description, risk, input_schema_json,
+                   implementation_json, status, created_at, updated_at
+            FROM generated_tools
+        """
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY updated_at DESC, name ASC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_generated_tool_from_row(row) for row in rows]
+
+    def update_generated_tool_status(self, name: str, status: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE generated_tools SET status = ?, updated_at = ? WHERE name = ?",
+                (status, time.time(), name),
+            )
+
     def add_eval_case(self, run_id: str, name: str, case: dict[str, Any]) -> str:
         case_id = new_id("eval")
         with self.connect() as conn:
@@ -1302,6 +1411,13 @@ def _skill_usage_from_row(row: sqlite3.Row) -> dict[str, Any]:
 def _tool_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["spec"] = loads(result.pop("spec_json"), {})
+    return result
+
+
+def _generated_tool_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["input_schema"] = loads(result.pop("input_schema_json"), {})
+    result["implementation"] = loads(result.pop("implementation_json"), {})
     return result
 
 
@@ -1528,11 +1644,34 @@ def _migration_run_queue(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_generated_tools(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS generated_tools (
+            id TEXT PRIMARY KEY,
+            candidate_id TEXT REFERENCES tool_candidates(id),
+            name TEXT NOT NULL UNIQUE,
+            description TEXT NOT NULL,
+            risk TEXT NOT NULL,
+            input_schema_json TEXT NOT NULL,
+            implementation_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_generated_tools_status_name
+            ON generated_tools(status, name);
+        """
+    )
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
     SchemaMigration(3, "event_outbox", _migration_event_outbox),
     SchemaMigration(4, "run_queue", _migration_run_queue),
+    SchemaMigration(5, "generated_tools", _migration_generated_tools),
 )
 
 

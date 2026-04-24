@@ -8,6 +8,8 @@
 
 ### 2. Signatures
 - `ToolRegistry.specs() -> list[ToolSpec]`
+- `ToolRegistry.from_store(store: StateStore) -> ToolRegistry`
+- `ToolRegistry.load_generated_tools(generated_tools: Iterable[dict[str, Any]]) -> None`
 - `ToolRegistry.execute(call: ToolCallEnvelope, context: ToolContext) -> ToolResult`
 - `ToolHarness.execute(call: ToolCallEnvelope, *, run_id: str, mission_id: str) -> ToolResult`
 - `ToolExecutionPolicy.check(spec: ToolSpec) -> ToolPermission`
@@ -28,6 +30,10 @@
 - `working_note` with `retention="memory_candidate"` stores metadata for DreamCycle; it does not create a memory candidate synchronously.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
 - `compact_tool_result` for crystallization must not include the generated skill body or raw source run payloads.
+- Active generated tools are loaded from `StateStore.list_generated_tools(status="active")`.
+- Generated tools are normal provider-native tools once loaded into `ToolRegistry`.
+- Generated tool aliases execute by mapping model arguments to an existing target tool handler.
+- Compact results for install/uninstall and generated tool execution must not include implementation payloads.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -44,6 +50,9 @@
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
 | Skill eval case run | Return compact eval status/evidence without body | `tests/test_tools.py` |
+| Generated tool install | Return compact install evidence without implementation payload | `tests/test_tools.py` |
+| Generated tool execution | Execute through existing handler and return generated-tool evidence | `tests/test_tools.py` |
+| Generated tool runtime exposure | Provider runtime sends active generated tool specs | `tests/test_runtime.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new tool by defining `ToolSpec`, registering a handler, and adding summary/evidence projection.
@@ -58,6 +67,8 @@
 - Skill review: assert status is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.
 - Skill eval case: assert eval status is persisted and compact result omits full skill body.
+- Generated tool install: assert active tool row is persisted and compact result omits implementation payload.
+- Generated tool execution: assert alias argument mapping reaches the target handler.
 - Local path tools: assert workspace scoping and traversal rejection.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
