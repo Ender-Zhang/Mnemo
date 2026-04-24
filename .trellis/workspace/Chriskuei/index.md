@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
+- **Total Sessions**: 30
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~979 | Active |
+| `journal-1.md` | ~1013 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 30 | 2026-04-25 | Anthropic provider adapter | `2aa2980`, `f08537a` | `main` |
 | 29 | 2026-04-25 | Daemon queue recovery | `5a726f7`, `92ca8b8` | `main` |
 | 28 | 2026-04-25 | Backup export import | `3f4dae3`, `7ab6347` | `main` |
 | 27 | 2026-04-25 | Event outbox | `f6a5bb9`, `cd38e50` | `main` |

@@ -977,3 +977,37 @@ Implemented persisted run queue, daemon drain/status/recover CLI, single-instanc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: Anthropic provider adapter
+
+**Date**: 2026-04-25
+**Task**: Anthropic provider adapter
+**Branch**: `main`
+
+### Summary
+
+Implemented Anthropic Messages API adapter, streaming and tool-use normalization, CLI/web provider wiring, tests, and provider tool-harness contracts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2aa2980` | (see git log) |
+| `f08537a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
