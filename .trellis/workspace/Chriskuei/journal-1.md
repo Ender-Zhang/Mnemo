@@ -1113,3 +1113,37 @@ Added durable generated tool manifests, safe alias installation/uninstall tools,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: Web event resume by event id
+
+**Date**: 2026-04-25
+**Task**: Web event resume by event id
+**Branch**: `main`
+
+### Summary
+
+Added sinceEventId replay for web chat events, browser last_event_id persistence, event de-duplication, last-run rehydration, tests, and Trellis specs/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aa12eb2` | (see git log) |
+| `1068ddc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
