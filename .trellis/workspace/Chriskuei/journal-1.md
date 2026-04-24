@@ -603,3 +603,37 @@ Added skill usage event storage, skill_record_outcome tool, skill_view usage tra
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Tool candidate eval gate
+
+**Date**: 2026-04-25
+**Task**: Tool candidate eval gate
+**Branch**: `main`
+
+### Summary
+
+Added tool candidate and eval case lifecycle storage APIs, ToolEvolutionService review gate, eval_record_result and tool_review_candidate tools, executable tool evolution spec, and storage/service/tool tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e631177` | (see git log) |
+| `00bd36a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
