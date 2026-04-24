@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 import sqlite3
 import time
 from pathlib import Path
@@ -9,7 +11,14 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+
+@dataclass(frozen=True)
+class SchemaMigration:
+    version: int
+    name: str
+    apply: Callable[[sqlite3.Connection], None]
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -42,6 +51,12 @@ class StateStore:
                 CREATE TABLE IF NOT EXISTS schema_meta (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    applied_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS conversations (
@@ -207,16 +222,30 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_skill_usage_run ON skill_usage_events(run_id);
                 """
             )
-            conn.execute(
-                "INSERT OR REPLACE INTO schema_meta(key, value) VALUES(?, ?)",
-                ("schema_version", str(SCHEMA_VERSION)),
-            )
-            _ensure_column(conn, "skills", "path", "TEXT")
-            _ensure_column(conn, "eval_cases", "result_json", "TEXT")
-            _ensure_column(conn, "working_notes", "metadata_json", "TEXT")
-            _ensure_column(conn, "working_notes", "status", "TEXT")
-            _ensure_column(conn, "working_notes", "processed_at", "REAL")
-            _ensure_column(conn, "working_notes", "result_json", "TEXT")
+            _apply_schema_migrations(conn)
+
+    def schema_version(self) -> int:
+        with self.connect() as conn:
+            try:
+                row = conn.execute("SELECT value FROM schema_meta WHERE key = ?", ("schema_version",)).fetchone()
+            except sqlite3.OperationalError:
+                return 0
+        if not row:
+            return 0
+        try:
+            return int(row["value"])
+        except (TypeError, ValueError):
+            return 0
+
+    def applied_migrations(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            try:
+                rows = conn.execute(
+                    "SELECT version, name, applied_at FROM schema_migrations ORDER BY version ASC"
+                ).fetchall()
+            except sqlite3.OperationalError:
+                return []
+        return [dict(row) for row in rows]
 
     def create_conversation(self, title: str | None = None) -> str:
         now = time.time()
@@ -985,6 +1014,45 @@ def _eval_case_targets_skill(case: dict[str, Any], skill_name: str) -> bool:
         payload.get("skill"),
         payload.get("name"),
     }
+
+
+def _apply_schema_migrations(conn: sqlite3.Connection) -> None:
+    applied = {
+        int(row["version"])
+        for row in conn.execute("SELECT version FROM schema_migrations").fetchall()
+    }
+    for migration in MIGRATIONS:
+        if migration.version in applied:
+            continue
+        migration.apply(conn)
+        conn.execute(
+            "INSERT OR REPLACE INTO schema_migrations(version, name, applied_at) VALUES(?, ?, ?)",
+            (migration.version, migration.name, time.time()),
+        )
+    conn.execute(
+        "INSERT OR REPLACE INTO schema_meta(key, value) VALUES(?, ?)",
+        ("schema_version", str(SCHEMA_VERSION)),
+    )
+
+
+def _migration_initial_schema(conn: sqlite3.Connection) -> None:
+    # The current initialize() path creates the full base schema before migrations run.
+    return None
+
+
+def _migration_post_v1_generated_lifecycle_columns(conn: sqlite3.Connection) -> None:
+    _ensure_column(conn, "skills", "path", "TEXT")
+    _ensure_column(conn, "eval_cases", "result_json", "TEXT")
+    _ensure_column(conn, "working_notes", "metadata_json", "TEXT")
+    _ensure_column(conn, "working_notes", "status", "TEXT")
+    _ensure_column(conn, "working_notes", "processed_at", "REAL")
+    _ensure_column(conn, "working_notes", "result_json", "TEXT")
+
+
+MIGRATIONS = (
+    SchemaMigration(1, "initial_schema", _migration_initial_schema),
+    SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
+)
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

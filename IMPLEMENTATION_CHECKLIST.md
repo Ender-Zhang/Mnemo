@@ -120,7 +120,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] SQLite schema creation.
 - [x] State dirs for wiki, skills, runs, artifacts.
-- [ ] Schema migrations.
+- [x] Schema migrations.
 - [x] JSONL trace mirror.
 - [ ] Event outbox.
 - [x] Config file and env override model.
@@ -152,3 +152,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-skill-eval-harness`: linked skill eval cases can run, persist pass/fail results, and gate skill review.
 - [x] `04-25-implement-sop-crystallization-from-runs`: completed runs with successful compact tool traces can become draft skill candidates without raw payload leakage.
 - [x] `04-25-implement-memory-safety-evals`: deterministic memory safety harness suite covers candidate-first writes, conflict guardrails, compact payloads, and duplicate reinforcement.
+- [x] `04-25-implement-sqlite-schema-migrations`: SQLite migration ledger, schema version API, idempotent initialization, and legacy column upgrades are implemented.

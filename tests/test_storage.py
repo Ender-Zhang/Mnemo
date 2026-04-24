@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
-from mnemo.storage import StateStore
+from mnemo.storage import SCHEMA_VERSION, StateStore
 
 
 class StateStoreTests(unittest.TestCase):
@@ -18,6 +19,94 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "skills").is_dir())
             self.assertTrue((Path(tmp) / "runs").is_dir())
             self.assertTrue((Path(tmp) / "artifacts").is_dir())
+            self.assertEqual(store.schema_version(), SCHEMA_VERSION)
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2])
+
+    def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            first = store.applied_migrations()
+
+            store.initialize()
+            second = store.applied_migrations()
+
+            self.assertEqual(store.schema_version(), SCHEMA_VERSION)
+            self.assertEqual([item["version"] for item in first], [1, 2])
+            self.assertEqual([item["version"] for item in second], [1, 2])
+            self.assertEqual(len(first), len(second))
+
+    def test_initialize_upgrades_legacy_schema_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "state.db"
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE schema_meta (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                    INSERT INTO schema_meta(key, value) VALUES('schema_version', '1');
+
+                    CREATE TABLE skills (
+                        id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL UNIQUE,
+                        description TEXT NOT NULL,
+                        body TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        source TEXT NOT NULL,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    );
+                    INSERT INTO skills(
+                        id, name, description, body, status, source, created_at, updated_at
+                    ) VALUES(
+                        'skill_legacy', 'legacy', 'Legacy skill', 'Legacy body',
+                        'draft', 'generated', 1.0, 1.0
+                    );
+
+                    CREATE TABLE eval_cases (
+                        id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        case_json TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        created_at REAL NOT NULL
+                    );
+                    INSERT INTO eval_cases(
+                        id, run_id, name, case_json, status, created_at
+                    ) VALUES('eval_legacy', 'run_legacy', 'legacy eval', '{}', 'draft', 1.0);
+
+                    CREATE TABLE working_notes (
+                        id TEXT PRIMARY KEY,
+                        mission_id TEXT NOT NULL,
+                        run_id TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        created_at REAL NOT NULL
+                    );
+                    INSERT INTO working_notes(
+                        id, mission_id, run_id, content, created_at
+                    ) VALUES('note_legacy', 'mis_legacy', 'run_legacy', 'Legacy note', 1.0);
+                    """
+                )
+            finally:
+                conn.close()
+
+            store = StateStore(tmp)
+            store.initialize()
+
+            self.assertEqual(store.schema_version(), SCHEMA_VERSION)
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2])
+            self.assertIn("path", _columns(db_path, "skills"))
+            self.assertIn("result_json", _columns(db_path, "eval_cases"))
+            self.assertIn("metadata_json", _columns(db_path, "working_notes"))
+            self.assertIsNone(store.get_skill("legacy")["path"])
+            self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
+            legacy_note = store.list_working_notes(status=None)[0]
+            self.assertEqual(legacy_note["metadata"], {})
+            self.assertEqual(legacy_note["result"], {})
+            self.assertEqual(legacy_note["status"], "open")
 
     def test_run_ledger_events_are_sequenced(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -163,6 +252,14 @@ class StateStoreTests(unittest.TestCase):
 
             self.assertEqual([case["id"] for case in writer_cases], [writer_case])
             self.assertEqual(reader_cases[0]["case"]["skill_candidate"], "reader")
+
+def _columns(db_path: Path, table: str) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    finally:
+        conn.close()
+    return {str(row[1]) for row in rows}
 
 
 if __name__ == "__main__":
