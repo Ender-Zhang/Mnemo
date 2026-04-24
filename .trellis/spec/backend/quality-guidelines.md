@@ -2,50 +2,49 @@
 
 > Code quality standards for backend development.
 
----
+## Package And CI Gate
 
-## Overview
+### Scope / Trigger
 
-<!--
-Document your project's quality standards here.
+Changes that affect public imports, CLI entrypoints, package data, or test discovery must keep the install smoke gate passing.
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+### Signatures
 
-(To be filled by the team)
+```bash
+python -m unittest discover -s tests
+cd "$RUNNER_TEMP"
+python -m build "$GITHUB_WORKSPACE" --outdir "$GITHUB_WORKSPACE/dist"
+python -m pip install --force-reinstall "$GITHUB_WORKSPACE"/dist/*.whl
+MNEMO_REPO_ROOT="$GITHUB_WORKSPACE" python "$GITHUB_WORKSPACE/tests/package_install_smoke.py"
+```
 
----
+### Contracts
 
-## Forbidden Patterns
+- The package name is `mnemo`.
+- The console script entrypoint is `mnemo = mnemo.interfaces.cli:main`.
+- `python -m mnemo --version` and `mnemo --version` must both return `mnemo <version>`.
+- Packaged web assets must include `mnemo/interfaces/web_assets/index.html`, `app.css`, and `app.js`.
+- Installed-package smoke checks must run outside the repository root and fail if `mnemo` imports from the checkout.
 
-<!-- Patterns that should never be used and why -->
+### Validation & Error Matrix
 
-(To be filled by the team)
+| Case | Expected Result |
+|------|-----------------|
+| Source unit tests fail | CI fails before packaging smoke. |
+| Wheel build fails | CI fails before install smoke. |
+| Console script is missing or miswired | Install smoke fails on `mnemo --version`. |
+| `python -m mnemo` is broken | Install smoke fails on module entrypoint. |
+| Package data omits web assets | Install smoke reports missing asset names. |
+| Smoke imports checkout source | Smoke fails with the resolved source path. |
 
----
+### Good/Base/Bad Cases
 
-## Required Patterns
+- Good: run tests from source, build the package from a temp directory, install wheel, run smoke from a temp directory.
+- Base: local development may run only `python -m unittest discover -s tests` for tight loops.
+- Bad: running install smoke from the repo root, because local imports can hide packaging defects.
 
-<!-- Patterns that must always be used -->
+### Tests Required
 
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- CI must run the source unit suite on supported Python versions.
+- CI must build package distributions before install smoke.
+- Install smoke must cover package metadata, console script, module entrypoint, and web asset package data.
