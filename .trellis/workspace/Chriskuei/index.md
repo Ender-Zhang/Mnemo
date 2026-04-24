@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1047 | Active |
+| `journal-1.md` | ~1081 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-04-25 | CI package install smoke tests | `b802ef1`, `d9caf65` | `main` |
 | 31 | 2026-04-25 | Skill evolution eval suite | `85941cc`, `850ce32` | `main` |
 | 30 | 2026-04-25 | Anthropic provider adapter | `2aa2980`, `f08537a` | `main` |
 | 29 | 2026-04-25 | Daemon queue recovery | `5a726f7`, `92ca8b8` | `main` |

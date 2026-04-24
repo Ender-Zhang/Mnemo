@@ -1045,3 +1045,37 @@ Added built-in skill-evolution harness suite for crystallization safety, eval re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: CI package install smoke tests
+
+**Date**: 2026-04-25
+**Task**: CI package install smoke tests
+**Branch**: `main`
+
+### Summary
+
+Added GitHub Actions CI for source tests, package build, wheel install smoke, CLI entrypoint checks, packaged web asset validation, and quality/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b802ef1` | (see git log) |
+| `d9caf65` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
