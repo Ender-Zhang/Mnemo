@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "SOP crystallization extends skill evolution contract"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Crystallization is exposed as provider-native tool"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change spans service, tool, CLI, tests"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing skill proposal and run event patterns"}
