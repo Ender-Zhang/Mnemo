@@ -637,3 +637,37 @@ Added tool candidate and eval case lifecycle storage APIs, ToolEvolutionService 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: Daily L1 memory snapshot
+
+**Date**: 2026-04-25
+**Task**: Daily L1 memory snapshot
+**Branch**: `main`
+
+### Summary
+
+Implemented compact active-memory L1 snapshot compilation/loading, DreamCycle snapshot generation, cache-friendly prompt injection, runtime loading, tests, and backend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f699f5d` | (see git log) |
+| `5542aa7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
