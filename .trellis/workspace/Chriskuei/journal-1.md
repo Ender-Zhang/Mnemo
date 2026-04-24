@@ -202,3 +202,36 @@ Added Agent Skills-compatible filesystem scanner, skill service, generated SKILL
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Event replay foundation
+
+**Date**: 2026-04-24
+**Task**: Event replay foundation
+**Branch**: `main`
+
+### Summary
+
+Added JSONL trace mirror, RunLedger replay APIs, chat event replay, events --since/--chat CLI, replay command, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `56a7076` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
