@@ -5,7 +5,7 @@ import re
 from typing import Any
 
 from ..storage import StateStore
-from .filesystem import SkillFile, scan_skill_files
+from .filesystem import SkillFile, load_skill_metadata, scan_skill_files
 
 
 class SkillService:
@@ -75,13 +75,49 @@ def _skill_file_as_dict(skill: SkillFile) -> dict[str, Any]:
 
 
 def _skill_context_card(skill: dict[str, Any]) -> dict[str, Any]:
-    return {
+    metadata = _skill_metadata(skill)
+    card = {
         "name": skill["name"],
         "description": skill.get("description", ""),
         "status": skill.get("status", "unknown"),
         "source": skill.get("source", ""),
         "path": skill.get("path"),
     }
+
+    allowed_tools = _metadata_allowed_tools(metadata)
+    if allowed_tools:
+        card["allowed_tools"] = allowed_tools
+
+    for key in ("arguments", "scope"):
+        if key in metadata:
+            card[key] = metadata[key]
+
+    if not card.get("source") and "source" in metadata:
+        card["source"] = metadata["source"]
+    if not card.get("path") and "path" in metadata:
+        card["path"] = metadata["path"]
+
+    return card
+
+
+def _skill_metadata(skill: dict[str, Any]) -> dict[str, Any]:
+    metadata = skill.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+
+    path = skill.get("path")
+    if not path:
+        return {}
+    return load_skill_metadata(path)
+
+
+def _metadata_allowed_tools(metadata: dict[str, Any]) -> list[str]:
+    value = metadata.get("allowed_tools", metadata.get("allowed-tools", []))
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item]
+    if isinstance(value, str) and value:
+        return [value]
+    return []
 
 
 def _skill_markdown(skill: dict[str, Any]) -> str:

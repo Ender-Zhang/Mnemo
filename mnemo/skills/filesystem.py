@@ -16,6 +16,9 @@ class SkillFile:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+_LIST_METADATA_KEYS = {"allowed-tools", "allowed_tools"}
+
+
 def scan_skill_files(source_roots: Iterable[str | Path]) -> list[SkillFile]:
     skills: list[SkillFile] = []
     for source_root in source_roots:
@@ -48,6 +51,25 @@ def load_skill_file(path: str | Path, *, source_root: str | Path | None = None) 
     )
 
 
+def load_skill_metadata(path: str | Path) -> dict[str, Any]:
+    skill_path = Path(path)
+    try:
+        with skill_path.open(encoding="utf-8") as handle:
+            first_line = handle.readline()
+            if first_line.strip() != "---":
+                return {}
+
+            frontmatter_lines: list[str] = []
+            for line in handle:
+                if line.strip() == "---":
+                    return _parse_frontmatter("".join(frontmatter_lines))
+                frontmatter_lines.append(line)
+    except OSError:
+        return {}
+
+    return {}
+
+
 def _split_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     lines = content.splitlines()
     if not lines or lines[0].strip() != "---":
@@ -65,19 +87,39 @@ def _split_frontmatter(content: str) -> tuple[dict[str, Any], str]:
 def _parse_frontmatter(frontmatter: str) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
     current_list_key: str | None = None
+    current_mapping_key: str | None = None
 
     for raw_line in frontmatter.splitlines():
         line = raw_line.strip()
-        if not line:
+        if not line or line.startswith("#"):
             continue
 
-        if current_list_key and line.startswith("- "):
-            list_value = line[2:].strip()
-            if list_value:
-                metadata[current_list_key].append(list_value)
+        if current_list_key and raw_line[:1].isspace() and line.startswith("- "):
+            list_value = _parse_scalar(line[2:].strip())
+            metadata[current_list_key].append(list_value)
+            continue
+
+        if current_mapping_key and raw_line[:1].isspace():
+            if line.startswith("- "):
+                existing = metadata[current_mapping_key]
+                if not isinstance(existing, list):
+                    existing = []
+                    metadata[current_mapping_key] = existing
+                existing.append(_parse_scalar(line[2:].strip()))
+                continue
+            if ":" in line:
+                key, value = line.split(":", 1)
+                key = key.strip()
+                if key:
+                    existing = metadata[current_mapping_key]
+                    if not isinstance(existing, dict):
+                        existing = {}
+                        metadata[current_mapping_key] = existing
+                    existing[key] = _parse_scalar(value.strip())
             continue
 
         current_list_key = None
+        current_mapping_key = None
         if ":" not in line:
             continue
 
@@ -87,14 +129,49 @@ def _parse_frontmatter(frontmatter: str) -> dict[str, Any]:
         if not key:
             continue
 
-        if key == "allowed-tools":
-            metadata[key] = [value] if value else []
+        if key in _LIST_METADATA_KEYS:
+            metadata[key] = _parse_list_value(value)
             if not value:
                 current_list_key = key
+        elif key == "arguments":
+            metadata[key] = _parse_inline_collection(value)
+            if not value:
+                current_mapping_key = key
         else:
-            metadata[key] = value
+            metadata[key] = _parse_scalar(value)
 
     return metadata
+
+
+def _parse_inline_collection(value: str) -> Any:
+    if not value:
+        return {}
+    if value.startswith("[") and value.endswith("]"):
+        return _parse_bracket_list(value)
+    return _parse_scalar(value)
+
+
+def _parse_list_value(value: str) -> list[Any]:
+    if not value:
+        return []
+    if value.startswith("[") and value.endswith("]"):
+        return _parse_bracket_list(value)
+    if "," in value:
+        return [_parse_scalar(part.strip()) for part in value.split(",") if part.strip()]
+    return [_parse_scalar(value)]
+
+
+def _parse_bracket_list(value: str) -> list[Any]:
+    inner = value[1:-1].strip()
+    if not inner:
+        return []
+    return [_parse_scalar(part.strip()) for part in inner.split(",") if part.strip()]
+
+
+def _parse_scalar(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
 
 
 def _metadata_string(value: Any) -> str:

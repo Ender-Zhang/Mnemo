@@ -66,7 +66,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Skill draft storage and list/view tools.
 - [x] Skill proposal tool exists with generated `SKILL.md` promotion.
 - [~] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
-- [~] Progressive skill index/summary/full load.
+- [x] Progressive skill index/summary/full load.
 - [ ] Skill usage tracking and outcome scoring.
 - [ ] Skill patch/proposal review lifecycle.
 - [ ] SOP crystallization from successful runs.
@@ -137,3 +137,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-24-implement-tool-boundary-cards`: Tool permission policy, compact model tool results, and evidence cards are in progress.
 - [~] `04-24-implement-prompt-progressive-context`: Memory/skill compact indexes and runtime prompt injection are in progress.
 - [~] `04-25-implement-openai-streaming-provider`: OpenAI-compatible SSE parser, streamed deltas, and streamed tool-call chunks are in progress.
+- [~] `04-25-implement-skills-metadata-compatibility`: common Agent Skills metadata parsing and compact card projection are in progress.

@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/skills/filesystem.py", "reason": "Agent Skills frontmatter parser"}
+{"file": "mnemo/skills/service.py", "reason": "Skill compact context cards"}
