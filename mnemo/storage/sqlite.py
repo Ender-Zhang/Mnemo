@@ -11,7 +11,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -339,7 +339,78 @@ class StateStore:
                 "INSERT INTO run_events(run_id, seq, event_type, payload_json, created_at) VALUES(?, ?, ?, ?, ?)",
                 (run_id, seq, event_type, dumps(payload), now),
             )
+            _insert_outbox_event(
+                conn,
+                topic=event_type,
+                aggregate_id=run_id,
+                payload={
+                    "run_id": run_id,
+                    "seq": seq,
+                    "event_type": event_type,
+                    "payload": payload,
+                    "created_at": now,
+                },
+                now=now,
+            )
         return seq
+
+    def enqueue_outbox_event(
+        self,
+        topic: str,
+        payload: dict[str, Any],
+        *,
+        aggregate_id: str | None = None,
+        available_at: float | None = None,
+    ) -> str:
+        clean_topic = topic.strip()
+        if not clean_topic:
+            raise ValueError("outbox topic is required")
+        now = time.time()
+        with self.connect() as conn:
+            return _insert_outbox_event(
+                conn,
+                topic=clean_topic,
+                aggregate_id=aggregate_id,
+                payload=payload,
+                now=now,
+                available_at=available_at,
+            )
+
+    def list_outbox_events(self, status: str | None = "pending", *, limit: int = 50) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, topic, aggregate_id, payload_json, status, attempts, available_at, last_error, created_at, updated_at
+            FROM event_outbox
+        """
+        params: list[Any] = []
+        clauses: list[str] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+            if status == "pending":
+                clauses.append("available_at <= ?")
+                params.append(time.time())
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY available_at ASC, created_at ASC, id ASC LIMIT ?"
+        params.append(max(0, int(limit)))
+
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_outbox_event_from_row(row) for row in rows]
+
+    def mark_outbox_event(self, event_id: str, status: str, *, error: str | None = None) -> None:
+        if status not in {"pending", "sent", "failed"}:
+            raise ValueError(f"invalid outbox status: {status}")
+        attempts_expr = "attempts + 1" if status == "failed" else "attempts"
+        with self.connect() as conn:
+            conn.execute(
+                f"""
+                UPDATE event_outbox
+                SET status = ?, attempts = {attempts_expr}, last_error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, error, time.time(), event_id),
+            )
 
     def record_tool_call(
         self,
@@ -997,6 +1068,12 @@ def _eval_case_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return result
 
 
+def _outbox_event_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["payload"] = loads(result.pop("payload_json"), {})
+    return result
+
+
 def _eval_case_targets_tool(case: dict[str, Any], tool_name: str) -> bool:
     payload = case.get("case") or {}
     return tool_name in {
@@ -1049,10 +1126,68 @@ def _migration_post_v1_generated_lifecycle_columns(conn: sqlite3.Connection) -> 
     _ensure_column(conn, "working_notes", "result_json", "TEXT")
 
 
+def _migration_event_outbox(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS event_outbox (
+            id TEXT PRIMARY KEY,
+            topic TEXT NOT NULL,
+            aggregate_id TEXT,
+            payload_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            attempts INTEGER NOT NULL,
+            available_at REAL NOT NULL,
+            last_error TEXT,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_event_outbox_status_available
+            ON event_outbox(status, available_at, created_at);
+        CREATE INDEX IF NOT EXISTS idx_event_outbox_aggregate
+            ON event_outbox(aggregate_id, created_at);
+        """
+    )
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
+    SchemaMigration(3, "event_outbox", _migration_event_outbox),
 )
+
+
+def _insert_outbox_event(
+    conn: sqlite3.Connection,
+    *,
+    topic: str,
+    payload: dict[str, Any],
+    now: float,
+    aggregate_id: str | None = None,
+    available_at: float | None = None,
+) -> str:
+    event_id = new_id("outbox")
+    conn.execute(
+        """
+        INSERT INTO event_outbox(
+            id, topic, aggregate_id, payload_json, status, attempts, available_at, last_error, created_at, updated_at
+        )
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event_id,
+            topic,
+            aggregate_id,
+            dumps(payload),
+            "pending",
+            0,
+            now if available_at is None else available_at,
+            None,
+            now,
+            now,
+        ),
+    )
+    return event_id
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

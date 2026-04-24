@@ -20,7 +20,8 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "runs").is_dir())
             self.assertTrue((Path(tmp) / "artifacts").is_dir())
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3])
+            self.assertIn("event_outbox", _tables(Path(tmp) / "state.db"))
 
     def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -32,8 +33,8 @@ class StateStoreTests(unittest.TestCase):
             second = store.applied_migrations()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in first], [1, 2])
-            self.assertEqual([item["version"] for item in second], [1, 2])
+            self.assertEqual([item["version"] for item in first], [1, 2, 3])
+            self.assertEqual([item["version"] for item in second], [1, 2, 3])
             self.assertEqual(len(first), len(second))
 
     def test_initialize_upgrades_legacy_schema_columns(self) -> None:
@@ -97,10 +98,11 @@ class StateStoreTests(unittest.TestCase):
             store.initialize()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3])
             self.assertIn("path", _columns(db_path, "skills"))
             self.assertIn("result_json", _columns(db_path, "eval_cases"))
             self.assertIn("metadata_json", _columns(db_path, "working_notes"))
+            self.assertIn("event_outbox", _tables(db_path))
             self.assertIsNone(store.get_skill("legacy")["path"])
             self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
             legacy_note = store.list_working_notes(status=None)[0]
@@ -123,6 +125,47 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual((first, second), (1, 2))
             self.assertEqual([event["seq"] for event in events], [1, 2])
             self.assertEqual(events[0]["payload"]["message"], "hello")
+            outbox = store.list_outbox_events()
+            self.assertEqual([event["topic"] for event in outbox], ["request.received", "run.completed"])
+            self.assertEqual(outbox[0]["aggregate_id"], run_id)
+            self.assertEqual(outbox[0]["payload"]["seq"], 1)
+            self.assertEqual(outbox[0]["payload"]["event_type"], "request.received")
+            self.assertEqual(outbox[0]["payload"]["payload"], {"message": "hello"})
+
+    def test_outbox_enqueue_list_and_mark_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            future_id = store.enqueue_outbox_event(
+                "manual.future",
+                {"value": 1},
+                aggregate_id="agg_1",
+                available_at=9999999999.0,
+            )
+            ready_id = store.enqueue_outbox_event("manual.ready", {"value": 2}, aggregate_id="agg_2", available_at=0.0)
+
+            pending = store.list_outbox_events()
+            all_events = store.list_outbox_events(status=None)
+            store.mark_outbox_event(ready_id, "failed", error="delivery failed")
+            failed = store.list_outbox_events(status="failed")
+            store.mark_outbox_event(ready_id, "sent")
+            sent = store.list_outbox_events(status="sent")
+
+            self.assertEqual([event["id"] for event in pending], [ready_id])
+            self.assertEqual([event["id"] for event in all_events], [ready_id, future_id])
+            self.assertEqual(failed[0]["attempts"], 1)
+            self.assertEqual(failed[0]["last_error"], "delivery failed")
+            self.assertEqual(sent[0]["id"], ready_id)
+            self.assertIsNone(sent[0]["last_error"])
+
+    def test_mark_outbox_event_rejects_invalid_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            event_id = store.enqueue_outbox_event("manual.ready", {})
+
+            with self.assertRaisesRegex(ValueError, "invalid outbox status"):
+                store.mark_outbox_event(event_id, "unknown")
 
     def test_memory_candidate_search_and_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -260,6 +303,15 @@ def _columns(db_path: Path, table: str) -> set[str]:
     finally:
         conn.close()
     return {str(row[1]) for row in rows}
+
+
+def _tables(db_path: Path) -> set[str]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    finally:
+        conn.close()
+    return {str(row[0]) for row in rows}
 
 
 if __name__ == "__main__":

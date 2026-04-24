@@ -11,6 +11,9 @@
 - `StateStore.initialize() -> None`
 - `StateStore.schema_version() -> int`
 - `StateStore.applied_migrations() -> list[dict[str, Any]]`
+- `StateStore.enqueue_outbox_event(topic: str, payload: dict[str, Any], *, aggregate_id: str | None = None, available_at: float | None = None) -> str`
+- `StateStore.list_outbox_events(status: str | None = "pending", *, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.mark_outbox_event(event_id: str, status: str, *, error: str | None = None) -> None`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
@@ -24,6 +27,12 @@
 - Legacy databases without `schema_migrations` must be upgraded through the same `initialize()` entry point.
 - Additive compatibility migrations should use `_ensure_column` so they can run against fresh and legacy schemas.
 - Existing storage APIs must not require callers to run migrations explicitly.
+- `event_outbox` stores durable delivery records with `topic`, `aggregate_id`, structured `payload_json`, `status`, `attempts`, `available_at`, and `last_error`.
+- `StateStore.append_event()` mirrors each `run_events` row into `event_outbox` in the same SQLite transaction.
+- Mirrored run-event outbox payloads include `run_id`, `seq`, `event_type`, original `payload`, and `created_at`.
+- `list_outbox_events(status="pending")` returns only pending rows whose `available_at` is due, ordered by `available_at`, `created_at`, then `id`.
+- `mark_outbox_event(..., status="failed")` increments `attempts` and records `last_error`.
+- `mark_outbox_event(..., status="sent")` clears `last_error` and leaves `attempts` unchanged.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -32,16 +41,25 @@
 | Repeated initialize | No duplicate migration rows and no failure | `tests/test_storage.py` |
 | Legacy v1 DB missing generated lifecycle columns | Add missing columns and preserve existing rows | `tests/test_storage.py` |
 | Pre-initialized version read | Return `0` or empty migration list instead of crashing | Storage API behavior |
+| Run event append | Persist run event and matching pending outbox row in one call | `tests/test_storage.py` |
+| Future outbox availability | Exclude future pending rows from due pending list | `tests/test_storage.py` |
+| Failed outbox mark | Increment attempts and store error | `tests/test_storage.py` |
+| Invalid outbox status | Raise `ValueError` | `tests/test_storage.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new schema change by appending one `SchemaMigration` and bumping `SCHEMA_VERSION`.
 - Good: make migrations idempotent with `CREATE ... IF NOT EXISTS` or `_ensure_column`.
+- Good: consume pending outbox events through `list_outbox_events()` and mark delivery through `mark_outbox_event()`.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
 - Bad: overwrite `schema_meta.schema_version` without recording the migration ledger.
+- Bad: poll `run_events` directly from daemon code when outbox delivery state is needed.
 
 ### 6. Tests Required
 - Fresh initialization records all migrations.
 - Initialization is idempotent.
 - Legacy schemas are upgraded in place.
+- Outbox table exists on fresh and upgraded state dirs.
+- Appending a run event creates a matching outbox event.
+- Outbox list and mark lifecycle is covered.
 - Existing storage round-trips still pass after migration changes.
