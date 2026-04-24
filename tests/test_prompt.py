@@ -130,6 +130,81 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertEqual(memory.cache_policy, "turn")
         self.assertEqual(skills.cache_policy, "daily")
 
+    def test_token_budget_drops_only_optional_blocks(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "Current turn must stay",
+            mission={"brief": "Budget test", "checkpoint": {"recent_summary": "short"}},
+            tool_specs=[_tool("file_read")],
+            memory_cards=[
+                {
+                    "id": "mempg_1",
+                    "type": "page",
+                    "title": "large memory",
+                    "summary": "memory detail " * 100,
+                    "confidence": 0.9,
+                    "status": "active",
+                }
+            ],
+            skill_cards=[
+                {
+                    "name": "large_skill",
+                    "description": "skill detail " * 100,
+                    "status": "active",
+                }
+            ],
+            token_budget=80,
+        )
+
+        block_ids = [block.id for block in prompt.blocks]
+        dropped_ids = [block["id"] for block in prompt.metadata()["dropped_blocks"]]
+
+        self.assertIn("system.identity", block_ids)
+        self.assertIn("developer.operating_principles", block_ids)
+        self.assertIn("mission.continuation", block_ids)
+        self.assertIn("turn.current_user_message", block_ids)
+        self.assertIn("skills.index", dropped_ids)
+        self.assertIn("memory.index", dropped_ids)
+
+    def test_unbudgeted_prompt_keeps_optional_blocks(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "Keep all context",
+            tool_specs=[_tool("file_read")],
+            memory_cards=[
+                {
+                    "id": "mempg_1",
+                    "type": "page",
+                    "title": "preference",
+                    "summary": "User prefers context",
+                    "status": "active",
+                }
+            ],
+            skill_cards=[{"name": "reader", "description": "Read files", "status": "active"}],
+            token_budget=None,
+        )
+
+        self.assertIn("memory.index", [block.id for block in prompt.blocks])
+        self.assertIn("skills.index", [block.id for block in prompt.blocks])
+        self.assertEqual(prompt.metadata()["dropped_blocks"], [])
+        self.assertIsNone(prompt.metadata()["token_budget"])
+
+    def test_large_checkpoint_values_are_compacted(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "Continue",
+            mission={
+                "brief": "Compaction",
+                "checkpoint": {
+                    "recent_summary": "very-long-summary " * 200,
+                },
+            },
+            token_budget=None,
+        )
+
+        mission = next(block for block in prompt.blocks if block.id == "mission.continuation")
+
+        self.assertLess(len(mission.content), 1200)
+        self.assertIn("Recent summary:", mission.content)
+        self.assertIn("...", mission.content)
+
 
 def _tool(name: str) -> ToolSpec:
     return ToolSpec(

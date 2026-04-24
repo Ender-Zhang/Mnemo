@@ -81,7 +81,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Skill and memory progressive disclosure.
 - [x] KV-cache-first prompt assembly ordering.
 - [x] Prompt inspection command.
-- [ ] Context compression.
+- [x] Context compression.
 
 ## Frontend Experience
 
@@ -142,3 +142,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-25-implement-eval-harness-foundation`: built-in personalization golden cases, smoke suite, and replay harness CLI are in progress.
 - [~] `04-25-implement-config-resolver`: shared runtime config resolver, redacted inspect CLI, and provider config refactor are in progress.
 - [x] `04-25-implement-standard-local-tools-foundation`: workspace-scoped file tools, policy-gated web fetch, and policy-gated shell execution are implemented.
+- [x] `04-25-implement-prompt-context-compression`: prompt token budget, optional block dropping, checkpoint compaction, and dropped-block metadata are implemented.

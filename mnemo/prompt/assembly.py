@@ -11,6 +11,8 @@ from ..core.models import ToolSpec
 PromptRole = Literal["system", "developer", "user", "assistant", "tool"]
 CachePolicy = Literal["stable", "daily", "mission", "turn", "never"]
 CacheSegment = Literal["core", "user_profile", "tool_bundle", "daily_context", "mission", "turn", "none"]
+DEFAULT_PROMPT_TOKEN_BUDGET = 6000
+MISSION_VALUE_CHAR_LIMIT = 1000
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,8 @@ class PromptBlock:
 @dataclass(frozen=True)
 class AssembledPrompt:
     blocks: tuple[PromptBlock, ...]
+    dropped_blocks: tuple[dict[str, Any], ...] = ()
+    token_budget: int | None = None
 
     def messages(self) -> list[dict[str, str]]:
         return [{"role": block.role, "content": block.content} for block in self.blocks]
@@ -56,7 +60,12 @@ class AssembledPrompt:
             "total_token_estimate": sum(block.token_estimate for block in self.blocks),
             "stable_prefix": [block.id for block in self.blocks if block.cache_policy == "stable"],
             "dynamic_tail": [block.id for block in self.blocks if block.cache_policy != "stable"],
-            "dropped_blocks": [],
+            "dropped_blocks": list(self.dropped_blocks),
+            "token_budget": self.token_budget,
+            "budget_exceeded": (
+                self.token_budget is not None
+                and sum(block.token_estimate for block in self.blocks) > self.token_budget
+            ),
         }
 
 
@@ -70,6 +79,7 @@ class PromptAssembler:
         tool_specs: Sequence[ToolSpec] | None = None,
         memory_cards: Sequence[dict[str, Any]] | None = None,
         skill_cards: Sequence[dict[str, Any]] | None = None,
+        token_budget: int | None = DEFAULT_PROMPT_TOKEN_BUDGET,
     ) -> AssembledPrompt:
         checkpoint = _resolve_checkpoint(mission, checkpoint)
         tools = tuple(sorted(tool_specs or (), key=lambda spec: spec.name))
@@ -88,7 +98,8 @@ class PromptAssembler:
                 self._current_turn(current_user_message),
             ]
         )
-        return AssembledPrompt(blocks=tuple(blocks))
+        kept_blocks, dropped_blocks = _apply_budget(blocks, token_budget)
+        return AssembledPrompt(blocks=tuple(kept_blocks), dropped_blocks=dropped_blocks, token_budget=token_budget)
 
     def _system_identity(self) -> PromptBlock:
         content = "\n".join(
@@ -284,15 +295,39 @@ def _mission_content(mission: dict[str, Any], checkpoint: dict[str, Any]) -> str
     ):
         value = checkpoint.get(key)
         if value:
-            lines.append(f"{title}: {_stable_value(value)}")
+            lines.append(f"{title}: {_stable_value(value, limit=MISSION_VALUE_CHAR_LIMIT)}")
 
     return "\n".join(lines)
 
 
-def _stable_value(value: Any) -> str:
+def _apply_budget(blocks: Sequence[PromptBlock], token_budget: int | None) -> tuple[list[PromptBlock], tuple[dict[str, Any], ...]]:
+    if token_budget is None:
+        return list(blocks), ()
+    if token_budget <= 0:
+        token_budget = 1
+    kept = list(blocks)
+    dropped: list[dict[str, Any]] = []
+    while sum(block.token_estimate for block in kept) > token_budget:
+        candidates = [(index, block) for index, block in enumerate(kept) if block.can_drop]
+        if not candidates:
+            break
+        drop_index, block = max(candidates, key=lambda item: (item[1].priority, item[0]))
+        dropped.append(
+            {
+                "id": block.id,
+                "title": block.title,
+                "token_estimate": block.token_estimate,
+                "reason": "token_budget",
+            }
+        )
+        del kept[drop_index]
+    return kept, tuple(dropped)
+
+
+def _stable_value(value: Any, *, limit: int) -> str:
     if isinstance(value, str):
-        return value
-    return dumps(value)
+        return _compact(value, limit=limit)
+    return _compact(dumps(value), limit=limit)
 
 
 def _memory_card_text(card: dict[str, Any]) -> str:

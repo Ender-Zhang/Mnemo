@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/prompt/assembly.py", "reason": "prompt block assembly and metadata"}
+{"file": "tests/test_prompt.py", "reason": "prompt assembler regression tests"}
+{"file": "mnemo/runtime/provider.py", "reason": "provider prompt metadata recording"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "prompt metadata crosses runtime and replay boundaries"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "executable prompt assembly contract"}
