@@ -12,7 +12,10 @@
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
 - `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
+- `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
+- `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
+- `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
@@ -21,7 +24,10 @@
 - Duplicate candidates may reinforce existing page confidence and must create a `reinforces` memory link.
 - Conflicting candidates are not promoted automatically.
 - Conflicting candidates are marked `needs_review:conflict` and linked with `conflicts_with`.
-- Dream consolidation returns `promoted`, `rejected`, `skipped`, and `conflicts` lists.
+- Dream consolidation returns `promoted`, `rejected`, `skipped`, `conflicts`, and a compact L1 `snapshot`.
+- L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
+- L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
+- Prompt-facing snapshots must omit raw evidence and full page content.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -31,6 +37,8 @@
 | Obvious contradiction | Mark `needs_review:conflict`, add `conflicts_with` link, do not promote | `tests/test_memory.py` |
 | Low confidence non-conflict | Keep `draft`, return skipped entry | `tests/test_memory.py` |
 | High confidence non-conflict | Promote to active memory page | `tests/test_memory.py` |
+| Missing or invalid snapshot file | Return `None` | `tests/test_memory.py` |
+| Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: use links to preserve why memory changed.
@@ -43,6 +51,7 @@
 - Duplicate reinforcement updates confidence and creates `reinforces`.
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
 - Search/context cards remain compact and omit raw evidence.
+- L1 snapshot compile/load behavior is covered, including invalid files.
 
 ### 7. Wrong vs Correct
 #### Wrong

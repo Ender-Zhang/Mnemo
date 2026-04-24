@@ -61,11 +61,13 @@ class ProviderAgentRuntime:
             mission_id=mission_id,
         )
         mission = store.get_mission(mission_id) or {}
+        memory_engine = MemoryEngine(store)
         assembled_prompt = PromptAssembler().assemble(
             request.message,
             mission=mission,
             tool_specs=self.registry.specs(),
-            memory_cards=MemoryEngine(store).context_cards(request.message, limit=5),
+            memory_snapshot=memory_engine.load_l1_snapshot(),
+            memory_cards=memory_engine.context_cards(request.message, limit=5),
             skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
         )
 

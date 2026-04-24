@@ -7,14 +7,16 @@
 - Goal: keep prompts stable for KV-cache reuse while limiting optional context growth.
 
 ### 2. Signatures
-- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, memory_cards=None, skill_cards=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET) -> AssembledPrompt`
+- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, memory_snapshot=None, memory_cards=None, skill_cards=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET) -> AssembledPrompt`
 - `AssembledPrompt.messages() -> list[dict[str, str]]`
 - `AssembledPrompt.metadata() -> dict[str, Any]`
 
 ### 3. Contracts
 - Stable prefix blocks must stay ordered before dynamic blocks.
 - Non-droppable blocks: `system.identity`, `developer.operating_principles`, `mission.continuation`, `turn.current_user_message`.
-- Droppable blocks: optional tool cards, memory index, and skill index.
+- Droppable blocks: optional tool cards, L1 memory snapshot, memory index, and skill index.
+- `memory.l1_snapshot` is daily-cache context and must appear before turn-scoped `memory.index`.
+- `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
 - Tool schemas still travel through provider-native tool definitions; dropping `tools.cards` must not remove actual tool availability.
 - `metadata().dropped_blocks` records block id, title, estimate, and reason.
 - Large mission checkpoint values must be compacted before token estimates are computed.
@@ -27,6 +29,8 @@
 | Budget exceeded after all optional drops | Keep required blocks and set `budget_exceeded=true` | Prompt test when added |
 | Large checkpoint value | Compact inside mission continuation | `tests/test_prompt.py` |
 | Metadata inspection | No prompt content or secrets in metadata | `tests/test_prompt.py` |
+| L1 snapshot present | Add `memory.l1_snapshot` with `daily_context` cache segment before `memory.index` | `tests/test_prompt.py` |
+| Empty L1 snapshot | Do not inject `memory.l1_snapshot` | `tests/test_prompt.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: expose compact memory/skill indexes and let the model call tools for details.
@@ -39,6 +43,7 @@
 - Metadata shape tests that exclude raw content.
 - Budget tests that assert required blocks remain and optional blocks are recorded as dropped.
 - Runtime/provider tests that assert prompt metadata is persisted in `prompt.assembled`.
+- Runtime/provider tests that assert daily L1 memory snapshot content reaches provider messages when present.
 
 ### 7. Wrong vs Correct
 #### Wrong

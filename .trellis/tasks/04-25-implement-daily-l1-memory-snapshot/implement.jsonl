@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "L1 snapshot extends memory engine contract"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Snapshot is injected through cache-friendly prompt assembly"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change spans storage service prompt and runtime layers"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing compact card and JSON patterns"}

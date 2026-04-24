@@ -90,6 +90,20 @@ class PromptAssemblerTests(unittest.TestCase):
         prompt = PromptAssembler().assemble(
             "Help with writing",
             tool_specs=[_tool("memory_search"), _tool("skill_view")],
+            memory_snapshot={
+                "kind": "l1_memory_snapshot",
+                "generated_at": 123,
+                "page_count": 1,
+                "items": [
+                    {
+                        "id": "mempg_daily",
+                        "title": "daily preference",
+                        "summary": "User prefers direct updates",
+                        "scope": "global",
+                        "confidence": 0.88,
+                    }
+                ],
+            },
             memory_cards=[
                 {
                     "id": "mempg_1",
@@ -115,20 +129,36 @@ class PromptAssemblerTests(unittest.TestCase):
                 "system.identity",
                 "developer.operating_principles",
                 "tools.cards",
+                "memory.l1_snapshot",
                 "memory.index",
                 "skills.index",
                 "mission.continuation",
                 "turn.current_user_message",
             ],
         )
+        snapshot = next(block for block in prompt.blocks if block.id == "memory.l1_snapshot")
         memory = next(block for block in prompt.blocks if block.id == "memory.index")
         skills = next(block for block in prompt.blocks if block.id == "skills.index")
+        self.assertIn("Daily compiled memory snapshot", snapshot.content)
+        self.assertIn("memory_search", snapshot.content)
+        self.assertIn("mempg_daily", snapshot.content)
+        self.assertNotIn("generated_at", snapshot.content)
         self.assertIn("memory_read", memory.content)
         self.assertIn("mempg_1", memory.content)
         self.assertIn("skill_view", skills.content)
         self.assertIn("writer", skills.content)
+        self.assertEqual(snapshot.cache_policy, "daily")
+        self.assertEqual(snapshot.cache_segment, "daily_context")
         self.assertEqual(memory.cache_policy, "turn")
         self.assertEqual(skills.cache_policy, "daily")
+
+    def test_empty_memory_snapshot_is_not_injected(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "No snapshot",
+            memory_snapshot={"kind": "l1_memory_snapshot", "page_count": 0, "items": []},
+        )
+
+        self.assertNotIn("memory.l1_snapshot", [block.id for block in prompt.blocks])
 
     def test_token_budget_drops_only_optional_blocks(self) -> None:
         prompt = PromptAssembler().assemble(

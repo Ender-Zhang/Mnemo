@@ -13,6 +13,7 @@ CachePolicy = Literal["stable", "daily", "mission", "turn", "never"]
 CacheSegment = Literal["core", "user_profile", "tool_bundle", "daily_context", "mission", "turn", "none"]
 DEFAULT_PROMPT_TOKEN_BUDGET = 6000
 MISSION_VALUE_CHAR_LIMIT = 1000
+L1_SNAPSHOT_PROMPT_ITEM_LIMIT = 16
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ class PromptAssembler:
         mission: dict[str, Any] | None = None,
         checkpoint: dict[str, Any] | None = None,
         tool_specs: Sequence[ToolSpec] | None = None,
+        memory_snapshot: dict[str, Any] | None = None,
         memory_cards: Sequence[dict[str, Any]] | None = None,
         skill_cards: Sequence[dict[str, Any]] | None = None,
         token_budget: int | None = DEFAULT_PROMPT_TOKEN_BUDGET,
@@ -88,6 +90,8 @@ class PromptAssembler:
             self._operating_principles(),
             self._tool_cards(tools),
         ]
+        if _snapshot_items(memory_snapshot):
+            blocks.append(self._memory_snapshot(memory_snapshot))
         if memory_cards:
             blocks.append(self._memory_index(memory_cards))
         if skill_cards:
@@ -198,6 +202,30 @@ class PromptAssembler:
             cache_policy="turn",
             cache_segment="turn",
             priority=32,
+            can_drop=True,
+        )
+
+    def _memory_snapshot(self, snapshot: dict[str, Any]) -> PromptBlock:
+        items = _snapshot_items(snapshot)
+        visible_items = items[:L1_SNAPSHOT_PROMPT_ITEM_LIMIT]
+        page_count = snapshot.get("page_count")
+        lines = [
+            "Daily compiled memory snapshot:",
+            "Use memory_search or memory_read for details beyond this snapshot.",
+        ]
+        if isinstance(page_count, int) and page_count > len(visible_items):
+            lines.append(f"Showing {len(visible_items)} of {page_count} active memory pages.")
+        lines.extend(f"- {_memory_snapshot_item_text(item)}" for item in visible_items)
+        return _block(
+            id="memory.l1_snapshot",
+            role="developer",
+            layer="memory",
+            title="L1 Memory Snapshot",
+            content="\n".join(lines),
+            source="memory",
+            cache_policy="daily",
+            cache_segment="daily_context",
+            priority=31,
             can_drop=True,
         )
 
@@ -339,9 +367,27 @@ def _memory_card_text(card: dict[str, Any]) -> str:
     )
 
 
+def _memory_snapshot_item_text(item: dict[str, Any]) -> str:
+    confidence = _confidence_text(item.get("confidence"))
+    scope = item.get("scope") or "global"
+    return (
+        f"{item.get('id', '')} [{scope}{confidence}] "
+        f"{_compact(item.get('title', 'Memory'))}: {_compact(item.get('summary', ''), limit=140)}"
+    )
+
+
 def _skill_card_text(card: dict[str, Any]) -> str:
     status = card.get("status") or "unknown"
     return f"{card.get('name', '')} [{status}]: {_compact(card.get('description', ''))}"
+
+
+def _snapshot_items(snapshot: dict[str, Any] | None) -> tuple[dict[str, Any], ...]:
+    if not isinstance(snapshot, dict):
+        return ()
+    items = snapshot.get("items")
+    if not isinstance(items, list):
+        return ()
+    return tuple(item for item in items if isinstance(item, dict))
 
 
 def _confidence_text(value: Any) -> str:

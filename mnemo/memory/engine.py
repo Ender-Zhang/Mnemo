@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import re
+import time
+from pathlib import Path
 from typing import Any
+
+from ..core.jsonutil import dumps, loads
+
+L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
 
 
 class MemoryEngine:
@@ -49,6 +55,35 @@ class MemoryEngine:
 
     def context_cards(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         return [_context_card(item) for item in self.search(query, limit=limit)]
+
+    def compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any]:
+        pages = self.store.list_memory_pages(status="active", limit=max(0, int(limit)))
+        items = [_snapshot_item(page) for page in pages]
+        snapshot = {
+            "kind": "l1_memory_snapshot",
+            "generated_at": time.time(),
+            "page_count": len(items),
+            "items": items,
+        }
+        path = self._l1_snapshot_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(dumps(snapshot), encoding="utf-8")
+        return snapshot
+
+    def load_l1_snapshot(self) -> dict[str, Any] | None:
+        path = self._l1_snapshot_path()
+        try:
+            snapshot = loads(path.read_text(encoding="utf-8"), {})
+        except (OSError, TypeError, ValueError):
+            return None
+        if not isinstance(snapshot, dict):
+            return None
+        if snapshot.get("kind") != "l1_memory_snapshot":
+            return None
+        items = snapshot.get("items")
+        if not isinstance(items, list):
+            return None
+        return snapshot
 
     def promote_candidate(self, candidate_id: str) -> dict[str, Any]:
         candidate = self._get_candidate(candidate_id)
@@ -138,7 +173,11 @@ class MemoryEngine:
             "rejected": rejected,
             "skipped": skipped,
             "conflicts": conflicts,
+            "snapshot": self.compile_l1_snapshot(limit=50),
         }
+
+    def _l1_snapshot_path(self) -> Path:
+        return self.store.state_dir / "wiki" / L1_SNAPSHOT_FILENAME
 
     def _get_candidate(self, candidate_id: str) -> dict[str, Any] | None:
         get_candidate = getattr(self.store, "get_memory_candidate", None)
@@ -234,6 +273,17 @@ def _context_card(item: dict[str, Any]) -> dict[str, Any]:
         "summary": _truncate(item["claim"]),
         "confidence": item.get("confidence"),
         "status": item.get("status"),
+    }
+
+
+def _snapshot_item(page: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": page["id"],
+        "title": _truncate(page.get("title", ""), limit=96),
+        "summary": _truncate(page.get("content", ""), limit=180),
+        "scope": page.get("scope") or "global",
+        "confidence": page.get("confidence"),
+        "updated_at": page.get("updated_at"),
     }
 
 

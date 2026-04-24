@@ -98,6 +98,10 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual([item["candidate_id"] for item in result["skipped"]], [low_id])
             self.assertEqual(store.get_memory_candidate(high_id)["status"], "promoted")
             self.assertEqual(store.get_memory_candidate(low_id)["status"], "draft")
+            self.assertEqual(result["snapshot"]["page_count"], 1)
+            loaded_snapshot = MemoryEngine(store).load_l1_snapshot()
+            self.assertIsNotNone(loaded_snapshot)
+            self.assertEqual(loaded_snapshot["page_count"], 1)
 
     def test_dream_consolidate_rejects_empty_and_duplicate_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -171,6 +175,38 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(links[0]["relation"], "conflicts_with")
             self.assertEqual(links[0]["target_id"], page_id)
             self.assertEqual(store.get_memory_page(page_id)["content"], "User prefers concise updates")
+
+    def test_compile_l1_snapshot_writes_compact_active_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            engine = MemoryEngine(store)
+            self.assertIsNone(engine.load_l1_snapshot())
+            page_id = store.upsert_memory_page(
+                "preferences: update style",
+                "User prefers direct updates " + ("with compact status notes " * 20),
+                scope="global",
+                confidence=0.91,
+            )
+            store.upsert_memory_page(
+                "archived: stale",
+                "This page should not appear",
+                status="archived",
+            )
+
+            snapshot = engine.compile_l1_snapshot(limit=10)
+
+            path = store.state_dir / "wiki" / "l1-memory-snapshot.json"
+            loaded = engine.load_l1_snapshot()
+            self.assertTrue(path.exists())
+            self.assertEqual(snapshot["kind"], "l1_memory_snapshot")
+            self.assertEqual(snapshot["page_count"], 1)
+            self.assertEqual(snapshot["items"][0]["id"], page_id)
+            self.assertLessEqual(len(snapshot["items"][0]["summary"]), 183)
+            self.assertNotIn("This page should not appear", str(snapshot))
+            self.assertIsNotNone(loaded)
+            self.assertEqual(loaded["page_count"], 1)
+            path.write_text("{", encoding="utf-8")
+            self.assertIsNone(engine.load_l1_snapshot())
 
 
 def _store_with_run(tmp: str) -> tuple[StateStore, str]:

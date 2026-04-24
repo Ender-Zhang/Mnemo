@@ -512,6 +512,23 @@ class StateStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_memory_pages(self, status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]:
+        limit_value = max(0, int(limit))
+        sql = """
+            SELECT id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+            FROM memory_pages
+        """
+        params: list[Any] = []
+        if status:
+            sql += " WHERE status = ?"
+            params.append(status)
+        sql += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit_value)
+
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     def get_memory_page(self, page_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(

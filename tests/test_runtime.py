@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from mnemo.core.models import RunRequest, ToolCallEnvelope
+from mnemo.memory import MemoryEngine
 from mnemo.providers import ProviderEvent
 from mnemo.runtime import ProviderAgentRuntime, run_local, stream_local
 from mnemo.storage import StateStore
@@ -113,6 +114,12 @@ class LocalRuntimeTests(unittest.TestCase):
             mission_id = store.create_mission(conversation_id, "context tests")
             seed_run_id = store.create_run(conversation_id, mission_id, "seed")
             store.add_memory_candidate(seed_run_id, "User prefers concise writing", confidence=0.8)
+            store.upsert_memory_page(
+                "preferences: writing",
+                "User prefers concise writing in project updates",
+                confidence=0.9,
+            )
+            MemoryEngine(store).compile_l1_snapshot()
             store.upsert_skill("writer", "Draft concise prose", "Full skill body", status="active")
             provider = FakeProvider([[ProviderEvent(type="text_delta", text="Ready"), ProviderEvent(type="completed")]])
 
@@ -123,6 +130,7 @@ class LocalRuntimeTests(unittest.TestCase):
             )
 
             prompt_text = "\n".join(message["content"] for message in provider.requests[0].messages)
+            self.assertIn("Daily compiled memory snapshot", prompt_text)
             self.assertIn("Relevant memory index", prompt_text)
             self.assertIn("User prefers concise writing", prompt_text)
             self.assertIn("Available skill index", prompt_text)
