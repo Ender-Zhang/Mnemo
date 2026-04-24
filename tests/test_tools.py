@@ -260,6 +260,50 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact["evidence"][0]["kind"], "skill_eval_case")
             self.assertNotIn("body", str(compact))
 
+    def test_skill_crystallize_from_run_returns_compact_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            target_conversation_id = store.create_conversation("target")
+            target_mission_id = store.create_mission(target_conversation_id, "target mission")
+            target_run_id = store.create_run(target_conversation_id, target_mission_id, "draft launch notes")
+            store.append_event(
+                target_run_id,
+                "tool.result",
+                {
+                    "tool_name": "artifact_update",
+                    "ok": True,
+                    "summary": "Artifact updated.",
+                    "result": {"body": "RAW SECRET PAYLOAD"},
+                    "evidence": [{"kind": "artifact", "id": "artifact_1", "title": "Draft"}],
+                },
+            )
+            store.append_event(target_run_id, "run.completed", {"status": "completed"})
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_crystallize_from_run",
+                    arguments={
+                        "run_id": target_run_id,
+                        "name": "artifact-sop",
+                        "description": "Capture artifact workflow",
+                    },
+                    call_id="call_skill_crystallize",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            compact = compact_tool_result(result)
+            skill = store.get_skill("artifact-sop")
+            self.assertTrue(result.ok)
+            self.assertEqual(skill["status"], "draft")
+            self.assertEqual(result.result["tool_names"], ["artifact_update"])
+            self.assertEqual(compact["evidence"][0]["kind"], "skill_crystallization")
+            self.assertNotIn("body", str(compact))
+            self.assertNotIn("RAW SECRET PAYLOAD", str(compact))
+
     def test_eval_result_and_tool_review_candidate_mark_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

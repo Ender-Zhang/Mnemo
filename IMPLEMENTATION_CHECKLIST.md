@@ -69,7 +69,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Progressive skill index/summary/full load.
 - [x] Skill usage tracking and outcome scoring.
 - [~] Skill patch/proposal review lifecycle: proposal review gate exists; patch-specific diff/apply remains pending.
-- [ ] SOP crystallization from successful runs.
+- [x] SOP crystallization from successful runs.
 - [x] Skill eval harness.
 
 ## Prompt And Context
@@ -150,3 +150,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-w0-working-memory-pipeline`: model-marked working notes can enter DreamCycle as candidate-first memory updates.
 - [~] `04-25-implement-skill-review-lifecycle`: generated skill candidates can be reviewed to `ready` or `blocked:*` before explicit promotion.
 - [x] `04-25-implement-skill-eval-harness`: linked skill eval cases can run, persist pass/fail results, and gate skill review.
+- [x] `04-25-implement-sop-crystallization-from-runs`: completed runs with successful compact tool traces can become draft skill candidates without raw payload leakage.

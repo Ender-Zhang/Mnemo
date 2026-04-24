@@ -151,6 +151,13 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(skills_review_parser)
     skills_review_parser.add_argument("name")
     skills_review_parser.add_argument("--json", action="store_true")
+    skills_crystallize_parser = skills_subparsers.add_parser("crystallize", help="Crystallize a run into a draft skill")
+    _add_state_dir(skills_crystallize_parser)
+    skills_crystallize_parser.add_argument("run_id")
+    skills_crystallize_parser.add_argument("name")
+    skills_crystallize_parser.add_argument("--description")
+    skills_crystallize_parser.add_argument("--notes")
+    skills_crystallize_parser.add_argument("--json", action="store_true")
     skills_eval_parser = skills_subparsers.add_parser("eval", help="Run a stored skill eval case")
     _add_state_dir(skills_eval_parser)
     skills_eval_parser.add_argument("case_id")
@@ -401,6 +408,13 @@ def _cmd_skills(args: argparse.Namespace) -> int:
         result = {"skill": skill}
     elif args.skills_command == "review":
         result = service.review(args.name)
+    elif args.skills_command == "crystallize":
+        result = service.crystallize_from_run(
+            args.run_id,
+            args.name,
+            description=args.description,
+            notes=args.notes,
+        )
     elif args.skills_command == "eval":
         result = service.run_eval_case(args.case_id)
     elif args.skills_command == "promote":

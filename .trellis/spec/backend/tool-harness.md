@@ -24,6 +24,8 @@
 - `ToolContext.workspace_root`: resolved root for local file and shell tools.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
 - `working_note` with `retention="memory_candidate"` stores metadata for DreamCycle; it does not create a memory candidate synchronously.
+- Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
+- `compact_tool_result` for crystallization must not include the generated skill body or raw source run payloads.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -36,6 +38,7 @@
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
+| Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
 | Skill eval case run | Return compact eval status/evidence without body | `tests/test_tools.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -49,6 +52,7 @@
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
 - Working note retention metadata: assert stored metadata and compact result remain small.
 - Skill review: assert status is persisted and compact result omits full skill body.
+- Skill crystallization: assert draft status is persisted and compact result omits raw source payload.
 - Skill eval case: assert eval status is persisted and compact result omits full skill body.
 - Local path tools: assert workspace scoping and traversal rejection.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.

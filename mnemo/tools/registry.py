@@ -157,6 +157,20 @@ LEARNING_TOOL_SPECS = [
         input_schema=_schema(["name"], {"name": {"type": "string"}}),
     ),
     ToolSpec(
+        name="skill_crystallize_from_run",
+        description="Crystallize a completed successful run trace into a draft skill candidate for later review/eval/promotion.",
+        risk="write",
+        input_schema=_schema(
+            ["run_id", "name"],
+            {
+                "run_id": {"type": "string"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "notes": {"type": "string"},
+            },
+        ),
+    ),
+    ToolSpec(
         name="skill_run_eval_case",
         description="Run a structured eval case against a skill and record the pass/fail result.",
         risk="write",
@@ -252,6 +266,7 @@ class ToolRegistry:
             "memory_write_candidate": self._memory_write_candidate,
             "skill_propose_candidate": self._skill_propose_candidate,
             "skill_review_candidate": self._skill_review_candidate,
+            "skill_crystallize_from_run": self._skill_crystallize_from_run,
             "skill_run_eval_case": self._skill_run_eval_case,
             "tool_propose_candidate": self._tool_propose_candidate,
             "eval_propose_case": self._eval_propose_case,
@@ -362,6 +377,14 @@ class ToolRegistry:
 
     def _skill_review_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         return SkillService(context.store).review(_require_str(args, "name"))
+
+    def _skill_crystallize_from_run(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        return SkillService(context.store).crystallize_from_run(
+            _require_str(args, "run_id"),
+            _require_str(args, "name"),
+            description=_optional_str(args, "description"),
+            notes=_optional_str(args, "notes"),
+        )
 
     def _skill_run_eval_case(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         return SkillService(context.store).run_eval_case(_require_str(args, "case_id"))
@@ -637,6 +660,8 @@ def _tool_summary(result: ToolResult) -> str:
         return f"Reviewed tool candidate: {result.result.get('status', 'unknown')}."
     if result.name == "skill_review_candidate":
         return f"Reviewed skill candidate: {result.result.get('status', 'unknown')}."
+    if result.name == "skill_crystallize_from_run":
+        return f"Crystallized draft skill: {result.result.get('name', 'unknown')}."
     if result.name == "skill_run_eval_case":
         return f"Ran skill eval case: {result.result.get('status', 'unknown')}."
     if result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
@@ -719,6 +744,17 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "title": str(result.result.get("name") or "Skill candidate"),
                 "status": result.result.get("status"),
                 "errors": result.result.get("errors", [])[:5],
+            }
+        ]
+    if result.name == "skill_crystallize_from_run":
+        return [
+            {
+                "kind": "skill_crystallization",
+                "id": str(result.result.get("skill_id") or ""),
+                "title": str(result.result.get("name") or "Skill candidate"),
+                "status": result.result.get("status"),
+                "source_run_id": result.result.get("source_run_id"),
+                "tools": result.result.get("tool_names", [])[:10],
             }
         ]
     if result.name == "skill_run_eval_case":

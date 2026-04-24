@@ -301,6 +301,60 @@ class SkillFilesystemTests(unittest.TestCase):
             self.assertEqual(stored["status"], "failed")
             self.assertIn("body_missing_text", stored["result"]["errors"])
 
+    def test_crystallize_from_run_creates_draft_skill_from_compact_trace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skills")
+            mission_id = store.create_mission(conversation_id, "skill crystallization")
+            run_id = store.create_run(conversation_id, mission_id, "draft release notes")
+            store.append_event(
+                run_id,
+                "tool.result",
+                {
+                    "tool_name": "artifact_update",
+                    "ok": True,
+                    "summary": "Artifact updated.",
+                    "result": {"body": "RAW SECRET PAYLOAD"},
+                    "evidence": [{"kind": "artifact", "id": "artifact_1", "title": "Draft"}],
+                },
+            )
+            store.append_event(run_id, "run.completed", {"status": "completed"})
+
+            result = SkillService(store).crystallize_from_run(
+                run_id,
+                "artifact-sop",
+                description="Capture artifact workflow",
+                notes="Keep concise.",
+            )
+            skill = store.get_skill("artifact-sop")
+
+            self.assertEqual(result["status"], "draft")
+            self.assertEqual(result["tool_names"], ["artifact_update"])
+            self.assertEqual(skill["status"], "draft")
+            self.assertEqual(skill["source"], f"run:{run_id}:crystallized")
+            self.assertIn("artifact_update", skill["body"])
+            self.assertIn("Artifact updated.", skill["body"])
+            self.assertNotIn("RAW SECRET PAYLOAD", skill["body"])
+
+    def test_crystallize_from_run_rejects_incomplete_or_empty_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skills")
+            mission_id = store.create_mission(conversation_id, "skill crystallization")
+            incomplete_run_id = store.create_run(conversation_id, mission_id, "draft release notes")
+            empty_run_id = store.create_run(conversation_id, mission_id, "draft release notes")
+            store.append_event(incomplete_run_id, "request.received", {"message": "draft release notes"})
+            store.append_event(empty_run_id, "run.completed", {"status": "completed"})
+
+            service = SkillService(store)
+
+            with self.assertRaisesRegex(ValueError, "not completed"):
+                service.crystallize_from_run(incomplete_run_id, "incomplete-sop")
+            with self.assertRaisesRegex(ValueError, "no successful tool results"):
+                service.crystallize_from_run(empty_run_id, "empty-sop")
+
 
 if __name__ == "__main__":
     unittest.main()

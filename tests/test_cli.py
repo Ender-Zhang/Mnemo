@@ -197,6 +197,36 @@ class CliTests(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(path.name, "SKILL.md")
 
+    def test_skills_crystallize_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _run_cli(["run", "artifact: Launch secret body", "--state-dir", tmp, "--json"])
+            self.assertEqual(run.returncode, 0, run.stderr)
+            run_id = json.loads(run.stdout)["run_id"]
+
+            crystallize = _run_cli(
+                [
+                    "skills",
+                    "crystallize",
+                    run_id,
+                    "artifact-sop",
+                    "--state-dir",
+                    tmp,
+                    "--description",
+                    "Capture artifact workflow",
+                    "--json",
+                ]
+            )
+            self.assertEqual(crystallize.returncode, 0, crystallize.stderr)
+            payload = json.loads(crystallize.stdout)
+            self.assertEqual(payload["status"], "draft")
+            self.assertEqual(payload["tool_names"], ["artifact_update"])
+
+            view = _run_cli(["skills", "view", "artifact-sop", "--state-dir", tmp, "--json"])
+            self.assertEqual(view.returncode, 0, view.stderr)
+            body = json.loads(view.stdout)["skill"]["body"]
+            self.assertIn("artifact_update", body)
+            self.assertNotIn("Launch secret body", body)
+
     def test_harness_eval_and_replay_commands(self) -> None:
         eval_run = _run_cli(["harness", "eval", "personalization-core", "--json"])
         self.assertEqual(eval_run.returncode, 0, eval_run.stderr)

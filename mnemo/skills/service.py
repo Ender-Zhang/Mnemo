@@ -73,6 +73,51 @@ class SkillService:
             "assertions": assertions,
         }
 
+    def crystallize_from_run(
+        self,
+        run_id: str,
+        name: str,
+        *,
+        description: str | None = None,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        trace = self.store.get_run_events(run_id)
+        if not trace:
+            raise ValueError(f"Run not found: {run_id}")
+        if not _run_completed(trace):
+            raise ValueError(f"Run is not completed: {run_id}")
+
+        tool_results = _compact_successful_tool_results(trace)
+        if not tool_results:
+            raise ValueError(f"Run has no successful tool results: {run_id}")
+
+        skill_name = name.strip()
+        if not skill_name:
+            raise ValueError("Skill name is required")
+        skill_description = (description or f"Crystallized SOP from run {run_id}").strip()
+        body = _crystallized_skill_body(
+            run_id=run_id,
+            name=skill_name,
+            description=skill_description,
+            tool_results=tool_results,
+            notes=notes,
+        )
+        skill_id = self.store.upsert_skill(
+            skill_name,
+            skill_description,
+            body,
+            source=f"run:{run_id}:crystallized",
+            status="draft",
+        )
+        return {
+            "skill_id": skill_id,
+            "name": skill_name,
+            "description": skill_description,
+            "status": "draft",
+            "source_run_id": run_id,
+            "tool_names": _unique_tool_names(tool_results),
+        }
+
     def review(self, name: str) -> dict[str, Any]:
         skill = self.store.get_skill(name)
         if not skill:
@@ -297,6 +342,106 @@ def _skill_eval_errors(summary: dict[str, Any]) -> list[str]:
     if int(summary.get("total", 0)) > 0 and int(summary.get("passed", 0)) == 0:
         return ["missing_eval"]
     return []
+
+
+def _run_completed(trace: list[dict[str, Any]]) -> bool:
+    completed = False
+    for event in trace:
+        if event.get("event_type") != "run.completed":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict):
+            completed = True
+            continue
+        completed = completed or str(payload.get("status") or "completed") == "completed"
+    return completed
+
+
+def _compact_successful_tool_results(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for event in trace:
+        if event.get("event_type") != "tool.result":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, dict) or not payload.get("ok"):
+            continue
+        tool_name = str(payload.get("tool_name") or "").strip()
+        if not tool_name or tool_name == "skill_crystallize_from_run":
+            continue
+        results.append(
+            {
+                "tool_name": tool_name,
+                "summary": _compact_text(payload.get("summary") or "Tool call completed.", limit=200),
+                "evidence_count": _evidence_count(payload.get("evidence")),
+            }
+        )
+    return results
+
+
+def _crystallized_skill_body(
+    *,
+    run_id: str,
+    name: str,
+    description: str,
+    tool_results: list[dict[str, Any]],
+    notes: str | None = None,
+) -> str:
+    tool_names = _unique_tool_names(tool_results)
+    lines = [
+        "# Purpose",
+        description,
+        "",
+        "# Procedure",
+        "1. Start from the user's current goal and relevant mission context.",
+    ]
+    for index, tool_name in enumerate(tool_names, start=2):
+        lines.append(f"{index}. Use `{tool_name}` when the task state calls for the same capability.")
+    lines.extend(
+        [
+            f"{len(tool_names) + 2}. Return concise progress and cite compact evidence, not raw payloads.",
+            "",
+            "# Source Run Evidence",
+            f"- source_run_id: `{run_id}`",
+            f"- draft_skill: `{name}`",
+            f"- tools: {', '.join(f'`{tool_name}`' for tool_name in tool_names)}",
+            "- compact tool summaries:",
+        ]
+    )
+    for result in tool_results:
+        lines.append(
+            f"  - `{result['tool_name']}`: {result['summary']} "
+            f"(evidence_items={result['evidence_count']})"
+        )
+    lines.extend(
+        [
+            "",
+            "# Review Notes",
+            _compact_text(notes, limit=800) if notes else "Review and test this draft before promotion.",
+        ]
+    )
+    return "\n".join(lines).strip()
+
+
+def _unique_tool_names(tool_results: list[dict[str, Any]]) -> list[str]:
+    seen: set[str] = set()
+    names: list[str] = []
+    for result in tool_results:
+        name = str(result.get("tool_name") or "").strip()
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    return names
+
+
+def _evidence_count(value: Any) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def _compact_text(value: Any, *, limit: int) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "..."
 
 
 def _compact_usage(usage: dict[str, Any]) -> dict[str, Any]:
