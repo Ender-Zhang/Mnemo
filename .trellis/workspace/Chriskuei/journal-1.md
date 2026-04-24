@@ -773,3 +773,37 @@ Implemented skill-targeted eval cases, skill_run_eval_case tool, CLI skill eval 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: SOP crystallization
+
+**Date**: 2026-04-25
+**Task**: SOP crystallization
+**Branch**: `main`
+
+### Summary
+
+Implemented model-directed run trace crystallization into draft skill candidates, tool and CLI entrypoints, focused/full tests, checklist, and specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `032538f` | (see git log) |
+| `0b18eab` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
