@@ -9,6 +9,7 @@
 ### 2. Signatures
 - `MemoryEngine.search(query: str, limit: int = 5) -> list[dict[str, Any]]`
 - `MemoryEngine.context_cards(query: str, limit: int = 5) -> list[dict[str, Any]]`
+- `MemoryEngine.ingest_working_notes(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
 - `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
@@ -16,15 +17,22 @@
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.add_working_note(mission_id: str, run_id: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
+- `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.update_working_note_status(note_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
 
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
 - Stable memory pages are created through promotion or explicit curation.
+- W0 working notes are mission-scoped scratchpad entries.
+- DreamCycle only turns W0 notes into memory candidates when the note metadata has `retention="memory_candidate"`.
+- W0 ingestion creates draft candidates and marks source notes as `candidate_created`; it never writes stable memory pages directly.
+- W0 notes without durable retention are marked `skipped:ephemeral`; short notes are marked `skipped:too_short`.
 - Duplicate candidates are rejected as `rejected:duplicate`.
 - Duplicate candidates may reinforce existing page confidence and must create a `reinforces` memory link.
 - Conflicting candidates are not promoted automatically.
 - Conflicting candidates are marked `needs_review:conflict` and linked with `conflicts_with`.
-- Dream consolidation returns `promoted`, `rejected`, `skipped`, `conflicts`, and a compact L1 `snapshot`.
+- Dream consolidation returns `w0`, `promoted`, `rejected`, `skipped`, `conflicts`, and a compact L1 `snapshot`.
 - L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
 - L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
 - Prompt-facing snapshots must omit raw evidence and full page content.
@@ -37,6 +45,8 @@
 | Obvious contradiction | Mark `needs_review:conflict`, add `conflicts_with` link, do not promote | `tests/test_memory.py` |
 | Low confidence non-conflict | Keep `draft`, return skipped entry | `tests/test_memory.py` |
 | High confidence non-conflict | Promote to active memory page | `tests/test_memory.py` |
+| W0 note with memory retention | Create candidate, mark note `candidate_created`, continue normal consolidation | `tests/test_memory.py` |
+| W0 note without memory retention | Mark note `skipped:ephemeral`, create no candidate | `tests/test_memory.py` |
 | Missing or invalid snapshot file | Return `None` | `tests/test_memory.py` |
 | Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
 
@@ -48,6 +58,7 @@
 
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
+- W0 ingestion creates candidates from model-marked working notes and skips ephemeral notes.
 - Duplicate reinforcement updates confidence and creates `reinforces`.
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
 - Search/context cards remain compact and omit raw evidence.

@@ -56,7 +56,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Memory engine pages/indexes beyond candidates.
 - [~] Associative recall / LLM Wiki style memory graph.
 - [x] Conflict detection and confidence updates.
-- [ ] W0 working memory to long-term candidate pipeline.
+- [x] W0 working memory to long-term candidate pipeline.
 - [x] DreamCycle idle memory consolidation.
 - [x] Daily compiled L1 cache-friendly memory snapshot.
 - [~] Memory eval cases and regression gates.
@@ -147,3 +147,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-skill-usage-scoring`: skill usage events, outcome scoring, compact card stats, and deterministic skill ranking are implemented.
 - [~] `04-25-implement-tool-candidate-eval-gate`: tool candidate status lifecycle, eval result recording, and readiness review gate are implemented.
 - [x] `04-25-implement-daily-l1-memory-snapshot`: daily compact active-memory snapshot compilation, prompt injection, and runtime loading are implemented.
+- [x] `04-25-implement-w0-working-memory-pipeline`: model-marked working notes can enter DreamCycle as candidate-first memory updates.

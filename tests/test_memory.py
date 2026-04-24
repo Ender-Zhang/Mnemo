@@ -103,6 +103,65 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertIsNotNone(loaded_snapshot)
             self.assertEqual(loaded_snapshot["page_count"], 1)
 
+    def test_dream_consolidate_ingests_model_marked_working_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("memory")
+            mission_id = store.create_mission(conversation_id, "memory tests")
+            run_id = store.create_run(conversation_id, mission_id, "note")
+            note_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "User prefers direct implementation progress",
+                metadata={
+                    "retention": "memory_candidate",
+                    "dimension": "preference",
+                    "scope": "global",
+                    "confidence": 0.82,
+                },
+            )
+
+            result = MemoryEngine(store).dream_consolidate(min_confidence=0.7)
+
+            candidate_id = result["w0"]["created"][0]["candidate_id"]
+            note = store.list_working_notes(status="candidate_created")[0]
+            candidate = store.get_memory_candidate(candidate_id)
+            self.assertEqual(result["w0"]["created"][0]["note_id"], note_id)
+            self.assertEqual(result["promoted"][0]["candidate_id"], candidate_id)
+            self.assertEqual(note["result"], {"candidate_id": candidate_id})
+            self.assertEqual(candidate["status"], "promoted")
+            self.assertEqual(candidate["evidence"][0]["kind"], "working_note")
+            self.assertEqual(candidate["evidence"][0]["id"], note_id)
+
+    def test_working_note_ingestion_skips_ephemeral_and_short_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("memory")
+            mission_id = store.create_mission(conversation_id, "memory tests")
+            run_id = store.create_run(conversation_id, mission_id, "note")
+            ephemeral_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "Temporary scratchpad context",
+                metadata={"retention": "ephemeral"},
+            )
+            short_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "tiny",
+                metadata={"retention": "memory_candidate"},
+            )
+
+            result = MemoryEngine(store).dream_consolidate()
+
+            skipped = {item["note_id"]: item["status"] for item in result["w0"]["skipped"]}
+            self.assertEqual(result["w0"]["created"], [])
+            self.assertEqual(skipped[ephemeral_id], "skipped:ephemeral")
+            self.assertEqual(skipped[short_id], "skipped:too_short")
+            self.assertEqual(store.list_memory_candidates(status=None), [])
+
     def test_dream_consolidate_rejects_empty_and_duplicate_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)

@@ -330,7 +330,8 @@ def _cmd_dream(args: argparse.Namespace) -> int:
         return 0
     print(
         "DreamCycle completed: "
-        f"promoted={len(result['promoted'])} rejected={len(result['rejected'])} "
+        f"w0_created={len(result['w0']['created'])} promoted={len(result['promoted'])} "
+        f"rejected={len(result['rejected'])} "
         f"skipped={len(result['skipped'])} snapshot_items={result['snapshot']['page_count']}"
     )
     return 0

@@ -8,6 +8,9 @@ from typing import Any
 from ..core.jsonutil import dumps, loads
 
 L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
+W0_MEMORY_RETENTION = "memory_candidate"
+DEFAULT_W0_CONFIDENCE = 0.62
+MIN_W0_CANDIDATE_CHARS = 12
 
 
 class MemoryEngine:
@@ -55,6 +58,55 @@ class MemoryEngine:
 
     def context_cards(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         return [_context_card(item) for item in self.search(query, limit=limit)]
+
+    def ingest_working_notes(self, limit: int = 20) -> dict[str, Any]:
+        list_notes = getattr(self.store, "list_working_notes", None)
+        update_note = getattr(self.store, "update_working_note_status", None)
+        if not list_notes or not update_note:
+            return {"created": [], "skipped": []}
+
+        created: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        for note in list_notes(status="open", limit=limit):
+            content = _normalize_space(note.get("content", ""))
+            metadata = note.get("metadata") if isinstance(note.get("metadata"), dict) else {}
+            retention = metadata.get("retention") or "ephemeral"
+
+            if len(content) < MIN_W0_CANDIDATE_CHARS:
+                skipped.append(_skip_working_note(self.store, note, "too_short"))
+                continue
+            if retention != W0_MEMORY_RETENTION:
+                skipped.append(_skip_working_note(self.store, note, "ephemeral"))
+                continue
+
+            candidate_id = self.store.add_memory_candidate(
+                note["run_id"],
+                content,
+                dimension=metadata.get("dimension") or "working_note",
+                scope=metadata.get("scope") or f"mission:{note['mission_id']}",
+                confidence=_bounded_confidence(metadata.get("confidence"), DEFAULT_W0_CONFIDENCE),
+                evidence=[
+                    {
+                        "kind": "working_note",
+                        "id": note["id"],
+                        "mission_id": note["mission_id"],
+                        "run_id": note["run_id"],
+                    }
+                ],
+            )
+            result = {
+                "note_id": note["id"],
+                "candidate_id": candidate_id,
+                "status": "candidate_created",
+            }
+            self.store.update_working_note_status(
+                note["id"],
+                "candidate_created",
+                result={"candidate_id": candidate_id},
+            )
+            created.append(result)
+
+        return {"created": created, "skipped": skipped}
 
     def compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any]:
         pages = self.store.list_memory_pages(status="active", limit=max(0, int(limit)))
@@ -125,6 +177,7 @@ class MemoryEngine:
         }
 
     def dream_consolidate(self, limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]:
+        w0 = self.ingest_working_notes(limit=limit)
         candidates = self.store.list_memory_candidates(status="draft", limit=limit)
         promoted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
@@ -169,6 +222,7 @@ class MemoryEngine:
                 )
 
         return {
+            "w0": w0,
             "promoted": promoted,
             "rejected": rejected,
             "skipped": skipped,
@@ -285,6 +339,24 @@ def _snapshot_item(page: dict[str, Any]) -> dict[str, Any]:
         "confidence": page.get("confidence"),
         "updated_at": page.get("updated_at"),
     }
+
+
+def _skip_working_note(store: Any, note: dict[str, Any], reason: str) -> dict[str, Any]:
+    status = f"skipped:{_status_reason(reason)}"
+    store.update_working_note_status(note["id"], status, result={"reason": reason})
+    return {
+        "note_id": note["id"],
+        "status": status,
+        "reason": reason,
+    }
+
+
+def _bounded_confidence(value: Any, default: float) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        confidence = default
+    return min(1.0, max(0.0, confidence))
 
 
 def _fingerprint(value: str) -> str:

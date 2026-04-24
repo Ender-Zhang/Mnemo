@@ -60,9 +60,22 @@ CORE_TOOL_SPECS = [
     ),
     ToolSpec(
         name="working_note",
-        description="Record a short mission-scoped working note or scratchpad observation.",
+        description="Record a short mission-scoped working note. Set retention=memory_candidate only when this note should enter DreamCycle as a long-term memory candidate.",
         risk="write",
-        input_schema=_schema(["content"], {"content": {"type": "string"}}),
+        input_schema=_schema(
+            ["content"],
+            {
+                "content": {"type": "string"},
+                "retention": {
+                    "type": "string",
+                    "enum": ["ephemeral", "memory_candidate"],
+                    "default": "ephemeral",
+                },
+                "dimension": {"type": "string"},
+                "scope": {"type": "string"},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            },
+        ),
     ),
     ToolSpec(
         name="skills_list",
@@ -271,8 +284,14 @@ class ToolRegistry:
 
     def _working_note(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         content = _require_str(args, "content")
-        note_id = context.store.add_working_note(context.mission_id, context.run_id, content)
-        return {"note_id": note_id}
+        metadata = {
+            "retention": _working_note_retention(args),
+            "dimension": _optional_str(args, "dimension"),
+            "scope": _optional_str(args, "scope"),
+            "confidence": _optional_float(args, "confidence"),
+        }
+        note_id = context.store.add_working_note(context.mission_id, context.run_id, content, metadata=metadata)
+        return {"note_id": note_id, "retention": metadata["retention"]}
 
     def _skills_list(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         return {"skills": SkillService(context.store).context_cards(limit=50)}
@@ -728,6 +747,25 @@ def _outcome_score(args: dict[str, Any], outcome: str) -> float:
     if score < -1 or score > 1:
         raise ToolError("score must be between -1 and 1")
     return score
+
+
+def _working_note_retention(args: dict[str, Any]) -> str:
+    retention = str(args.get("retention") or "ephemeral")
+    if retention not in {"ephemeral", "memory_candidate"}:
+        raise ToolError(f"invalid working note retention: {retention}")
+    return retention
+
+
+def _optional_float(args: dict[str, Any], key: str) -> float | None:
+    if key not in args or args.get(key) is None:
+        return None
+    try:
+        value = float(args[key])
+    except (TypeError, ValueError) as exc:
+        raise ToolError(f"expected numeric argument: {key}") from exc
+    if key == "confidence" and (value < 0 or value > 1):
+        raise ToolError("confidence must be between 0 and 1")
+    return value
 
 
 def _optional_str(args: dict[str, Any], key: str) -> str | None:

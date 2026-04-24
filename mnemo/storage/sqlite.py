@@ -102,6 +102,10 @@ class StateStore:
                     mission_id TEXT NOT NULL REFERENCES missions(id),
                     run_id TEXT NOT NULL REFERENCES runs(id),
                     content TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    processed_at REAL,
+                    result_json TEXT NOT NULL,
                     created_at REAL NOT NULL
                 );
 
@@ -209,6 +213,10 @@ class StateStore:
             )
             _ensure_column(conn, "skills", "path", "TEXT")
             _ensure_column(conn, "eval_cases", "result_json", "TEXT")
+            _ensure_column(conn, "working_notes", "metadata_json", "TEXT")
+            _ensure_column(conn, "working_notes", "status", "TEXT")
+            _ensure_column(conn, "working_notes", "processed_at", "REAL")
+            _ensure_column(conn, "working_notes", "result_json", "TEXT")
 
     def create_conversation(self, title: str | None = None) -> str:
         now = time.time()
@@ -347,14 +355,58 @@ class StateStore:
             )
         return call_id
 
-    def add_working_note(self, mission_id: str, run_id: str, content: str) -> str:
+    def add_working_note(
+        self,
+        mission_id: str,
+        run_id: str,
+        content: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
         note_id = new_id("note")
         with self.connect() as conn:
             conn.execute(
-                "INSERT INTO working_notes(id, mission_id, run_id, content, created_at) VALUES(?, ?, ?, ?, ?)",
-                (note_id, mission_id, run_id, content, time.time()),
+                """
+                INSERT INTO working_notes(
+                    id, mission_id, run_id, content, metadata_json, status, processed_at, result_json, created_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (note_id, mission_id, run_id, content, dumps(metadata or {}), "open", None, dumps({}), time.time()),
             )
         return note_id
+
+    def list_working_notes(self, status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, mission_id, run_id, content, metadata_json, status, processed_at, result_json, created_at
+            FROM working_notes
+        """
+        params: list[Any] = []
+        if status:
+            sql += " WHERE COALESCE(status, 'open') = ?"
+            params.append(status)
+        sql += " ORDER BY created_at ASC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_working_note_from_row(row) for row in rows]
+
+    def update_working_note_status(
+        self,
+        note_id: str,
+        status: str,
+        *,
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE working_notes
+                SET status = ?, processed_at = ?, result_json = COALESCE(?, result_json)
+                WHERE id = ?
+                """,
+                (status, time.time(), dumps(result) if result is not None else None, note_id),
+            )
 
     def add_memory_candidate(
         self,
@@ -882,6 +934,14 @@ class StateStore:
 def _memory_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["evidence"] = loads(result.pop("evidence_json"), [])
+    return result
+
+
+def _working_note_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json", None), {})
+    result["result"] = loads(result.pop("result_json", None), {})
+    result["status"] = result.get("status") or "open"
     return result
 
 

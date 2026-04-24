@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "W0 ingestion extends memory engine DreamCycle contract"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Data flows from tool storage to memory engine to CLI"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "working_note tool is the W0 input surface"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing candidate and dream consolidation paths"}

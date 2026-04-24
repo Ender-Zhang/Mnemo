@@ -70,6 +70,33 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertIn("evidence", compact)
             self.assertNotIn("result", compact)
 
+    def test_working_note_can_mark_model_retention(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="working_note",
+                    arguments={
+                        "content": "User prefers direct implementation progress",
+                        "retention": "memory_candidate",
+                        "dimension": "preference",
+                        "scope": "global",
+                        "confidence": 0.84,
+                    },
+                    call_id="call_note",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            notes = store.list_working_notes()
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["retention"], "memory_candidate")
+            self.assertEqual(notes[0]["metadata"]["dimension"], "preference")
+            self.assertEqual(notes[0]["metadata"]["scope"], "global")
+            self.assertEqual(notes[0]["metadata"]["confidence"], 0.84)
+
     def test_skill_view_records_usage_and_outcome_tool_records_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

@@ -55,6 +55,30 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(matches[0]["id"], candidate_id)
             self.assertEqual(store.get_memory_candidate(candidate_id)["claim"], matches[0]["claim"])
 
+    def test_working_notes_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("test")
+            mission_id = store.create_mission(conversation_id, "test mission")
+            run_id = store.create_run(conversation_id, mission_id, "note")
+
+            note_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "User wants terse implementation updates",
+                metadata={"retention": "memory_candidate", "confidence": 0.8},
+            )
+            open_notes = store.list_working_notes()
+            store.update_working_note_status(note_id, "candidate_created", result={"candidate_id": "mem_1"})
+            processed = store.list_working_notes(status="candidate_created")
+
+            self.assertEqual(open_notes[0]["id"], note_id)
+            self.assertEqual(open_notes[0]["metadata"]["retention"], "memory_candidate")
+            self.assertEqual(open_notes[0]["status"], "open")
+            self.assertEqual(processed[0]["result"], {"candidate_id": "mem_1"})
+            self.assertIsNotNone(processed[0]["processed_at"])
+
     def test_skill_usage_events_and_stats(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
