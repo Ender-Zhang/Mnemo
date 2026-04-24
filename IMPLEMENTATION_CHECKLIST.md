@@ -93,7 +93,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [ ] Inline artifact cards and artifact viewer.
 - [ ] Inline decision cards.
 - [ ] Event replay/resume with `sinceEventId`.
-- [ ] Streaming transport API.
+- [~] Streaming transport API.
 
 ## Provider And Model Integration
 
@@ -110,7 +110,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] Basic unit tests.
 - [ ] Golden personalization cases.
-- [ ] Runtime smoke replay tests.
+- [x] Runtime smoke replay tests.
 - [ ] Memory safety tests.
 - [ ] Skill evolution tests.
 - [x] Provider fake server tests.
@@ -121,7 +121,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] SQLite schema creation.
 - [x] State dirs for wiki, skills, runs, artifacts.
 - [ ] Schema migrations.
-- [ ] JSONL trace mirror.
+- [x] JSONL trace mirror.
 - [ ] Event outbox.
 - [ ] Config file and env override model.
 - [ ] Daemon status command.
@@ -133,3 +133,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] `04-24-implement-prompt-assembly-foundation`: PromptBlock, PromptAssembler, provider runtime integration, and prompt inspect CLI are in progress.
 - [~] `04-24-implement-memory-engine-foundation`: memory pages, promotion/rejection, stable search, and deterministic DreamCycle are in progress.
 - [~] `04-24-implement-skills-filesystem-lifecycle`: Agent Skills scanner, skill service, and generated `SKILL.md` promotion are in progress.
+- [~] `04-24-implement-event-replay-foundation`: JSONL trace mirror, event replay CLI, and trace summary are in progress.

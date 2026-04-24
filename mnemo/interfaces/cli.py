@@ -41,6 +41,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_dream(args)
         if args.command == "prompt":
             return _cmd_prompt(args)
+        if args.command == "replay":
+            return _cmd_replay(args)
         if args.command == "skills":
             return _cmd_skills(args)
         if args.command == "tools":
@@ -85,7 +87,14 @@ def build_parser() -> argparse.ArgumentParser:
     events_parser = subparsers.add_parser("events", help="Print RunLedger events for a run")
     _add_state_dir(events_parser)
     events_parser.add_argument("run_id")
+    events_parser.add_argument("--since", type=int, default=0)
+    events_parser.add_argument("--chat", action="store_true", help="Print ChatEvent payloads only")
     events_parser.add_argument("--json", action="store_true")
+
+    replay_parser = subparsers.add_parser("replay", help="Summarize a run trace")
+    _add_state_dir(replay_parser)
+    replay_parser.add_argument("run_id")
+    replay_parser.add_argument("--json", action="store_true")
 
     memory_parser = subparsers.add_parser("memory", help="Search and curate memory")
     memory_subparsers = memory_parser.add_subparsers(dest="memory_command")
@@ -195,13 +204,45 @@ def _cmd_events(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     store.initialize()
     ledger = RunLedger(store)
-    events = ledger.events(args.run_id)
+    events = ledger.chat_events(args.run_id, since=args.since) if args.chat else ledger.events_since(args.run_id, args.since)
     if args.json:
         print(dumps({"events": events}))
         return 0
 
     for event in events:
-        print(f"{event['seq']:03d} {event['event_type']} {dumps(event['payload'])}")
+        if args.chat:
+            print(dumps(event))
+        else:
+            print(f"{event['seq']:03d} {event['event_type']} {dumps(event['payload'])}")
+    return 0
+
+
+def _cmd_replay(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    store.initialize()
+    ledger = RunLedger(store)
+    trace = ledger.load_trace(args.run_id)
+    summary = {
+        "run_id": args.run_id,
+        "event_count": len(trace),
+        "chat_event_count": sum(1 for event in trace if event.get("event_type") == "chat.event"),
+        "tool_call_count": sum(1 for event in trace if event.get("event_type") == "tool.called"),
+        "completed": any(
+            event.get("event_type") == "run.completed"
+            and event.get("payload", {}).get("status") == "completed"
+            for event in trace
+        ),
+        "trace_path": str(ledger.trace_path(args.run_id)),
+    }
+    if args.json:
+        print(dumps(summary))
+    else:
+        print(
+            f"run={summary['run_id']} events={summary['event_count']} "
+            f"chat_events={summary['chat_event_count']} tool_calls={summary['tool_call_count']} "
+            f"completed={summary['completed']}"
+        )
+        print(summary["trace_path"])
     return 0
 
 

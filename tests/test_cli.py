@@ -136,6 +136,24 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_events_chat_and_replay_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _run_cli(["run", "remember: replay CLI", "--state-dir", tmp, "--json"])
+            self.assertEqual(run.returncode, 0, run.stderr)
+            run_id = json.loads(run.stdout)["run_id"]
+
+            events = _run_cli(["events", run_id, "--state-dir", tmp, "--chat", "--json"])
+            self.assertEqual(events.returncode, 0, events.stderr)
+            chat_events = json.loads(events.stdout)["events"]
+            self.assertEqual(chat_events[0]["type"], "turn.started")
+            self.assertEqual(chat_events[-1]["type"], "run.completed")
+
+            replay = _run_cli(["replay", run_id, "--state-dir", tmp, "--json"])
+            self.assertEqual(replay.returncode, 0, replay.stderr)
+            replay_payload = json.loads(replay.stdout)
+            self.assertTrue(replay_payload["completed"])
+            self.assertGreater(replay_payload["event_count"], 0)
+
     def test_skills_scan_view_and_promote_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "skill-root"
