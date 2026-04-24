@@ -569,3 +569,37 @@ Added duplicate reinforcement, conflict review routing, memory link provenance, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: Skill usage scoring
+
+**Date**: 2026-04-25
+**Task**: Skill usage scoring
+**Branch**: `main`
+
+### Summary
+
+Added skill usage event storage, skill_record_outcome tool, skill_view usage tracking, compact usage stats in skill cards, deterministic skill ranking, executable skill evolution spec, and focused tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b54e161` | (see git log) |
+| `499a217` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
