@@ -219,6 +219,88 @@ class SkillFilesystemTests(unittest.TestCase):
             self.assertIn("negative_usage", review["errors"])
             self.assertEqual(review["usage"]["failures"], 1)
 
+    def test_run_eval_case_records_passed_result_and_review_uses_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skills")
+            mission_id = store.create_mission(conversation_id, "skill eval")
+            run_id = store.create_run(conversation_id, mission_id, "eval")
+            store.upsert_skill(
+                "writer",
+                "Draft concise project notes",
+                "Use short sentences and preserve concrete file references.",
+                status="draft",
+            )
+            case_id = store.add_eval_case(
+                run_id,
+                "writer smoke",
+                {
+                    "skill_name": "writer",
+                    "body_contains": ["short sentences"],
+                    "description_contains": "concise",
+                    "min_body_chars": 20,
+                },
+            )
+
+            result = SkillService(store).run_eval_case(case_id)
+            review = SkillService(store).review("writer")
+
+            self.assertTrue(result["passed"])
+            self.assertEqual(store.get_eval_case(case_id)["status"], "passed")
+            self.assertEqual(review["status"], "ready")
+            self.assertEqual(review["evals"]["passed_eval_case_ids"], [case_id])
+
+    def test_review_blocks_linked_pending_or_failed_eval_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skills")
+            mission_id = store.create_mission(conversation_id, "skill eval")
+            run_id = store.create_run(conversation_id, mission_id, "eval")
+            store.upsert_skill(
+                "writer",
+                "Draft concise project notes",
+                "Use short sentences and preserve concrete file references.",
+                status="draft",
+            )
+            pending_id = store.add_eval_case(run_id, "writer pending", {"skill_name": "writer"})
+
+            pending_review = SkillService(store).review("writer")
+            store.update_eval_case_status(pending_id, "failed", result={"ok": False})
+            failed_review = SkillService(store).review("writer")
+
+            self.assertEqual(pending_review["status"], "blocked:missing_eval")
+            self.assertIn("missing_eval", pending_review["errors"])
+            self.assertEqual(failed_review["status"], "blocked:failed_eval")
+            self.assertIn("failed_eval", failed_review["errors"])
+
+    def test_run_eval_case_records_failed_result_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skills")
+            mission_id = store.create_mission(conversation_id, "skill eval")
+            run_id = store.create_run(conversation_id, mission_id, "eval")
+            store.upsert_skill(
+                "writer",
+                "Draft concise project notes",
+                "Use short sentences and preserve concrete file references.",
+                status="draft",
+            )
+            case_id = store.add_eval_case(
+                run_id,
+                "writer failing",
+                {"skill_name": "writer", "body_contains": "never present"},
+            )
+
+            result = SkillService(store).run_eval_case(case_id)
+            stored = store.get_eval_case(case_id)
+
+            self.assertFalse(result["passed"])
+            self.assertEqual(stored["status"], "failed")
+            self.assertIn("body_missing_text", stored["result"]["errors"])
+
 
 if __name__ == "__main__":
     unittest.main()

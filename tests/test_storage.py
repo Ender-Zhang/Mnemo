@@ -146,6 +146,24 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(cases[0]["case"]["tool_candidate"], "fetch_page")
             self.assertEqual(cases[0]["result"], {"ok": True})
 
+    def test_eval_cases_can_filter_by_skill_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("test")
+            mission_id = store.create_mission(conversation_id, "test mission")
+            run_id = store.create_run(conversation_id, mission_id, "skills")
+
+            writer_case = store.add_eval_case(run_id, "writer smoke", {"skill_name": "writer"})
+            store.add_eval_case(run_id, "reader smoke", {"skill_candidate": "reader"})
+            store.update_eval_case_status(writer_case, "passed", result={"ok": True})
+
+            writer_cases = store.list_eval_cases(status="passed", skill_name="writer")
+            reader_cases = store.list_eval_cases(skill_name="reader")
+
+            self.assertEqual([case["id"] for case in writer_cases], [writer_case])
+            self.assertEqual(reader_cases[0]["case"]["skill_candidate"], "reader")
+
 
 if __name__ == "__main__":
     unittest.main()

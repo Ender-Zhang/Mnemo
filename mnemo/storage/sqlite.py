@@ -869,6 +869,7 @@ class StateStore:
         status: str | None = None,
         *,
         tool_name: str | None = None,
+        skill_name: str | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
         sql = """
@@ -884,9 +885,11 @@ class StateStore:
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         cases = [_eval_case_from_row(row) for row in rows]
-        if not tool_name:
-            return cases
-        return [case for case in cases if _eval_case_targets_tool(case, tool_name)]
+        if tool_name:
+            cases = [case for case in cases if _eval_case_targets_tool(case, tool_name)]
+        if skill_name:
+            cases = [case for case in cases if _eval_case_targets_skill(case, skill_name)]
+        return cases
 
     def update_eval_case_status(
         self,
@@ -970,6 +973,16 @@ def _eval_case_targets_tool(case: dict[str, Any], tool_name: str) -> bool:
     return tool_name in {
         payload.get("tool_candidate"),
         payload.get("tool_name"),
+        payload.get("name"),
+    }
+
+
+def _eval_case_targets_skill(case: dict[str, Any], skill_name: str) -> bool:
+    payload = case.get("case") or {}
+    return skill_name in {
+        payload.get("skill_candidate"),
+        payload.get("skill_name"),
+        payload.get("skill"),
         payload.get("name"),
     }
 

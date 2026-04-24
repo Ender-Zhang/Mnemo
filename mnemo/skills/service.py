@@ -38,22 +38,62 @@ class SkillService:
     def view(self, name: str) -> dict[str, Any] | None:
         return self.store.get_skill(name)
 
+    def run_eval_case(self, case_id: str) -> dict[str, Any]:
+        eval_case = self.store.get_eval_case(case_id)
+        if not eval_case:
+            raise ValueError(f"Eval case not found: {case_id}")
+
+        case = eval_case.get("case") or {}
+        skill_name = _eval_case_skill_name(case)
+        assertions: list[dict[str, Any]] = []
+        errors: list[str] = []
+        skill = self.store.get_skill(skill_name) if skill_name else None
+        if not skill_name:
+            errors.append("missing_skill_target")
+        elif not skill:
+            errors.append("skill_not_found")
+        else:
+            assertions, errors = _run_skill_assertions(skill, case)
+
+        passed = not errors
+        status = "passed" if passed else "failed"
+        result = {
+            "ok": passed,
+            "skill_name": skill_name,
+            "errors": errors,
+            "assertions": assertions,
+        }
+        self.store.update_eval_case_status(case_id, status, result=result)
+        return {
+            "case_id": case_id,
+            "skill_name": skill_name,
+            "status": status,
+            "passed": passed,
+            "errors": errors,
+            "assertions": assertions,
+        }
+
     def review(self, name: str) -> dict[str, Any]:
         skill = self.store.get_skill(name)
         if not skill:
             raise ValueError(f"Skill not found: {name}")
 
         usage = _skill_usage_stats(self.store).get(name, {})
+        eval_cases = self.store.list_eval_cases(skill_name=name, limit=100)
+        eval_summary = _skill_eval_summary(eval_cases)
         if skill.get("status") == "active":
             return {
                 "name": name,
                 "status": "active",
                 "errors": [],
                 "usage": _compact_usage(usage),
+                "evals": eval_summary,
                 "reason": "already_active",
             }
 
         errors = _skill_review_errors(skill, usage)
+        errors.extend(_skill_eval_errors(eval_summary))
+        errors = list(dict.fromkeys(errors))
         status = "ready" if not errors else f"blocked:{errors[0]}"
         self.store.update_skill_status(name, status)
         return {
@@ -61,6 +101,7 @@ class SkillService:
             "status": status,
             "errors": errors,
             "usage": _compact_usage(usage),
+            "evals": eval_summary,
         }
 
     def promote(self, name: str) -> dict[str, Any]:
@@ -171,6 +212,91 @@ def _skill_review_errors(skill: dict[str, Any], usage: dict[str, Any]) -> list[s
     if int(usage.get("failures", 0)) > int(usage.get("successes", 0)) and int(usage.get("successes", 0)) == 0:
         errors.append("negative_usage")
     return list(dict.fromkeys(errors))
+
+
+def _eval_case_skill_name(case: dict[str, Any]) -> str:
+    for key in ("skill_name", "skill_candidate", "skill", "name"):
+        value = case.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _run_skill_assertions(skill: dict[str, Any], case: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str]]:
+    body = str(skill.get("body") or "")
+    description = str(skill.get("description") or "")
+    assertions: list[dict[str, Any]] = []
+    errors: list[str] = []
+    payload = _assertion_payload(case)
+
+    for expected in _string_list(payload.get("body_contains")):
+        passed = expected in body
+        assertions.append({"name": "body_contains", "value": expected, "passed": passed})
+        if not passed:
+            errors.append("body_missing_text")
+
+    for expected in _string_list(payload.get("description_contains")):
+        passed = expected in description
+        assertions.append({"name": "description_contains", "value": expected, "passed": passed})
+        if not passed:
+            errors.append("description_missing_text")
+
+    for forbidden in [*_string_list(payload.get("body_not_contains")), *_string_list(payload.get("body_forbids"))]:
+        passed = forbidden not in body
+        assertions.append({"name": "body_not_contains", "value": forbidden, "passed": passed})
+        if not passed:
+            errors.append("body_forbidden_text")
+
+    min_chars = payload.get("min_body_chars")
+    if min_chars is not None:
+        try:
+            min_value = int(min_chars)
+        except (TypeError, ValueError):
+            min_value = -1
+        passed = min_value >= 0 and len(body.strip()) >= min_value
+        assertions.append({"name": "min_body_chars", "value": min_chars, "passed": passed})
+        if not passed:
+            errors.append("body_too_short")
+
+    return assertions, list(dict.fromkeys(errors))
+
+
+def _assertion_payload(case: dict[str, Any]) -> dict[str, Any]:
+    assertions = case.get("assertions")
+    if isinstance(assertions, dict):
+        return {**case, **assertions}
+    return case
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str) and value:
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str) and item]
+    return []
+
+
+def _skill_eval_summary(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    passed = [case["id"] for case in cases if case.get("status") == "passed"]
+    failed = [case["id"] for case in cases if case.get("status") == "failed"]
+    pending = [case["id"] for case in cases if case.get("status") not in {"passed", "failed"}]
+    return {
+        "total": len(cases),
+        "passed": len(passed),
+        "failed": len(failed),
+        "pending": len(pending),
+        "passed_eval_case_ids": passed,
+        "failed_eval_case_ids": failed,
+        "pending_eval_case_ids": pending,
+    }
+
+
+def _skill_eval_errors(summary: dict[str, Any]) -> list[str]:
+    if int(summary.get("failed", 0)) > 0:
+        return ["failed_eval"]
+    if int(summary.get("total", 0)) > 0 and int(summary.get("passed", 0)) == 0:
+        return ["missing_eval"]
+    return []
 
 
 def _compact_usage(usage: dict[str, Any]) -> dict[str, Any]:

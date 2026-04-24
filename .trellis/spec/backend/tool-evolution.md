@@ -12,6 +12,7 @@
 - `StateStore.update_tool_candidate_status(candidate_id: str, status: str) -> None`
 - `StateStore.get_eval_case(case_id: str) -> dict[str, Any] | None`
 - `StateStore.list_eval_cases(status: str | None = None, *, tool_name: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.list_eval_cases(status: str | None = None, *, tool_name: str | None = None, skill_name: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_eval_case_status(case_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
 - `ToolEvolutionService.review_candidate(candidate_id: str) -> dict[str, Any]`
 - Tool: `eval_record_result(case_id: str, status: passed|failed, result?: object)`
@@ -22,6 +23,7 @@
 - Candidate review never activates executable generated code.
 - Valid candidate specs require matching `name`, non-empty `description`, valid `risk`, and object `input_schema`.
 - Linked eval cases target a candidate through `case.tool_candidate`, `case.tool_name`, or `case.name`.
+- The same eval table may target skills through `case.skill_name`, `case.skill_candidate`, `case.skill`, or `case.name`.
 - A candidate with invalid spec becomes `blocked:invalid_spec`.
 - A valid candidate without passed linked evals becomes `blocked:missing_eval`.
 - A valid candidate with at least one passed linked eval becomes `ready`.

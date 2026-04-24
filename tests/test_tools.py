@@ -226,6 +226,40 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact["evidence"][0]["kind"], "skill_candidate_review")
             self.assertNotIn("body", str(compact))
 
+    def test_skill_run_eval_case_records_result_and_returns_compact_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            store.upsert_skill(
+                "writer",
+                "Draft concise notes",
+                "Use short sentences and keep project references concrete.",
+                status="draft",
+            )
+            case_id = store.add_eval_case(
+                run_id,
+                "writer smoke",
+                {"skill_name": "writer", "body_contains": "short sentences"},
+            )
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_run_eval_case",
+                    arguments={"case_id": case_id},
+                    call_id="call_skill_eval",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            compact = compact_tool_result(result)
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["status"], "passed")
+            self.assertEqual(store.get_eval_case(case_id)["status"], "passed")
+            self.assertEqual(compact["evidence"][0]["kind"], "skill_eval_case")
+            self.assertNotIn("body", str(compact))
+
     def test_eval_result_and_tool_review_candidate_mark_ready(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

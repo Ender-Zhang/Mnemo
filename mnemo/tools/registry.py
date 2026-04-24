@@ -157,6 +157,12 @@ LEARNING_TOOL_SPECS = [
         input_schema=_schema(["name"], {"name": {"type": "string"}}),
     ),
     ToolSpec(
+        name="skill_run_eval_case",
+        description="Run a structured eval case against a skill and record the pass/fail result.",
+        risk="write",
+        input_schema=_schema(["case_id"], {"case_id": {"type": "string"}}),
+    ),
+    ToolSpec(
         name="tool_propose_candidate",
         description="Propose a generated tool integration with a structured spec and provenance.",
         risk="write",
@@ -246,6 +252,7 @@ class ToolRegistry:
             "memory_write_candidate": self._memory_write_candidate,
             "skill_propose_candidate": self._skill_propose_candidate,
             "skill_review_candidate": self._skill_review_candidate,
+            "skill_run_eval_case": self._skill_run_eval_case,
             "tool_propose_candidate": self._tool_propose_candidate,
             "eval_propose_case": self._eval_propose_case,
             "eval_record_result": self._eval_record_result,
@@ -355,6 +362,9 @@ class ToolRegistry:
 
     def _skill_review_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         return SkillService(context.store).review(_require_str(args, "name"))
+
+    def _skill_run_eval_case(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        return SkillService(context.store).run_eval_case(_require_str(args, "case_id"))
 
     def _tool_propose_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         candidate_id = context.store.add_tool_candidate(
@@ -627,6 +637,8 @@ def _tool_summary(result: ToolResult) -> str:
         return f"Reviewed tool candidate: {result.result.get('status', 'unknown')}."
     if result.name == "skill_review_candidate":
         return f"Reviewed skill candidate: {result.result.get('status', 'unknown')}."
+    if result.name == "skill_run_eval_case":
+        return f"Ran skill eval case: {result.result.get('status', 'unknown')}."
     if result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
         return "Learning candidate recorded."
     if result.name == "learning_discard":
@@ -705,6 +717,16 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "kind": "skill_candidate_review",
                 "id": str(result.result.get("name") or ""),
                 "title": str(result.result.get("name") or "Skill candidate"),
+                "status": result.result.get("status"),
+                "errors": result.result.get("errors", [])[:5],
+            }
+        ]
+    if result.name == "skill_run_eval_case":
+        return [
+            {
+                "kind": "skill_eval_case",
+                "id": str(result.result.get("case_id") or ""),
+                "title": str(result.result.get("skill_name") or "Skill eval"),
                 "status": result.result.get("status"),
                 "errors": result.result.get("errors", [])[:5],
             }

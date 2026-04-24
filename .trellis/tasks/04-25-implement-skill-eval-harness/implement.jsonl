@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "Skill eval harness extends skill evolution contract"}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "Reuse generic eval_cases storage patterns"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Expose eval runner as provider-native tool"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change spans storage, service, tool, CLI"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse eval and skill service patterns"}

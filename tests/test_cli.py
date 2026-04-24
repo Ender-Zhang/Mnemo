@@ -12,6 +12,8 @@ from pathlib import Path
 from socketserver import ThreadingTCPServer
 from typing import Any
 
+from mnemo.storage import StateStore
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -175,6 +177,19 @@ class CliTests(unittest.TestCase):
             review = _run_cli(["skills", "review", "writer", "--state-dir", tmp, "--json"])
             self.assertEqual(review.returncode, 0, review.stderr)
             self.assertIn(json.loads(review.stdout)["status"], {"ready", "active"})
+
+            store = StateStore(tmp)
+            conversation_id = store.create_conversation("skill eval")
+            mission_id = store.create_mission(conversation_id, "skill eval")
+            run_id = store.create_run(conversation_id, mission_id, "skill eval")
+            case_id = store.add_eval_case(
+                run_id,
+                "writer smoke",
+                {"skill_name": "writer", "body_contains": "Use short notes."},
+            )
+            skill_eval = _run_cli(["skills", "eval", case_id, "--state-dir", tmp, "--json"])
+            self.assertEqual(skill_eval.returncode, 0, skill_eval.stderr)
+            self.assertEqual(json.loads(skill_eval.stdout)["status"], "passed")
 
             promote = _run_cli(["skills", "promote", "writer", "--state-dir", tmp, "--json"])
             self.assertEqual(promote.returncode, 0, promote.stderr)

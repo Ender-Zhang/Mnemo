@@ -70,7 +70,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Skill usage tracking and outcome scoring.
 - [~] Skill patch/proposal review lifecycle: proposal review gate exists; patch-specific diff/apply remains pending.
 - [ ] SOP crystallization from successful runs.
-- [ ] Skill eval harness.
+- [x] Skill eval harness.
 
 ## Prompt And Context
 
@@ -149,3 +149,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-daily-l1-memory-snapshot`: daily compact active-memory snapshot compilation, prompt injection, and runtime loading are implemented.
 - [x] `04-25-implement-w0-working-memory-pipeline`: model-marked working notes can enter DreamCycle as candidate-first memory updates.
 - [~] `04-25-implement-skill-review-lifecycle`: generated skill candidates can be reviewed to `ready` or `blocked:*` before explicit promotion.
+- [x] `04-25-implement-skill-eval-harness`: linked skill eval cases can run, persist pass/fail results, and gate skill review.
