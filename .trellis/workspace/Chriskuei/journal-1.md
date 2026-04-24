@@ -535,3 +535,37 @@ Added PromptAssembler token budgeting, optional block dropping with metadata, mi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Memory conflict reinforcement
+
+**Date**: 2026-04-25
+**Task**: Memory conflict reinforcement
+**Branch**: `main`
+
+### Summary
+
+Added duplicate reinforcement, conflict review routing, memory link provenance, page confidence updates, memory engine code-spec, and unit tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d812e8` | (see git log) |
+| `bcfb7c5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

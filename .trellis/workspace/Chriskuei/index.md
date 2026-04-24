@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~537 | Active |
+| `journal-1.md` | ~571 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-04-25 | Memory conflict reinforcement | `6d812e8`, `bcfb7c5` | `main` |
 | 16 | 2026-04-25 | Prompt context compression | `b21f198`, `189ea00` | `main` |
 | 15 | 2026-04-25 | Standard local tools foundation | `9fc9ad3`, `ff8ef35` | `main` |
 | 14 | 2026-04-25 | Runtime config resolver | `f20e1cc` | `main` |
