@@ -1463,3 +1463,37 @@ Cleaned stale Trellis tracking, completed project guideline specs, archived old 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: Browser app connector tools
+
+**Date**: 2026-04-25
+**Task**: Browser app connector tools
+**Branch**: `main`
+
+### Summary
+
+Added lightweight provider-native browser_open and app_open connector tools with policy gates, dry-run validation, compact evidence, tests, and tool-harness spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8108631` | (see git log) |
+| `bf75f58` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

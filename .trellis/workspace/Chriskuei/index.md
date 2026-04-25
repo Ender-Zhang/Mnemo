@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 43
+- **Total Sessions**: 44
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1465 | Active |
+| `journal-1.md` | ~1499 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 44 | 2026-04-25 | Browser app connector tools | `8108631`, `bf75f58` | `main` |
 | 43 | 2026-04-25 | Trellis cleanup and run cancellation | `e9b0162`, `ed51756`, `8d5a232`, `aa8fafe`, `5b03bb9`, `efdd111`, `660641f`, `8cdc3c5`, `25a7b47`, `326bf21`, `15f8c02`, `9c62975` | `main` |
 | 42 | 2026-04-25 | Provider retry policy | `0e0f49c`, `e7a232b` | `main` |
 | 41 | 2026-04-25 | Skill patch candidates | `b605177`, `fc2026d` | `main` |
