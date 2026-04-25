@@ -8,7 +8,7 @@
 
 ### 2. Signatures
 - `load_prompt_bootstrap(state_dir: str | Path, *, workspace_root: str | Path | None = None, per_file_char_limit=BOOTSTRAP_FILE_CHAR_LIMIT, total_char_limit=BOOTSTRAP_TOTAL_CHAR_LIMIT) -> PromptBootstrapContext`
-- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET) -> AssembledPrompt`
+- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET, mode: PromptMode = "full") -> AssembledPrompt`
 - `AssembledPrompt.messages() -> list[dict[str, str]]`
 - `AssembledPrompt.metadata() -> dict[str, Any]`
 
@@ -17,6 +17,11 @@
 - Stable prefix order: `system.identity`, `developer.operating_principles`, optional `soul.user_contract`, `tools.cards`.
 - Non-droppable blocks: `system.identity`, `developer.operating_principles`, optional `soul.user_contract`, `mission.continuation`, `turn.current_user_message`.
 - Droppable blocks: optional tool cards, workspace bootstrap blocks, L1 memory snapshot, memory index, and skill index.
+- `full` preserves the standard personal prompt surface.
+- `minimal` includes identity, operating principles, visible tool cards, `AGENTS.md`/`TOOLS.md` workspace bootstrap, mission continuation, and current turn; it does not inject Soul, L1 memory, memory index, or skill index.
+- `capsule` includes identity, operating principles, visible tool cards, mission continuation, and current turn; it does not inject Soul, workspace bootstrap, L1 memory, memory index, or skill index.
+- `none` is diagnostic-only prompt assembly with identity and current turn; runtime execution must reject it.
+- `metadata()` includes `mode`, `execution_allowed`, and `disclosure_boundary`.
 - `SOUL.md` under `state_dir` becomes `soul.user_contract` with `stable/user_profile`; it is a bounded user contract, not a raw memory dump.
 - Workspace bootstrap files from `workspace_root` become quoted `workspace.bootstrap.*` blocks with `daily/daily_context`.
 - Workspace bootstrap content must be bounded by per-file and total character caps and may be dropped under prompt budget pressure.
@@ -48,6 +53,10 @@
 | CLI snapshot inspection | Existing compiled snapshot is inspectable without full page bodies | `tests/test_cli.py` |
 | Tight prompt budget with tools | May drop `tools.cards`; tool schema metadata remains present | `tests/test_prompt.py` |
 | Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |
+| Minimal mode | Omits Soul, memory, and skills while preserving provider-native tool schema metadata | `tests/test_prompt.py`, `tests/test_runtime.py`, `tests/test_cli.py` |
+| Capsule mode | Omits personal and workspace context while keeping task, mission, and allowed tool cards | `tests/test_prompt.py` |
+| None mode | Assembles diagnostic shell and marks `execution_allowed=false`; runtime rejects execution | `tests/test_prompt.py` |
+| Invalid mode | Reject with validation error | `tests/test_prompt.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: expose compact memory/skill indexes and let the model call tools for details.
@@ -66,6 +75,7 @@
 - Runtime/provider tests that assert prompt metadata is persisted in `prompt.assembled`.
 - Runtime/CLI/Web tests that assert Soul and workspace bootstrap are passed through request boundaries.
 - Runtime/provider tests that assert daily L1 memory snapshot content reaches provider messages when present.
+- Prompt mode tests that assert disclosure boundaries for `minimal`, `capsule`, and `none`.
 
 ### 7. Wrong vs Correct
 #### Wrong

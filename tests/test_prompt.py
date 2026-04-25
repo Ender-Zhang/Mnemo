@@ -386,6 +386,111 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertIn("Recent summary:", mission.content)
         self.assertIn("...", mission.content)
 
+    def test_minimal_mode_limits_personal_context_but_keeps_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            workspace = root / "workspace"
+            state_dir.mkdir()
+            workspace.mkdir()
+            (state_dir / "SOUL.md").write_text("User private preference.", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("Project agent context.", encoding="utf-8")
+            (workspace / "TOOLS.md").write_text("Project tool hints.", encoding="utf-8")
+            (workspace / "MEMORY.md").write_text("Legacy memory dump.", encoding="utf-8")
+
+            bootstrap = load_prompt_bootstrap(state_dir, workspace_root=workspace)
+            prompt = PromptAssembler().assemble(
+                "Check the task",
+                mission={"brief": "Minimal mode"},
+                tool_specs=[_tool("memory_search"), _tool("memory_write_candidate")],
+                soul_context=bootstrap.soul,
+                workspace_context=bootstrap.workspace,
+                memory_snapshot={
+                    "kind": "l1_memory_snapshot",
+                    "page_count": 1,
+                    "items": [{"id": "mempg_1", "title": "Private", "summary": "private memory"}],
+                },
+                memory_cards=[{"id": "mempg_2", "summary": "private index", "status": "active"}],
+                skill_cards=[{"name": "private_skill", "description": "private skill", "status": "active"}],
+                mode="minimal",
+                token_budget=None,
+            )
+
+            block_ids = [block.id for block in prompt.blocks]
+            metadata = prompt.metadata()
+
+            self.assertEqual(metadata["mode"], "minimal")
+            self.assertTrue(metadata["execution_allowed"])
+            self.assertEqual(metadata["disclosure_boundary"], "minimal_task_context")
+            self.assertIn("tools.cards", block_ids)
+            self.assertIn("workspace.bootstrap.agents_md", block_ids)
+            self.assertIn("workspace.bootstrap.tools_md", block_ids)
+            self.assertNotIn("workspace.bootstrap.memory_md", block_ids)
+            self.assertNotIn("soul.user_contract", block_ids)
+            self.assertNotIn("memory.l1_snapshot", block_ids)
+            self.assertNotIn("memory.index", block_ids)
+            self.assertNotIn("skills.index", block_ids)
+            self.assertEqual(metadata["tool_schema"]["count"], 2)
+            self.assertEqual(metadata["tool_schema"]["names"], ["memory_search", "memory_write_candidate"])
+
+    def test_capsule_mode_omits_soul_workspace_memory_and_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            workspace = root / "workspace"
+            state_dir.mkdir()
+            workspace.mkdir()
+            (state_dir / "SOUL.md").write_text("User private preference.", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("Project agent context.", encoding="utf-8")
+
+            bootstrap = load_prompt_bootstrap(state_dir, workspace_root=workspace)
+            prompt = PromptAssembler().assemble(
+                "Delegate this",
+                mission={"brief": "Capsule mode"},
+                tool_specs=[_tool("memory_search")],
+                soul_context=bootstrap.soul,
+                workspace_context=bootstrap.workspace,
+                memory_cards=[{"id": "mempg_1", "summary": "private index", "status": "active"}],
+                skill_cards=[{"name": "private_skill", "description": "private skill", "status": "active"}],
+                mode="capsule",
+                token_budget=None,
+            )
+
+            self.assertEqual(
+                [block.id for block in prompt.blocks],
+                [
+                    "system.identity",
+                    "developer.operating_principles",
+                    "tools.cards",
+                    "mission.continuation",
+                    "turn.current_user_message",
+                ],
+            )
+            self.assertEqual(prompt.metadata()["mode"], "capsule")
+            self.assertEqual(prompt.metadata()["disclosure_boundary"], "external_runtime_capsule")
+            self.assertEqual(prompt.metadata()["tool_schema"]["names"], ["memory_search"])
+
+    def test_none_mode_is_diagnostic_shell(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "Inspect only",
+            tool_specs=[_tool("memory_search")],
+            memory_cards=[{"id": "mempg_1", "summary": "private index", "status": "active"}],
+            skill_cards=[{"name": "private_skill", "description": "private skill", "status": "active"}],
+            mode="none",
+            token_budget=None,
+        )
+
+        self.assertEqual([block.id for block in prompt.blocks], ["system.identity", "turn.current_user_message"])
+        metadata = prompt.metadata()
+        self.assertEqual(metadata["mode"], "none")
+        self.assertFalse(metadata["execution_allowed"])
+        self.assertEqual(metadata["disclosure_boundary"], "diagnostic_shell")
+        self.assertEqual(metadata["tool_schema"]["count"], 0)
+
+    def test_invalid_prompt_mode_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            PromptAssembler().assemble("Bad mode", mode="unknown")  # type: ignore[arg-type]
+
 
 def _tool(name: str, input_schema: dict | None = None) -> ToolSpec:
     return ToolSpec(

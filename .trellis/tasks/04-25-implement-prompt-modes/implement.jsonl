@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/11-prompt-system.md", "reason": "Prompt modes and cache design"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Prompt assembly contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Runtime validation behavior"}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Open implementation gaps"}

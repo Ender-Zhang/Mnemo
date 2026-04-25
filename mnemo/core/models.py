@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 
 RiskLevel = Literal["read", "write", "external", "admin"]
+PromptMode = Literal["full", "minimal", "capsule", "none"]
 RunStatus = Literal["running", "completed", "failed", "cancelled"]
 MissionStatus = Literal["active", "paused", "completed", "cancelled", "archived"]
 ChatEventType = Literal[
@@ -24,6 +25,7 @@ ChatEventType = Literal[
     "run.completed",
     "run.error",
 ]
+PROMPT_MODES: tuple[PromptMode, ...] = ("full", "minimal", "capsule", "none")
 
 
 @dataclass(frozen=True)
@@ -96,6 +98,7 @@ class RunRequest:
     conversation_id: str | None = None
     mission_id: str | None = None
     workspace_root: str | None = None
+    prompt_mode: PromptMode = "full"
 
 
 @dataclass(frozen=True)

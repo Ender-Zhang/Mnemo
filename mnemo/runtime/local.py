@@ -15,6 +15,7 @@ from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
 from .common import (
     action_card,
     cancellation_result,
+    ensure_executable_prompt_mode,
     make_chat_event_emitter,
     project_tool_result,
     result_as_dict,
@@ -46,6 +47,7 @@ class LocalAgentRuntime:
         return final_result
 
     def stream(self, request: RunRequest) -> Iterator[ChatEvent]:
+        ensure_executable_prompt_mode(request.prompt_mode)
         store = StateStore(request.state_dir)
         store.initialize()
         ledger = RunLedger(store)
@@ -99,13 +101,13 @@ class LocalAgentRuntime:
             memory_snapshot=memory_engine.load_l1_snapshot(),
             memory_cards=memory_engine.context_cards(request.message, limit=5),
             skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
+            mode=request.prompt_mode,
         )
         ledger.append(
             run_id,
             "prompt.assembled",
             {
                 **assembled_prompt.metadata(),
-                "mode": "full",
                 "tool_count": len(registry.specs()),
                 "tools": [spec["name"] for spec in tool_specs_as_json_schema(registry.specs())],
             },

@@ -37,6 +37,24 @@ class CliTests(unittest.TestCase):
             self.assertTrue(payload["run_id"].startswith("run_"))
             self.assertEqual(payload["tool_results"][0]["name"], "memory_write_candidate")
 
+    def test_run_accepts_prompt_mode_and_persists_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "SOUL.md").write_text("User prefers private CLI context.", encoding="utf-8")
+
+            run = _run_cli(["run", "hello minimal", "--state-dir", tmp, "--prompt-mode", "minimal", "--json"])
+            self.assertEqual(run.returncode, 0, run.stderr)
+            payload = json.loads(run.stdout)
+
+            inspect = _run_cli(["prompt", "inspect", payload["run_id"], "--state-dir", tmp, "--json"])
+            self.assertEqual(inspect.returncode, 0, inspect.stderr)
+            prompt = json.loads(inspect.stdout)["prompt"]
+            block_ids = [block["id"] for block in prompt["blocks"]]
+
+            self.assertEqual(prompt["mode"], "minimal")
+            self.assertTrue(prompt["execution_allowed"])
+            self.assertEqual(prompt["disclosure_boundary"], "minimal_task_context")
+            self.assertNotIn("soul.user_contract", block_ids)
+
     def test_run_stream_outputs_ndjson_events(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run = _run_cli(["run", "remember: CLI stream", "--state-dir", tmp, "--stream"])

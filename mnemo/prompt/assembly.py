@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from ..core.jsonutil import dumps
-from ..core.models import ToolSpec
+from ..core.models import PROMPT_MODES, PromptMode, ToolSpec
 from .bootstrap import PromptContextItem
 
 
@@ -39,6 +39,7 @@ class AssembledPrompt:
     dropped_blocks: tuple[dict[str, Any], ...] = ()
     token_budget: int | None = None
     tool_schema_metadata: dict[str, Any] | None = None
+    mode: PromptMode = "full"
 
     def messages(self) -> list[dict[str, str]]:
         return [{"role": block.role, "content": block.content} for block in self.blocks]
@@ -62,6 +63,9 @@ class AssembledPrompt:
             for block in self.blocks
         ]
         return {
+            "mode": self.mode,
+            "execution_allowed": self.mode != "none",
+            "disclosure_boundary": _mode_disclosure_boundary(self.mode),
             "blocks": block_metadata,
             "total_token_estimate": prompt_token_estimate,
             "prompt_token_estimate": prompt_token_estimate,
@@ -91,37 +95,84 @@ class PromptAssembler:
         memory_cards: Sequence[dict[str, Any]] | None = None,
         skill_cards: Sequence[dict[str, Any]] | None = None,
         token_budget: int | None = DEFAULT_PROMPT_TOKEN_BUDGET,
+        mode: PromptMode = "full",
     ) -> AssembledPrompt:
+        prompt_mode = _normalize_prompt_mode(mode)
         checkpoint = _resolve_checkpoint(mission, checkpoint)
         tools = tuple(sorted(tool_specs or (), key=lambda spec: spec.name))
-        blocks = [
-            self._system_identity(),
-            self._operating_principles(),
-        ]
-        if soul_context:
-            blocks.append(self._context_item_block(soul_context, layer="L0"))
-        blocks.append(self._tool_cards(tools))
-        for item in workspace_context or ():
-            blocks.append(self._context_item_block(item, layer="workspace"))
-        if _snapshot_items(memory_snapshot):
-            blocks.append(self._memory_snapshot(memory_snapshot))
-        if memory_cards:
-            blocks.append(self._memory_index(memory_cards))
-        if skill_cards:
-            blocks.append(self._skill_index(skill_cards))
-        blocks.extend(
-            [
-                self._mission_continuation(mission or {}, checkpoint),
-                self._current_turn(current_user_message),
-            ]
+        blocks = self._blocks_for_mode(
+            prompt_mode,
+            current_user_message,
+            mission=mission or {},
+            checkpoint=checkpoint,
+            tools=tools,
+            soul_context=soul_context,
+            workspace_context=workspace_context or (),
+            memory_snapshot=memory_snapshot,
+            memory_cards=memory_cards or (),
+            skill_cards=skill_cards or (),
         )
         kept_blocks, dropped_blocks = _apply_budget(blocks, token_budget)
         return AssembledPrompt(
             blocks=tuple(kept_blocks),
             dropped_blocks=dropped_blocks,
             token_budget=token_budget,
-            tool_schema_metadata=_tool_schema_metadata(tools),
+            tool_schema_metadata=_tool_schema_metadata(tools if prompt_mode != "none" else ()),
+            mode=prompt_mode,
         )
+
+    def _blocks_for_mode(
+        self,
+        mode: PromptMode,
+        current_user_message: str,
+        *,
+        mission: dict[str, Any],
+        checkpoint: dict[str, Any],
+        tools: Sequence[ToolSpec],
+        soul_context: PromptContextItem | None,
+        workspace_context: Sequence[PromptContextItem],
+        memory_snapshot: dict[str, Any] | None,
+        memory_cards: Sequence[dict[str, Any]],
+        skill_cards: Sequence[dict[str, Any]],
+    ) -> list[PromptBlock]:
+        if mode == "none":
+            return [
+                self._system_identity(),
+                self._current_turn(current_user_message),
+            ]
+
+        blocks = [
+            self._system_identity(),
+            self._operating_principles(),
+        ]
+        if mode == "full" and soul_context:
+            blocks.append(self._context_item_block(soul_context, layer="L0"))
+
+        blocks.append(self._tool_cards(tools))
+
+        workspace_items = workspace_context
+        if mode == "minimal":
+            workspace_items = _minimal_workspace_items(workspace_context)
+        elif mode == "capsule":
+            workspace_items = ()
+        for item in workspace_items:
+            blocks.append(self._context_item_block(item, layer="workspace"))
+
+        if mode == "full":
+            if _snapshot_items(memory_snapshot):
+                blocks.append(self._memory_snapshot(memory_snapshot))
+            if memory_cards:
+                blocks.append(self._memory_index(memory_cards))
+            if skill_cards:
+                blocks.append(self._skill_index(skill_cards))
+
+        blocks.extend(
+            [
+                self._mission_continuation(mission, checkpoint),
+                self._current_turn(current_user_message),
+            ]
+        )
+        return blocks
 
     def _system_identity(self) -> PromptBlock:
         content = "\n".join(
@@ -336,6 +387,31 @@ def _resolve_checkpoint(
         return {}
     mission_checkpoint = mission.get("checkpoint")
     return mission_checkpoint if isinstance(mission_checkpoint, dict) else {}
+
+
+def _normalize_prompt_mode(value: str) -> PromptMode:
+    if value not in PROMPT_MODES:
+        raise ValueError(f"unsupported prompt mode: {value}")
+    return cast(PromptMode, value)
+
+
+def _minimal_workspace_items(items: Sequence[PromptContextItem]) -> tuple[PromptContextItem, ...]:
+    allowed_paths = {"AGENTS.md", "TOOLS.md"}
+    return tuple(
+        item
+        for item in items
+        if str(item.metadata.get("path") or "") in allowed_paths
+    )
+
+
+def _mode_disclosure_boundary(mode: PromptMode) -> str:
+    if mode == "full":
+        return "standard_personal_context"
+    if mode == "minimal":
+        return "minimal_task_context"
+    if mode == "capsule":
+        return "external_runtime_capsule"
+    return "diagnostic_shell"
 
 
 def _mission_content(mission: dict[str, Any], checkpoint: dict[str, Any]) -> str:

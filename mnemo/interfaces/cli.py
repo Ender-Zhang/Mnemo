@@ -10,7 +10,7 @@ from ..core.config import ConfigOverrides, DEFAULT_PROVIDER, DEFAULT_STATE_DIR, 
 from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps, loads
-from ..core.models import RunRequest
+from ..core.models import PROMPT_MODES, RunRequest
 from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderAdapter, ProviderConfig, ProviderRunInput
@@ -109,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
     run_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
     run_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
+    run_parser.add_argument(
+        "--prompt-mode",
+        choices=list(PROMPT_MODES),
+        default="full",
+        help="Prompt disclosure mode for this run",
+    )
     run_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
     conversations_parser = subparsers.add_parser("conversations", help="List and read conversations")
@@ -490,6 +496,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         conversation_id=args.conversation_id,
         mission_id=args.mission_id,
         workspace_root=os.getcwd(),
+        prompt_mode=args.prompt_mode,
     )
     if args.stream:
         event_stream = stream_local(request) if config.provider == "local" else stream_provider(request, _provider_adapter(args, stream=True))

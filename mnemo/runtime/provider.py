@@ -14,6 +14,7 @@ from ..tools import ToolHarness, ToolRegistry, compact_tool_result, tool_specs_a
 from .common import (
     action_card,
     cancellation_result,
+    ensure_executable_prompt_mode,
     make_chat_event_emitter,
     project_tool_result,
     result_as_dict,
@@ -47,6 +48,7 @@ class ProviderAgentRuntime:
         return final_result
 
     def stream(self, request: RunRequest) -> Iterator[ChatEvent]:
+        ensure_executable_prompt_mode(request.prompt_mode)
         store = StateStore(request.state_dir)
         store.initialize()
         ledger = RunLedger(store)
@@ -76,6 +78,7 @@ class ProviderAgentRuntime:
             memory_snapshot=memory_engine.load_l1_snapshot(),
             memory_cards=memory_engine.context_cards(request.message, limit=5),
             skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
+            mode=request.prompt_mode,
         )
 
         ledger.append(
@@ -103,7 +106,6 @@ class ProviderAgentRuntime:
             "prompt.assembled",
             {
                 **assembled_prompt.metadata(),
-                "mode": "full",
                 "tool_count": len(registry.specs()),
                 "tools": [spec["name"] for spec in tool_specs_as_json_schema(registry.specs())],
                 "provider": self.provider.name,

@@ -93,8 +93,8 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Prompt inspection command.
 - [~] Context compression exists at a basic budget/drop level; full pre-run safety compression, in-loop compaction, mission checkpoint compression, and provider cache-control integration are not complete.
 - [~] Soul.md loading and bounded prompt injection are implemented; user-confirmed Soul evolution and explicit cache invalidation are not complete.
-- [~] Workspace bootstrap blocks for `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `BOOTSTRAP.md`, `MEMORY.md`, `CLAUDE.md`, and cursor rules load with caps, truncation markers, and warning metadata; prompt modes/provider cache controls are not complete.
-- [ ] Prompt modes beyond recorded `full`: `minimal`, `capsule`, and `none` with enforced disclosure boundaries.
+- [~] Workspace bootstrap blocks for `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `BOOTSTRAP.md`, `MEMORY.md`, `CLAUDE.md`, and cursor rules load with caps, truncation markers, warning metadata, and prompt-mode filtering; provider cache controls are not complete.
+- [x] Prompt modes beyond recorded `full`: `minimal`, `capsule`, and `none` with enforced disclosure boundaries.
 - [ ] Stable ToolBundle epochs and lazy schema expansion for large MCP/external tool surfaces.
 
 ## Frontend Experience

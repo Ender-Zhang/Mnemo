@@ -4,8 +4,9 @@ from collections.abc import Callable, Iterator
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
+from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict, new_chat_event
-from ..core.models import ChatEvent, ChatEventType, RunResult, ToolCallEnvelope, ToolResult
+from ..core.models import ChatEvent, ChatEventType, PromptMode, RunResult, ToolCallEnvelope, ToolResult
 from ..tools import ToolRegistry
 from .ledger import RunLedger
 
@@ -14,6 +15,11 @@ if TYPE_CHECKING:
 
 
 EmitChatEvent = Callable[[ChatEventType, dict[str, Any] | None], ChatEvent]
+
+
+def ensure_executable_prompt_mode(mode: PromptMode) -> None:
+    if mode == "none":
+        raise MnemoError("prompt mode 'none' is diagnostic-only and cannot execute user tasks")
 
 
 def make_chat_event_emitter(

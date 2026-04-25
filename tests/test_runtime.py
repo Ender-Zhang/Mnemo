@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from mnemo.core.errors import MnemoError
 from mnemo.core.models import RunRequest, ToolCallEnvelope
 from mnemo.memory import MemoryEngine
 from mnemo.providers import ProviderEvent
@@ -103,6 +104,11 @@ class LocalRuntimeTests(unittest.TestCase):
                 ["system", "developer", "developer", "developer", "user"],
             )
 
+    def test_runtime_rejects_none_prompt_mode_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(MnemoError):
+                list(stream_local(RunRequest(message="hello", state_dir=tmp, prompt_mode="none")))
+
     def test_provider_runtime_executes_tool_rounds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider(
@@ -163,6 +169,59 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("Available skill index", prompt_text)
             self.assertIn("writer [active]", prompt_text)
             self.assertNotIn("Full skill body", prompt_text)
+
+    def test_provider_runtime_minimal_prompt_mode_limits_disclosure_but_keeps_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            workspace = root / "workspace"
+            state_dir.mkdir()
+            workspace.mkdir()
+            (state_dir / "SOUL.md").write_text("User likes private runtime answers.", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("Minimal workspace context.", encoding="utf-8")
+            (workspace / "MEMORY.md").write_text("Legacy memory dump.", encoding="utf-8")
+            store = StateStore(str(state_dir))
+            store.initialize()
+            conversation_id = store.create_conversation("minimal prompt")
+            mission_id = store.create_mission(conversation_id, "minimal prompt")
+            seed_run_id = store.create_run(conversation_id, mission_id, "seed")
+            store.add_memory_candidate(seed_run_id, "User prefers private detail", confidence=0.8)
+            store.upsert_memory_page("preferences: private", "User prefers private detail", confidence=0.9)
+            MemoryEngine(store).compile_l1_snapshot()
+            store.upsert_skill("private_writer", "Draft private prose", "Full private skill body", status="active")
+            provider = FakeProvider([[ProviderEvent(type="text_delta", text="Ready"), ProviderEvent(type="completed")]])
+
+            events = list(
+                ProviderAgentRuntime(provider).stream(
+                    RunRequest(
+                        message="private detail",
+                        state_dir=str(state_dir),
+                        conversation_id=conversation_id,
+                        workspace_root=str(workspace),
+                        prompt_mode="minimal",
+                    )
+                )
+            )
+
+            prompt_text = "\n".join(message["content"] for message in provider.requests[0].messages)
+            tool_names = [tool.name for tool in provider.requests[0].tools]
+            prompt_event = next(
+                event for event in store.get_run_events(events[-1].run_id) if event["event_type"] == "prompt.assembled"
+            )
+            block_ids = [block["id"] for block in prompt_event["payload"]["blocks"]]
+
+            self.assertIn("Minimal workspace context.", prompt_text)
+            self.assertNotIn("User likes private runtime answers.", prompt_text)
+            self.assertNotIn("Daily compiled memory snapshot", prompt_text)
+            self.assertNotIn("Available skill index", prompt_text)
+            self.assertNotIn("Legacy memory dump.", prompt_text)
+            self.assertIn("memory_search", tool_names)
+            self.assertIn("memory_write_candidate", tool_names)
+            self.assertEqual(prompt_event["payload"]["mode"], "minimal")
+            self.assertIn("workspace.bootstrap.agents_md", block_ids)
+            self.assertNotIn("soul.user_contract", block_ids)
+            self.assertNotIn("memory.index", block_ids)
+            self.assertNotIn("skills.index", block_ids)
 
     def test_provider_runtime_adds_soul_and_workspace_bootstrap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
