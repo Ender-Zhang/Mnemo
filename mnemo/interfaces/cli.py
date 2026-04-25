@@ -504,30 +504,33 @@ def _cmd_skills(args: argparse.Namespace) -> int:
     roots = [*default_skill_roots(args.state_dir), *args.root] if hasattr(args, "root") else default_skill_roots(args.state_dir)
     service = SkillService(store, roots=roots)
 
-    if args.skills_command == "scan":
-        result = {"skills": service.scan()}
-    elif args.skills_command == "list":
-        result = {"skills": service.list()}
-    elif args.skills_command == "view":
-        skill = service.view(args.name)
-        if not skill:
-            raise MnemoError(f"skill not found: {args.name}")
-        result = {"skill": skill}
-    elif args.skills_command == "review":
-        result = service.review(args.name)
-    elif args.skills_command == "crystallize":
-        result = service.crystallize_from_run(
-            args.run_id,
-            args.name,
-            description=args.description,
-            notes=args.notes,
-        )
-    elif args.skills_command == "eval":
-        result = service.run_eval_case(args.case_id)
-    elif args.skills_command == "promote":
-        result = service.promote(args.name)
-    else:
-        raise MnemoError("skills command requires a subcommand")
+    try:
+        if args.skills_command == "scan":
+            result = {"skills": service.scan()}
+        elif args.skills_command == "list":
+            result = {"skills": service.list()}
+        elif args.skills_command == "view":
+            skill = service.view(args.name)
+            if not skill:
+                raise MnemoError(f"skill not found: {args.name}")
+            result = {"skill": skill}
+        elif args.skills_command == "review":
+            result = service.review(args.name)
+        elif args.skills_command == "crystallize":
+            result = service.crystallize_from_run(
+                args.run_id,
+                args.name,
+                description=args.description,
+                notes=args.notes,
+            )
+        elif args.skills_command == "eval":
+            result = service.run_eval_case(args.case_id)
+        elif args.skills_command == "promote":
+            result = service.promote(args.name)
+        else:
+            raise MnemoError("skills command requires a subcommand")
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
 
     if args.json:
         print(dumps(result))

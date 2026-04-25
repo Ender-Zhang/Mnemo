@@ -274,6 +274,22 @@ class CliTests(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(path.name, "SKILL.md")
 
+    def test_skill_service_errors_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            promote = _run_cli(["skills", "promote", "missing", "--state-dir", tmp])
+            eval_run = _run_cli(["skills", "eval", "case_missing", "--state-dir", tmp])
+            crystallize = _run_cli(["skills", "crystallize", "run_missing", "draft", "--state-dir", tmp])
+
+            self.assertEqual(promote.returncode, 1)
+            self.assertIn("mnemo: Skill not found: missing", promote.stderr)
+            self.assertNotIn("Traceback", promote.stderr)
+            self.assertEqual(eval_run.returncode, 1)
+            self.assertIn("mnemo: Eval case not found: case_missing", eval_run.stderr)
+            self.assertNotIn("Traceback", eval_run.stderr)
+            self.assertEqual(crystallize.returncode, 1)
+            self.assertIn("mnemo: Run not found: run_missing", crystallize.stderr)
+            self.assertNotIn("Traceback", crystallize.stderr)
+
     def test_skills_scan_uses_workspace_mainstream_default_roots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

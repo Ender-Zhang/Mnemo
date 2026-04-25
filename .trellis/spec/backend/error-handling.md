@@ -29,6 +29,7 @@
 - Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
 - Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
+- `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
@@ -51,6 +52,7 @@
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
@@ -76,6 +78,7 @@
 - Runtime cancellation test for cancelled completion status.
 - Web cancellation endpoint test for success and JSON error responses.
 - CLI memory curation tests for missing candidate errors without tracebacks.
+- CLI skill command tests for missing skill, eval case, and crystallization run errors without tracebacks.
 
 ### 7. Wrong vs Correct
 #### Wrong
