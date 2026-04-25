@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/tools/standard.py", "reason": "Reuse existing URL validator for web_fetch."}
+{"file": "tests/test_standard_tools.py", "reason": "Add malformed web_fetch URL regression coverage."}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Record the URL validation contract for web_fetch."}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Track the landed tool validation hardening task."}

@@ -30,6 +30,7 @@
 - `memory_read` reads either a memory candidate or a stable memory page by id.
 - `file_patch(path, replacements, replace_all=False)` applies exact UTF-8 text replacements under `ToolContext.workspace_root` and is `admin` risk.
 - `file_patch` rejects missing text, ambiguous text when `replace_all` is false, binary files, and paths outside the workspace.
+- `web_fetch(url, timeout_s=10, max_bytes=60000)` validates HTTP/HTTPS URLs with a network location before opening a request; malformed URLs fail as tool errors without network I/O.
 - `browser_open(url, new=2, dry_run=False)` validates HTTP/HTTPS URLs and opens them with the default browser; it is `external` risk.
 - `app_open(path, dry_run=False)` resolves `path` under `ToolContext.workspace_root` and opens it with the OS default app; it is `admin` risk.
 - Connector tools support `dry_run=True` so tests and model planning can validate the handoff without launching local UI.
@@ -56,6 +57,7 @@
 | File patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_standard_tools.py` |
 | Binary file read | Return failed tool result, no decoded payload | `tests/test_standard_tools.py` |
 | Shell command timeout | Return failed tool result with timeout error | `tests/test_standard_tools.py` |
+| Web fetch malformed URL | Return failed tool result before network I/O | `tests/test_standard_tools.py` |
 | Browser connector | External policy gates URL open; dry-run validates HTTP/HTTPS URL without launching browser | `tests/test_standard_tools.py` |
 | App connector | Admin policy gates OS app open; path traversal is rejected before opener execution | `tests/test_standard_tools.py` |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |

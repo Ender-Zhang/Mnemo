@@ -250,10 +250,7 @@ def file_patch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
 
 
 def web_fetch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
-    url = _require_str(args, "url")
-    parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ToolError("web_fetch supports only http and https URLs")
+    url = _require_http_url(args, "url")
     timeout_s = _bounded_float(args.get("timeout_s", 10), minimum=0.1, maximum=30)
     max_bytes = _bounded_int(args.get("max_bytes", 60000), minimum=1, maximum=200000)
     request = Request(url, headers={"User-Agent": "mnemo-agent/0"})

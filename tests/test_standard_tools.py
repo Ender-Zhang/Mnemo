@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from mnemo.core.models import ToolCallEnvelope, ToolExecutionPolicy
 from mnemo.runtime.ledger import RunLedger
@@ -343,6 +344,36 @@ class StandardToolTests(unittest.TestCase):
             self.assertEqual(opened.evidence[0]["kind"], "browser")
             self.assertFalse(rejected.ok)
             self.assertIn("http or https URL", rejected.error or "")
+
+    def test_web_fetch_rejects_malformed_http_url_before_fetching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "external")),
+            )
+
+            with patch("mnemo.tools.standard.urlopen") as urlopen:
+                result = harness.execute(
+                    ToolCallEnvelope(
+                        name="web_fetch",
+                        arguments={"url": "https:///missing-host"},
+                        call_id="call_web_fetch_bad_url",
+                    ),
+                    run_id=run_id,
+                    mission_id=mission_id,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.result, {})
+            self.assertIn("http or https URL", result.error or "")
+            self.assertEqual(result.evidence[0]["kind"], "tool_error")
+            urlopen.assert_not_called()
 
     def test_app_open_dry_run_is_workspace_scoped(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
