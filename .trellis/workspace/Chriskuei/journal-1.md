@@ -1249,3 +1249,37 @@ Extended default skill root discovery to workspace and home Claude, Hermes, and 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: Associative memory recall
+
+**Date**: 2026-04-25
+**Task**: Associative memory recall
+**Branch**: `main`
+
+### Summary
+
+Added one-hop associative memory recall through direct and reverse memory links, compact linked-page context cards, stable-page memory_read support, tests, and memory/tool/database specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `436e081` | (see git log) |
+| `5dc3d18` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
