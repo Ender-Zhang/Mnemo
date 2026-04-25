@@ -1502,11 +1502,45 @@ class CliTests(unittest.TestCase):
         self.assertEqual(json_result.returncode, 0, json_result.stderr)
         payload = json.loads(json_result.stdout)["api_schema"]
         self.assertEqual(payload["schema_version"], "mnemo.core_api.v1")
-        self.assertEqual(set(payload["methods"]), {"context", "recall", "run", "replay", "evaluate"})
+        self.assertEqual(set(payload["methods"]), {"context", "recall", "capsule", "run", "replay", "evaluate"})
         self.assertNotIn("input_schema", str(payload["methods"]["run"]["output_schema"]))
         self.assertEqual(text_result.returncode, 0, text_result.stderr)
         self.assertIn("MnemoCore mnemo.core_api.v1", text_result.stdout)
         self.assertIn("- context:", text_result.stdout)
+        self.assertIn("- capsule:", text_result.stdout)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            page_id = store.upsert_memory_page(
+                "preferences: cli capsule",
+                "External handoff should be compact. FULL_PRIVATE_BODY_SECRET_TOKEN",
+                confidence=0.9,
+            )
+            capsule_result = _run_cli(
+                [
+                    "api",
+                    "capsule",
+                    "Inspect failing tests",
+                    "--state-dir",
+                    tmp,
+                    "--runtime",
+                    "codex",
+                    "--requested-page",
+                    page_id,
+                    "--allowed-page",
+                    page_id,
+                    "--json",
+                ]
+            )
+            self.assertEqual(capsule_result.returncode, 0, capsule_result.stderr)
+            capsule = json.loads(capsule_result.stdout)["capsule"]
+            self.assertEqual(capsule["kind"], "context_capsule")
+            self.assertEqual(capsule["allowed_pages"][0]["id"], page_id)
+            self.assertNotIn("FULL_PRIVATE_BODY_SECRET_TOKEN", str(capsule))
+
+            missing_task = _run_cli(["api", "capsule", "--state-dir", tmp, "--json"])
+            self.assertEqual(missing_task.returncode, 2)
 
     def test_mcp_tools_and_call_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

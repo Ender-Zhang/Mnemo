@@ -54,6 +54,22 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertIn("skill_review_blocks_failed_eval", assertion_names)
         self.assertIn("skill_cards_omit_full_body_secret", assertion_names)
 
+    def test_external_harness_suite_passes(self) -> None:
+        report = EvalHarness().run_suite("external-harness")
+
+        self.assertTrue(report.passed)
+        self.assertEqual(report.case_count, 1)
+        self.assertEqual(report.failed_count, 0)
+        self.assertIn("external-harness", list_suites())
+        assertion_names = {
+            assertion.name
+            for case in report.cases
+            for step in case.steps
+            for assertion in step.assertions
+        }
+        self.assertIn("omits_raw_session_transcript", assertion_names)
+        self.assertIn("boundary_is_proposals_only", assertion_names)
+
     def test_variant_report_compares_core_variants(self) -> None:
         report = EvalHarness().run_variant_report("personalization-core")
         payload = report.as_dict()

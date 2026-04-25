@@ -100,6 +100,16 @@ class MnemoClient:
         不直接绕过 Mnemo 的记忆、技能、审批和 trace 机制。
         """
 
+    def capsule(
+        self,
+        task: str,
+        runtime: str = "external",  # external|openclaw|codex|acp
+        agent_type: str = "general",
+        requested_pages: list[str] | None = None,
+        allowed_pages: list[str] | None = None,
+    ) -> ContextCapsule:
+        """为外部 runtime 构建最小披露 context capsule；不是执行入口"""
+
     def replay(
         self,
         run_id: str,
@@ -130,6 +140,9 @@ mnemo_context(intent, agent_role, budget_tokens)
 
 mnemo_update(facts, observations)
   → 返回: {updated_pages, triggered_compilations}
+
+mnemo_capsule(task, runtime, requested_pages?, allowed_pages?)
+  → 返回: ContextCapsule（task、mission_brief、L1 pointers、allowed summaries、return_contract）
 
 mnemo_recall(seed, depth, context)
   → 返回: AssociativeCluster
@@ -210,6 +223,7 @@ mnemo run "让 Codex 检查这个 repo 的测试失败" --runtime codex
 # 回放/评测/质量门禁
 mnemo harness replay <run_id> --mode deterministic
 mnemo harness eval personalization-core
+mnemo harness eval external-harness
 mnemo harness smoke
 mnemo harness report <report_id>
 ```

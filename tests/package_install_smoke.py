@@ -69,10 +69,12 @@ def main() -> int:
         raise AssertionError(f"missing packaged web assets: {', '.join(missing_assets)}")
 
     schema = mnemo_core_api_schema()
-    if "context" not in schema.get("methods", {}):
-        raise AssertionError("packaged SDK schema is missing context method")
-    if "mnemo_context" not in {tool["name"] for tool in MnemoMcpServer().tools()}:
-        raise AssertionError("packaged MCP server is missing context tool")
+    methods = schema.get("methods", {})
+    if "context" not in methods or "capsule" not in methods:
+        raise AssertionError("packaged SDK schema is missing context or capsule method")
+    tool_names = {tool["name"] for tool in MnemoMcpServer().tools()}
+    if "mnemo_context" not in tool_names or "mnemo_capsule" not in tool_names:
+        raise AssertionError("packaged MCP server is missing capsule tool")
     if not hasattr(MnemoMcpServer(), "serve_content_length"):
         raise AssertionError("packaged MCP server is missing content-length serve transport")
     if "quiet_hours" not in load_user_settings(Path.cwd()):

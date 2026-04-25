@@ -44,6 +44,7 @@ class MnemoMcpTests(unittest.TestCase):
         self.assertTrue(
             {
                 "mnemo_context",
+                "mnemo_capsule",
                 "mnemo_update",
                 "mnemo_recall",
                 "mnemo_search",
@@ -74,17 +75,24 @@ class MnemoMcpTests(unittest.TestCase):
             server = MnemoMcpServer(state_dir=tmp)
 
             context = server.call_tool("mnemo_context", {"intent": "compact MCP", "agent_role": "integrator"})
+            capsule = server.call_tool(
+                "mnemo_capsule",
+                {"task": "Use external runtime", "runtime": "codex", "requested_pages": [page_id], "allowed_pages": [page_id]},
+            )
             search = server.call_tool("mnemo_search", {"query": "compact MCP", "limit": 5})
             recall = server.call_tool("mnemo_recall", {"seed": "compact MCP", "limit": 5})
             skills = server.call_tool("mnemo_skills", {"query": "mcp", "limit": 5})
             tools = server.call_tool("mnemo_tools", {"query": "memory", "profile": "minimal.v1"})
 
             self.assertEqual(context["kind"], "context_block")
+            self.assertEqual(capsule["kind"], "context_capsule")
+            self.assertEqual(capsule["allowed_pages"][0]["id"], page_id)
             self.assertIn(page_id, [card["id"] for card in search["cards"]])
             self.assertIn(page_id, [item["item_id"] for item in recall["items"]])
             self.assertEqual(skills["cards"][0]["name"], "mcp-skill")
             self.assertTrue(any(card["name"] == "memory_search" for card in tools["cards"]))
             self.assertNotIn("evidence", str(search["cards"]))
+            self.assertNotIn("content", str(capsule["memory_pointers"]))
             self.assertNotIn("input_schema", str(tools))
 
     def test_update_writes_memory_candidates_and_working_notes(self) -> None:

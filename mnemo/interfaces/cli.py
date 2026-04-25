@@ -27,7 +27,7 @@ from ..runtime import DaemonRunner, ScheduleService, result_as_dict, run_local, 
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
-from ..sdk import mnemo_core_api_schema
+from ..sdk import MnemoClient, mnemo_core_api_schema
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolEvolutionService, ToolRegistry, tool_specs_as_json_schema
@@ -581,6 +581,17 @@ def build_parser() -> argparse.ArgumentParser:
     api_subparsers = api_parser.add_subparsers(dest="api_command")
     api_schema_parser = api_subparsers.add_parser("schema", help="Print the MnemoCore API schema")
     api_schema_parser.add_argument("--json", action="store_true")
+    api_capsule_parser = api_subparsers.add_parser("capsule", help="Build an external runtime context capsule")
+    _add_state_dir(api_capsule_parser)
+    api_capsule_parser.add_argument("task", nargs="+")
+    api_capsule_parser.add_argument("--runtime", default="external")
+    api_capsule_parser.add_argument("--agent-type", default="general")
+    api_capsule_parser.add_argument("--requested-page", action="append", default=[])
+    api_capsule_parser.add_argument("--allowed-page", action="append", default=[])
+    api_capsule_parser.add_argument("--conversation-id")
+    api_capsule_parser.add_argument("--mission-id")
+    api_capsule_parser.add_argument("--limit", type=int, default=8)
+    api_capsule_parser.add_argument("--json", action="store_true")
 
     mcp_parser = subparsers.add_parser("mcp", help="Expose Mnemo MCP-style tools")
     mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
@@ -619,18 +630,37 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_api(args: argparse.Namespace) -> int:
-    if args.api_command != "schema":
-        raise MnemoError("api command requires a subcommand")
-    schema = mnemo_core_api_schema()
-    if args.json:
-        print(dumps({"api_schema": schema}))
+    if args.api_command == "capsule":
+        try:
+            capsule = MnemoClient(state_dir=args.state_dir, workspace_root=Path.cwd()).capsule(
+                " ".join(args.task),
+                runtime=args.runtime,
+                agent_type=args.agent_type,
+                requested_pages=args.requested_page,
+                allowed_pages=args.allowed_page,
+                conversation_id=args.conversation_id,
+                mission_id=args.mission_id,
+                limit=args.limit,
+            )
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
+        if args.json:
+            print(dumps({"capsule": capsule}))
+        else:
+            print(capsule["text"])
         return 0
+    if args.api_command == "schema":
+        schema = mnemo_core_api_schema()
+        if args.json:
+            print(dumps({"api_schema": schema}))
+            return 0
 
-    print(f"{schema['title']} {schema['schema_version']}")
-    print(schema["description"])
-    for name, method in schema["methods"].items():
-        print(f"- {name}: {method['description']} ({method['side_effects']})")
-    return 0
+        print(f"{schema['title']} {schema['schema_version']}")
+        print(schema["description"])
+        for name, method in schema["methods"].items():
+            print(f"- {name}: {method['description']} ({method['side_effects']})")
+        return 0
+    raise MnemoError("api command requires a subcommand")
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

@@ -9,7 +9,7 @@ from ..evals import EvalHarness, replay_summary
 from ..memory import MemoryEngine
 from ..providers import provider_capabilities
 from ..prompt import PromptAssembler, load_prompt_bootstrap
-from ..runtime import run_local
+from ..runtime import build_context_capsule, run_local
 from ..runtime.common import build_tool_bundle
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService, default_skill_roots
@@ -97,6 +97,30 @@ class MnemoClient:
             "query_plan": result["query_plan"],
             "items": [_recall_item(item) for item in result["matches"][:bounded_limit]],
         }
+
+    def capsule(
+        self,
+        task: str,
+        *,
+        runtime: str = "external",
+        agent_type: str = "general",
+        requested_pages: list[str] | tuple[str, ...] | None = None,
+        allowed_pages: list[str] | tuple[str, ...] | None = None,
+        conversation_id: str | None = None,
+        mission_id: str | None = None,
+        limit: int = 8,
+    ) -> dict[str, Any]:
+        return build_context_capsule(
+            self.state_dir,
+            task,
+            runtime=runtime,
+            agent_type=agent_type,
+            requested_pages=requested_pages,
+            allowed_pages=allowed_pages,
+            conversation_id=conversation_id,
+            mission_id=mission_id,
+            limit=limit,
+        )
 
     def run(
         self,

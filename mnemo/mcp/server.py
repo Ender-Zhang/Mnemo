@@ -40,6 +40,7 @@ class MnemoMcpServer:
         args = _require_arguments(arguments)
         handlers = {
             "mnemo_context": self._context,
+            "mnemo_capsule": self._capsule,
             "mnemo_update": self._update,
             "mnemo_recall": self._recall,
             "mnemo_search": self._search,
@@ -139,6 +140,18 @@ class MnemoMcpServer:
             budget_tokens=_bounded_int(args.get("budget_tokens"), default=4000, minimum=512, maximum=20000),
             include_associations=_bool(args.get("include_associations"), default=True),
             prompt_mode=_prompt_mode(args.get("prompt_mode"), default="full"),
+        )
+
+    def _capsule(self, args: dict[str, Any]) -> dict[str, Any]:
+        return self.client.capsule(
+            _required_string(args.get("task"), "task"),
+            runtime=_string(args.get("runtime"), default="external"),
+            agent_type=_string(args.get("agent_type"), default="general"),
+            requested_pages=_string_list(args.get("requested_pages")),
+            allowed_pages=_string_list(args.get("allowed_pages")),
+            conversation_id=_optional_string(args.get("conversation_id")),
+            mission_id=_optional_string(args.get("mission_id")),
+            limit=_bounded_int(args.get("limit"), default=8, minimum=1, maximum=50),
         )
 
     def _update(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -452,6 +465,25 @@ _TOOL_DESCRIPTORS = [
                 "include_associations": {"type": "boolean", "default": True},
                 "prompt_mode": {"type": "string", "enum": ["full", "minimal", "capsule"], "default": "full"},
             }
+        ),
+        risk="read",
+        read_only=True,
+    ),
+    _descriptor(
+        "mnemo_capsule",
+        "Build a minimal-disclosure context capsule for an external runtime handoff.",
+        _schema(
+            {
+                "task": {"type": "string"},
+                "runtime": {"type": "string", "default": "external"},
+                "agent_type": {"type": "string", "default": "general"},
+                "requested_pages": {"type": "array", "items": {"type": "string"}},
+                "allowed_pages": {"type": "array", "items": {"type": "string"}},
+                "conversation_id": {"type": ["string", "null"]},
+                "mission_id": {"type": ["string", "null"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 8},
+            },
+            required=["task"],
         ),
         risk="read",
         read_only=True,

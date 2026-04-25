@@ -8,6 +8,7 @@ from typing import Any
 from ..core.models import PromptMode, RunRequest
 from ..memory import MemoryEngine
 from ..runtime import stream_local
+from ..runtime.capsule import ContextCapsuleBuilder
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService
 from ..storage import StateStore
@@ -145,6 +146,8 @@ class EvalHarness:
             return self._run_memory_safety_suite()
         if suite == "skill-evolution":
             return self._run_skill_evolution_suite()
+        if suite == "external-harness":
+            return self._run_external_harness_suite()
 
         cases = _suite_cases(suite)
         case_reports = [self.run_case(case, prompt_mode=prompt_mode) for case in cases]
@@ -287,6 +290,20 @@ class EvalHarness:
         passed_count = sum(1 for report in case_reports if report.passed)
         return SuiteReport(
             suite="skill-evolution",
+            passed=passed_count == len(case_reports),
+            case_count=len(case_reports),
+            passed_count=passed_count,
+            failed_count=len(case_reports) - passed_count,
+            cases=case_reports,
+        )
+
+    def _run_external_harness_suite(self) -> SuiteReport:
+        case_reports = [
+            self._external_context_capsule_case(),
+        ]
+        passed_count = sum(1 for report in case_reports if report.passed)
+        return SuiteReport(
+            suite="external-harness",
             passed=passed_count == len(case_reports),
             case_count=len(case_reports),
             passed_count=passed_count,
@@ -705,9 +722,72 @@ class EvalHarness:
                 ),
             )
 
+    def _external_context_capsule_case(self) -> CaseReport:
+        case_id = "external-context-capsule-boundary"
+        with self._case_state_dir(case_id) as state_dir:
+            store = StateStore(state_dir)
+            store.initialize()
+            conversation_id = store.create_conversation("External harness")
+            mission_id = store.create_mission(conversation_id, "Use an external coding harness safely")
+            run_id = store.create_run(conversation_id, mission_id, "External capsule eval")
+            allowed_id = store.upsert_memory_page(
+                "preferences: external coding",
+                "User prefers concise external harness reports with evidence. FULL_PRIVATE_BODY_SECRET_TOKEN",
+                confidence=0.91,
+            )
+            blocked_id = store.upsert_memory_page(
+                "relationships: private",
+                "Private relationship detail RAW_RELATIONSHIP_SECRET_TOKEN",
+                confidence=0.91,
+            )
+            store.upsert_skill("external-secret", "Do not leak bodies", "FULL_SKILL_BODY_SECRET_TOKEN", status="active")
+            store.record_session_message(
+                conversation_id,
+                mission_id,
+                run_id,
+                "user",
+                "RAW_TRANSCRIPT_SECRET_TOKEN",
+            )
+
+            capsule = ContextCapsuleBuilder(store).build(
+                "Ask Codex to inspect the repo tests",
+                runtime="codex",
+                agent_type="coding",
+                requested_pages=[allowed_id, blocked_id, "missing_page"],
+                allowed_pages=[allowed_id],
+                conversation_id=conversation_id,
+                mission_id=mission_id,
+            )
+            capsule_text = str(capsule)
+            assertions = [
+                _assertion("capsule_kind", capsule.get("kind") == "context_capsule", str(capsule.get("kind"))),
+                _assertion("capsule_has_return_contract", "return_contract" in capsule, str(capsule)),
+                _assertion("allowed_page_summary_present", len(capsule.get("allowed_pages", [])) == 1, str(capsule.get("allowed_pages"))),
+                _assertion("blocked_page_pointer_only", any(item.get("id") == blocked_id for item in capsule["requested_pages"]["blocked"]), str(capsule["requested_pages"])),
+                _assertion("missing_page_unresolved", any(item.get("id") == "missing_page" for item in capsule["requested_pages"]["unresolved"]), str(capsule["requested_pages"])),
+                _assertion("omits_full_page_body_secret", "FULL_PRIVATE_BODY_SECRET_TOKEN" not in capsule_text, capsule_text),
+                _assertion("omits_blocked_page_body", "RAW_RELATIONSHIP_SECRET_TOKEN" not in capsule_text, capsule_text),
+                _assertion("omits_blocked_page_title", "relationships: private" not in capsule_text, capsule_text),
+                _assertion("omits_raw_session_transcript", "RAW_TRANSCRIPT_SECRET_TOKEN" not in capsule_text, capsule_text),
+                _assertion("omits_full_skill_body", "FULL_SKILL_BODY_SECRET_TOKEN" not in capsule_text, capsule_text),
+                _assertion("omits_raw_tool_schemas", "input_schema" not in capsule_text, capsule_text),
+                _assertion("boundary_is_proposals_only", capsule["return_contract"]["side_effects"] == "proposals_only", str(capsule["return_contract"])),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "External Context Capsule Boundary",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
 
 def list_suites() -> list[str]:
-    return sorted([*_BUILTIN_SUITES, "memory-safety", "skill-evolution"])
+    return sorted([*_BUILTIN_SUITES, "external-harness", "memory-safety", "skill-evolution"])
 
 
 def list_variants() -> list[str]:

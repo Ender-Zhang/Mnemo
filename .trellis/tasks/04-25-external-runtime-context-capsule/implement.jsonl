@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "SDK/MCP/API capsule boundary"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory pointer and allowed-page compactness"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Capsule prompt-mode and disclosure metadata"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test and package gates"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI error normalization"}

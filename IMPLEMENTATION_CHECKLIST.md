@@ -138,7 +138,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider fake server tests.
 - [x] Standard tool edge regression tests for binary file reads and shell timeouts.
 - [x] CLI and package install tests in CI.
-- [~] Harness gates exist as built-in smoke suites with core variant comparison (`no_memory`, `skills_only`, `full_mnemo`) and quantitative thresholds; external-harness suite, proactive-watch suite, and full release gate reports are not complete.
+- [~] Harness gates exist as built-in smoke suites with core variant comparison (`no_memory`, `skills_only`, `full_mnemo`), quantitative thresholds, and an external-harness capsule boundary suite; proactive-watch suite and full release gate reports are not complete.
 
 ## Persistence And Operations
 
@@ -161,7 +161,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
 - [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, Inbox/Decision persistence, provider after-turn learning packets, and one-shot high-risk approval execution are implemented; local/background learning reflection and richer frontend recall/learning actions remain.
-- [~] Highest-priority integration alignment: SDK/API schema and MCP-style tool server foundations exist; external RuntimeAdapter with context capsule boundaries remains.
+- [~] Highest-priority integration alignment: SDK/API schema, MCP-style tool server, and external context capsule boundaries exist; actual RuntimeAdapter execution remains.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
 ## Recently Landed Trellis Tasks
@@ -220,3 +220,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-tool-bundle-epochs`: runtime now compiles deterministic ToolBundles, records compact bundle metadata, filters reduced prompt-mode tool profiles, and supports provider-loop schema expansion epochs through `tool_expand_schema`.
 - [x] `04-25-dream-maintenance-interface`: DreamCycle now exposes compact delta collection, model-facing maintenance plans, persisted reports, `dream status/report`, and delta-limited local fallback consolidation.
 - [x] `04-25-harness-variant-report`: Harness now compares `no_memory`/`skills_only`/`full_mnemo` variants with compact metrics and gates, exposed through CLI, SDK, and MCP eval surfaces.
+- [x] `04-25-external-runtime-context-capsule`: SDK/CLI/MCP now build minimal-disclosure external runtime context capsules, and the external-harness eval verifies capsule boundaries.
