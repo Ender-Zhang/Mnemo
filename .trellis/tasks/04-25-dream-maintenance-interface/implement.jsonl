@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Dream maintenance changes memory engine contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Dream reports require persisted state contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI dream commands must normalize expected errors"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Backend package and test gates apply"}

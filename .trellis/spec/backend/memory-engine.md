@@ -12,12 +12,19 @@
 - `MemoryEngine.search_with_plan(query: str, limit: int = 5, *, search_scope: str = "memory") -> dict[str, Any]`
 - `MemoryEngine.context_cards(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
 - `MemoryEngine.write_candidate(run_id: str, claim: str, *, dimension: str | None = None, scope: str = "global", confidence: float = 0.5, evidence: list[dict[str, Any]] | None = None) -> dict[str, Any]`
-- `MemoryEngine.ingest_working_notes(limit: int = 20) -> dict[str, Any]`
+- `MemoryEngine.ingest_working_notes(limit: int = 20, *, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
 - `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto") -> dict[str, Any]`
 - `MemoryEngine.health_report(limit: int = 20) -> dict[str, Any]`
-- `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
+- `MemoryEngine.collect_dream_delta(limit: int = 20, *, since: float | None = None) -> dict[str, Any]`
+- `MemoryEngine.build_dream_plan(delta: dict[str, Any], *, limit: int = 20) -> dict[str, Any]`
+- `MemoryEngine.dream_maintenance(limit: int = 20, min_confidence: float = 0.7, *, since: float | None = None, persist: bool = True) -> dict[str, Any]`
+- `MemoryEngine.dream_status(limit: int = 20) -> dict[str, Any]`
+- `MemoryEngine.save_dream_report(report: dict[str, Any]) -> Path`
+- `MemoryEngine.load_latest_dream_report() -> dict[str, Any] | None`
+- `MemoryEngine.load_dream_report(report_id: str | None = None, *, latest: bool = False) -> dict[str, Any] | None`
+- `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7, *, candidate_ids: list[str] | set[str] | None = None, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
 - `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
 - `EvalHarness.run_suite("memory-safety") -> SuiteReport`
@@ -43,6 +50,10 @@
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream run [--limit N] [--min-confidence FLOAT] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream --now [--limit N] [--min-confidence FLOAT] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream status [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
 
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
@@ -65,6 +76,12 @@
 - Conflicting candidates are not promoted automatically.
 - Conflicting candidates are marked `needs_review:conflict` and linked with `conflicts_with`.
 - Dream consolidation returns `w0`, `promoted`, `rejected`, `skipped`, `conflicts`, and a compact L1 `snapshot`.
+- Dream delta collection returns only bounded W0 notes, draft/review candidates, changed pages, tombstones, recent runs, and health cards since the last persisted Dream report when available.
+- Dream plans are model-facing decision surfaces with `decision_owner="model"` and allowed candidate tools; they are advisory and must not encode a mandatory maintenance workflow.
+- Dream maintenance may use local deterministic consolidation as fallback, but fallback processing is restricted to collected draft candidate ids and W0 note ids when a delta set is provided.
+- Dream reports are compact JSON documents persisted under `runs/dream-reports/` with `delta`, `plan`, `execution`, and `health_after`.
+- `mnemo dream status` must be read-only and return latest report metadata plus current backlog counts.
+- `mnemo dream report --latest` must load the latest persisted report without recomputing memory maintenance.
 - L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
 - L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
 - Prompt-facing snapshots must omit raw evidence and full page content.
@@ -136,6 +153,9 @@
 | Candidate rejection tombstone | Rejected candidates get durable tombstone rows | `tests/test_memory.py` |
 | Page tombstone | Page status becomes `tombstoned:<reason>` and active recall omits it | `tests/test_memory.py` |
 | Memory health report | Counts, coverage, score, and review cards stay compact | `tests/test_memory.py` |
+| Dream delta-limited maintenance | Old candidates before `since` remain draft while delta candidates are processed | `tests/test_memory.py` |
+| Dream report persistence | Latest report reloads with delta, plan, execution, and health payloads | `tests/test_memory.py`, `tests/test_cli.py` |
+| CLI Dream status/report | `dream status`, `dream report --latest`, and `dream --now` use compact persisted reports | `tests/test_cli.py` |
 | CLI query debug | `--debug-query` includes query plan metadata while default JSON omits it | `tests/test_cli.py` |
 | CLI health and tombstones | Health, tombstone, and tombstone listing commands normalize output/errors | `tests/test_cli.py` |
 
@@ -146,13 +166,15 @@
 - Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
 - Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
 - Good: expose health cards as compact model input so the model chooses whether to verify, link, archive, or ignore.
-- Base: deterministic dream logic may emit signals that later model decisions consume.
+- Good: persist Dream reports as compact managed-state JSON so status/report inspection does not require another schema surface.
+- Base: deterministic dream fallback may execute the current delta while provider-led Dream runs are not yet wired.
 - Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
 - Bad: bypass `MemoryEngine.write_candidate()` from tools or W0 ingestion.
 - Bad: hide reinforcement or conflict decisions without a memory link.
 - Bad: treat advisory tombstone annotations as durable deletion records.
 - Bad: let tombstoned stable pages remain in active recall or L1 snapshots.
+- Bad: let Dream fallback scan every draft candidate after a delta set is available.
 
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
@@ -173,6 +195,7 @@
 - CLI `memory links` covers outgoing-only, incoming-only, both directions, and compact non-JSON rows.
 - CLI `memory snapshot` covers missing snapshots, loaded snapshots, and compact non-JSON rows.
 - L1 snapshot compile/load behavior is covered, including invalid files.
+- Dream maintenance report persistence, status, latest-report CLI, and delta-limited candidate processing are covered.
 - Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
 
 ### 7. Wrong vs Correct

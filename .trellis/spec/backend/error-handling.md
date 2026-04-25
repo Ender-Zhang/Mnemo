@@ -21,6 +21,7 @@
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
 - CLI: `mnemo artifacts read <artifact_id> [--json]`
 - CLI: `mnemo inbox show <item_id> [--json]`
 - CLI: `mnemo inbox resolve <item_id> --accept|--reject|--ignore [--json]`
@@ -54,6 +55,7 @@
 - `mnemo memory read` normalizes missing candidate/page ids this way.
 - `mnemo memory tombstone` normalizes missing candidate/page ids this way.
 - `mnemo memory health` and `mnemo memory tombstones` are read-only inspection commands and do not require raw SQLite access.
+- `mnemo dream report <missing_id>` normalizes missing report ids this way.
 - `mnemo artifacts read` normalizes missing artifact ids this way.
 - `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
 - `mnemo schedule pause`, `resume`, and `disable` normalize missing scheduled item ids this way.
@@ -96,6 +98,7 @@
 | Missing memory id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory id in CLI tombstone | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Memory health/tombstone listing | CLI exits zero with compact JSON or row output | `tests/test_cli.py` |
+| Missing Dream report id | CLI exits non-zero with `mnemo:` error and no traceback | CLI behavior |
 | Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing Inbox item in CLI show/resolve | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing scheduled item in CLI status commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -136,6 +139,7 @@
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI memory read tests for missing ids without tracebacks.
 - CLI memory health/tombstone tests for compact output and missing ids without tracebacks.
+- CLI Dream report tests for missing ids without tracebacks.
 - CLI artifact read tests for missing ids without tracebacks.
 - CLI Inbox show/resolve tests for missing item ids without tracebacks.
 - CLI schedule pause/resume/disable tests for missing item ids without tracebacks.

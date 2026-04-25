@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 
 from mnemo.memory import MemoryEngine
@@ -367,6 +368,48 @@ class MemoryEngineTests(unittest.TestCase):
             loaded_snapshot = MemoryEngine(store).load_l1_snapshot()
             self.assertIsNotNone(loaded_snapshot)
             self.assertEqual(loaded_snapshot["page_count"], 1)
+
+    def test_dream_maintenance_persists_model_decision_report_and_uses_delta_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            old_id = store.add_memory_candidate(
+                run_id,
+                "User prefers old dream backlog",
+                confidence=0.9,
+            )
+            mission_id = store.get_run(run_id)["mission_id"]
+            old_note_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "User prefers old W0 backlog",
+                metadata={"retention": "memory_candidate", "confidence": 0.9},
+            )
+            since = time.time()
+            time.sleep(0.01)
+            new_id = store.add_memory_candidate(
+                run_id,
+                "User prefers delta dream maintenance",
+                confidence=0.9,
+            )
+
+            report = MemoryEngine(store).dream_maintenance(limit=10, min_confidence=0.7, since=since)
+
+            execution = report["execution"]["result"]
+            self.assertEqual(report["kind"], "dream_report")
+            self.assertEqual(report["plan"]["decision_owner"], "model")
+            self.assertEqual(report["plan"]["mode"], "model_led_decision_surface")
+            self.assertEqual(report["delta"]["candidate_ids"], [new_id])
+            self.assertEqual([item["candidate_id"] for item in execution["promoted"]], [new_id])
+            self.assertEqual(store.get_memory_candidate(new_id)["status"], "promoted")
+            self.assertEqual(store.get_memory_candidate(old_id)["status"], "draft")
+            self.assertEqual(store.list_working_notes(status="open")[0]["id"], old_note_id)
+
+            engine = MemoryEngine(store)
+            latest = engine.load_latest_dream_report()
+            status = engine.dream_status(limit=10)
+            self.assertEqual(latest["id"], report["id"])
+            self.assertEqual(status["latest"]["id"], report["id"])
+            self.assertIn("health_after", latest)
 
     def test_dream_consolidate_ingests_model_marked_working_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

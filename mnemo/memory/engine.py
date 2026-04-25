@@ -5,11 +5,14 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 from .query import CONTENT_DIMENSIONS, MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
 from .safety import append_safety_evidence, scan_memory_candidate
 
 L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
+DREAM_REPORTS_DIRNAME = "dream-reports"
+DREAM_LATEST_FILENAME = "latest.json"
 W0_MEMORY_RETENTION = "memory_candidate"
 DEFAULT_W0_CONFIDENCE = 0.62
 MIN_W0_CANDIDATE_CHARS = 12
@@ -123,15 +126,19 @@ class MemoryEngine:
             "safety": _compact_safety_scan(scan),
         }
 
-    def ingest_working_notes(self, limit: int = 20) -> dict[str, Any]:
+    def ingest_working_notes(self, limit: int = 20, *, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]:
         list_notes = getattr(self.store, "list_working_notes", None)
         update_note = getattr(self.store, "update_working_note_status", None)
         if not list_notes or not update_note:
             return {"created": [], "skipped": []}
 
+        selected_note_ids = set(note_ids) if note_ids is not None else None
         created: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
-        for note in list_notes(status="open", limit=limit):
+        fetch_limit = max(limit, len(selected_note_ids)) if selected_note_ids is not None else limit
+        for note in list_notes(status="open", limit=fetch_limit):
+            if selected_note_ids is not None and note["id"] not in selected_note_ids:
+                continue
             content = _normalize_space(note.get("content", ""))
             metadata = note.get("metadata") if isinstance(note.get("metadata"), dict) else {}
             retention = metadata.get("retention") or "ephemeral"
@@ -394,9 +401,234 @@ class MemoryEngine:
             "review_cards": review_cards,
         }
 
-    def dream_consolidate(self, limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]:
-        w0 = self.ingest_working_notes(limit=limit)
-        candidates = self.store.list_memory_candidates(status="draft", limit=limit)
+    def collect_dream_delta(self, limit: int = 20, *, since: float | None = None) -> dict[str, Any]:
+        collected_at = time.time()
+        bounded_limit = max(1, int(limit))
+        inventory_limit = max(50, bounded_limit * 5)
+        notes = [
+            _compact_working_note(note)
+            for note in _since_filter(
+                self.store.list_working_notes(status="open", limit=inventory_limit),
+                since=since,
+                field="created_at",
+            )
+        ][:bounded_limit]
+        candidates = [
+            _compact_candidate(candidate)
+            for candidate in _since_filter(
+                [
+                    candidate
+                    for candidate in self.store.list_memory_candidates(status=None, limit=inventory_limit)
+                    if candidate.get("status") == "draft"
+                    or str(candidate.get("status") or "").startswith("needs_review")
+                ],
+                since=since,
+                field="created_at",
+            )
+        ][:bounded_limit]
+        pages = [
+            _compact_page(page)
+            for page in _since_filter(
+                self.store.list_memory_pages(status=None, limit=inventory_limit),
+                since=since,
+                field="updated_at",
+            )
+        ][:bounded_limit]
+        list_tombstones = getattr(self.store, "list_memory_tombstones", None)
+        tombstones = (
+            [
+                _compact_tombstone(tombstone)
+                for tombstone in _since_filter(list_tombstones(limit=inventory_limit), since=since, field="created_at")
+            ][:bounded_limit]
+            if list_tombstones
+            else []
+        )
+        list_runs = getattr(self.store, "list_runs", None)
+        recent_runs = (
+            [
+                _compact_run(run)
+                for run in _since_filter(list_runs(limit=inventory_limit), since=since, field="created_at")
+            ][:bounded_limit]
+            if list_runs
+            else []
+        )
+        health = self.health_report(limit=min(10, bounded_limit))
+        draft_candidate_ids = [item["id"] for item in candidates if item.get("status") == "draft"]
+        note_ids = [item["id"] for item in notes]
+        return {
+            "kind": "dream_delta",
+            "collected_at": collected_at,
+            "since": since,
+            "counts": {
+                "w0_pending": len(notes),
+                "memory_candidates": len(candidates),
+                "draft_candidates": len(draft_candidate_ids),
+                "changed_pages": len(pages),
+                "tombstones": len(tombstones),
+                "recent_runs": len(recent_runs),
+                "review_cards": len(health.get("review_cards", [])),
+            },
+            "note_ids": note_ids,
+            "candidate_ids": draft_candidate_ids,
+            "w0_pending": notes,
+            "memory_candidates": candidates,
+            "changed_pages": pages,
+            "tombstones": tombstones,
+            "recent_runs": recent_runs,
+            "health": {
+                "counts": health.get("counts", {}),
+                "score": health.get("score", {}),
+                "review_cards": health.get("review_cards", []),
+            },
+        }
+
+    def build_dream_plan(self, delta: dict[str, Any], *, limit: int = 20) -> dict[str, Any]:
+        counts = delta.get("counts") if isinstance(delta.get("counts"), dict) else {}
+        focus: list[dict[str, Any]] = []
+        if counts.get("w0_pending"):
+            focus.append({"kind": "ingest_w0", "count": counts["w0_pending"], "tool": "memory_write_candidate"})
+        if counts.get("draft_candidates"):
+            focus.append({"kind": "review_drafts", "count": counts["draft_candidates"], "tool": "memory_read"})
+        if counts.get("review_cards"):
+            focus.append({"kind": "memory_health", "count": counts["review_cards"], "tool": "memory_health_report"})
+        if counts.get("tombstones"):
+            focus.append({"kind": "respect_tombstones", "count": counts["tombstones"], "tool": "memory_search"})
+        return {
+            "kind": "dream_maintenance_plan",
+            "decision_owner": "model",
+            "mode": "model_led_decision_surface",
+            "budget": {
+                "max_items": max(1, int(limit)),
+                "max_inbox_items": 5,
+                "max_pages_touched": 20,
+            },
+            "allowed_tools": [
+                "memory_search",
+                "memory_read",
+                "memory_write_candidate",
+                "memory_health_report",
+                "memory_tombstone",
+                "skill_propose_candidate",
+                "tool_propose_candidate",
+                "eval_propose_case",
+                "learning_discard",
+            ],
+            "focus_candidates": focus,
+            "instructions": [
+                "Choose 0..N maintenance actions from the delta; do not process the whole store.",
+                "Prefer evidence-backed memory candidates, user corrections, conflicts, and tombstones.",
+                "Skip low-value items with a reason instead of forcing a workflow step.",
+            ],
+            "local_fallback": {
+                "enabled": True,
+                "summary": "Run deterministic candidate consolidation for collected draft candidates only.",
+            },
+        }
+
+    def dream_maintenance(
+        self,
+        limit: int = 20,
+        min_confidence: float = 0.7,
+        *,
+        since: float | None = None,
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        started_at = time.time()
+        if since is None:
+            latest = self.load_latest_dream_report()
+            since = _report_completed_at(latest)
+        delta = self.collect_dream_delta(limit=limit, since=since)
+        plan = self.build_dream_plan(delta, limit=limit)
+        execution = self.dream_consolidate(
+            limit=limit,
+            min_confidence=min_confidence,
+            candidate_ids=delta.get("candidate_ids", []),
+            note_ids=delta.get("note_ids", []),
+        )
+        completed_at = time.time()
+        report = {
+            "kind": "dream_report",
+            "id": new_id("dream"),
+            "started_at": started_at,
+            "completed_at": completed_at,
+            "since": since,
+            "duration_s": round(completed_at - started_at, 3),
+            "delta": delta,
+            "plan": plan,
+            "execution": {
+                "mode": "local_fallback",
+                "result": execution,
+            },
+            "health_after": self.health_report(limit=min(10, max(1, int(limit)))),
+        }
+        if persist:
+            self.save_dream_report(report)
+        return report
+
+    def dream_status(self, limit: int = 20) -> dict[str, Any]:
+        latest = self.load_latest_dream_report()
+        since = _report_completed_at(latest)
+        delta = self.collect_dream_delta(limit=limit, since=since)
+        return {
+            "kind": "dream_status",
+            "generated_at": time.time(),
+            "latest": _compact_dream_report(latest) if latest else None,
+            "backlog": delta.get("counts", {}),
+            "health": delta.get("health", {}),
+        }
+
+    def save_dream_report(self, report: dict[str, Any]) -> Path:
+        report_id = _safe_report_id(str(report.get("id") or new_id("dream")))
+        report["id"] = report_id
+        reports_dir = self._dream_reports_path()
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        path = reports_dir / f"{report_id}.json"
+        path.write_text(dumps(report), encoding="utf-8")
+        (reports_dir / DREAM_LATEST_FILENAME).write_text(dumps(report), encoding="utf-8")
+        return path
+
+    def load_latest_dream_report(self) -> dict[str, Any] | None:
+        return self.load_dream_report(latest=True)
+
+    def load_dream_report(self, report_id: str | None = None, *, latest: bool = False) -> dict[str, Any] | None:
+        if latest:
+            path = self._dream_reports_path() / DREAM_LATEST_FILENAME
+        elif report_id:
+            path = self._dream_reports_path() / f"{_safe_report_id(report_id)}.json"
+        else:
+            return None
+        try:
+            report = loads(path.read_text(encoding="utf-8"), {})
+        except (OSError, TypeError, ValueError):
+            return None
+        if not isinstance(report, dict) or report.get("kind") != "dream_report":
+            return None
+        return report
+
+    def dream_consolidate(
+        self,
+        limit: int = 20,
+        min_confidence: float = 0.7,
+        *,
+        candidate_ids: list[str] | set[str] | None = None,
+        note_ids: list[str] | set[str] | None = None,
+    ) -> dict[str, Any]:
+        w0 = self.ingest_working_notes(limit=limit, note_ids=note_ids)
+        selected_candidate_ids = set(candidate_ids or [])
+        selected_candidate_ids.update(
+            item["candidate_id"]
+            for item in w0.get("created", [])
+            if item.get("candidate_status") == "draft"
+        )
+        if candidate_ids is None:
+            candidates = self.store.list_memory_candidates(status="draft", limit=limit)
+        else:
+            candidates = [
+                candidate
+                for candidate_id in sorted(selected_candidate_ids)
+                for candidate in [self._get_candidate(candidate_id)]
+                if candidate and candidate.get("status") == "draft"
+            ][: max(0, int(limit))]
         promoted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
@@ -450,6 +682,9 @@ class MemoryEngine:
 
     def _l1_snapshot_path(self) -> Path:
         return self.store.state_dir / "wiki" / L1_SNAPSHOT_FILENAME
+
+    def _dream_reports_path(self) -> Path:
+        return self.store.state_dir / "runs" / DREAM_REPORTS_DIRNAME
 
     def _get_candidate(self, candidate_id: str) -> dict[str, Any] | None:
         get_candidate = getattr(self.store, "get_memory_candidate", None)
@@ -601,6 +836,123 @@ class MemoryEngine:
             "conflict_page_id": page["id"],
             "reason": "conflicts_with_active_memory",
         }
+
+
+def _since_filter(items: list[dict[str, Any]], *, since: float | None, field: str) -> list[dict[str, Any]]:
+    if since is None:
+        return items
+    return [
+        item
+        for item in items
+        if _float_or_zero(item.get(field)) > since
+    ]
+
+
+def _compact_working_note(note: dict[str, Any]) -> dict[str, Any]:
+    metadata = note.get("metadata") if isinstance(note.get("metadata"), dict) else {}
+    return {
+        "id": note.get("id"),
+        "mission_id": note.get("mission_id"),
+        "run_id": note.get("run_id"),
+        "summary": _truncate(note.get("content", ""), limit=220),
+        "retention": metadata.get("retention") or "ephemeral",
+        "dimension": metadata.get("dimension"),
+        "scope": metadata.get("scope"),
+        "confidence": metadata.get("confidence"),
+        "status": note.get("status") or "open",
+        "created_at": note.get("created_at"),
+    }
+
+
+def _compact_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": candidate.get("id"),
+        "run_id": candidate.get("run_id"),
+        "claim": _truncate(candidate.get("claim", ""), limit=220),
+        "dimension": candidate.get("dimension"),
+        "scope": candidate.get("scope"),
+        "confidence": candidate.get("confidence"),
+        "status": candidate.get("status"),
+        "created_at": candidate.get("created_at"),
+    }
+
+
+def _compact_page(page: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": page.get("id"),
+        "title": _truncate(page.get("title", ""), limit=96),
+        "summary": _truncate(page.get("content", ""), limit=220),
+        "scope": page.get("scope"),
+        "confidence": page.get("confidence"),
+        "status": page.get("status"),
+        "updated_at": page.get("updated_at"),
+    }
+
+
+def _compact_tombstone(tombstone: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": tombstone.get("id"),
+        "target_id": tombstone.get("target_id"),
+        "target_type": tombstone.get("target_type"),
+        "reason": tombstone.get("reason"),
+        "summary": _truncate(tombstone.get("summary", ""), limit=180),
+        "created_at": tombstone.get("created_at"),
+    }
+
+
+def _compact_run(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": run.get("id"),
+        "conversation_id": run.get("conversation_id"),
+        "mission_id": run.get("mission_id"),
+        "status": run.get("status"),
+        "input_preview": _truncate(run.get("input_preview", ""), limit=160),
+        "created_at": run.get("created_at"),
+        "completed_at": run.get("completed_at"),
+    }
+
+
+def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not report:
+        return None
+    execution = report.get("execution") if isinstance(report.get("execution"), dict) else {}
+    result = execution.get("result") if isinstance(execution.get("result"), dict) else {}
+    delta = report.get("delta") if isinstance(report.get("delta"), dict) else {}
+    return {
+        "id": report.get("id"),
+        "started_at": report.get("started_at"),
+        "completed_at": report.get("completed_at"),
+        "since": report.get("since"),
+        "duration_s": report.get("duration_s"),
+        "delta_counts": delta.get("counts", {}),
+        "execution": {
+            "mode": execution.get("mode"),
+            "w0_created": len((result.get("w0") or {}).get("created", [])),
+            "promoted": len(result.get("promoted", [])),
+            "rejected": len(result.get("rejected", [])),
+            "skipped": len(result.get("skipped", [])),
+            "conflicts": len(result.get("conflicts", [])),
+        },
+    }
+
+
+def _report_completed_at(report: dict[str, Any] | None) -> float | None:
+    if not report:
+        return None
+    completed_at = _float_or_zero(report.get("completed_at"))
+    return completed_at or None
+
+
+def _safe_report_id(report_id: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(report_id or "")).strip("._-")
+    return normalized or new_id("dream")
+
+
+def _float_or_zero(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _page_result(page: dict[str, Any]) -> dict[str, Any]:

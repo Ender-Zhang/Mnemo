@@ -63,7 +63,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Associative recall / LLM Wiki style memory graph.
 - [~] Conflict detection, confidence updates, durable tombstones, and compact memory health review cards exist; decay passes, stale review execution, and full selective forgetting are not complete.
 - [x] W0 working memory to long-term candidate pipeline.
-- [~] DreamCycle idle memory consolidation exists as deterministic candidate promotion and L1 snapshot compilation; it is not yet model-led, scheduled by idle windows, or delta-only across all memory maintenance tasks.
+- [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, persists reports, and limits local fallback to delta candidates; provider-led idle scheduling and broader memory maintenance actions remain incomplete.
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
 - [~] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, and a deterministic injection-scan gate; full wrong-memory, over-personalization, and Memory Health gates are not complete.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
@@ -218,3 +218,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-web-settings-drawer`: Web now has a low-frequency settings drawer backed by compact `/api/settings` summaries and quiet-hours persistence, while normal preference/data actions return to the single composer.
 - [x] `04-25-web-artifact-actions`: Web artifact cards now expose continue/export/compare/send/apply/revert actions, use compact related artifact metadata, and route side-effectful work back through the single composer.
 - [x] `04-25-implement-tool-bundle-epochs`: runtime now compiles deterministic ToolBundles, records compact bundle metadata, filters reduced prompt-mode tool profiles, and supports provider-loop schema expansion epochs through `tool_expand_schema`.
+- [x] `04-25-dream-maintenance-interface`: DreamCycle now exposes compact delta collection, model-facing maintenance plans, persisted reports, `dream status/report`, and delta-limited local fallback consolidation.

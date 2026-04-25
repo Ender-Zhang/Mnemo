@@ -237,7 +237,26 @@ class CliTests(unittest.TestCase):
             dream = _run_cli(["dream", "run", "--state-dir", tmp, "--min-confidence", "0.7", "--json"])
             self.assertEqual(dream.returncode, 0, dream.stderr)
             dream_payload = json.loads(dream.stdout)
-            self.assertEqual(len(dream_payload["promoted"]), 1)
+            self.assertEqual(dream_payload["kind"], "dream_report")
+            self.assertEqual(dream_payload["plan"]["decision_owner"], "model")
+            self.assertEqual(len(dream_payload["execution"]["result"]["promoted"]), 1)
+
+            status = _run_cli(["dream", "status", "--state-dir", tmp, "--json"])
+            self.assertEqual(status.returncode, 0, status.stderr)
+            status_payload = json.loads(status.stdout)
+            self.assertEqual(status_payload["latest"]["id"], dream_payload["id"])
+
+            report = _run_cli(["dream", "report", "--latest", "--state-dir", tmp, "--json"])
+            self.assertEqual(report.returncode, 0, report.stderr)
+            self.assertEqual(json.loads(report.stdout)["id"], dream_payload["id"])
+
+            missing_report = _run_cli(["dream", "report", "missing-report", "--state-dir", tmp, "--json"])
+            self.assertEqual(missing_report.returncode, 1)
+            self.assertIn("mnemo: dream report not found", missing_report.stderr)
+
+            now = _run_cli(["dream", "--now", "--state-dir", tmp, "--json"])
+            self.assertEqual(now.returncode, 0, now.stderr)
+            self.assertEqual(json.loads(now.stdout)["kind"], "dream_report")
 
             search_after = _run_cli(["memory", "search", "DreamCycle", "--state-dir", tmp, "--json"])
             self.assertEqual(search_after.returncode, 0, search_after.stderr)

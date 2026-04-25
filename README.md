@@ -11,7 +11,7 @@ The repository contains both the design package in `design/` and the runnable im
 - Single-chat web UI with streaming output, actionable artifact cards, decision cards, learning chips, settings drawer, replay, and stop/cancel.
 - SQLite state store for conversations, missions, runs, events, memory, skills, artifacts, queue, and generated tools.
 - Lightweight tool harness with policy-gated memory, skill, artifact, file, shell, HTTP, browser, and app connector tools.
-- Memory candidate pipeline, associative memory pages, DreamCycle consolidation, and daily L1 memory snapshot.
+- Memory candidate pipeline, associative memory pages, delta-oriented DreamCycle reports, and L1 memory snapshot.
 - Skill scanning, draft/review/promote flow, skill patch candidates, SOP crystallization, and generated tool lifecycle gates.
 - Reference SDK and MCP-style tool server for compact external integrations.
 - Daemon queue, run cancellation, backup/export/import, replay, and eval harness commands.
@@ -108,6 +108,8 @@ mnemo memory read <memory_id> --state-dir .mnemo
 mnemo memory links <memory_id> --state-dir .mnemo
 mnemo memory snapshot --state-dir .mnemo
 mnemo dream run --state-dir .mnemo
+mnemo dream status --state-dir .mnemo
+mnemo dream report --latest --state-dir .mnemo
 
 mnemo skills scan --state-dir .mnemo
 mnemo skills list --state-dir .mnemo
@@ -122,7 +124,7 @@ mnemo tools install <candidate_id> --state-dir .mnemo
 mnemo tools uninstall <name> --state-dir .mnemo
 ```
 
-Normal turns do not mutate stable memory directly. They write candidates and working notes; DreamCycle consolidates them into durable memory pages and cache-friendly snapshots. Skills and tools follow the same model-directed pattern: propose, evaluate, review, then promote.
+Normal turns do not mutate stable memory directly. They write candidates and working notes; DreamCycle collects a compact delta, exposes a model-facing maintenance plan, persists a report, and uses local consolidation as fallback until provider-led idle runs are wired. Skills and tools follow the same model-directed pattern: propose, evaluate, review, then promote.
 
 ## External Integration
 

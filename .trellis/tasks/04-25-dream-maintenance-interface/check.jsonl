@@ -1,0 +1,6 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Verify Dream memory contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Verify persisted state contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify package/test gates"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify CLI errors"}

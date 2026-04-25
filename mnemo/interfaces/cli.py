@@ -290,12 +290,26 @@ def build_parser() -> argparse.ArgumentParser:
     memory_reject_parser.add_argument("--json", action="store_true")
 
     dream_parser = subparsers.add_parser("dream", help="Run idle consolidation cycles")
+    _add_state_dir(dream_parser)
+    dream_parser.add_argument("--now", action="store_true", help="Run Dream maintenance now")
+    dream_parser.add_argument("--limit", type=int, default=20)
+    dream_parser.add_argument("--min-confidence", type=float, default=0.7)
+    dream_parser.add_argument("--json", action="store_true")
     dream_subparsers = dream_parser.add_subparsers(dest="dream_command")
-    dream_run_parser = dream_subparsers.add_parser("run", help="Run deterministic memory consolidation")
+    dream_run_parser = dream_subparsers.add_parser("run", help="Run Dream maintenance")
     _add_state_dir(dream_run_parser)
     dream_run_parser.add_argument("--limit", type=int, default=20)
     dream_run_parser.add_argument("--min-confidence", type=float, default=0.7)
     dream_run_parser.add_argument("--json", action="store_true")
+    dream_status_parser = dream_subparsers.add_parser("status", help="Inspect Dream maintenance backlog")
+    _add_state_dir(dream_status_parser)
+    dream_status_parser.add_argument("--limit", type=int, default=20)
+    dream_status_parser.add_argument("--json", action="store_true")
+    dream_report_parser = dream_subparsers.add_parser("report", help="Read a persisted Dream report")
+    _add_state_dir(dream_report_parser)
+    dream_report_parser.add_argument("report_id", nargs="?")
+    dream_report_parser.add_argument("--latest", action="store_true")
+    dream_report_parser.add_argument("--json", action="store_true")
 
     prompt_parser = subparsers.add_parser("prompt", help="Inspect prompt assembly metadata")
     prompt_subparsers = prompt_parser.add_subparsers(dest="prompt_command")
@@ -1099,21 +1113,61 @@ def _cmd_memory(args: argparse.Namespace) -> int:
 
 
 def _cmd_dream(args: argparse.Namespace) -> int:
-    if args.dream_command != "run":
-        raise MnemoError("dream command requires a subcommand")
     store = StateStore(args.state_dir)
     store.initialize()
-    result = MemoryEngine(store).dream_consolidate(limit=args.limit, min_confidence=args.min_confidence)
+    engine = MemoryEngine(store)
+    if args.now or args.dream_command == "run":
+        result = engine.dream_maintenance(limit=args.limit, min_confidence=args.min_confidence)
+    elif args.dream_command == "status":
+        result = engine.dream_status(limit=args.limit)
+    elif args.dream_command == "report":
+        latest = bool(args.latest or not args.report_id)
+        result = engine.load_dream_report(args.report_id, latest=latest)
+        if not result:
+            raise MnemoError("dream report not found")
+    else:
+        raise MnemoError("dream command requires a subcommand or --now")
+
     if args.json:
         print(dumps(result))
         return 0
-    print(
-        "DreamCycle completed: "
-        f"w0_created={len(result['w0']['created'])} promoted={len(result['promoted'])} "
-        f"rejected={len(result['rejected'])} "
-        f"skipped={len(result['skipped'])} snapshot_items={result['snapshot']['page_count']}"
-    )
+    _print_dream_result(result)
     return 0
+
+
+def _print_dream_result(result: dict[str, Any]) -> None:
+    if result.get("kind") == "dream_status":
+        latest = result.get("latest") or {}
+        backlog = result.get("backlog") or {}
+        latest_id = latest.get("id") or "-"
+        print(
+            "Dream status: "
+            f"latest={latest_id} "
+            f"w0_pending={backlog.get('w0_pending', 0)} "
+            f"draft_candidates={backlog.get('draft_candidates', 0)} "
+            f"review_cards={backlog.get('review_cards', 0)}"
+        )
+        return
+
+    if result.get("kind") == "dream_report":
+        execution = result.get("execution") if isinstance(result.get("execution"), dict) else {}
+        execution_result = execution.get("result") if isinstance(execution.get("result"), dict) else {}
+        w0 = execution_result.get("w0") if isinstance(execution_result.get("w0"), dict) else {}
+        snapshot = execution_result.get("snapshot") if isinstance(execution_result.get("snapshot"), dict) else {}
+        print(
+            "Dream report: "
+            f"id={result.get('id')} "
+            f"mode={execution.get('mode')} "
+            f"w0_created={len(w0.get('created', []))} "
+            f"promoted={len(execution_result.get('promoted', []))} "
+            f"rejected={len(execution_result.get('rejected', []))} "
+            f"skipped={len(execution_result.get('skipped', []))} "
+            f"conflicts={len(execution_result.get('conflicts', []))} "
+            f"snapshot_items={snapshot.get('page_count', 0)}"
+        )
+        return
+
+    print(dumps(result))
 
 
 def _print_memory_result(result: dict) -> None:
