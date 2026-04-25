@@ -3,11 +3,25 @@ from __future__ import annotations
 import tempfile
 import unittest
 
+from mnemo.core.errors import NotFoundError
 from mnemo.tools import ToolEvolutionService, ToolRegistry
 from mnemo.storage import StateStore
 
 
 class ToolEvolutionTests(unittest.TestCase):
+    def test_review_and_install_missing_candidate_raise_not_found(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            service = ToolEvolutionService(store)
+
+            with self.assertRaisesRegex(NotFoundError, "tool candidate not found: missing_candidate"):
+                service.review_candidate("missing_candidate")
+            with self.assertRaisesRegex(NotFoundError, "tool candidate not found: missing_candidate"):
+                service.install_candidate(
+                    "missing_candidate",
+                    available_tools={spec.name: spec for spec in ToolRegistry().specs()},
+                )
+
     def test_review_blocks_invalid_candidate_spec(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)

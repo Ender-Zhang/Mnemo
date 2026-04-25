@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "tests/test_tool_evolution.py", "reason": "Add service-level missing candidate regression coverage."}
+{"file": "tests/test_tools.py", "reason": "Add model-facing tool harness missing candidate coverage."}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "Replace missing-candidate test placeholder with concrete test points."}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Track the landed tool evolution missing-candidate coverage task."}

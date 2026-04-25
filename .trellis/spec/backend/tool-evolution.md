@@ -48,7 +48,7 @@
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
 | --- | --- | --- |
-| Missing candidate | `NotFoundError` | Tool/service test when added |
+| Missing candidate | `NotFoundError`; tool harness returns compact failed result | `tests/test_tool_evolution.py`, `tests/test_tools.py` |
 | Invalid spec | `blocked:invalid_spec` and errors returned | `tests/test_tool_evolution.py` |
 | Valid spec, no passed eval | `blocked:missing_eval` | `tests/test_tool_evolution.py` |
 | Valid spec, passed linked eval | `ready` | `tests/test_tool_evolution.py` |

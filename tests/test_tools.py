@@ -426,6 +426,29 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertIn(eval_case.result["case_id"], review.result["passed_eval_case_ids"])
             self.assertIn("Reviewed tool candidate", review.summary)
 
+    def test_tool_review_missing_candidate_returns_compact_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_review_candidate",
+                    arguments={"candidate_id": "missing_candidate"},
+                    call_id="call_tool_review_missing",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.result, {})
+            self.assertIn("tool candidate not found: missing_candidate", result.error or "")
+            self.assertEqual(compact["evidence"][0]["kind"], "tool_error")
+            self.assertNotIn("result", compact)
+
     def test_tool_install_candidate_registers_compact_generated_alias(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)
