@@ -29,6 +29,7 @@
 - CLI: `mnemo tools review <candidate_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo tools install <candidate_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo tools uninstall <name> [--state-dir DIR] [--json]`
+- CLI: `mnemo evals create <run_id> <name> --case-json OBJECT [--state-dir DIR] [--json]`
 - CLI: `mnemo evals list [--status STATUS] [--tool-name NAME] [--skill-name NAME] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo evals record <case_id> passed|failed [--result-json OBJECT] [--state-dir DIR] [--json]`
 
@@ -37,6 +38,7 @@
 - The CLI lifecycle commands are thin wrappers around `ToolEvolutionService`; validation logic stays in the service.
 - `mnemo tools` and `mnemo tools list` both list currently available provider-facing tool specs.
 - `mnemo tools candidates` reads candidates without changing candidate state.
+- `mnemo evals create` validates the source run exists, parses `--case-json` as an object, and stores a draft eval case.
 - `mnemo evals list` reads stored eval cases without changing eval or candidate state.
 - `mnemo evals record` persists eval status/result through `StateStore.update_eval_case_status` after verifying the case exists.
 - Candidate review never activates executable generated code.
@@ -71,7 +73,7 @@
 | Existing tool name collision | Candidate becomes `blocked:install_invalid` | `tests/test_tool_evolution.py` |
 | Uninstall generated tool | Tool row becomes `disabled`, registry drops spec | `tests/test_tools.py` |
 | CLI candidate lifecycle | Review/install/uninstall commands update service state and keep `mnemo tools` list behavior | `tests/test_cli.py` |
-| CLI eval result record | Status/result persist and can satisfy candidate review gates | `tests/test_cli.py` |
+| CLI eval case lifecycle | Create/list/record persist case payload, target filters, and result status | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: model proposes candidate, proposes eval case, records eval result, then reviews candidate.
@@ -86,7 +88,7 @@
 - Service tests for invalid, missing-eval, and ready outcomes.
 - Tool harness test for model-facing lifecycle tools.
 - CLI lifecycle test for candidate listing, review, install, uninstall, and missing-id errors.
-- CLI eval case test for listing by tool/skill target and recording pass/fail results.
+- CLI eval case test for creating, listing by tool/skill target, and recording pass/fail results.
 - Storage round-trip for installed generated tools.
 - Runtime test that active generated tools appear in provider tool specs.
 - Tool harness tests for install, execution, compact evidence, and uninstall.

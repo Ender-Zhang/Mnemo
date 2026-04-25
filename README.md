@@ -87,6 +87,7 @@ mnemo dream run --state-dir .mnemo
 mnemo skills scan --state-dir .mnemo
 mnemo skills list --state-dir .mnemo
 mnemo tools --state-dir .mnemo
+mnemo evals create <run_id> "lookup memory smoke" --case-json '{"tool_candidate":"lookup_memory"}' --state-dir .mnemo
 mnemo evals list --state-dir .mnemo
 mnemo evals record <case_id> passed --result-json '{"ok":true}' --state-dir .mnemo
 mnemo tools candidates --state-dir .mnemo

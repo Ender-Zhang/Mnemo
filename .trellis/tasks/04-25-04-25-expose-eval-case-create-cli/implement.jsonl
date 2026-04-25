@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI parser and eval creation handler"}
+{"file": "mnemo/storage/sqlite.py", "reason": "Existing add_eval_case/get_run APIs"}
+{"file": "README.md", "reason": "Document eval creation usage"}
+{"file": "tests/test_cli.py", "reason": "CLI regression coverage"}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "Eval lifecycle contract"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI error normalization"}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Track landed implementation"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "StateStore eval case API contract surfaced by CLI"}

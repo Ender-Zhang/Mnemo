@@ -248,8 +248,14 @@ def build_parser() -> argparse.ArgumentParser:
     harness_list_parser = harness_subparsers.add_parser("list", help="List built-in eval suites")
     harness_list_parser.add_argument("--json", action="store_true")
 
-    evals_parser = subparsers.add_parser("evals", help="List and record stored eval cases")
+    evals_parser = subparsers.add_parser("evals", help="Create, list, and record stored eval cases")
     evals_subparsers = evals_parser.add_subparsers(dest="evals_command")
+    evals_create_parser = evals_subparsers.add_parser("create", help="Create a stored eval case")
+    _add_state_dir(evals_create_parser)
+    evals_create_parser.add_argument("run_id")
+    evals_create_parser.add_argument("name")
+    evals_create_parser.add_argument("--case-json", required=True, help="JSON object eval case payload")
+    evals_create_parser.add_argument("--json", action="store_true")
     evals_list_parser = evals_subparsers.add_parser("list", help="List stored eval cases")
     _add_state_dir(evals_list_parser)
     evals_list_parser.add_argument("--status")
@@ -717,7 +723,16 @@ def _cmd_evals(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     store.initialize()
 
-    if args.evals_command == "list":
+    if args.evals_command == "create":
+        if not store.get_run(args.run_id):
+            raise MnemoError(f"run not found: {args.run_id}")
+        case_id = store.add_eval_case(
+            args.run_id,
+            args.name,
+            _parse_json_object_arg(args.case_json, "--case-json"),
+        )
+        result = {"eval_case": store.get_eval_case(case_id)}
+    elif args.evals_command == "list":
         result = {
             "eval_cases": store.list_eval_cases(
                 status=args.status,
@@ -746,6 +761,10 @@ def _cmd_evals(args: argparse.Namespace) -> int:
 
 
 def _print_evals_result(command: str, result: dict[str, Any]) -> None:
+    if command == "create":
+        case = result["eval_case"]
+        print(f"Eval case {case['id']} created [{case['status']}]")
+        return
     if command == "list":
         for case in result["eval_cases"]:
             print(f"{case['id']} {case['name']} [{case['status']}]")

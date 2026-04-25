@@ -523,6 +523,39 @@ class CliTests(unittest.TestCase):
             self.assertEqual(recorded["result"], {"ok": True, "source": "manual"})
             self.assertEqual(json.loads(passed_list.stdout)["eval_cases"][0]["id"], tool_case_id)
 
+    def test_evals_create_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("eval cli")
+            mission_id = store.create_mission(conversation_id, "eval cli")
+            run_id = store.create_run(conversation_id, mission_id, "eval cli")
+
+            create = _run_cli(
+                [
+                    "evals",
+                    "create",
+                    run_id,
+                    "lookup_memory smoke",
+                    "--case-json",
+                    '{"tool_candidate":"lookup_memory"}',
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            payload = json.loads(create.stdout)
+            case_id = payload["eval_case"]["id"]
+            record = _run_cli(["evals", "record", case_id, "passed", "--state-dir", tmp, "--json"])
+            listed = _run_cli(["evals", "list", "--tool-name", "lookup_memory", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(create.returncode, 0, create.stderr)
+            self.assertEqual(payload["eval_case"]["status"], "draft")
+            self.assertEqual(payload["eval_case"]["case"], {"tool_candidate": "lookup_memory"})
+            self.assertEqual(record.returncode, 0, record.stderr)
+            self.assertEqual(json.loads(record.stdout)["eval_case"]["status"], "passed")
+            self.assertEqual([case["id"] for case in json.loads(listed.stdout)["eval_cases"]], [case_id])
+
     def test_evals_record_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -536,6 +569,21 @@ class CliTests(unittest.TestCase):
             invalid_json = _run_cli(
                 ["evals", "record", case_id, "failed", "--result-json", "[1]", "--state-dir", tmp]
             )
+            missing_run = _run_cli(
+                [
+                    "evals",
+                    "create",
+                    "run_missing",
+                    "lookup_memory smoke",
+                    "--case-json",
+                    '{"tool_candidate":"lookup_memory"}',
+                    "--state-dir",
+                    tmp,
+                ]
+            )
+            invalid_case_json = _run_cli(
+                ["evals", "create", run_id, "writer smoke", "--case-json", "[]", "--state-dir", tmp]
+            )
 
             self.assertEqual(missing.returncode, 1)
             self.assertIn("mnemo: eval case not found: eval_missing", missing.stderr)
@@ -543,6 +591,12 @@ class CliTests(unittest.TestCase):
             self.assertEqual(invalid_json.returncode, 1)
             self.assertIn("mnemo: --result-json must be a JSON object", invalid_json.stderr)
             self.assertNotIn("Traceback", invalid_json.stderr)
+            self.assertEqual(missing_run.returncode, 1)
+            self.assertIn("mnemo: run not found: run_missing", missing_run.stderr)
+            self.assertNotIn("Traceback", missing_run.stderr)
+            self.assertEqual(invalid_case_json.returncode, 1)
+            self.assertIn("mnemo: --case-json must be a JSON object", invalid_case_json.stderr)
+            self.assertNotIn("Traceback", invalid_case_json.stderr)
 
     def test_config_inspect_redacts_api_key(self) -> None:
         config = _run_cli(["config", "inspect", "--api-key", "secret-value", "--json"])

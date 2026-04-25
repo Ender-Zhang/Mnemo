@@ -31,7 +31,7 @@
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
 - `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
 - `mnemo tools review`, `install`, and `uninstall` normalize missing candidate/generated-tool errors this way.
-- `mnemo evals record` normalizes missing eval cases and invalid `--result-json` this way.
+- `mnemo evals create` and `record` normalize missing runs/eval cases and invalid JSON payloads this way.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
@@ -56,7 +56,7 @@
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing tool candidate/generated tool in CLI lifecycle commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
-| Missing eval case or invalid result JSON in CLI eval commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing run/eval case or invalid JSON in CLI eval commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
@@ -84,7 +84,7 @@
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI skill command tests for missing skill, eval case, and crystallization run errors without tracebacks.
 - CLI tool lifecycle tests for missing candidate and generated tool errors without tracebacks.
-- CLI eval record tests for missing eval cases and invalid result JSON without tracebacks.
+- CLI eval tests for missing runs/eval cases and invalid JSON without tracebacks.
 
 ### 7. Wrong vs Correct
 #### Wrong

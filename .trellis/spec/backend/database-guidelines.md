@@ -31,6 +31,10 @@
 - `StateStore.get_generated_tool(name: str) -> dict[str, Any] | None`
 - `StateStore.list_generated_tools(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_generated_tool_status(name: str, status: str) -> None`
+- `StateStore.add_eval_case(run_id: str, name: str, case: dict[str, Any]) -> str`
+- `StateStore.get_eval_case(case_id: str) -> dict[str, Any] | None`
+- `StateStore.list_eval_cases(status: str | None = None, *, tool_name: str | None = None, skill_name: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.update_eval_case_status(case_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
 - `StateStore.upsert_artifact(mission_id: str, run_id: str, title: str, body: str, kind: str = "markdown") -> str`
 - `StateStore.get_artifact(artifact_id: str) -> dict[str, Any] | None`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
@@ -73,6 +77,7 @@
 - Daemon code must execute queued work through the existing `RunRequest` runtime path.
 - `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled status.
 - Generated tool implementations are data, not executable code.
+- `eval_cases` stores draft/passed/failed cases with source run provenance and structured `case` / `result` JSON payloads.
 - `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
 - `get_artifact()` returns `None` for unknown ids and a plain JSON-serializable dict for known ids.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
@@ -100,6 +105,7 @@
 | Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
 | Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
+| Eval case storage | Add, list by target/status, and update result payloads | `tests/test_storage.py`, `tests/test_cli.py` |
 | Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |
@@ -134,6 +140,7 @@
 - Queue lifecycle, daemon drain, single-instance lock, and stale recovery are covered.
 - Run and queue cancellation are covered at storage, CLI, daemon, and provider runtime boundaries.
 - Generated tool manifest round-trip and migration coverage are covered.
+- Eval case add/list/update behavior is covered.
 - Artifact storage round-trip by id is covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.
