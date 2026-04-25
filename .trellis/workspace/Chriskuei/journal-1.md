@@ -1215,3 +1215,37 @@ Added on-demand artifact viewing in the single-chat web UI: storage lookup, /api
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Cross-client skill roots
+
+**Date**: 2026-04-25
+**Task**: Cross-client skill roots
+**Branch**: `main`
+
+### Summary
+
+Extended default skill root discovery to workspace and home Claude, Hermes, and OpenClaw directories with deterministic de-duplication; added CLI and service tests plus skill-evolution specs/checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7512220` | (see git log) |
+| `05e5124` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
