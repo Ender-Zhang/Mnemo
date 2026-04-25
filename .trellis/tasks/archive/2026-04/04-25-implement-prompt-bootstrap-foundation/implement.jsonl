@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/11-prompt-system.md", "reason": "Soul/workspace bootstrap prompt design"}
+{"file": "design/03-agentic-loop-prompt-soul.md", "reason": "Soul loading and cache design"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Prompt assembly contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation expectations"}
