@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 67
+- **Total Sessions**: 68
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~344 | Active |
+| `journal-2.md` | ~392 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 68 | 2026-04-25 | Expose continuity inspection CLI | `292e6e8`, `dd8e25a` | `main` |
 | 67 | 2026-04-25 | Expose runs inspection CLI | `622c7fe`, `60ddea2` | `main` |
 | 66 | 2026-04-25 | Expose artifacts CLI | `629974d`, `4447bb9` | `main` |
 | 65 | 2026-04-25 | Expose memory notes CLI | `40ed2cc`, `284e793` | `main` |

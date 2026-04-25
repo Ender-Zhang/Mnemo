@@ -351,3 +351,42 @@ Added compact run-history listing and full run record inspection before users op
 ### Next Steps
 
 - None - task complete
+
+
+## Session 68: Expose continuity inspection CLI
+
+**Date**: 2026-04-25
+**Task**: Expose continuity inspection CLI
+**Branch**: `main`
+
+### Summary
+
+Added compact conversation and mission inspection commands so CLI users can recover continuity ids for later turns.
+
+### Main Changes
+
+- Added `StateStore.list_conversations()` and `StateStore.list_missions()` read APIs.
+- Added `mnemo conversations list/show` and `mnemo missions list/show` with JSON/plain output.
+- Kept list outputs compact: mission lists omit checkpoint data; `missions show` returns the parsed checkpoint explicitly.
+- Normalized missing conversation/mission ids and missing subcommands through `MnemoError`.
+- Updated README, implementation checklist, and backend storage/error specs.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `292e6e8` | (see git log) |
+| `dd8e25a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
