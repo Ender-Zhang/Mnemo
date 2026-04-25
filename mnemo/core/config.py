@@ -10,6 +10,8 @@ from typing import Any, Mapping
 DEFAULT_PROVIDER = "local"
 DEFAULT_STATE_DIR = "~/.mnemo"
 DEFAULT_TIMEOUT_S = 30.0
+DEFAULT_RETRY_COUNT = 0
+DEFAULT_RETRY_BACKOFF_S = 0.0
 
 
 @dataclass(frozen=True)
@@ -21,6 +23,8 @@ class RuntimeConfig:
     api_key: str | None = None
     api_key_env: str | None = None
     timeout_s: float = DEFAULT_TIMEOUT_S
+    retry_count: int = DEFAULT_RETRY_COUNT
+    retry_backoff_s: float = DEFAULT_RETRY_BACKOFF_S
     config_path: str | None = None
 
     def redacted(self) -> dict[str, Any]:
@@ -38,6 +42,8 @@ class ConfigOverrides:
     api_key: str | None = None
     api_key_env: str | None = None
     timeout_s: float | None = None
+    retry_count: int | None = None
+    retry_backoff_s: float | None = None
     config_path: str | None = None
 
 
@@ -75,6 +81,18 @@ def resolve_runtime_config(
         file_config.get("timeout_s"),
         DEFAULT_TIMEOUT_S,
     )
+    retry_count = _first_int(
+        overrides.retry_count,
+        env.get("MNEMO_RETRY_COUNT"),
+        file_config.get("retry_count"),
+        DEFAULT_RETRY_COUNT,
+    )
+    retry_backoff_s = _first_float(
+        overrides.retry_backoff_s,
+        env.get("MNEMO_RETRY_BACKOFF_S"),
+        file_config.get("retry_backoff_s"),
+        DEFAULT_RETRY_BACKOFF_S,
+    )
 
     return RuntimeConfig(
         state_dir=state_dir,
@@ -84,6 +102,8 @@ def resolve_runtime_config(
         api_key=api_key,
         api_key_env=api_key_env,
         timeout_s=timeout_s,
+        retry_count=max(0, retry_count),
+        retry_backoff_s=max(0.0, retry_backoff_s),
         config_path=str(config_path) if config_path else None,
     )
 
@@ -127,3 +147,14 @@ def _first_float(*values: Any) -> float:
         except (TypeError, ValueError):
             continue
     return DEFAULT_TIMEOUT_S
+
+
+def _first_int(*values: Any) -> int:
+    for value in values:
+        if value is None or value == "":
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    return DEFAULT_RETRY_COUNT

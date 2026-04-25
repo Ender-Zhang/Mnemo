@@ -28,6 +28,8 @@ class WebServerConfig:
     model: str | None = None
     api_key: str | None = None
     timeout_s: float = 30.0
+    retry_count: int = 0
+    retry_backoff_s: float = 0.0
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -217,6 +219,8 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
                 model=config.model,
                 api_key=config.api_key,
                 timeout_s=config.timeout_s,
+                retry_count=config.retry_count,
+                retry_backoff_s=config.retry_backoff_s,
                 stream=True,
             )
         )
@@ -231,6 +235,8 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
                 model=config.model,
                 api_key=config.api_key,
                 timeout_s=config.timeout_s,
+                retry_count=config.retry_count,
+                retry_backoff_s=config.retry_backoff_s,
                 stream=True,
             )
         )

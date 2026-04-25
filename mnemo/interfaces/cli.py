@@ -95,6 +95,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
     run_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
     run_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
+    run_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
+    run_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
     run_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
     events_parser = subparsers.add_parser("events", help="Print RunLedger events for a run")
@@ -193,6 +195,8 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
     web_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
     web_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
+    web_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
+    web_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
     web_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
     harness_parser = subparsers.add_parser("harness", help="Run lightweight replay and eval harnesses")
@@ -230,6 +234,8 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_run_parser.add_argument("--api-key")
     daemon_run_parser.add_argument("--api-key-env")
     daemon_run_parser.add_argument("--timeout-s", type=float)
+    daemon_run_parser.add_argument("--retry-count", type=int)
+    daemon_run_parser.add_argument("--retry-backoff-s", type=float)
     daemon_run_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
     daemon_run_parser.add_argument("--json", action="store_true")
     daemon_status_parser = daemon_subparsers.add_parser("status", help="Print queue and lock status")
@@ -262,6 +268,8 @@ def build_parser() -> argparse.ArgumentParser:
     config_inspect_parser.add_argument("--api-key")
     config_inspect_parser.add_argument("--api-key-env")
     config_inspect_parser.add_argument("--timeout-s", type=float)
+    config_inspect_parser.add_argument("--retry-count", type=int)
+    config_inspect_parser.add_argument("--retry-backoff-s", type=float)
     config_inspect_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
     config_inspect_parser.add_argument("--json", action="store_true")
     config_smoke_parser = config_subparsers.add_parser("smoke", help="Smoke test the configured provider endpoint")
@@ -272,6 +280,8 @@ def build_parser() -> argparse.ArgumentParser:
     config_smoke_parser.add_argument("--api-key")
     config_smoke_parser.add_argument("--api-key-env")
     config_smoke_parser.add_argument("--timeout-s", type=float)
+    config_smoke_parser.add_argument("--retry-count", type=int)
+    config_smoke_parser.add_argument("--retry-backoff-s", type=float)
     config_smoke_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
     config_smoke_parser.add_argument("--message", default="Hello, introduce yourself in one sentence.")
     config_smoke_parser.add_argument("--json", action="store_true")
@@ -531,6 +541,8 @@ def _cmd_web(args: argparse.Namespace) -> int:
             model=config.model,
             api_key=config.api_key,
             timeout_s=config.timeout_s,
+            retry_count=config.retry_count,
+            retry_backoff_s=config.retry_backoff_s,
         )
     )
     return 0
@@ -578,7 +590,18 @@ def _cmd_config(args: argparse.Namespace) -> int:
     if args.json:
         print(dumps(payload))
     else:
-        for key in ("state_dir", "provider", "base_url", "model", "api_key_env", "api_key", "timeout_s", "config_path"):
+        for key in (
+            "state_dir",
+            "provider",
+            "base_url",
+            "model",
+            "api_key_env",
+            "api_key",
+            "timeout_s",
+            "retry_count",
+            "retry_backoff_s",
+            "config_path",
+        ):
             print(f"{key}={payload.get(key)}")
     return 0
 
@@ -754,6 +777,8 @@ def _openai_adapter_from_config(config, *, stream: bool = False) -> OpenAIProvid
             model=config.model,
             api_key=config.api_key,
             timeout_s=config.timeout_s,
+            retry_count=config.retry_count,
+            retry_backoff_s=config.retry_backoff_s,
             stream=stream,
         )
     )
@@ -766,6 +791,8 @@ def _anthropic_adapter_from_config(config, *, stream: bool = False) -> Anthropic
             model=config.model or "",
             api_key=config.api_key,
             timeout_s=config.timeout_s,
+            retry_count=config.retry_count,
+            retry_backoff_s=config.retry_backoff_s,
             stream=stream,
         )
     )
@@ -839,6 +866,8 @@ def _runtime_config_from_args(args: argparse.Namespace):
             api_key=getattr(args, "api_key", None),
             api_key_env=getattr(args, "api_key_env", None),
             timeout_s=getattr(args, "timeout_s", None),
+            retry_count=getattr(args, "retry_count", None),
+            retry_backoff_s=getattr(args, "retry_backoff_s", None),
             config_path=getattr(args, "config", None),
         )
     )

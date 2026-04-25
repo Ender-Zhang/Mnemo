@@ -4,12 +4,14 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 import json
 import socket
+import time
 from typing import Any, Literal, Protocol
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from ..core.errors import (
     ProviderConnectionError,
+    ProviderError,
     ProviderPayloadError,
     ProviderStatusError,
     ProviderTimeoutError,
@@ -20,6 +22,7 @@ from ..core.models import ToolCallEnvelope, ToolSpec
 ProviderEventType = Literal["text_delta", "tool_call", "completed"]
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_DEFAULT_MAX_TOKENS = 4096
+DEFAULT_RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
 
 
 @dataclass(frozen=True)
@@ -36,6 +39,9 @@ class ProviderConfig:
     model: str
     api_key: str | None = None
     timeout_s: float = 30.0
+    retry_count: int = 0
+    retry_backoff_s: float = 0.0
+    retry_status_codes: tuple[int, ...] = DEFAULT_RETRY_STATUS_CODES
     stream: bool = False
 
 
@@ -65,7 +71,7 @@ class OpenAIProviderAdapter:
             headers=self._request_headers(stream=False),
             method="GET",
         )
-        return _read_json_response(http_request, timeout_s=self.config.timeout_s)
+        return _read_json_response(http_request, config=self.config)
 
     def stream(self, request: ProviderRunInput) -> Iterable[ProviderEvent]:
         if self.config.stream:
@@ -102,28 +108,7 @@ class OpenAIProviderAdapter:
             method="POST",
         )
 
-        try:
-            with urllib_request.urlopen(http_request, timeout=self.config.timeout_s) as response:
-                response_body = response.read()
-        except urllib_error.HTTPError as exc:
-            raise ProviderStatusError(exc.code, _read_error_body(exc)) from exc
-        except urllib_error.URLError as exc:
-            if _is_timeout(exc.reason):
-                raise ProviderTimeoutError("provider request timed out") from exc
-            raise ProviderConnectionError("provider is unreachable") from exc
-        except (TimeoutError, socket.timeout) as exc:
-            raise ProviderTimeoutError("provider request timed out") from exc
-        except OSError as exc:
-            raise ProviderConnectionError("provider is unreachable") from exc
-
-        try:
-            parsed = json.loads(response_body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ProviderPayloadError("provider returned invalid JSON") from exc
-
-        if not isinstance(parsed, dict):
-            raise ProviderPayloadError("provider returned a non-object JSON payload")
-        return parsed
+        return _read_json_response(http_request, config=self.config)
 
     def _stream_chat_completions(self, request: ProviderRunInput) -> Iterable[ProviderEvent]:
         http_request = urllib_request.Request(
@@ -252,27 +237,7 @@ class AnthropicProviderAdapter:
             method="POST",
         )
 
-        try:
-            with urllib_request.urlopen(http_request, timeout=self.config.timeout_s) as response:
-                response_body = response.read()
-        except urllib_error.HTTPError as exc:
-            raise ProviderStatusError(exc.code, _read_error_body(exc)) from exc
-        except urllib_error.URLError as exc:
-            if _is_timeout(exc.reason):
-                raise ProviderTimeoutError("provider request timed out") from exc
-            raise ProviderConnectionError("provider is unreachable") from exc
-        except (TimeoutError, socket.timeout) as exc:
-            raise ProviderTimeoutError("provider request timed out") from exc
-        except OSError as exc:
-            raise ProviderConnectionError("provider is unreachable") from exc
-
-        try:
-            parsed = json.loads(response_body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise ProviderPayloadError("provider returned invalid JSON") from exc
-        if not isinstance(parsed, dict):
-            raise ProviderPayloadError("provider returned a non-object JSON payload")
-        return parsed
+        return _read_json_response(http_request, config=self.config)
 
     def _stream_messages(self, request: ProviderRunInput) -> Iterable[ProviderEvent]:
         http_request = urllib_request.Request(
@@ -368,7 +333,19 @@ def _anthropic_messages_url(base_url: str) -> str:
     return f"{base_url.rstrip('/')}/messages"
 
 
-def _read_json_response(http_request: urllib_request.Request, *, timeout_s: float) -> dict[str, Any]:
+def _read_json_response(http_request: urllib_request.Request, *, config: ProviderConfig) -> dict[str, Any]:
+    max_attempts = _retry_count(config.retry_count) + 1
+    for attempt in range(max_attempts):
+        try:
+            return _read_json_response_once(http_request, timeout_s=config.timeout_s)
+        except ProviderError as exc:
+            if attempt >= max_attempts - 1 or not _should_retry(exc, config.retry_status_codes):
+                raise
+            _sleep_before_retry(config.retry_backoff_s, attempt)
+    raise ProviderConnectionError("provider is unreachable")
+
+
+def _read_json_response_once(http_request: urllib_request.Request, *, timeout_s: float) -> dict[str, Any]:
     try:
         with urllib_request.urlopen(http_request, timeout=timeout_s) as response:
             response_body = response.read()
@@ -390,6 +367,32 @@ def _read_json_response(http_request: urllib_request.Request, *, timeout_s: floa
     if not isinstance(parsed, dict):
         raise ProviderPayloadError("provider returned a non-object JSON payload")
     return parsed
+
+
+def _retry_count(value: int) -> int:
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return min(max(count, 0), 5)
+
+
+def _should_retry(exc: ProviderError, retry_status_codes: tuple[int, ...]) -> bool:
+    if isinstance(exc, ProviderTimeoutError | ProviderConnectionError):
+        return True
+    if isinstance(exc, ProviderStatusError):
+        return exc.status_code in retry_status_codes
+    return False
+
+
+def _sleep_before_retry(backoff_s: float, attempt: int) -> None:
+    try:
+        base = float(backoff_s)
+    except (TypeError, ValueError):
+        return
+    if base <= 0:
+        return
+    time.sleep(min(base * (2**attempt), 5.0))
 
 
 def _tool_spec_to_openai_tool(spec: ToolSpec) -> dict[str, Any]:

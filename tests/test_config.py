@@ -19,6 +19,8 @@ class RuntimeConfigTests(unittest.TestCase):
                         "base_url": "http://from-file",
                         "model": "file-model",
                         "timeout_s": 10,
+                        "retry_count": 1,
+                        "retry_backoff_s": 0.2,
                     }
                 ),
                 encoding="utf-8",
@@ -34,6 +36,8 @@ class RuntimeConfigTests(unittest.TestCase):
                     "MNEMO_BASE_URL": "http://from-env",
                     "MNEMO_MODEL": "env-model",
                     "MNEMO_TIMEOUT_S": "12",
+                    "MNEMO_RETRY_COUNT": "2",
+                    "MNEMO_RETRY_BACKOFF_S": "0.01",
                 },
             )
 
@@ -41,6 +45,8 @@ class RuntimeConfigTests(unittest.TestCase):
             self.assertEqual(config.base_url, "http://from-env")
             self.assertEqual(config.model, "cli-model")
             self.assertEqual(config.timeout_s, 12.0)
+            self.assertEqual(config.retry_count, 2)
+            self.assertEqual(config.retry_backoff_s, 0.01)
 
     def test_api_key_resolves_from_env_and_redacts(self) -> None:
         config = resolve_runtime_config(

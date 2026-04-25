@@ -13,6 +13,7 @@
 - `ProviderTimeoutError(message: str)`
 - `ProviderConnectionError(message: str)`
 - `ProviderPayloadError(message: str)`
+- `ProviderConfig(timeout_s: float, retry_count: int = 0, retry_backoff_s: float = 0.0, retry_status_codes=(429, 500, 502, 503, 504))`
 - CLI: `mnemo config smoke --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --provider anthropic --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 
@@ -21,6 +22,9 @@
 - Provider adapters raise `ProviderTimeoutError` for socket/URL timeout conditions.
 - Provider adapters raise `ProviderConnectionError` for unreachable endpoints.
 - Provider adapters raise `ProviderPayloadError` for invalid or non-object JSON payloads.
+- Non-streaming provider JSON requests retry timeout errors, connection errors, and `retry_status_codes` up to `retry_count`.
+- Streaming provider requests remain single-attempt because retrying after partial deltas can duplicate model output or tool calls.
+- Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
@@ -36,18 +40,27 @@
 | Provider returns HTTP error | CLI exits non-zero and stderr includes normalized status | `tests/test_cli.py` |
 | Invalid provider payload | Adapter raises `ProviderPayloadError` | `tests/test_providers.py` |
 | Provider timeout | Adapter raises `ProviderTimeoutError` | `tests/test_providers.py` |
+| Retryable provider status | Non-streaming adapter retries and can recover | `tests/test_providers.py` |
+| Non-retryable provider status | Adapter fails without extra attempts | `tests/test_providers.py` |
+| Streaming provider status | Streaming adapter fails without retry | `tests/test_providers.py` |
+| Retry config resolution | Runtime config resolves retry fields and redacts secrets | `tests/test_config.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
 - Good: show response previews and model ids, not raw request payloads.
+- Good: set `retry_count` only for transient endpoint instability and keep default at zero.
 - Base: `--api-key` is supported for local smoke but is redacted in output.
+- Base: streaming calls rely on timeout and normalized errors, not retries.
 - Bad: print Authorization headers, API keys, or full provider error bodies to stdout.
+- Bad: retry streaming calls after text/tool deltas have already been emitted.
 
 ### 6. Tests Required
 - CLI success for OpenAI-compatible smoke.
 - CLI success for Anthropic smoke.
 - CLI failure for provider status errors.
 - Existing provider adapter status/payload/timeout tests still pass.
+- Provider retry tests for OpenAI-compatible and Anthropic non-streaming calls.
+- Config resolver test for `retry_count` and `retry_backoff_s`.
 
 ### 7. Wrong vs Correct
 #### Wrong
