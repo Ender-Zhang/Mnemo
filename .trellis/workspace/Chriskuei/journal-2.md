@@ -584,3 +584,37 @@ Implemented persisted Inbox decision items, ask_user decision projection, CLI/We
 ### Next Steps
 
 - None - task complete
+
+
+## Session 74: Learning Chip Actions
+
+**Date**: 2026-04-25
+**Task**: Learning Chip Actions
+**Branch**: `main`
+
+### Summary
+
+Added inline memory learning chip actions with a compact Web API, frontend card buttons, tests, checklist/spec updates, and archived the Trellis task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d21128c` | (see git log) |
+| `2c81217` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
