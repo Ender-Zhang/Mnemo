@@ -303,3 +303,42 @@ Added read-only artifact listing and reading commands, with compact list output 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 67: Expose runs inspection CLI
+
+**Date**: 2026-04-25
+**Task**: Expose runs inspection CLI
+**Branch**: `main`
+
+### Summary
+
+Added compact run-history listing and full run record inspection before users open events, replay, prompts, or artifacts.
+
+### Main Changes
+
+- Added `StateStore.list_runs()` for recency-ordered compact run summaries with status, conversation, mission, and limit filters.
+- Added `mnemo runs list` and `mnemo runs show <run_id>` with JSON/plain output.
+- Kept list output compact by returning `input_preview` and omitting full `input_text` / `output_text`; `runs show` returns the full record explicitly.
+- Normalized missing run ids and no-subcommand paths through `MnemoError`.
+- Updated README, implementation checklist, and backend storage/error specs.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `622c7fe` | (see git log) |
+| `60ddea2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
