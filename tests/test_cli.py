@@ -478,6 +478,72 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: generated tool not found: missing_tool", uninstall.stderr)
             self.assertNotIn("Traceback", uninstall.stderr)
 
+    def test_evals_list_and_record_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("eval cli")
+            mission_id = store.create_mission(conversation_id, "eval cli")
+            run_id = store.create_run(conversation_id, mission_id, "eval cli")
+            tool_case_id = store.add_eval_case(
+                run_id,
+                "lookup_memory smoke",
+                {"tool_candidate": "lookup_memory"},
+            )
+            skill_case_id = store.add_eval_case(
+                run_id,
+                "writer smoke",
+                {"skill_name": "writer"},
+            )
+
+            tool_list = _run_cli(["evals", "list", "--tool-name", "lookup_memory", "--state-dir", tmp, "--json"])
+            skill_list = _run_cli(["evals", "list", "--skill-name", "writer", "--state-dir", tmp, "--json"])
+            record = _run_cli(
+                [
+                    "evals",
+                    "record",
+                    tool_case_id,
+                    "passed",
+                    "--result-json",
+                    '{"ok":true,"source":"manual"}',
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            passed_list = _run_cli(["evals", "list", "--status", "passed", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(tool_list.returncode, 0, tool_list.stderr)
+            self.assertEqual([case["id"] for case in json.loads(tool_list.stdout)["eval_cases"]], [tool_case_id])
+            self.assertEqual(skill_list.returncode, 0, skill_list.stderr)
+            self.assertEqual([case["id"] for case in json.loads(skill_list.stdout)["eval_cases"]], [skill_case_id])
+            self.assertEqual(record.returncode, 0, record.stderr)
+            recorded = json.loads(record.stdout)["eval_case"]
+            self.assertEqual(recorded["status"], "passed")
+            self.assertEqual(recorded["result"], {"ok": True, "source": "manual"})
+            self.assertEqual(json.loads(passed_list.stdout)["eval_cases"][0]["id"], tool_case_id)
+
+    def test_evals_record_errors_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("eval cli")
+            mission_id = store.create_mission(conversation_id, "eval cli")
+            run_id = store.create_run(conversation_id, mission_id, "eval cli")
+            case_id = store.add_eval_case(run_id, "writer smoke", {"skill_name": "writer"})
+
+            missing = _run_cli(["evals", "record", "eval_missing", "passed", "--state-dir", tmp])
+            invalid_json = _run_cli(
+                ["evals", "record", case_id, "failed", "--result-json", "[1]", "--state-dir", tmp]
+            )
+
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: eval case not found: eval_missing", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+            self.assertEqual(invalid_json.returncode, 1)
+            self.assertIn("mnemo: --result-json must be a JSON object", invalid_json.stderr)
+            self.assertNotIn("Traceback", invalid_json.stderr)
+
     def test_config_inspect_redacts_api_key(self) -> None:
         config = _run_cli(["config", "inspect", "--api-key", "secret-value", "--json"])
 

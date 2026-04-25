@@ -9,7 +9,7 @@ from .. import __version__
 from ..core.config import ConfigOverrides, DEFAULT_PROVIDER, DEFAULT_STATE_DIR, resolve_runtime_config
 from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
-from ..core.jsonutil import dumps
+from ..core.jsonutil import dumps, loads
 from ..core.models import RunRequest
 from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
@@ -55,6 +55,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_web(args)
         if args.command == "harness":
             return _cmd_harness(args)
+        if args.command == "evals":
+            return _cmd_evals(args)
         if args.command == "daemon":
             return _cmd_daemon(args)
         if args.command == "backup":
@@ -245,6 +247,22 @@ def build_parser() -> argparse.ArgumentParser:
     harness_replay_parser.add_argument("--json", action="store_true")
     harness_list_parser = harness_subparsers.add_parser("list", help="List built-in eval suites")
     harness_list_parser.add_argument("--json", action="store_true")
+
+    evals_parser = subparsers.add_parser("evals", help="List and record stored eval cases")
+    evals_subparsers = evals_parser.add_subparsers(dest="evals_command")
+    evals_list_parser = evals_subparsers.add_parser("list", help="List stored eval cases")
+    _add_state_dir(evals_list_parser)
+    evals_list_parser.add_argument("--status")
+    evals_list_parser.add_argument("--tool-name")
+    evals_list_parser.add_argument("--skill-name")
+    evals_list_parser.add_argument("--limit", type=int, default=50)
+    evals_list_parser.add_argument("--json", action="store_true")
+    evals_record_parser = evals_subparsers.add_parser("record", help="Record an eval case result")
+    _add_state_dir(evals_record_parser)
+    evals_record_parser.add_argument("case_id")
+    evals_record_parser.add_argument("status", choices=["passed", "failed"])
+    evals_record_parser.add_argument("--result-json", default="{}", help="JSON object result payload")
+    evals_record_parser.add_argument("--json", action="store_true")
 
     daemon_parser = subparsers.add_parser("daemon", help="Manage the lightweight run queue")
     daemon_subparsers = daemon_parser.add_subparsers(dest="daemon_command")
@@ -693,6 +711,60 @@ def _cmd_harness(args: argparse.Namespace) -> int:
                 print(suite)
         return 0
     raise MnemoError("harness command requires a subcommand")
+
+
+def _cmd_evals(args: argparse.Namespace) -> int:
+    store = StateStore(args.state_dir)
+    store.initialize()
+
+    if args.evals_command == "list":
+        result = {
+            "eval_cases": store.list_eval_cases(
+                status=args.status,
+                tool_name=args.tool_name,
+                skill_name=args.skill_name,
+                limit=max(0, args.limit),
+            )
+        }
+    elif args.evals_command == "record":
+        if not store.get_eval_case(args.case_id):
+            raise MnemoError(f"eval case not found: {args.case_id}")
+        store.update_eval_case_status(
+            args.case_id,
+            args.status,
+            result=_parse_json_object_arg(args.result_json, "--result-json"),
+        )
+        result = {"eval_case": store.get_eval_case(args.case_id)}
+    else:
+        raise MnemoError("evals command requires a subcommand")
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_evals_result(args.evals_command, result)
+    return 0
+
+
+def _print_evals_result(command: str, result: dict[str, Any]) -> None:
+    if command == "list":
+        for case in result["eval_cases"]:
+            print(f"{case['id']} {case['name']} [{case['status']}]")
+        return
+    if command == "record":
+        case = result["eval_case"]
+        print(f"Eval case {case['id']} {case['status']}")
+        return
+    print(dumps(result))
+
+
+def _parse_json_object_arg(value: str, flag: str) -> dict[str, Any]:
+    try:
+        parsed = loads(value, default={})
+    except ValueError as exc:
+        raise MnemoError(f"{flag} must be valid JSON") from exc
+    if not isinstance(parsed, dict):
+        raise MnemoError(f"{flag} must be a JSON object")
+    return parsed
 
 
 def _cmd_config(args: argparse.Namespace) -> int:

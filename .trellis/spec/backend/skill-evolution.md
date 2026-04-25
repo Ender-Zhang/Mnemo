@@ -22,6 +22,8 @@
 - Tool: `skill_patch_candidate(source_name: str, name: str, replacements: [{old: str, new: str}], description?: str, replace_all?: bool)`
 - Tool: `skill_run_eval_case(case_id: str)`
 - Tool: `skill_review_candidate(name: str)`
+- CLI: `mnemo evals list [--status STATUS] [--skill-name NAME] [--state-dir DIR] [--json]`
+- CLI: `mnemo evals record <case_id> passed|failed [--result-json OBJECT] [--state-dir DIR] [--json]`
 
 ### 3. Contracts
 - `skill_view` records a `viewed` event only after the skill exists.
@@ -45,6 +47,7 @@
 - `skill_review_candidate` updates a generated skill candidate to `ready` or `blocked:*`.
 - Review validates name, description, body, and negative usage evidence.
 - Skill eval cases target skills through `case.skill_name`, `case.skill_candidate`, `case.skill`, or `case.name`.
+- The shared `mnemo evals` CLI can list skill-targeted cases and record external eval outcomes; it does not run deterministic skill assertions by itself.
 - `skill_run_eval_case` evaluates deterministic structured assertions against skill body/description and records `passed` or `failed`.
 - Supported skill eval assertions: `body_contains`, `description_contains`, `body_not_contains`, `body_forbids`, and `min_body_chars`.
 - Review blocks linked failed evals as `blocked:failed_eval`.
@@ -75,6 +78,7 @@
 | Review tool | Return compact summary/evidence without body | `tests/test_tools.py` |
 | Crystallization tool | Return compact summary/evidence without body or raw payloads | `tests/test_tools.py` |
 | Eval tool | Return compact summary/evidence without body | `tests/test_tools.py` |
+| Shared eval CLI | List skill-targeted eval cases and record external outcomes | `tests/test_cli.py` |
 | Skill cards | Include compact usage stats and omit body | `tests/test_skills_filesystem.py` |
 | Default roots | Include mainstream client roots and de-duplicate | `tests/test_skills_filesystem.py` |
 | CLI scan defaults | Import workspace mainstream roots without explicit `--root` | `tests/test_cli.py` |
@@ -101,6 +105,7 @@
 - Tool harness test for `skill_patch_candidate`.
 - Tool harness test for `skill_run_eval_case`.
 - Tool harness test for `skill_review_candidate`.
+- CLI test for shared eval case listing and result recording.
 - Skill service test for usage stats and deterministic ranking.
 - Skill service test for default root ordering and de-duplication.
 - CLI test for scanning a workspace mainstream root without `--root`.

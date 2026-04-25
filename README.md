@@ -87,6 +87,8 @@ mnemo dream run --state-dir .mnemo
 mnemo skills scan --state-dir .mnemo
 mnemo skills list --state-dir .mnemo
 mnemo tools --state-dir .mnemo
+mnemo evals list --state-dir .mnemo
+mnemo evals record <case_id> passed --result-json '{"ok":true}' --state-dir .mnemo
 mnemo tools candidates --state-dir .mnemo
 mnemo tools review <candidate_id> --state-dir .mnemo
 mnemo tools install <candidate_id> --state-dir .mnemo
