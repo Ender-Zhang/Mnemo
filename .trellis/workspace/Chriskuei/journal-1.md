@@ -1798,3 +1798,36 @@ Added a web client event shape guard before state persistence/rendering, added a
 ### Next Steps
 
 - None - task complete
+
+
+## Session 54: Normalize CLI memory candidate errors
+
+**Date**: 2026-04-25
+**Task**: Normalize CLI memory candidate errors
+**Branch**: `main`
+
+### Summary
+
+Converted expected memory promote/reject ValueError paths to MnemoError at the CLI boundary, added missing candidate CLI regression coverage without tracebacks, updated error-handling spec, and recorded the task in the implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2973190` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
