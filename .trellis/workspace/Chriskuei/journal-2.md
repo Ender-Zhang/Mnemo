@@ -889,3 +889,37 @@ Added compact after-turn learning packets, provider-native learning reflection w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 83: High-risk tool decision cards
+
+**Date**: 2026-04-25
+**Task**: High-risk tool decision cards
+**Branch**: `main`
+
+### Summary
+
+Denied external/admin tool calls now persist compact tool_approval Inbox decisions, stream through the existing decision.card path, keep non-high-risk denials unchanged, and include runtime/web/tool regression coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6cd783c` | (see git log) |
+| `19a87f0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
