@@ -1633,3 +1633,36 @@ Disabled and guarded the web New/reset action while a run is streaming so users 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 49: Refresh README current capabilities
+
+**Date**: 2026-04-25
+**Task**: Refresh README current capabilities
+**Branch**: `main`
+
+### Summary
+
+Updated README, package metadata, CLI help wording, CLI test assertion, and implementation checklist so public docs match the current runtime, provider, web, daemon, cancellation, memory/skill/tool, backup, and harness workflows.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f0a03a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 48
+- **Total Sessions**: 49
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1635 | Active |
+| `journal-1.md` | ~1668 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 49 | 2026-04-25 | Refresh README current capabilities | `7f0a03a` | `main` |
 | 48 | 2026-04-25 | Guard web reset during active run | `7d7e7df`, `2fef62e` | `main` |
 | 47 | 2026-04-25 | Web stop active run target | `1ff4aa5`, `b2bf3a2` | `main` |
 | 46 | 2026-04-25 | Standard tool edge coverage | `32cdc84`, `8fb96bb` | `main` |
