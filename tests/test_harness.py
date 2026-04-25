@@ -13,7 +13,7 @@ class EvalHarnessTests(unittest.TestCase):
         report = EvalHarness().run_suite("personalization-core")
 
         self.assertTrue(report.passed)
-        self.assertEqual(report.case_count, 3)
+        self.assertEqual(report.case_count, 4)
         self.assertEqual(report.failed_count, 0)
         self.assertTrue(all(case.passed for case in report.cases))
         self.assertIn("personalization-core", list_suites())

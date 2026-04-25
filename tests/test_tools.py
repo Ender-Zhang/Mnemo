@@ -174,6 +174,58 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact["evidence"][0]["kind"], "memory_search")
             self.assertEqual(compact["evidence"][0]["items"][0]["type"], "session_message")
 
+    def test_recall_search_returns_compact_actionable_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            run = store.get_run(run_id)
+            conversation_id = run["conversation_id"]
+            prior_run_id = store.create_run(conversation_id, mission_id, "Project Zephyr migration notes")
+            store.complete_run(prior_run_id, "Zephyr work is ready to continue.")
+            store.upsert_memory_page(
+                "knowledge: zephyr",
+                "Project Zephyr prefers compact recall cards",
+                confidence=0.9,
+            )
+            store.upsert_artifact(
+                mission_id,
+                prior_run_id,
+                "Zephyr launch brief",
+                "Zephyr launch body " + ("private details " * 40) + "sensitive tail",
+            )
+            store.add_inbox_item(
+                category="decision",
+                title="Approve Zephyr launch",
+                body="Zephyr needs approval before sending.",
+                priority=1,
+                source_run_id=prior_run_id,
+            )
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="recall_search",
+                    arguments={"query": "Zephyr", "limit": 10},
+                    call_id="call_recall",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+
+            self.assertTrue(result.ok)
+            self.assertIn("recall_search", [spec.name for spec in ToolRegistry().specs()])
+            kinds = {item["kind"] for item in result.result["items"]}
+            self.assertIn("knowledge", kinds)
+            self.assertIn("past_work", kinds)
+            self.assertIn("artifact", kinds)
+            self.assertIn("decision", kinds)
+            self.assertEqual(compact["evidence"][0]["kind"], "recall_search")
+            self.assertNotIn("sensitive tail", str(compact))
+            artifact = next(item for item in result.result["items"] if item["kind"] == "artifact")
+            decision = next(item for item in result.result["items"] if item["kind"] == "decision")
+            self.assertIn("open", artifact["actions"])
+            self.assertIn("resolve", decision["actions"])
+
     def test_skill_view_records_usage_and_outcome_tool_records_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

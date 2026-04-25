@@ -65,6 +65,23 @@ CORE_TOOL_SPECS = [
         input_schema=_schema(["id"], {"id": {"type": "string"}}),
     ),
     ToolSpec(
+        name="recall_search",
+        description="Find compact, actionable cards across memory, prior work, artifacts, and decisions.",
+        risk="read",
+        input_schema=_schema(
+            ["query"],
+            {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 8},
+                "scope": {
+                    "type": "string",
+                    "enum": ["all", "knowledge", "past_work", "artifacts", "decisions"],
+                    "default": "all",
+                },
+            },
+        ),
+    ),
+    ToolSpec(
         name="working_note",
         description="Record a short mission-scoped working note. Set retention=memory_candidate only when this note should enter DreamCycle as a long-term memory candidate.",
         risk="write",
@@ -312,6 +329,7 @@ class ToolRegistry:
         self._handlers: dict[str, ToolHandler] = {
             "memory_search": self._memory_search,
             "memory_read": self._memory_read,
+            "recall_search": self._recall_search,
             "working_note": self._working_note,
             "skills_list": self._skills_list,
             "skill_view": self._skill_view,
@@ -412,6 +430,50 @@ class ToolRegistry:
         if page:
             return {"memory": {"type": "page", **page}}
         raise NotFoundError(f"memory not found: {memory_id}")
+
+    def _recall_search(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        query = _require_str(args, "query")
+        limit = _bounded_limit(args.get("limit"), default=8, maximum=20)
+        scope = _recall_scope(args)
+        items: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+
+        if scope in {"all", "knowledge"}:
+            for match in MemoryEngine(context.store).search(query, limit=limit, search_scope="memory"):
+                _append_recall_item(items, seen, _recall_knowledge_item(match))
+        if scope in {"all", "past_work"}:
+            for message in context.store.search_session_messages(query, limit=limit):
+                if message.get("run_id") == context.run_id:
+                    continue
+                _append_recall_item(items, seen, _recall_session_item(message))
+            for run in context.store.list_runs(limit=50):
+                if run.get("id") == context.run_id:
+                    continue
+                if _query_matches(query, run.get("input_preview"), run.get("status")):
+                    _append_recall_item(items, seen, _recall_run_item(run))
+        if scope in {"all", "artifacts"}:
+            for artifact in context.store.list_artifacts(limit=50):
+                full_artifact = context.store.get_artifact(artifact["id"]) or artifact
+                if _query_matches(query, full_artifact.get("title"), full_artifact.get("kind"), full_artifact.get("body")):
+                    _append_recall_item(items, seen, _recall_artifact_item(full_artifact))
+        if scope in {"all", "decisions"}:
+            for item in context.store.list_inbox_items(status=None, limit=50):
+                if _query_matches(
+                    query,
+                    item.get("title"),
+                    item.get("body"),
+                    item.get("category"),
+                    item.get("status"),
+                    item.get("resolution"),
+                ):
+                    _append_recall_item(items, seen, _recall_decision_item(item))
+
+        return {
+            "query": query,
+            "scope": scope,
+            "count": len(items[:limit]),
+            "items": items[:limit],
+        }
 
     def _working_note(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         content = _require_str(args, "content")
@@ -803,6 +865,8 @@ def _tool_summary(result: ToolResult) -> str:
         return "Memory candidate recorded for later consolidation."
     if result.name == "memory_search":
         return f"Found {len(result.result.get('matches', []))} memory matches."
+    if result.name == "recall_search":
+        return f"Found {len(result.result.get('items', []))} recall items."
     if result.name == "memory_read":
         return "Memory item loaded."
     if result.name == "working_note":
@@ -864,6 +928,15 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "kind": "memory_search",
                 "summary": f"{len(matches)} matches",
                 "items": [_compact_memory_match(item) for item in matches[:5]],
+            }
+        ]
+    if result.name == "recall_search":
+        items = result.result.get("items", [])
+        return [
+            {
+                "kind": "recall_search",
+                "summary": f"{len(items)} items",
+                "items": [_compact_recall_item(item) for item in items[:6]],
             }
         ]
     if result.name == "memory_read":
@@ -1012,6 +1085,125 @@ def _compact_memory_match(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _compact_recall_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": item.get("kind"),
+        "item_id": item.get("item_id"),
+        "title": str(item.get("title") or "")[:160],
+        "summary": str(item.get("summary") or "")[:220],
+    }
+
+
+def _append_recall_item(items: list[dict[str, Any]], seen: set[tuple[str, str]], item: dict[str, Any]) -> None:
+    key = (str(item.get("kind") or ""), str(item.get("item_id") or ""))
+    if not key[0] or not key[1] or key in seen:
+        return
+    seen.add(key)
+    items.append(item)
+
+
+def _recall_knowledge_item(match: dict[str, Any]) -> dict[str, Any]:
+    source_type = str(match.get("type") or "memory")
+    item_id = str(match.get("id") or "")
+    title = match.get("title") or match.get("claim") or "Knowledge"
+    summary = match.get("content") or match.get("claim") or match.get("snippet") or ""
+    return {
+        "kind": "knowledge",
+        "item_id": item_id,
+        "source_type": source_type,
+        "title": _preview(str(title), limit=96),
+        "summary": _preview(str(summary), limit=220),
+        "confidence": match.get("confidence"),
+        "status": match.get("status"),
+        "actions": ["use"],
+    }
+
+
+def _recall_session_item(message: dict[str, Any]) -> dict[str, Any]:
+    summary = str(message.get("snippet") or "")
+    return {
+        "kind": "past_work",
+        "item_id": str(message.get("message_id") or message.get("id") or ""),
+        "source_type": "session_message",
+        "title": f"{message.get('role', 'message')} message",
+        "summary": _preview(summary, limit=220),
+        "conversation_id": message.get("conversation_id"),
+        "mission_id": message.get("mission_id"),
+        "run_id": message.get("run_id"),
+        "actions": ["continue"],
+    }
+
+
+def _recall_run_item(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "past_work",
+        "item_id": str(run.get("id") or ""),
+        "source_type": "run",
+        "title": "Past run",
+        "summary": _preview(str(run.get("input_preview") or ""), limit=220),
+        "conversation_id": run.get("conversation_id"),
+        "mission_id": run.get("mission_id"),
+        "run_id": run.get("id"),
+        "status": run.get("status"),
+        "actions": ["continue"],
+    }
+
+
+def _recall_artifact_item(artifact: dict[str, Any]) -> dict[str, Any]:
+    title = str(artifact.get("title") or "Artifact")
+    body = str(artifact.get("body") or "")
+    return {
+        "kind": "artifact",
+        "item_id": str(artifact.get("id") or ""),
+        "artifact_id": artifact.get("id"),
+        "source_type": str(artifact.get("kind") or "artifact"),
+        "title": _preview(title, limit=96),
+        "summary": _preview(body or title, limit=220),
+        "run_id": artifact.get("run_id"),
+        "mission_id": artifact.get("mission_id"),
+        "actions": ["open", "reuse"],
+    }
+
+
+def _recall_decision_item(item: dict[str, Any]) -> dict[str, Any]:
+    title = str(item.get("title") or "Decision")
+    body = str(item.get("body") or "")
+    return {
+        "kind": "decision",
+        "item_id": str(item.get("id") or ""),
+        "source_type": str(item.get("category") or "decision"),
+        "title": _preview(title, limit=96),
+        "summary": _preview(body or title, limit=220),
+        "status": item.get("status"),
+        "resolution": item.get("resolution"),
+        "run_id": item.get("source_run_id"),
+        "actions": ["resolve"] if item.get("status") == "open" else ["reuse"],
+    }
+
+
+def _query_matches(query: str, *values: Any) -> bool:
+    terms = [term for term in query.casefold().split() if term]
+    if not terms:
+        return False
+    haystack = " ".join(str(value or "") for value in values).casefold()
+    return all(term in haystack for term in terms)
+
+
+def _preview(value: str, limit: int = 220) -> str:
+    compact = " ".join(str(value or "").split())
+    if len(compact) <= limit:
+        return compact
+    return f"{compact[: max(0, limit - 1)].rstrip()}..."
+
+
+def _bounded_limit(value: Any, *, default: int, maximum: int) -> int:
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        limit = default
+    return max(1, min(maximum, limit))
+
+
 def _require_str(args: dict[str, Any], key: str) -> str:
     value = args.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -1056,6 +1248,13 @@ def _memory_search_scope(args: dict[str, Any]) -> str:
     scope = str(args.get("search_scope") or args.get("scope") or "memory")
     if scope not in {"memory", "stable", "sessions", "all"}:
         raise ToolError(f"invalid memory search scope: {scope}")
+    return scope
+
+
+def _recall_scope(args: dict[str, Any]) -> str:
+    scope = str(args.get("scope") or "all")
+    if scope not in {"all", "knowledge", "past_work", "artifacts", "decisions"}:
+        raise ToolError(f"invalid recall scope: {scope}")
     return scope
 
 

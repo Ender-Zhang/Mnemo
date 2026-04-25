@@ -30,6 +30,10 @@
 - `memory_search.search_scope`: optional, one of `memory`, `stable`, `sessions`, or `all`; default is `memory`.
 - `memory_search(search_scope="sessions")` returns bounded `session_message` snippets with conversation/mission/run/message ids and no raw transcript body.
 - `memory_read` reads either a memory candidate or a stable memory page by id.
+- `recall_search(query, scope="all", limit=8)` returns compact actionable cards across knowledge, past work, artifacts, and decisions.
+- `recall_search.scope` is one of `all`, `knowledge`, `past_work`, `artifacts`, or `decisions`.
+- `recall_search` is read-only and must omit full artifact bodies and raw session transcripts from result cards and compact evidence.
+- `recall_search` excludes the active run from past-work session/run matches so the user's recall query does not echo itself.
 - `file_patch(path, replacements, replace_all=False)` applies exact UTF-8 text replacements under `ToolContext.workspace_root` and is `admin` risk.
 - `file_patch` rejects missing text, ambiguous text when `replace_all` is false, binary files, and paths outside the workspace.
 - `web_fetch(url, timeout_s=10, max_bytes=60000)` validates HTTP/HTTPS URLs with a network location before opening a request; malformed URLs fail as tool errors without network I/O.
@@ -50,6 +54,7 @@
 - Generated tool aliases execute by mapping model arguments to an existing target tool handler.
 - Compact results for install/uninstall and generated tool execution must not include implementation payloads.
 - `artifact.card` events carry artifact metadata only; clients fetch body content explicitly when the user opens the artifact.
+- `recall.card` events carry recall query metadata and compact cards only; clients reuse existing artifact/decision actions or composer prefill for follow-up work.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -80,6 +85,7 @@
 | Artifact card projection | Emit id/title/kind without full artifact body | `tests/test_web.py`, `mnemo/runtime/common.py` |
 | Memory page read | Return stable page payload when `memory_read.id` is a memory page id | `tests/test_tools.py` |
 | Session memory search | `memory_search` can target L4 snippets through `search_scope="sessions"` | `tests/test_tools.py` |
+| Recall search | Return compact actionable cards for memory/session/artifact/decision matches without raw bodies | `tests/test_tools.py`, `tests/test_runtime.py`, `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new tool by defining `ToolSpec`, registering a handler, and adding summary/evidence projection.
@@ -87,6 +93,7 @@
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.
 - Good: expose L4 recall through `memory_search` scope instead of adding a separate session workflow tool.
+- Good: expose user-facing cross-surface recall through one read-only `recall_search` tool instead of separate dashboard workflows.
 - Good: represent user approvals as Inbox decision item ids, not transient-only chat text.
 - Good: use `file_patch` for bounded edits instead of full-file overwrite when the old text is known.
 - Good: use connector tools as side-effect handoffs from model decisions, not as workflow branches.
@@ -98,6 +105,7 @@
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
 - Memory search session scope: assert session snippets include provenance ids and omit raw content.
+- Recall search: assert compact cards include `kind`, `item_id`, `title`, `summary`, provenance ids, and action hints while omitting full bodies/transcripts.
 - Working note retention metadata: assert stored metadata and compact result remain small.
 - Skill review: assert status is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.

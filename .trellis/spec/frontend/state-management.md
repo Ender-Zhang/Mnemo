@@ -16,6 +16,7 @@
 - Runtime state: `state.activeRunId: string`
 - Runtime state: `state.renderedEventIds: Set<string>`
 - Runtime state: `state.artifacts: Map<string, object>`
+- UI event: `recall.card` with `{ recall: { query: string, scope: string, count: number, items: RecallItem[] } }`
 - API: `GET /api/events?run_id=<run_id>&chat=1`
 - API: `GET /api/events?run_id=<run_id>&chat=1&sinceEventId=<event_id>`
 - API: `GET /api/artifacts?artifact_id=<artifact_id>`
@@ -34,6 +35,7 @@
 - Reset clears all persisted chat continuity keys and the rendered-event set.
 - Reset is disabled and guarded while `state.busy` is true; active turns should use Stop instead.
 - Artifact cards render from streamed metadata and fetch artifact body content only when opened.
+- Recall cards render from streamed compact result items and reuse artifact body fetch, decision resolution, or composer prefill for actions.
 - Loaded artifacts are cached in `state.artifacts` for the current browser session.
 - Decision cards resolve persisted Inbox items by id and keep status local to the card.
 - Learning chips resolve persisted memory candidates by id and keep status local to the card.
@@ -53,6 +55,7 @@
 | Client asset | Contains `mnemo.last_event_id`, `sinceEventId`, and `renderedEventIds` handling | `tests/test_web.py` |
 | Artifact fetch | Returns stored artifact body by id and rejects missing/unknown ids | `tests/test_web.py` |
 | Artifact viewer asset | Contains on-demand artifact fetch and body rendering hooks | `tests/test_web.py` |
+| Recall card asset | Handles `recall.card`, compact item rendering, artifact open, decision resolve, and composer prefill hooks | `tests/test_web.py` |
 | Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Learning memory action | Promotes or rejects a persisted memory candidate and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
@@ -61,6 +64,7 @@
 ### 5. Good/Base/Bad Cases
 - Good: persist `event.event_id` after each processed chat event and use `sinceEventId` for incremental resume.
 - Good: fetch artifact body via `/api/artifacts` after the user opens an artifact card.
+- Good: keep recall result bodies compact and fetch/open only the selected artifact body.
 - Good: resolve decision cards by item id through `/api/inbox/resolve`, leaving conversation replay keys untouched.
 - Good: resolve learning chips by candidate id through `/api/learning/memory`, leaving conversation replay keys untouched.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
@@ -80,6 +84,7 @@
 - Frontend asset includes resume persistence and de-duplication logic.
 - Artifact API covers success, missing id, and unknown id.
 - Frontend asset includes on-demand artifact body loading.
+- Recall card rendering covers compact items and actions without additional browser persistence keys.
 - Inbox API covers listing and resolution, including missing and invalid resolution errors.
 - Frontend asset includes inline decision resolution hooks.
 - Learning memory API covers accept, this-turn-only, reject, missing candidate, and invalid action errors.

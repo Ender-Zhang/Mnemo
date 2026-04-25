@@ -194,6 +194,9 @@ function handleEvent(event) {
     case "artifact.card":
       renderArtifact(event.data?.artifact);
       break;
+    case "recall.card":
+      renderRecall(event.data?.recall);
+      break;
     case "learning.chip":
       renderLearning(event.data?.item);
       break;
@@ -382,6 +385,115 @@ function renderLearning(item) {
   node.append(titleRow, body, actions);
   timeline.appendChild(node);
   scrollToEnd();
+}
+
+function renderRecall(recall) {
+  if (!recall) return;
+  const items = Array.isArray(recall.items) ? recall.items : [];
+  const node = document.createElement("div");
+  node.className = "event-card recall";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "event-title";
+  const title = document.createElement("span");
+  title.textContent = "Recall";
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.textContent = `${items.length} found`;
+  titleRow.append(title, chip);
+
+  const body = document.createElement("div");
+  body.className = "event-body";
+  body.textContent = recall.query ? `“${recall.query}”` : "Past context";
+
+  const list = document.createElement("div");
+  list.className = "recall-items";
+  for (const item of items) {
+    list.appendChild(recallItem(item));
+  }
+
+  node.append(titleRow, body, list);
+  timeline.appendChild(node);
+  scrollToEnd();
+}
+
+function recallItem(item) {
+  const row = document.createElement("div");
+  row.className = "recall-item";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "recall-title";
+  const title = document.createElement("span");
+  title.textContent = item.title || "Untitled";
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.textContent = item.kind || item.source_type || "context";
+  titleRow.append(title, chip);
+
+  const summary = document.createElement("div");
+  summary.className = "event-body";
+  summary.textContent = item.summary || "";
+
+  const actions = document.createElement("div");
+  actions.className = "recall-actions";
+
+  row.append(titleRow, summary, actions);
+  appendRecallActions(actions, item, row, chip);
+  return row;
+}
+
+function appendRecallActions(actions, item, row, statusChip) {
+  if (item.kind === "artifact" && item.artifact_id) {
+    const viewer = document.createElement("div");
+    viewer.className = "artifact-viewer";
+    viewer.hidden = true;
+    const body = document.createElement("pre");
+    body.className = "artifact-body";
+    viewer.appendChild(body);
+    actions.appendChild(recallButton("Open", () => {
+      toggleArtifact(item.artifact_id, viewer, body, actions.querySelector("button"));
+    }));
+    actions.appendChild(recallButton("Reuse", () => {
+      prefillMessage(`Reuse artifact ${item.artifact_id}: `);
+    }));
+    row.appendChild(viewer);
+    return;
+  }
+
+  if (item.kind === "decision" && item.status === "open" && item.item_id) {
+    actions.append(
+      decisionButton("Approve", "accepted", item.item_id, statusChip),
+      decisionButton("Reject", "rejected", item.item_id, statusChip),
+      decisionButton("Ignore", "ignored", item.item_id, statusChip),
+    );
+    return;
+  }
+
+  if (item.kind === "past_work") {
+    actions.appendChild(recallButton("Continue", () => {
+      prefillMessage(`Continue from run ${item.run_id || item.item_id}: `);
+    }));
+    return;
+  }
+
+  actions.appendChild(recallButton("Use", () => {
+    prefillMessage(`Use recalled context ${item.item_id || ""}: `);
+  }));
+}
+
+function recallButton(label, onClick) {
+  const button = document.createElement("button");
+  button.className = "recall-button";
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function prefillMessage(text) {
+  input.value = text;
+  resizeInput();
+  input.focus();
 }
 
 function learningButton(label, action, itemId, statusChip) {

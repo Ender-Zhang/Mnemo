@@ -131,6 +131,7 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("event.data?.artifact", body)
                 self.assertIn("event.data?.decision", body)
                 self.assertIn("event.data?.item", body)
+                self.assertIn("event.data?.recall", body)
 
     def test_web_artifact_api_returns_stored_artifact_on_demand(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -209,6 +210,40 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("not found", json.loads(missing_body)["error"])
                 self.assertEqual(invalid_status, 400)
                 self.assertIn("invalid inbox resolution", json.loads(invalid_body)["error"])
+
+    def test_web_recall_card_streams_compact_actionable_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("web recall")
+            mission_id = store.create_mission(conversation_id, "web recall")
+            run_id = store.create_run(conversation_id, mission_id, "Zephyr web recall")
+            store.complete_run(run_id, "Zephyr web recall response")
+            store.upsert_memory_page("knowledge: zephyr", "Zephyr web recall prefers concise cards", confidence=0.9)
+            store.upsert_artifact(
+                mission_id,
+                run_id,
+                "Zephyr web artifact",
+                "Zephyr artifact body " + ("hidden detail " * 40) + "sensitive tail",
+            )
+            store.add_inbox_item(category="decision", title="Approve Zephyr web recall", source_run_id=run_id)
+
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, run_body = server.request(
+                    "POST",
+                    "/api/chat",
+                    {"message": "recall: Zephyr", "conversation_id": conversation_id},
+                )
+
+            self.assertEqual(status, 200)
+            events = [json.loads(line) for line in run_body.splitlines() if line.strip()]
+            recall_event = next(event for event in events if event["type"] == "recall.card")
+            recall = recall_event["data"]["recall"]
+            self.assertEqual(recall["query"], "Zephyr")
+            self.assertGreaterEqual(recall["count"], 4)
+            self.assertIn("artifact", {item["kind"] for item in recall["items"]})
+            self.assertIn("decision", {item["kind"] for item in recall["items"]})
+            self.assertNotIn("sensitive tail", json.dumps(recall_event))
 
     def test_web_learning_memory_actions_resolve_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -381,6 +416,23 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("这次而已", script)
                 self.assertIn("learning-button", css)
                 self.assertIn("event-card.learning", css)
+
+    def test_web_client_asset_renders_recall_cards_inline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn("recall.card", script)
+                self.assertIn("renderRecall", script)
+                self.assertIn("recall-actions", script)
+                self.assertIn("prefillMessage", script)
+                self.assertIn("toggleArtifact(item.artifact_id", script)
+                self.assertIn("decisionButton(\"Approve\"", script)
+                self.assertIn("event-card.recall", css)
+                self.assertIn("recall-button", css)
 
 
 class RunningServer:

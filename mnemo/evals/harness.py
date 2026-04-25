@@ -741,6 +741,36 @@ _PERSONALIZATION_CORE = (
             ),
         ),
     ),
+    EvalCase(
+        case_id="recall-card-projection",
+        name="Recall Card Projection",
+        steps=(
+            EvalStep(
+                message="remember: User prefers Zephyr recall cards",
+                expect_tool_names=("memory_write_candidate",),
+                expect_event_types=("learning.chip",),
+            ),
+            EvalStep(
+                message="artifact: Zephyr launch notes",
+                expect_tool_names=("artifact_update",),
+                expect_event_types=("artifact.card",),
+                expect_same_mission_as_previous=True,
+            ),
+            EvalStep(
+                message="ask: Approve Zephyr launch?",
+                expect_tool_names=("ask_user",),
+                expect_event_types=("decision.card",),
+                expect_same_mission_as_previous=True,
+            ),
+            EvalStep(
+                message="recall: Zephyr",
+                expect_response_contains=("找回",),
+                expect_tool_names=("recall_search",),
+                expect_event_types=("recall.card", "run.completed"),
+                expect_same_mission_as_previous=True,
+            ),
+        ),
+    ),
 )
 
 

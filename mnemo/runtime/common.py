@@ -57,6 +57,8 @@ def tool_result_summary(result: ToolResult) -> str:
         return "记忆候选已记录，等待后续学习流程评估。"
     if result.name == "memory_search":
         return f"找到 {len(result.result.get('matches', []))} 条候选。"
+    if result.name == "recall_search":
+        return f"找回 {len(result.result.get('items', []))} 条上下文。"
     if result.name == "working_note":
         return "工作笔记已记录。"
     if result.name == "artifact_update":
@@ -82,7 +84,19 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
         )
     if not result.ok:
         return
-    if result.name == "memory_write_candidate":
+    if result.name == "recall_search":
+        yield emit(
+            "recall.card",
+            {
+                "recall": {
+                    "query": result.result.get("query") or "",
+                    "scope": result.result.get("scope") or "all",
+                    "count": result.result.get("count") or len(result.result.get("items", [])),
+                    "items": result.result.get("items", []),
+                }
+            },
+        )
+    elif result.name == "memory_write_candidate":
         yield emit(
             "learning.chip",
             {

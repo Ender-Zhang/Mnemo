@@ -18,6 +18,7 @@ ChatEventType = Literal[
     "action.completed",
     "artifact.card",
     "decision.card",
+    "recall.card",
     "learning.chip",
     "source.attached",
     "run.completed",

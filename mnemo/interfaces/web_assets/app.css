@@ -146,6 +146,11 @@ textarea {
   border-left: 4px solid var(--accent);
 }
 
+.event-card.recall {
+  background: #ffffff;
+  border-left: 4px solid #3c6d9c;
+}
+
 .event-card.error {
   background: var(--warn);
   border-left: 4px solid var(--accent-2);
@@ -206,8 +211,38 @@ textarea {
   margin-top: 10px;
 }
 
+.recall-items {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.recall-item {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.recall-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.recall-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
 .decision-button,
-.learning-button {
+.learning-button,
+.recall-button {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
@@ -219,7 +254,8 @@ textarea {
 }
 
 .decision-button:disabled,
-.learning-button:disabled {
+.learning-button:disabled,
+.recall-button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }

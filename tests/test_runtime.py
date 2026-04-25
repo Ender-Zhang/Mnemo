@@ -62,6 +62,32 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("chat.event", [event["event_type"] for event in ledger_events])
             self.assertEqual(events[-1].data["result"]["tool_results"][0]["name"], "memory_write_candidate")
 
+    def test_local_recall_projects_recall_card(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("runtime recall")
+            mission_id = store.create_mission(conversation_id, "runtime recall")
+            seed_run_id = store.create_run(conversation_id, mission_id, "Zephyr runtime handoff")
+            store.complete_run(seed_run_id, "Zephyr handoff can be continued.")
+            store.upsert_memory_page("knowledge: zephyr", "Zephyr needs concise handoff notes", confidence=0.9)
+            store.upsert_artifact(mission_id, seed_run_id, "Zephyr handoff draft", "Zephyr artifact body")
+            store.add_inbox_item(category="decision", title="Approve Zephyr handoff", source_run_id=seed_run_id)
+
+            events = list(
+                stream_local(
+                    RunRequest(message="recall: Zephyr", state_dir=tmp, conversation_id=conversation_id)
+                )
+            )
+
+            event_types = [event.type for event in events]
+            recall_event = next(event for event in events if event.type == "recall.card")
+            result = events[-1].data["result"]
+            self.assertIn("recall.card", event_types)
+            self.assertEqual(result["tool_results"][0]["name"], "recall_search")
+            self.assertGreaterEqual(recall_event.data["recall"]["count"], 4)
+            self.assertEqual(recall_event.data["recall"]["query"], "Zephyr")
+
     def test_provider_runtime_streams_text_response(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider([[ProviderEvent(type="text_delta", text="Hello from model"), ProviderEvent(type="completed")]])

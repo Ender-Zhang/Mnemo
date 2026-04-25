@@ -217,6 +217,16 @@ class LocalAgentRuntime:
                 )
             )
 
+        for query in _extract_prefixed_values(message, ["recall", "找回"]):
+            calls.append(
+                ToolCallEnvelope(
+                    call_id=new_id("call"),
+                    name="recall_search",
+                    arguments={"query": query, "limit": 8, "scope": "all"},
+                    risk="read",
+                )
+            )
+
         for artifact in _extract_prefixed_values(message, ["artifact", "产物"]):
             calls.append(
                 ToolCallEnvelope(
@@ -255,6 +265,9 @@ class LocalAgentRuntime:
             elif result.name == "memory_search":
                 count = len(result.result.get("matches", []))
                 parts.append(f"找到 {count} 条记忆候选。")
+            elif result.name == "recall_search":
+                count = len(result.result.get("items", []))
+                parts.append(f"找回 {count} 条可继续的上下文。")
             elif result.name == "artifact_update":
                 parts.append(f"已更新产物 {result.result['artifact_id']}。")
             elif result.name == "ask_user":
