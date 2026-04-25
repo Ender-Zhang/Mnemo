@@ -37,6 +37,7 @@
 - `StateStore.update_eval_case_status(case_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
 - `StateStore.upsert_artifact(mission_id: str, run_id: str, title: str, body: str, kind: str = "markdown") -> str`
 - `StateStore.get_artifact(artifact_id: str) -> dict[str, Any] | None`
+- `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
@@ -80,6 +81,8 @@
 - `eval_cases` stores draft/passed/failed cases with source run provenance and structured `case` / `result` JSON payloads.
 - `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
 - `get_artifact()` returns `None` for unknown ids and a plain JSON-serializable dict for known ids.
+- `working_notes` stores W0 notes with mission/run provenance, metadata, processing status, and result payloads.
+- CLI W0 inspection must use the read API and remain read-only: `mnemo memory notes`.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
 - CLI graph inspection must use these read APIs and remain read-only: `mnemo memory links <memory_id>`.
 - Chat replay by `event_id` is derived from persisted `chat.event` payloads in run order.
@@ -108,6 +111,7 @@
 | Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
 | Eval case storage | Add, list by target/status, and update result payloads | `tests/test_storage.py`, `tests/test_cli.py` |
 | Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
+| CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
 | Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |

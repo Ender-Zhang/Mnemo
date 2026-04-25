@@ -177,6 +177,43 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_memory_notes_command_lists_open_and_processed_w0_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("memory notes")
+            mission_id = store.create_mission(conversation_id, "list W0 notes")
+            run_id = store.create_run(conversation_id, mission_id, "note")
+            open_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "User wants terse implementation updates",
+                metadata={"retention": "memory_candidate", "confidence": 0.8},
+            )
+            processed_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "Temporary scratchpad context",
+                metadata={"retention": "ephemeral"},
+            )
+            store.update_working_note_status(processed_id, "skipped:ephemeral", result={"reason": "ephemeral"})
+
+            default_notes = _run_cli(["memory", "notes", "--state-dir", tmp, "--json"])
+            all_notes = _run_cli(["memory", "notes", "--status", "all", "--state-dir", tmp, "--json"])
+            plain = _run_cli(["memory", "notes", "--state-dir", tmp])
+
+            self.assertEqual(default_notes.returncode, 0, default_notes.stderr)
+            default_payload = json.loads(default_notes.stdout)
+            self.assertEqual([note["id"] for note in default_payload["notes"]], [open_id])
+            self.assertEqual(default_payload["notes"][0]["metadata"]["retention"], "memory_candidate")
+            self.assertEqual(all_notes.returncode, 0, all_notes.stderr)
+            all_payload = json.loads(all_notes.stdout)
+            self.assertEqual({note["id"] for note in all_payload["notes"]}, {open_id, processed_id})
+            self.assertEqual(store.list_working_notes(status="skipped:ephemeral")[0]["result"], {"reason": "ephemeral"})
+            self.assertIn(f"note {open_id} [open] retention=memory_candidate", plain.stdout)
+            self.assertIn("User wants terse implementation updates", plain.stdout)
+            self.assertNotIn(processed_id, plain.stdout)
+
     def test_memory_list_command_filters_candidates_and_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

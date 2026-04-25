@@ -87,6 +87,7 @@ mnemo prompt inspect <run_id> --state-dir .mnemo
 ## Memory, Skills, And Tools
 
 ```bash
+mnemo memory notes --state-dir .mnemo
 mnemo memory list --state-dir .mnemo
 mnemo memory search "implementation preferences" --state-dir .mnemo
 mnemo memory read <memory_id> --state-dir .mnemo

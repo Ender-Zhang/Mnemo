@@ -24,6 +24,7 @@
 - `StateStore.add_working_note(mission_id: str, run_id: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_working_note_status(note_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
+- CLI: `mnemo memory notes [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory list [--kind candidate|page|all] [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
@@ -36,6 +37,8 @@
 - DreamCycle only turns W0 notes into memory candidates when the note metadata has `retention="memory_candidate"`.
 - W0 ingestion creates draft candidates and marks source notes as `candidate_created`; it never writes stable memory pages directly.
 - W0 notes without durable retention are marked `skipped:ephemeral`; short notes are marked `skipped:too_short`.
+- `mnemo memory notes` must expose read-only W0 working note inventory for DreamCycle inspection.
+- `mnemo memory notes` defaults to open notes; `--status all` means no status filter.
 - Duplicate candidates are rejected as `rejected:duplicate`.
 - Duplicate candidates may reinforce existing page confidence and must create a `reinforces` memory link.
 - Conflicting candidates are not promoted automatically.
@@ -69,6 +72,7 @@
 | High confidence non-conflict | Promote to active memory page | `tests/test_memory.py` |
 | W0 note with memory retention | Create candidate, mark note `candidate_created`, continue normal consolidation | `tests/test_memory.py` |
 | W0 note without memory retention | Mark note `skipped:ephemeral`, create no candidate | `tests/test_memory.py` |
+| CLI W0 note list | Open and processed working notes can be inspected without mutation | `tests/test_cli.py` |
 | Missing or invalid snapshot file | Return `None` | `tests/test_memory.py` |
 | Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
 | Direct association | Search returns linked active pages that do not match the query text | `tests/test_memory.py` |
@@ -91,6 +95,7 @@
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
 - W0 ingestion creates candidates from model-marked working notes and skips ephemeral notes.
+- CLI `memory notes` covers default open notes, unfiltered notes, metadata/result payloads, and compact non-JSON rows.
 - Duplicate reinforcement updates confidence and creates `reinforces`.
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
 - Search/context cards remain compact and omit raw evidence.

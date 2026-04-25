@@ -125,6 +125,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     memory_parser = subparsers.add_parser("memory", help="Search and curate memory")
     memory_subparsers = memory_parser.add_subparsers(dest="memory_command")
+    memory_notes_parser = memory_subparsers.add_parser("notes", help="List W0 working notes")
+    _add_state_dir(memory_notes_parser)
+    memory_notes_parser.add_argument("--status", help="Status filter, or 'all' for no status filter")
+    memory_notes_parser.add_argument("--limit", type=int, default=50)
+    memory_notes_parser.add_argument("--json", action="store_true")
     memory_list_parser = memory_subparsers.add_parser("list", help="List memory candidates or pages")
     _add_state_dir(memory_list_parser)
     memory_list_parser.add_argument("--kind", choices=["candidate", "page", "all"], default="candidate")
@@ -492,7 +497,9 @@ def _cmd_memory(args: argparse.Namespace) -> int:
     engine = MemoryEngine(store)
 
     try:
-        if args.memory_command == "list":
+        if args.memory_command == "notes":
+            result = _working_notes(store, args.status, args.limit)
+        elif args.memory_command == "list":
             result = _list_memory_items(store, args.kind, args.status, args.limit)
         elif args.memory_command == "search":
             result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
@@ -538,6 +545,16 @@ def _cmd_dream(args: argparse.Namespace) -> int:
 
 
 def _print_memory_result(result: dict) -> None:
+    if "notes" in result:
+        for note in result["notes"]:
+            metadata = note.get("metadata") or {}
+            retention = metadata.get("retention") or "ephemeral"
+            print(
+                f"note {note['id']} [{note['status']}] retention={retention} "
+                f"mission={note['mission_id']} run={note['run_id']}: "
+                f"{_short_text(note.get('content', ''))}"
+            )
+        return
     if "snapshot" in result and "exists" in result:
         snapshot = result.get("snapshot")
         if not snapshot:
@@ -618,6 +635,21 @@ def _list_memory_items(store: StateStore, kind: str, status: str | None, limit: 
         "candidates": candidates,
         "pages": pages,
     }
+
+
+def _working_notes(store: StateStore, status: str | None, limit: int) -> dict[str, Any]:
+    limit_value = max(0, int(limit))
+    return {
+        "status": status or "open",
+        "limit": limit_value,
+        "notes": store.list_working_notes(status=_note_status_filter(status), limit=limit_value),
+    }
+
+
+def _note_status_filter(status: str | None) -> str | None:
+    if status == "all":
+        return None
+    return status or "open"
 
 
 def _memory_links(store: StateStore, memory_id: str, direction: str) -> dict[str, Any]:

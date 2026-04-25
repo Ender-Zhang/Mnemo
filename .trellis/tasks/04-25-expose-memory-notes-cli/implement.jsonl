@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI parser and memory command handler"}
+{"file": "mnemo/storage/sqlite.py", "reason": "existing working notes list API"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "W0 working note contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "working notes storage contract"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "CLI placement convention"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "CLI and package validation gate"}
+{"file": "README.md", "reason": "document memory notes command"}
