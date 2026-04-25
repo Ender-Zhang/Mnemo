@@ -618,3 +618,36 @@ Added inline memory learning chip actions with a compact Web API, frontend card 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 75: Inline Recall Cards
+
+**Date**: 2026-04-25
+**Task**: Inline Recall Cards
+**Branch**: `main`
+
+### Summary
+
+Added model-callable recall_search, recall.card projection, inline web recall cards, smoke harness coverage, and checklist/spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6130d1d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
