@@ -231,7 +231,7 @@ class WebInterfaceTests(unittest.TestCase):
                         "provider": "fake",
                         "tool_name": "browser_open",
                         "risk": "external",
-                        "arguments": {"url": "https://example.com"},
+                        "arguments": {"url": "https://example.com", "dry_run": True},
                     },
                 },
                 source_run_id=run_id,
@@ -244,14 +244,72 @@ class WebInterfaceTests(unittest.TestCase):
                     "/api/inbox/resolve",
                     {"item_id": item_id, "resolution": "accepted"},
                 )
+                repeat_status, _, repeat_body = server.request(
+                    "POST",
+                    "/api/inbox/resolve",
+                    {"item_id": item_id, "resolution": "accepted"},
+                )
 
             listed = json.loads(list_body)["items"][0]
-            resolved = json.loads(resolve_body)["item"]
+            resolved_payload = json.loads(resolve_body)
+            repeated_payload = json.loads(repeat_body)
+            resolved = resolved_payload["item"]
+            run_event_types = [event["event_type"] for event in store.get_run_events(run_id)]
             self.assertEqual(status, 200)
             self.assertEqual(resolve_status, 200)
+            self.assertEqual(repeat_status, 200)
             self.assertEqual(listed["action_type"], "tool_approval")
             self.assertEqual(listed["action_data"]["tool_call"]["tool_name"], "browser_open")
             self.assertEqual(resolved["resolution"], "accepted")
+            self.assertEqual(resolved_payload["tool_result"]["tool"], "browser_open")
+            self.assertTrue(resolved_payload["tool_result"]["ok"])
+            self.assertIn("Browser prepared", resolved_payload["tool_result"]["summary"])
+            self.assertFalse(repeated_payload["item"]["changed"])
+            self.assertNotIn("tool_result", repeated_payload)
+            self.assertIn("tool.approval.executing", run_event_types)
+            self.assertIn("tool.approval.executed", run_event_types)
+            self.assertIn("tool.called", run_event_types)
+            self.assertIn("tool.result", run_event_types)
+            self.assertEqual(run_event_types.count("tool.approval.executed"), 1)
+
+    def test_web_rejecting_tool_approval_does_not_execute_tool(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("tool approval reject")
+            mission_id = store.create_mission(conversation_id, "tool approval reject")
+            run_id = store.create_run(conversation_id, mission_id, "open external app")
+            item_id = store.add_inbox_item(
+                category="decision",
+                title="Approve browser_open?",
+                priority=1,
+                action_type="tool_approval",
+                action_data={
+                    "source": "tool_policy",
+                    "tool_call": {
+                        "call_id": "call_browser",
+                        "provider": "fake",
+                        "tool_name": "browser_open",
+                        "risk": "external",
+                        "arguments": {"url": "https://example.com", "dry_run": True},
+                    },
+                },
+                source_run_id=run_id,
+            )
+
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request(
+                    "POST",
+                    "/api/inbox/resolve",
+                    {"item_id": item_id, "resolution": "rejected"},
+                )
+
+            payload = json.loads(body)
+            run_event_types = [event["event_type"] for event in store.get_run_events(run_id)]
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["item"]["resolution"], "rejected")
+            self.assertNotIn("tool_result", payload)
+            self.assertNotIn("tool.approval.executed", run_event_types)
 
     def test_web_recall_card_streams_compact_actionable_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -439,6 +497,7 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("/api/inbox/resolve", script)
                 self.assertIn("resolveDecision", script)
                 self.assertIn("item_id: itemId", script)
+                self.assertIn("payload.tool_result", script)
                 self.assertIn("decision-button", css)
                 self.assertIn("event-card.decision", css)
 

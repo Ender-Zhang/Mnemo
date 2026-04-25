@@ -50,7 +50,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
 - [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
-- [~] Lightweight permission gate for read/write/external/admin exists; denied external/admin calls now create compact `tool_approval` Decision Cards, while side-effect flags, standing authority, approved replay execution, and sandbox profile enforcement are not complete.
+- [~] Lightweight permission gate for read/write/external/admin exists; denied external/admin calls now create compact `tool_approval` Decision Cards and accepted approvals execute once through ToolHarness; side-effect flags, standing authority, and sandbox profile enforcement are not complete.
 - [x] Tool result compression and evidence cards.
 - [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, and safe alias installation exist; shadow dry-run, rollback, extension packaging, and richer eval gates are not complete.
 
@@ -108,7 +108,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] New/reset is guarded while a run is streaming.
 - [x] Inline action cards.
 - [x] Inline artifact cards and artifact viewer.
-- [~] Inline decision cards can render and resolve persisted Inbox decisions, including denied high-risk tool approval requests; standing authority and approved high-risk action replay are not implemented.
+- [~] Inline decision cards can render and resolve persisted Inbox decisions, including denied high-risk tool approval requests and compact approved execution results; standing authority is not implemented.
 - [x] Event replay/resume with `sinceEventId`.
 - [x] Streaming transport API.
 - [x] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
@@ -160,13 +160,14 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
-- [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, Inbox/Decision persistence, and provider after-turn learning packet foundations are implemented; full high-risk approval execution, local/background learning reflection, and richer frontend recall/learning actions remain.
+- [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, Inbox/Decision persistence, provider after-turn learning packets, and one-shot high-risk approval execution are implemented; local/background learning reflection and richer frontend recall/learning actions remain.
 - [ ] Highest-priority integration alignment: SDK/MCP server and external RuntimeAdapter with context capsule boundaries.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
 ## Recently Landed Trellis Tasks
 
 - [x] `04-25-high-risk-tool-decision-cards`: Denied external/admin tool calls now persist compact `tool_approval` Inbox decisions and stream through the existing inline decision-card path without executing the denied handler.
+- [x] `04-25-04-25-approved-tool-approval-execution`: Accepted `tool_approval` Inbox decisions now execute once through ToolHarness and return compact Web/CLI execution metadata.
 - [x] `04-25-implement-after-turn-learning-packet`: Provider runtime now builds a compact after-turn learning packet and lets the model propose 0..N mixed memory/skill/tool/eval candidates through provider-native tool calls.
 - [x] `04-25-04-25-refresh-readme-current-capabilities`: README and public runtime wording now describe the current single-chat runtime, provider setup, web UI, daemon, cancellation, memory/skill/tool operations, backup, and validation workflows.
 - [x] `04-25-implement-memory-query-planner`: Memory search now produces compact query plans, multi-route fused retrieval, stale/tombstone annotations, tool query-plan metadata, and `mnemo memory search --debug-query`.

@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Approved tool_approval decisions execute through ToolHarness."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Inbox action_data drives approved execution."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Full tests and package smoke gates."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Decision resolve should surface execution result compactly."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Decision resolution uses existing chat state only."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Resolution to tool execution spans storage/runtime/API/UI."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse ToolHarness and compact_tool_result."}

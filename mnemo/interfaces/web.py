@@ -14,6 +14,7 @@ from ..core.jsonutil import dumps
 from ..core.models import RunRequest
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
 from ..runtime import stream_local, stream_provider
+from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..memory import MemoryEngine
 from ..storage import StateStore
@@ -230,24 +231,20 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
             store = StateStore(config.state_dir)
             store.initialize()
             try:
-                item = store.resolve_inbox_item(item_id, resolution, notes=notes)
+                result = resolve_inbox_item_with_actions(
+                    store,
+                    item_id,
+                    resolution,
+                    notes=notes,
+                    workspace_root=config.workspace_root,
+                    source="web",
+                )
             except ValueError as exc:
                 message = str(exc)
                 status = HTTPStatus.NOT_FOUND if "not found" in message else HTTPStatus.BAD_REQUEST
                 self._send_json({"error": message}, status=status)
                 return
-            if item.get("source_run_id"):
-                store.append_event(
-                    item["source_run_id"],
-                    "inbox.resolved",
-                    {
-                        "item_id": item["id"],
-                        "resolution": item.get("resolution"),
-                        "changed": item.get("changed"),
-                        "source": "web",
-                    },
-                )
-            self._send_json({"item": item})
+            self._send_json(result)
 
         def _handle_learning_memory(self) -> None:
             try:

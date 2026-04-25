@@ -114,6 +114,8 @@
 - `inbox_items` stores asynchronous user-visible items with priority, category, title/body, action type, structured `action_data`, optional source run, status, resolution, and timestamps.
 - Inbox statuses are `open` and `resolved`; resolutions are `accepted`, `rejected`, and `ignored`.
 - Tool policy approval requests use `action_type="tool_approval"` with compact `action_data.tool_call` containing call id, provider, tool name, risk, and bounded arguments.
+- Resolving an open `tool_approval` item as `accepted` may return compact `tool_result` metadata after the stored call executes through the runtime harness.
+- Repeated `tool_approval` resolution returns `changed=false` and must not re-execute the stored call.
 - `add_inbox_item()` validates category/title and priority 0..3.
 - `list_inbox_items()` returns parsed `action_data`, supports status/category/priority filters, and orders by priority then creation time.
 - `resolve_inbox_item()` resolves only open items; repeated resolution returns `changed=false` with the existing item.
@@ -159,6 +161,7 @@
 | Artifact listing | List/filter artifact metadata without body text | `tests/test_storage.py`, `tests/test_cli.py` |
 | Inbox storage | Add, list/filter, read, and resolve Inbox items with parsed action data | `tests/test_storage.py`, `tests/test_cli.py`, `tests/test_web.py` |
 | Tool approval Inbox item | Denied high-risk tools create compact `tool_approval` action data | `tests/test_tools.py`, `tests/test_runtime.py` |
+| Accepted tool approval resolve | Returns compact `tool_result` once and records approval execution events | `tests/test_cli.py`, `tests/test_web.py` |
 | Inbox repeated resolve | Resolved item returns unchanged instead of mutating resolution again | `tests/test_storage.py` |
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |

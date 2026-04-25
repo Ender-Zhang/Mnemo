@@ -70,6 +70,9 @@
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
 - Denied `external` and `admin` tool calls create persisted Inbox `tool_approval` Decision Cards and must not execute the denied handler.
 - Denied high-risk tool results include compact decision metadata and evidence; raw tool schemas and large arguments must not be exposed in streamed cards.
+- Accepted open `tool_approval` Inbox decisions execute the stored tool call once through `ToolHarness` with an approval policy limited to the approved tool name.
+- Rejected, ignored, malformed, missing-source, unknown-tool, and already-resolved `tool_approval` decisions must not execute tools.
+- Approval execution appends `tool.approval.executing` and `tool.approval.executed` around the normal `tool.called` / `tool.result` ledger events and returns compact `tool_result` metadata to CLI/Web callers.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
 - `compact_tool_result` for crystallization must not include the generated skill body or raw source run payloads.
 - `skill_patch_candidate` is exposed as a normal provider-native tool call and returns patch metadata, not the patched skill body.
@@ -87,6 +90,9 @@
 | Disallowed risk | Return `ToolResult(ok=False)`, persist `tool.denied`, do not call handler | `tests/test_tools.py` |
 | Disallowed external/admin risk | Persist `tool_approval` Inbox decision, emit compact decision evidence/card, do not call handler | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Disallowed non-high-risk tool | Return normal denial without creating a decision item | `tests/test_tools.py` |
+| Accepted tool approval | Execute the stored call once through `ToolHarness` and return compact result metadata | `tests/test_web.py`, `tests/test_cli.py` |
+| Rejected or repeated tool approval | Resolve the Inbox item without executing the stored call | `tests/test_web.py`, `tests/test_cli.py` |
+| Invalid approval tool | Raise before resolving the Inbox item or executing any handler | `tests/test_approvals.py` |
 | Path outside workspace | Return failed tool result with boundary error | `tests/test_standard_tools.py` |
 | File patch exact edit | Admin policy applies exact replacement and returns compact patch evidence | `tests/test_standard_tools.py` |
 | File patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_standard_tools.py` |
@@ -143,6 +149,7 @@
 ### 6. Tests Required
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
 - High-risk denial: assert `tool_approval` Inbox item is persisted and `decision.card` is emitted without executing the handler.
+- High-risk approval: assert an accepted open `tool_approval` item executes once through `ToolHarness`, while rejected and repeated resolutions do not execute.
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
 - Memory search session scope: assert session snippets include provenance ids and omit raw content.
 - Memory health report: assert compact counts, score, and review-card evidence.

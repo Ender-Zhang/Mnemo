@@ -605,6 +605,55 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: inbox item not found: inbox_missing", missing.stderr)
             self.assertNotIn("Traceback", missing.stderr)
 
+    def test_inbox_resolve_executes_accepted_tool_approval_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("tool approval cli")
+            mission_id = store.create_mission(conversation_id, "tool approval cli")
+            run_id = store.create_run(conversation_id, mission_id, "open browser")
+
+            def add_approval(call_id: str) -> str:
+                return store.add_inbox_item(
+                    category="decision",
+                    title="Approve browser_open?",
+                    priority=1,
+                    body="tool risk is not allowed: external",
+                    action_type="tool_approval",
+                    action_data={
+                        "source": "tool_policy",
+                        "tool_call": {
+                            "call_id": call_id,
+                            "provider": "fake",
+                            "tool_name": "browser_open",
+                            "risk": "external",
+                            "arguments": {"url": "https://example.com", "dry_run": True},
+                        },
+                    },
+                    source_run_id=run_id,
+                )
+
+            json_item_id = add_approval("call_browser_json")
+            plain_item_id = add_approval("call_browser_plain")
+
+            accepted = _run_cli(["inbox", "resolve", json_item_id, "--accept", "--state-dir", tmp, "--json"])
+            repeated = _run_cli(["inbox", "resolve", json_item_id, "--accept", "--state-dir", tmp, "--json"])
+            plain = _run_cli(["inbox", "resolve", plain_item_id, "--accept", "--state-dir", tmp])
+
+            accepted_payload = json.loads(accepted.stdout)
+            repeated_payload = json.loads(repeated.stdout)
+            run_event_types = [event["event_type"] for event in store.get_run_events(run_id)]
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+            self.assertEqual(accepted_payload["tool_result"]["tool"], "browser_open")
+            self.assertTrue(accepted_payload["tool_result"]["ok"])
+            self.assertIn("Browser prepared", accepted_payload["tool_result"]["summary"])
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertFalse(repeated_payload["item"]["changed"])
+            self.assertNotIn("tool_result", repeated_payload)
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn("tool_result browser_open ok=True: Browser prepared", plain.stdout)
+            self.assertEqual(run_event_types.count("tool.approval.executed"), 2)
+
     def test_memory_missing_candidate_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             promote = _run_cli(["memory", "promote", "mem_missing", "--state-dir", tmp])

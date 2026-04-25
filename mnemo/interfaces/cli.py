@@ -22,6 +22,7 @@ from ..providers import (
     provider_capabilities,
 )
 from ..runtime import DaemonRunner, result_as_dict, run_local, run_provider, stream_local
+from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
 from ..skills import SkillService, default_skill_roots
@@ -813,13 +814,13 @@ def _cmd_inbox(args: argparse.Namespace) -> int:
                 raise MnemoError(f"inbox item not found: {args.item_id}")
             result = {"item": item}
         elif command == "resolve":
-            result = {
-                "item": store.resolve_inbox_item(
-                    args.item_id,
-                    _inbox_resolution_from_args(args),
-                    notes=args.notes,
-                )
-            }
+            result = resolve_inbox_item_with_actions(
+                store,
+                args.item_id,
+                _inbox_resolution_from_args(args),
+                notes=args.notes,
+                source="cli",
+            )
         else:
             raise MnemoError("inbox command requires list, show, or resolve")
     except ValueError as exc:
@@ -844,6 +845,9 @@ def _print_inbox_result(result: dict[str, Any]) -> None:
             print(item["body"])
         if item.get("action_data"):
             print(f"action_data={dumps(item['action_data'])}")
+        if result.get("tool_result"):
+            tool = result["tool_result"]
+            print(f"tool_result {tool.get('tool') or tool.get('name')} ok={tool.get('ok')}: {tool.get('summary')}")
         return
     print(dumps(result))
 

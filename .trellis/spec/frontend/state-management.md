@@ -23,6 +23,7 @@
 - API: `POST /api/runs/cancel` with JSON `{ "run_id": string, "reason"?: string }`
 - API: `GET /api/inbox?status=open|resolved|all&priority=critical|high|normal|low`
 - API: `POST /api/inbox/resolve` with JSON `{ "item_id": string, "resolution": "accepted"|"rejected"|"ignored", "notes"?: string }`
+- API response: accepted tool approvals may include compact `{ "tool_result": { "tool": string, "ok": boolean, "summary": string } }`.
 - API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject" }`
 
 ### 3. Contracts
@@ -38,7 +39,7 @@
 - Recall cards render from streamed compact result items and reuse artifact body fetch, decision resolution, or composer prefill for actions.
 - Loaded artifacts are cached in `state.artifacts` for the current browser session.
 - Decision cards resolve persisted Inbox items by id and keep status local to the card.
-- Tool approval cards also resolve persisted Inbox items by id; approval execution replay remains a backend follow-up.
+- Tool approval cards use the same decision resolution path and render any returned compact `tool_result` as an inline action/error card without adding browser persistence keys.
 - Learning chips resolve persisted memory candidates by id and keep status local to the card.
 - While a run is streaming, the composer exposes one stop control that calls `/api/runs/cancel`.
 - `activeRunId` is a volatile current-stream id and must not be stored in `localStorage`.
@@ -58,7 +59,7 @@
 | Artifact viewer asset | Contains on-demand artifact fetch and body rendering hooks | `tests/test_web.py` |
 | Recall card asset | Handles `recall.card`, compact item rendering, artifact open, decision resolve, and composer prefill hooks | `tests/test_web.py` |
 | Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
-| Tool approval card | Uses the same decision resolution path without adding browser state keys | `tests/test_runtime.py` |
+| Tool approval card | Uses the same decision resolution path, renders compact approval results, and adds no browser state keys | `tests/test_web.py`, `tests/test_runtime.py` |
 | Learning memory action | Promotes or rejects a persisted memory candidate and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
 | Busy reset | Reset is disabled/guarded while a stream is active | `tests/test_web.py` |

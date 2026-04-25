@@ -596,6 +596,10 @@ async function resolveDecision(itemId, resolution, statusChip, actions) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
     statusChip.textContent = payload.item?.resolution || resolution;
+    if (payload.tool_result) {
+      const tool = payload.tool_result;
+      addCard(tool.ok ? "action" : "error", tool.tool || tool.name || "Action", tool.summary || "Tool completed");
+    }
   } catch (error) {
     statusChip.textContent = "open";
     for (const button of actions.querySelectorAll("button")) {
