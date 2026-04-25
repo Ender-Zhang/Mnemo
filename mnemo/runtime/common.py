@@ -106,6 +106,9 @@ def tool_result_summary(result: ToolResult) -> str:
     if result.summary:
         return result.summary
     if not result.ok:
+        decision = result.result.get("decision")
+        if isinstance(decision, dict) and decision.get("item_id"):
+            return "需要用户确认。"
         return result.error or "Tool call failed."
     if result.name == "memory_write_candidate":
         return "记忆候选已记录，等待后续学习流程评估。"
@@ -137,6 +140,9 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
             },
         )
     if not result.ok:
+        decision = _decision_payload(result)
+        if decision:
+            yield emit("decision.card", {"decision": decision})
         return
     if result.name == "recall_search":
         yield emit(
@@ -178,19 +184,9 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
             },
         )
     elif result.name == "ask_user":
-        decision = result.result.get("decision") or {}
-        yield emit(
-            "decision.card",
-            {
-                "decision": {
-                    "item_id": decision.get("item_id"),
-                    "question": decision.get("question") or "Decision required",
-                    "reason": decision.get("reason") or "",
-                    "status": decision.get("status") or "open",
-                    "options": decision.get("options") or ["accepted", "rejected", "ignored"],
-                }
-            },
-        )
+        decision = _decision_payload(result)
+        if decision:
+            yield emit("decision.card", {"decision": decision})
 
 
 def _learning_candidate_item(result: ToolResult) -> dict[str, Any] | None:
@@ -216,6 +212,25 @@ def _learning_candidate_item(result: ToolResult) -> dict[str, Any] | None:
             "summary": "可能沉淀一个回放评测用例。",
         }
     return None
+
+
+def _decision_payload(result: ToolResult) -> dict[str, Any] | None:
+    decision = result.result.get("decision")
+    if not isinstance(decision, dict):
+        return None
+    item_id = decision.get("item_id")
+    if not item_id:
+        return None
+    return {
+        "item_id": item_id,
+        "question": decision.get("question") or "Decision required",
+        "reason": decision.get("reason") or "",
+        "status": decision.get("status") or "open",
+        "options": decision.get("options") or ["accepted", "rejected", "ignored"],
+        "action_type": decision.get("action_type"),
+        "tool_name": decision.get("tool_name"),
+        "risk": decision.get("risk"),
+    }
 
 
 def result_as_dict(result: RunResult) -> dict[str, Any]:

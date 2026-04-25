@@ -478,6 +478,43 @@ class LocalRuntimeTests(unittest.TestCase):
             tool_names = [tool.name for tool in provider.requests[0].tools]
             self.assertIn("lookup_memory", tool_names)
 
+    def test_provider_runtime_projects_denied_external_tool_as_decision_card(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="browser_open",
+                                arguments={"url": "https://example.com", "dry_run": True},
+                                call_id="call_browser",
+                                provider="fake",
+                                risk="external",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="text_delta", text="I need approval."), ProviderEvent(type="completed")],
+                    [ProviderEvent(type="completed")],
+                ]
+            )
+
+            events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="open site", state_dir=tmp)))
+
+            decision_event = next(event for event in events if event.type == "decision.card")
+            decision = decision_event.data["decision"]
+            store = StateStore(tmp)
+            inbox_item = store.get_inbox_item(decision["item_id"])
+            tool_result = events[-1].data["result"]["tool_results"][0]
+
+            self.assertEqual(decision["action_type"], "tool_approval")
+            self.assertEqual(decision["tool_name"], "browser_open")
+            self.assertEqual(decision["risk"], "external")
+            self.assertFalse(tool_result["ok"])
+            self.assertEqual(inbox_item["action_type"], "tool_approval")
+            self.assertEqual(inbox_item["action_data"]["tool_call"]["arguments"]["url"], "https://example.com")
+
     def test_provider_runtime_completes_cancelled_when_signal_is_observed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = CancellingProvider(tmp)

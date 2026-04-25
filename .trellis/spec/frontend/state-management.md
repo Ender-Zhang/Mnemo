@@ -38,6 +38,7 @@
 - Recall cards render from streamed compact result items and reuse artifact body fetch, decision resolution, or composer prefill for actions.
 - Loaded artifacts are cached in `state.artifacts` for the current browser session.
 - Decision cards resolve persisted Inbox items by id and keep status local to the card.
+- Tool approval cards also resolve persisted Inbox items by id; approval execution replay remains a backend follow-up.
 - Learning chips resolve persisted memory candidates by id and keep status local to the card.
 - While a run is streaming, the composer exposes one stop control that calls `/api/runs/cancel`.
 - `activeRunId` is a volatile current-stream id and must not be stored in `localStorage`.
@@ -57,6 +58,7 @@
 | Artifact viewer asset | Contains on-demand artifact fetch and body rendering hooks | `tests/test_web.py` |
 | Recall card asset | Handles `recall.card`, compact item rendering, artifact open, decision resolve, and composer prefill hooks | `tests/test_web.py` |
 | Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
+| Tool approval card | Uses the same decision resolution path without adding browser state keys | `tests/test_runtime.py` |
 | Learning memory action | Promotes or rejects a persisted memory candidate and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
 | Busy reset | Reset is disabled/guarded while a stream is active | `tests/test_web.py` |

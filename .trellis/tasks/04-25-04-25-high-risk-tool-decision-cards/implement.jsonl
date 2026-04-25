@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Tool policy denial and decision-card projection contract."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Inbox item action data and resolution storage contract."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Full tests and package smoke gates."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Decision cards are inline timeline cards."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Decision resolution stays inside chat resume state."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Denied tool to Inbox to event/card spans layers."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse ask_user decision shape and compact evidence."}

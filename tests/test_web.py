@@ -211,6 +211,48 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(invalid_status, 400)
                 self.assertIn("invalid inbox resolution", json.loads(invalid_body)["error"])
 
+    def test_web_resolves_tool_approval_decision_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("tool approval")
+            mission_id = store.create_mission(conversation_id, "tool approval")
+            run_id = store.create_run(conversation_id, mission_id, "open external app")
+            item_id = store.add_inbox_item(
+                category="decision",
+                title="Approve browser_open?",
+                priority=1,
+                body="tool risk is not allowed: external",
+                action_type="tool_approval",
+                action_data={
+                    "source": "tool_policy",
+                    "tool_call": {
+                        "call_id": "call_browser",
+                        "provider": "fake",
+                        "tool_name": "browser_open",
+                        "risk": "external",
+                        "arguments": {"url": "https://example.com"},
+                    },
+                },
+                source_run_id=run_id,
+            )
+
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, list_body = server.request("GET", "/api/inbox?status=open&priority=high")
+                resolve_status, _, resolve_body = server.request(
+                    "POST",
+                    "/api/inbox/resolve",
+                    {"item_id": item_id, "resolution": "accepted"},
+                )
+
+            listed = json.loads(list_body)["items"][0]
+            resolved = json.loads(resolve_body)["item"]
+            self.assertEqual(status, 200)
+            self.assertEqual(resolve_status, 200)
+            self.assertEqual(listed["action_type"], "tool_approval")
+            self.assertEqual(listed["action_data"]["tool_call"]["tool_name"], "browser_open")
+            self.assertEqual(resolved["resolution"], "accepted")
+
     def test_web_recall_card_streams_compact_actionable_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

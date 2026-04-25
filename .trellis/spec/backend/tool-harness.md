@@ -68,6 +68,8 @@
 - `skill_propose_candidate`, `tool_propose_candidate`, and `eval_propose_case` return compact candidate evidence and can project unified `learning.chip` events.
 - `ask_user` is `write` risk because it persists an Inbox decision item.
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
+- Denied `external` and `admin` tool calls create persisted Inbox `tool_approval` Decision Cards and must not execute the denied handler.
+- Denied high-risk tool results include compact decision metadata and evidence; raw tool schemas and large arguments must not be exposed in streamed cards.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
 - `compact_tool_result` for crystallization must not include the generated skill body or raw source run payloads.
 - `skill_patch_candidate` is exposed as a normal provider-native tool call and returns patch metadata, not the patched skill body.
@@ -83,6 +85,8 @@
 | --- | --- | --- |
 | Unknown tool name | Raise `ToolError` before handler execution | Registry unit test |
 | Disallowed risk | Return `ToolResult(ok=False)`, persist `tool.denied`, do not call handler | `tests/test_tools.py` |
+| Disallowed external/admin risk | Persist `tool_approval` Inbox decision, emit compact decision evidence/card, do not call handler | `tests/test_tools.py`, `tests/test_runtime.py` |
+| Disallowed non-high-risk tool | Return normal denial without creating a decision item | `tests/test_tools.py` |
 | Path outside workspace | Return failed tool result with boundary error | `tests/test_standard_tools.py` |
 | File patch exact edit | Admin policy applies exact replacement and returns compact patch evidence | `tests/test_standard_tools.py` |
 | File patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_standard_tools.py` |
@@ -129,6 +133,7 @@
 - Good: expose user-facing cross-surface recall through one read-only `recall_search` tool instead of separate dashboard workflows.
 - Good: expose large or rare tool surfaces through `tool_search` and `tool_expand_schema` rather than dumping every schema into every reduced prompt mode.
 - Good: represent user approvals as Inbox decision item ids, not transient-only chat text.
+- Good: turn blocked external/admin actions into compact Decision Cards instead of executing them.
 - Good: use `file_patch` for bounded edits instead of full-file overwrite when the old text is known.
 - Good: use connector tools as side-effect handoffs from model decisions, not as workflow branches.
 - Bad: adding a handler that performs side effects while declaring `risk="read"`.
@@ -137,6 +142,7 @@
 
 ### 6. Tests Required
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
+- High-risk denial: assert `tool_approval` Inbox item is persisted and `decision.card` is emitted without executing the handler.
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
 - Memory search session scope: assert session snippets include provenance ids and omit raw content.
 - Memory health report: assert compact counts, score, and review-card evidence.

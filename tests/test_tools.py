@@ -100,8 +100,39 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertFalse(called["value"])
             self.assertFalse(result.ok)
             self.assertIn("not allowed", result.summary)
+            self.assertEqual(result.result["decision"]["action_type"], "tool_approval")
+            self.assertEqual(result.result["decision"]["tool_name"], "external_fetch")
+            self.assertEqual(result.evidence[0]["kind"], "decision")
+            item = store.get_inbox_item(result.result["decision"]["item_id"])
+            self.assertEqual(item["category"], "decision")
+            self.assertEqual(item["action_type"], "tool_approval")
+            self.assertEqual(item["action_data"]["tool_call"]["tool_name"], "external_fetch")
+            self.assertEqual(item["action_data"]["tool_call"]["arguments"], {})
             events = store.get_run_events(run_id)
-            self.assertIn("tool.denied", [event["event_type"] for event in events])
+            denied = next(event for event in events if event["event_type"] == "tool.denied")
+            self.assertEqual(denied["payload"]["decision"]["item_id"], result.result["decision"]["item_id"])
+
+    def test_non_high_risk_denial_does_not_create_decision_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            result = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                policy=ToolExecutionPolicy(denied_tools=("memory_search",)),
+            ).execute(
+                ToolCallEnvelope(
+                    name="memory_search",
+                    arguments={"query": "anything"},
+                    call_id="call_read_denied",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertNotIn("decision", result.result)
+            self.assertEqual(store.list_inbox_items(status=None), [])
 
     def test_compact_tool_result_keeps_summary_and_evidence_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -965,13 +965,17 @@ class ToolHarness:
         started_at: float,
     ) -> ToolResult:
         ended_at = time.time()
+        result_payload: dict[str, Any] = {"permission": asdict(permission)}
+        decision = _approval_decision_for_denied_tool(self.store, call, spec, permission, run_id)
+        if decision:
+            result_payload["decision"] = decision
         result = _with_boundary_payload(
             ToolResult(
                 call_id=call.call_id,
                 name=call.name,
                 ok=False,
                 error=permission.reason,
-                result={"permission": asdict(permission)},
+                result=result_payload,
             )
         )
         self.store.record_tool_call(
@@ -995,6 +999,7 @@ class ToolHarness:
                 "tool_name": call.name,
                 "risk": spec.risk,
                 "reason": permission.reason,
+                "decision": decision,
             },
         )
         self.ledger.append(
@@ -1110,6 +1115,9 @@ def _with_boundary_payload(result: ToolResult) -> ToolResult:
 
 def _tool_summary(result: ToolResult) -> str:
     if not result.ok:
+        decision = result.result.get("decision")
+        if isinstance(decision, dict) and decision.get("item_id"):
+            return f"Tool requires user approval: {decision.get('item_id')} ({result.error or 'not allowed'})."
         return result.error or "Tool call failed."
     if result.name == "memory_write_candidate":
         status = str(result.result.get("status") or "draft")
@@ -1173,6 +1181,18 @@ def _tool_summary(result: ToolResult) -> str:
 
 def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
     if not result.ok:
+        decision = result.result.get("decision")
+        if isinstance(decision, dict) and decision.get("item_id"):
+            return [
+                {
+                    "kind": "decision",
+                    "id": str(decision.get("item_id") or ""),
+                    "title": str(decision.get("question") or "Tool approval required"),
+                    "status": decision.get("status") or "open",
+                    "tool_name": result.name,
+                    "risk": decision.get("risk"),
+                }
+            ]
         return [
             {
                 "kind": "tool_error",
@@ -1387,6 +1407,74 @@ def _evidence(kind: str, item_id: Any, title: str) -> dict[str, Any]:
         "id": str(item_id or ""),
         "title": title,
     }
+
+
+def _approval_decision_for_denied_tool(
+    store: StateStore,
+    call: ToolCallEnvelope,
+    spec: ToolSpec,
+    permission: ToolPermission,
+    run_id: str,
+) -> dict[str, Any] | None:
+    if spec.risk not in {"external", "admin"}:
+        return None
+    question = f"Approve {spec.name}?"
+    item_id = store.add_inbox_item(
+        category="decision",
+        title=question,
+        priority=0 if spec.risk == "admin" else 1,
+        body=permission.reason,
+        action_type="tool_approval",
+        action_data={
+            "options": [
+                {"id": "accepted", "label": "Approve"},
+                {"id": "rejected", "label": "Reject"},
+                {"id": "ignored", "label": "Ignore"},
+            ],
+            "source": "tool_policy",
+            "tool_call": {
+                "call_id": call.call_id,
+                "provider": call.provider,
+                "tool_name": spec.name,
+                "risk": spec.risk,
+                "arguments": _compact_tool_arguments(call.arguments),
+            },
+        },
+        source_run_id=run_id,
+    )
+    return {
+        "item_id": item_id,
+        "question": question,
+        "reason": permission.reason,
+        "status": "open",
+        "options": ["accepted", "rejected", "ignored"],
+        "action_type": "tool_approval",
+        "tool_name": spec.name,
+        "risk": spec.risk,
+    }
+
+
+def _compact_tool_arguments(value: Any, *, limit: int = 1200) -> Any:
+    if isinstance(value, dict):
+        compact: dict[str, Any] = {}
+        for key, item in value.items():
+            compact[str(key)] = _compact_tool_arguments(item, limit=max(120, limit // 2))
+            if len(dumps(compact)) > limit:
+                compact["..."] = "truncated"
+                break
+        return compact
+    if isinstance(value, list):
+        compact_items = [_compact_tool_arguments(item, limit=max(120, limit // 2)) for item in value[:10]]
+        if len(value) > 10:
+            compact_items.append("...[truncated]...")
+        return compact_items
+    if isinstance(value, str):
+        if len(value) <= limit:
+            return value
+        return value[: max(0, limit - 20)].rstrip() + "...[truncated]"
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    return str(value)[:limit]
 
 
 def _compact_memory_match(item: dict[str, Any]) -> dict[str, Any]:
