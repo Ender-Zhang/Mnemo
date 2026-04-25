@@ -1025,3 +1025,37 @@ Added dependency-free MCP-style tool descriptors, direct tool calls, JSON-RPC JS
 ### Next Steps
 
 - None - task complete
+
+
+## Session 87: Scheduled watch cron foundation
+
+**Date**: 2026-04-25
+**Task**: Scheduled watch cron foundation
+**Branch**: `main`
+
+### Summary
+
+Added durable scheduled watch/cron items, simple schedule parsing, CLI/MCP registration, scheduled status, and due-item enqueue into the existing daemon queue.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5afd8fd` | (see git log) |
+| `bc95af8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
