@@ -1181,3 +1181,37 @@ Added mnemo config smoke for OpenAI-compatible and Anthropic provider endpoint c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Web artifact viewer
+
+**Date**: 2026-04-25
+**Task**: Web artifact viewer
+**Branch**: `main`
+
+### Summary
+
+Added on-demand artifact viewing in the single-chat web UI: storage lookup, /api/artifacts endpoint, compact artifact.card metadata, frontend viewer, tests, and specs/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a6c5b6` | (see git log) |
+| `4c06ba8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
