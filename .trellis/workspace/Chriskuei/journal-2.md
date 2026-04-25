@@ -398,3 +398,41 @@ Added compact conversation and mission inspection commands so CLI users can reco
 ### Next Steps
 
 - None - task complete
+
+
+## Session 69: Normalize missing run trace CLI errors
+
+**Date**: 2026-04-25
+**Task**: Normalize missing run trace CLI errors
+**Branch**: `main`
+
+### Summary
+
+Made CLI trace inspection commands fail clearly for unknown run ids instead of returning empty traces.
+
+### Main Changes
+
+- Added a shared `_require_run()` CLI helper around `StateStore.get_run()`.
+- `mnemo events`, `mnemo replay`, and `mnemo harness replay` now normalize missing run ids as `mnemo: run not found: <id>`.
+- Reused the helper for `runs show` and `evals create` to avoid diverging run validation paths.
+- Updated error-handling specs and implementation tracking.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4f5ef4b` | (see git log) |
+| `1172507` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
