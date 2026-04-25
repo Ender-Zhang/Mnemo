@@ -11,54 +11,75 @@ L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
 W0_MEMORY_RETENTION = "memory_candidate"
 DEFAULT_W0_CONFIDENCE = 0.62
 MIN_W0_CANDIDATE_CHARS = 12
+MEMORY_SEARCH_SCOPES = {"memory", "stable", "sessions", "all"}
 
 
 class MemoryEngine:
     def __init__(self, store: Any):
         self.store = store
 
-    def search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def search(self, query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]:
         normalized_query = query.strip()
         if not normalized_query:
             return []
-
-        page_limit = max(limit, 1)
-        candidate_limit = max(limit, 1)
-        pages = self.store.search_memory_pages(normalized_query, limit=page_limit)
-        candidates = self.store.search_memory_candidates(normalized_query, limit=candidate_limit)
+        normalized_scope = _normalize_search_scope(search_scope)
 
         results: list[dict[str, Any]] = []
-        for page in pages:
-            results.append(
-                {
-                    "type": "page",
-                    "id": page["id"],
-                    "title": page["title"],
-                    "content": page["content"],
-                    "scope": page["scope"],
-                    "confidence": page["confidence"],
-                    "status": page["status"],
-                    "source_candidate_id": page.get("source_candidate_id"),
-                }
-            )
-        for candidate in candidates:
-            results.append(
-                {
-                    "type": "candidate",
-                    "id": candidate["id"],
-                    "claim": candidate["claim"],
-                    "dimension": candidate.get("dimension"),
-                    "scope": candidate["scope"],
-                    "confidence": candidate["confidence"],
-                    "status": candidate["status"],
-                    "evidence": candidate.get("evidence", []),
-                }
-            )
-        results.extend(self._associated_pages(pages, seen_ids={item["id"] for item in results}, limit=limit))
+        if normalized_scope in {"memory", "all"}:
+            page_limit = max(limit, 1)
+            candidate_limit = max(limit, 1)
+            pages = self.store.search_memory_pages(normalized_query, limit=page_limit)
+            candidates = self.store.search_memory_candidates(normalized_query, limit=candidate_limit)
+
+            for page in pages:
+                results.append(
+                    {
+                        "type": "page",
+                        "id": page["id"],
+                        "title": page["title"],
+                        "content": page["content"],
+                        "scope": page["scope"],
+                        "confidence": page["confidence"],
+                        "status": page["status"],
+                        "source_candidate_id": page.get("source_candidate_id"),
+                    }
+                )
+            for candidate in candidates:
+                results.append(
+                    {
+                        "type": "candidate",
+                        "id": candidate["id"],
+                        "claim": candidate["claim"],
+                        "dimension": candidate.get("dimension"),
+                        "scope": candidate["scope"],
+                        "confidence": candidate["confidence"],
+                        "status": candidate["status"],
+                        "evidence": candidate.get("evidence", []),
+                    }
+                )
+            results.extend(self._associated_pages(pages, seen_ids={item["id"] for item in results}, limit=limit))
+
+        if normalized_scope in {"sessions", "all"}:
+            search_session_messages = getattr(self.store, "search_session_messages", None)
+            if search_session_messages:
+                for message in search_session_messages(normalized_query, limit=max(limit, 1)):
+                    results.append(
+                        {
+                            "type": "session_message",
+                            "id": message["id"],
+                            "message_id": message.get("message_id") or message["id"],
+                            "conversation_id": message["conversation_id"],
+                            "mission_id": message["mission_id"],
+                            "run_id": message["run_id"],
+                            "role": message["role"],
+                            "snippet": message["snippet"],
+                            "created_at": message["created_at"],
+                        }
+                    )
         return results
 
-    def context_cards(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        return [_context_card(item) for item in self.search(query, limit=limit)]
+    def context_cards(self, query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]:
+        return [_context_card(item) for item in self.search(query, limit=limit, search_scope=search_scope)]
 
     def ingest_working_notes(self, limit: int = 20) -> dict[str, Any]:
         list_notes = getattr(self.store, "list_working_notes", None)
@@ -385,6 +406,19 @@ def _context_card(item: dict[str, Any]) -> dict[str, Any]:
             card["relation"] = item.get("relation")
             card["linked_from"] = item.get("linked_from")
         return card
+    if item["type"] == "session_message":
+        return {
+            "id": item["id"],
+            "type": "session_message",
+            "title": f"{item.get('role', 'message')} message",
+            "summary": _truncate(item.get("snippet", "")),
+            "conversation_id": item.get("conversation_id"),
+            "mission_id": item.get("mission_id"),
+            "run_id": item.get("run_id"),
+            "message_id": item.get("message_id") or item.get("id"),
+            "role": item.get("role"),
+            "created_at": item.get("created_at"),
+        }
     return {
         "id": item["id"],
         "type": "candidate",
@@ -458,6 +492,15 @@ def _is_conflict(left: str, right: str) -> bool:
 
 def _normalize_space(value: str) -> str:
     return " ".join(value.strip().split())
+
+
+def _normalize_search_scope(value: str) -> str:
+    normalized = str(value or "memory").strip().casefold()
+    if normalized not in MEMORY_SEARCH_SCOPES:
+        raise ValueError(f"invalid memory search scope: {value}")
+    if normalized == "stable":
+        return "memory"
+    return normalized
 
 
 def _truncate(value: str, limit: int = 220) -> str:

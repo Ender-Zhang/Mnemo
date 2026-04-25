@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import re
 import shutil
 import sqlite3
 import time
@@ -13,12 +14,13 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
 MANAGED_STATE_FILES = ("state.db",)
 QUEUE_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
+SESSION_MESSAGE_ROLES = ("user", "assistant", "tool", "system")
 
 
 @dataclass(frozen=True)
@@ -92,6 +94,17 @@ class StateStore:
                     output_text TEXT,
                     created_at REAL NOT NULL,
                     completed_at REAL
+                );
+
+                CREATE TABLE IF NOT EXISTS session_messages (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                    mission_id TEXT NOT NULL REFERENCES missions(id),
+                    run_id TEXT NOT NULL REFERENCES runs(id),
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at REAL NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS run_events (
@@ -232,6 +245,12 @@ class StateStore:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id, seq);
+                CREATE INDEX IF NOT EXISTS idx_session_messages_conversation
+                    ON session_messages(conversation_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_session_messages_run
+                    ON session_messages(run_id, created_at);
+                CREATE INDEX IF NOT EXISTS idx_session_messages_role
+                    ON session_messages(role, created_at);
                 CREATE INDEX IF NOT EXISTS idx_memory_candidates_claim ON memory_candidates(claim);
                 CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status);
                 CREATE INDEX IF NOT EXISTS idx_memory_pages_title ON memory_pages(title);
@@ -417,15 +436,49 @@ class StateStore:
                 """,
                 (run_id, conversation_id, mission_id, "running", input_text, now),
             )
+            _insert_session_message(
+                conn,
+                conversation_id=conversation_id,
+                mission_id=mission_id,
+                run_id=run_id,
+                role="user",
+                content=input_text,
+                metadata={"source": "run.input"},
+                created_at=now,
+            )
         return run_id
 
     def complete_run(self, run_id: str, output_text: str, status: str = "completed") -> None:
         now = time.time()
         with self.connect() as conn:
+            run = conn.execute(
+                "SELECT conversation_id, mission_id FROM runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
             conn.execute(
                 "UPDATE runs SET status = ?, output_text = ?, completed_at = ? WHERE id = ?",
                 (status, output_text, now, run_id),
             )
+            if run and str(output_text or "").strip():
+                existing = conn.execute(
+                    """
+                    SELECT id FROM session_messages
+                    WHERE run_id = ? AND role = 'assistant'
+                    LIMIT 1
+                    """,
+                    (run_id,),
+                ).fetchone()
+                if not existing:
+                    _insert_session_message(
+                        conn,
+                        conversation_id=str(run["conversation_id"]),
+                        mission_id=str(run["mission_id"]),
+                        run_id=run_id,
+                        role="assistant",
+                        content=output_text,
+                        metadata={"source": "run.output", "status": status},
+                        created_at=now,
+                    )
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -469,6 +522,65 @@ class StateStore:
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [_run_summary_from_row(row) for row in rows]
+
+    def record_session_message(
+        self,
+        conversation_id: str,
+        mission_id: str,
+        run_id: str,
+        role: str,
+        content: str,
+        *,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        with self.connect() as conn:
+            return _insert_session_message(
+                conn,
+                conversation_id=conversation_id,
+                mission_id=mission_id,
+                run_id=run_id,
+                role=role,
+                content=content,
+                metadata=metadata,
+                created_at=time.time(),
+            )
+
+    def search_session_messages(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        normalized_query = " ".join(str(query or "").split())
+        limit_value = max(0, int(limit))
+        if not normalized_query or limit_value == 0:
+            return []
+
+        with self.connect() as conn:
+            if _session_messages_fts_available(conn):
+                fts_query = _session_messages_fts_query(normalized_query)
+                if fts_query:
+                    try:
+                        rows = conn.execute(
+                            """
+                            SELECT
+                                sm.id,
+                                sm.conversation_id,
+                                sm.mission_id,
+                                sm.run_id,
+                                sm.role,
+                                snippet(session_messages_fts, 0, '', '', '...', 18) AS snippet,
+                                sm.created_at
+                            FROM session_messages_fts
+                            JOIN session_messages AS sm
+                                ON sm.rowid = session_messages_fts.rowid
+                            WHERE session_messages_fts MATCH ?
+                            ORDER BY bm25(session_messages_fts), sm.created_at DESC
+                            LIMIT ?
+                            """,
+                            (fts_query, limit_value),
+                        ).fetchall()
+                        matches = [_session_message_search_from_row(row) for row in rows]
+                        if matches:
+                            return matches
+                    except sqlite3.OperationalError:
+                        pass
+            return _search_session_messages_like(conn, normalized_query, limit_value)
 
     def cancel_run(self, run_id: str, *, reason: str = "cancelled") -> dict[str, Any]:
         now = time.time()
@@ -1622,6 +1734,13 @@ def _run_summary_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return result
 
 
+def _session_message_search_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["snippet"] = _preview_text(str(result.get("snippet") or ""), limit=360)
+    result["message_id"] = result["id"]
+    return result
+
+
 def _preview_text(value: str, limit: int = 120) -> str:
     text = " ".join(value.split())
     if len(text) <= limit:
@@ -1901,13 +2020,218 @@ def _migration_generated_tools(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_session_messages_fts(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS session_messages (
+            id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL REFERENCES conversations(id),
+            mission_id TEXT NOT NULL REFERENCES missions(id),
+            run_id TEXT NOT NULL REFERENCES runs(id),
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            created_at REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_session_messages_conversation
+            ON session_messages(conversation_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_session_messages_run
+            ON session_messages(run_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_session_messages_role
+            ON session_messages(role, created_at);
+        """
+    )
+    _backfill_session_messages_from_runs(conn)
+    try:
+        conn.executescript(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS session_messages_fts
+            USING fts5(
+                content,
+                content='session_messages',
+                content_rowid='rowid',
+                tokenize='unicode61'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS session_messages_fts_insert
+            AFTER INSERT ON session_messages BEGIN
+                INSERT INTO session_messages_fts(rowid, content)
+                VALUES (new.rowid, new.content);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS session_messages_fts_delete
+            AFTER DELETE ON session_messages BEGIN
+                INSERT INTO session_messages_fts(session_messages_fts, rowid, content)
+                VALUES ('delete', old.rowid, old.content);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS session_messages_fts_update
+            AFTER UPDATE ON session_messages BEGIN
+                INSERT INTO session_messages_fts(session_messages_fts, rowid, content)
+                VALUES ('delete', old.rowid, old.content);
+                INSERT INTO session_messages_fts(rowid, content)
+                VALUES (new.rowid, new.content);
+            END;
+            """
+        )
+        conn.execute("INSERT INTO session_messages_fts(session_messages_fts) VALUES('rebuild')")
+    except sqlite3.OperationalError as exc:
+        message = str(exc).casefold()
+        if "fts5" in message or "virtual table" in message:
+            return None
+        raise
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
     SchemaMigration(3, "event_outbox", _migration_event_outbox),
     SchemaMigration(4, "run_queue", _migration_run_queue),
     SchemaMigration(5, "generated_tools", _migration_generated_tools),
+    SchemaMigration(6, "session_messages_fts", _migration_session_messages_fts),
 )
+
+
+def _insert_session_message(
+    conn: sqlite3.Connection,
+    *,
+    conversation_id: str,
+    mission_id: str,
+    run_id: str,
+    role: str,
+    content: str,
+    metadata: dict[str, Any] | None,
+    created_at: float,
+) -> str:
+    normalized_role = role.strip().casefold()
+    if normalized_role not in SESSION_MESSAGE_ROLES:
+        raise ValueError(f"invalid session message role: {role}")
+    normalized_content = str(content or "").strip()
+    if not normalized_content:
+        raise ValueError("session message content is required")
+    message_id = new_id("msg")
+    conn.execute(
+        """
+        INSERT INTO session_messages(
+            id, conversation_id, mission_id, run_id, role, content, metadata_json, created_at
+        )
+        VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            message_id,
+            conversation_id,
+            mission_id,
+            run_id,
+            normalized_role,
+            normalized_content,
+            dumps(metadata or {}),
+            created_at,
+        ),
+    )
+    return message_id
+
+
+def _session_messages_fts_available(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_messages_fts'"
+    ).fetchone()
+    return row is not None
+
+
+def _session_messages_fts_query(query: str) -> str:
+    tokens = re.findall(r"[\w\u4e00-\u9fff]+", query, flags=re.UNICODE)
+    if not tokens:
+        return ""
+    return " AND ".join(f'"{token}"' for token in tokens[:8])
+
+
+def _search_session_messages_like(
+    conn: sqlite3.Connection,
+    query: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT id, conversation_id, mission_id, run_id, role, content, created_at
+        FROM session_messages
+        WHERE content LIKE ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (f"%{query}%", limit),
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "message_id": row["id"],
+            "conversation_id": row["conversation_id"],
+            "mission_id": row["mission_id"],
+            "run_id": row["run_id"],
+            "role": row["role"],
+            "snippet": _snippet_for_query(str(row["content"] or ""), query),
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
+
+
+def _backfill_session_messages_from_runs(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        """
+        SELECT id, conversation_id, mission_id, input_text, output_text, status, created_at, completed_at
+        FROM runs
+        """
+    ).fetchall()
+    for row in rows:
+        if str(row["input_text"] or "").strip() and not _session_message_exists(conn, row["id"], "user"):
+            _insert_session_message(
+                conn,
+                conversation_id=str(row["conversation_id"]),
+                mission_id=str(row["mission_id"]),
+                run_id=str(row["id"]),
+                role="user",
+                content=str(row["input_text"]),
+                metadata={"source": "run.input", "backfilled": True},
+                created_at=float(row["created_at"]),
+            )
+        if str(row["output_text"] or "").strip() and not _session_message_exists(conn, row["id"], "assistant"):
+            _insert_session_message(
+                conn,
+                conversation_id=str(row["conversation_id"]),
+                mission_id=str(row["mission_id"]),
+                run_id=str(row["id"]),
+                role="assistant",
+                content=str(row["output_text"]),
+                metadata={"source": "run.output", "status": row["status"], "backfilled": True},
+                created_at=float(row["completed_at"] or row["created_at"]),
+            )
+
+
+def _session_message_exists(conn: sqlite3.Connection, run_id: str, role: str) -> bool:
+    row = conn.execute(
+        "SELECT id FROM session_messages WHERE run_id = ? AND role = ? LIMIT 1",
+        (run_id, role),
+    ).fetchone()
+    return row is not None
+
+
+def _snippet_for_query(content: str, query: str, limit: int = 360) -> str:
+    compact = " ".join(content.split())
+    if len(compact) <= limit:
+        return compact
+    position = compact.casefold().find(query.casefold())
+    if position < 0:
+        return _preview_text(compact, limit=limit)
+    half = max(0, (limit - 3) // 2)
+    start = max(0, position - half)
+    end = min(len(compact), start + limit - 3)
+    snippet = compact[start:end].strip()
+    if start > 0:
+        snippet = "..." + snippet
+    if end < len(compact):
+        snippet += "..."
+    return snippet
 
 
 def _insert_outbox_event(

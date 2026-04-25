@@ -479,6 +479,29 @@ class CliTests(unittest.TestCase):
             self.assertEqual(linked[0]["id"], linked_id)
             self.assertEqual(linked[0]["relation"], "related")
 
+    def test_memory_search_command_can_search_session_snippets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("session cli")
+            mission_id = store.create_mission(conversation_id, "search session messages")
+            run_id = store.create_run(conversation_id, mission_id, "Use incident reports with timeline first.")
+            store.complete_run(run_id, "I will put timeline first in incident reports.")
+
+            search = _run_cli(["memory", "search", "timeline first", "--scope", "sessions", "--state-dir", tmp, "--json"])
+            plain = _run_cli(["memory", "search", "timeline first", "--scope", "sessions", "--state-dir", tmp])
+
+            self.assertEqual(search.returncode, 0, search.stderr)
+            matches = json.loads(search.stdout)["matches"]
+            self.assertEqual({item["type"] for item in matches}, {"session_message"})
+            self.assertEqual({item["conversation_id"] for item in matches}, {conversation_id})
+            self.assertEqual({item["mission_id"] for item in matches}, {mission_id})
+            self.assertEqual({item["run_id"] for item in matches}, {run_id})
+            self.assertNotIn("content", search.stdout)
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn("session_message", plain.stdout)
+            self.assertIn("timeline first", plain.stdout)
+
     def test_events_chat_and_replay_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run = _run_cli(["run", "remember: replay CLI", "--state-dir", tmp, "--json"])

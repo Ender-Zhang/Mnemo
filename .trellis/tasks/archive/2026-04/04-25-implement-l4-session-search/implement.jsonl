@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/01-memory-engine.md", "reason": "L4 FTS session search design"}
+{"file": "design/05-interfaces-data-security.md", "reason": "SQLite session/message schema and L4 exposure boundaries"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Schema migration and storage conventions"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory engine search contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "memory_search tool schema and compact result contracts"}

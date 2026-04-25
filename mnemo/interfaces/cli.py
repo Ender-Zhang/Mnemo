@@ -190,10 +190,11 @@ def build_parser() -> argparse.ArgumentParser:
     memory_list_parser.add_argument("--status", help="Status filter, or 'all' for no status filter")
     memory_list_parser.add_argument("--limit", type=int, default=50)
     memory_list_parser.add_argument("--json", action="store_true")
-    memory_search_parser = memory_subparsers.add_parser("search", help="Search memory pages and candidates")
+    memory_search_parser = memory_subparsers.add_parser("search", help="Search memory pages, candidates, or session snippets")
     _add_state_dir(memory_search_parser)
     memory_search_parser.add_argument("query", nargs="+")
     memory_search_parser.add_argument("--limit", type=int, default=5)
+    memory_search_parser.add_argument("--scope", choices=["memory", "stable", "sessions", "all"], default="memory")
     memory_search_parser.add_argument("--json", action="store_true")
     memory_read_parser = memory_subparsers.add_parser("read", help="Read a memory candidate or page by id")
     _add_state_dir(memory_read_parser)
@@ -750,7 +751,7 @@ def _cmd_memory(args: argparse.Namespace) -> int:
         elif args.memory_command == "list":
             result = _list_memory_items(store, args.kind, args.status, args.limit)
         elif args.memory_command == "search":
-            result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
+            result = {"matches": engine.search(" ".join(args.query), limit=args.limit, search_scope=args.scope)}
         elif args.memory_command == "read":
             result = {"memory": _read_memory_item(store, args.memory_id)}
         elif args.memory_command == "links":
@@ -846,6 +847,14 @@ def _print_memory_result(result: dict) -> None:
         for item in result["matches"]:
             if item["type"] == "page":
                 print(f"page {item['id']}: {item['title']} ({item['confidence']:.2f})")
+            elif item["type"] == "linked_page":
+                print(f"linked_page {item['id']}: {item['title']} relation={item.get('relation', '')}")
+            elif item["type"] == "session_message":
+                print(
+                    f"session_message {item['id']} role={item.get('role', '')} "
+                    f"conversation={item.get('conversation_id', '')} mission={item.get('mission_id', '')} "
+                    f"run={item.get('run_id', '')}: {_short_text(item.get('snippet', ''))}"
+                )
             else:
                 print(f"candidate {item['id']}: {item['claim']} [{item['status']}]")
         return

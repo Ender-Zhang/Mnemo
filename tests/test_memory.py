@@ -152,6 +152,34 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertNotIn("content", linked_cards[0])
             self.assertNotIn("evidence", linked_cards[0])
 
+    def test_search_can_target_l4_session_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("session recall")
+            mission_id = store.create_mission(conversation_id, "remember format")
+            run_id = store.create_run(
+                conversation_id,
+                mission_id,
+                "When I ask for release notes, keep risk callouts first.",
+            )
+            store.complete_run(run_id, "Understood. Risk callouts first for release notes.")
+
+            default_results = MemoryEngine(store).search("risk callouts", limit=5)
+            session_results = MemoryEngine(store).search("risk callouts", limit=5, search_scope="sessions")
+            cards = MemoryEngine(store).context_cards("risk callouts", limit=5, search_scope="sessions")
+
+            self.assertEqual(default_results, [])
+            self.assertEqual({item["type"] for item in session_results}, {"session_message"})
+            self.assertEqual({item["conversation_id"] for item in session_results}, {conversation_id})
+            self.assertEqual({item["mission_id"] for item in session_results}, {mission_id})
+            self.assertEqual({item["run_id"] for item in session_results}, {run_id})
+            self.assertIn("snippet", session_results[0])
+            self.assertNotIn("content", session_results[0])
+            self.assertEqual(cards[0]["type"], "session_message")
+            self.assertIn("summary", cards[0])
+            self.assertNotIn("content", cards[0])
+
     def test_dream_consolidate_promotes_confident_drafts_and_skips_low_confidence(
         self,
     ) -> None:

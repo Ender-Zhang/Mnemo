@@ -43,13 +43,18 @@ def _schema(required: list[str], properties: dict[str, dict[str, Any]]) -> dict[
 CORE_TOOL_SPECS = [
     ToolSpec(
         name="memory_search",
-        description="Search memory candidates and stable memory snippets by semantic query.",
+        description="Search stable memory, prior session snippets, or both by query.",
         risk="read",
         input_schema=_schema(
             ["query"],
             {
                 "query": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                "search_scope": {
+                    "type": "string",
+                    "enum": ["memory", "stable", "sessions", "all"],
+                    "default": "memory",
+                },
             },
         ),
     ),
@@ -395,7 +400,8 @@ class ToolRegistry:
     def _memory_search(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         query = _require_str(args, "query")
         limit = int(args.get("limit", 5))
-        return {"matches": MemoryEngine(context.store).search(query, limit=limit)}
+        search_scope = _memory_search_scope(args)
+        return {"matches": MemoryEngine(context.store).search(query, limit=limit, search_scope=search_scope)}
 
     def _memory_read(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         memory_id = _require_str(args, "id")
@@ -976,6 +982,8 @@ def _evidence(kind: str, item_id: Any, title: str) -> dict[str, Any]:
 
 def _compact_memory_match(item: dict[str, Any]) -> dict[str, Any]:
     title = item.get("title") or item.get("claim") or ""
+    if item.get("type") == "session_message":
+        title = item.get("snippet") or title
     return {
         "id": item.get("id"),
         "type": item.get("type"),
@@ -1022,6 +1030,13 @@ def _working_note_retention(args: dict[str, Any]) -> str:
     if retention not in {"ephemeral", "memory_candidate"}:
         raise ToolError(f"invalid working note retention: {retention}")
     return retention
+
+
+def _memory_search_scope(args: dict[str, Any]) -> str:
+    scope = str(args.get("search_scope") or args.get("scope") or "memory")
+    if scope not in {"memory", "stable", "sessions", "all"}:
+        raise ToolError(f"invalid memory search scope: {scope}")
+    return scope
 
 
 def _optional_float(args: dict[str, Any], key: str) -> float | None:

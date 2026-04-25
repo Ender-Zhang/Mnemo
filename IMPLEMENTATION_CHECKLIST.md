@@ -65,8 +65,8 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] W0 working memory to long-term candidate pipeline.
 - [~] DreamCycle idle memory consolidation exists as deterministic candidate promotion and L1 snapshot compilation; it is not yet model-led, scheduled by idle windows, or delta-only across all memory maintenance tasks.
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
-- [~] Memory eval cases and regression gates cover smoke/safety cases; full wrong-memory, over-personalization, L4 session search, Memory Health, and injection-scan gates are not complete.
-- [ ] L4 cross-session FTS5/BM25 search over raw messages and bounded snippets.
+- [~] Memory eval cases and regression gates cover smoke/safety cases plus L4 session-search regressions; full wrong-memory, over-personalization, Memory Health, and injection-scan gates are not complete.
+- [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
 - [ ] Memory QueryPlanner with lexical/semantic/temporal/dimension planning, RRF/MMR fusion, and tombstone/stale annotations.
 - [ ] Memory tombstones, decay passes, selective forgetting, memory health reports, and low-friction memory cultivation cards.
 - [ ] Memory write taint tracking and prompt-injection scanner across user, web, file, tool result, imported skill, MCP, and external runtime sources.
@@ -154,13 +154,13 @@ This file tracks implementation status against the design package. Keep it updat
 - [ ] MCP server exposing context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status tools.
 - [ ] Minimal Inbox/Decision persistence tables and CLI/API inspection.
 - [ ] Watch/Cron persistence and scheduled event processing.
-- [ ] Sessions/messages/L4 search tables and FTS5 indexes.
+- [x] Sessions/messages/L4 search tables and FTS5 indexes for persisted run messages.
 
 ## Remaining Trellis Focus
 
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
-- [ ] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, unified after-turn learning packet, interactive Decision/Inbox loop, and frontend recall/learning actions.
+- [~] Highest-priority core alignment: L4 memory search foundation is implemented; Soul/bootstrap prompt input, unified after-turn learning packet, interactive Decision/Inbox loop, and frontend recall/learning actions remain.
 - [ ] Highest-priority integration alignment: SDK/MCP server and external RuntimeAdapter with context capsule boundaries.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 

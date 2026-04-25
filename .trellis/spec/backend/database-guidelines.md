@@ -24,6 +24,8 @@
 - `StateStore.list_runs(*, status: str | None = None, conversation_id: str | None = None, mission_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.cancel_run(run_id: str, *, reason: str = "cancelled") -> dict[str, Any]`
 - `StateStore.is_run_cancelled(run_id: str) -> bool`
+- `StateStore.record_session_message(conversation_id: str, mission_id: str, run_id: str, role: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
+- `StateStore.search_session_messages(query: str, limit: int = 5) -> list[dict[str, Any]]`
 - `StateStore.enqueue_run_request(message: str, *, conversation_id: str | None = None, mission_id: str | None = None, metadata: dict[str, Any] | None = None, available_at: float | None = None) -> str`
 - `StateStore.list_queue_items(status: str | None = None, *, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.claim_next_queue_item(worker_id: str) -> dict[str, Any] | None`
@@ -80,6 +82,13 @@
 - `cancel_run()` marks only non-terminal runs as `cancelled`; terminal runs return unchanged.
 - Runtime code should check `is_run_cancelled()` between provider/tool steps and complete with `status="cancelled"`.
 - Web and CLI cancellation entry points append `run.cancel.requested` with reason, changed flag, and observed status.
+- `session_messages` stores L4 raw run messages tied to conversation, mission, and run ids.
+- `create_run()` records the user input as a `role="user"` session message in the same transaction as the run row.
+- `complete_run()` records a non-empty assistant output once as a `role="assistant"` session message.
+- The v6 session message migration backfills existing `runs.input_text` and non-empty `runs.output_text` into `session_messages` before rebuilding the FTS index.
+- `search_session_messages()` returns compact snippet results only: `id`, `message_id`, `conversation_id`, `mission_id`, `run_id`, `role`, `snippet`, and `created_at`.
+- Session search must not return full `content` unless a future explicit read API is added.
+- L4 search uses SQLite FTS5 when available and falls back to bounded `LIKE` snippets when FTS5 is unavailable.
 - `run_queue` stores durable local work with `message`, optional conversation/mission ids, structured metadata, status, attempts, worker id, produced run id, timing fields, and last error.
 - Queue statuses are `pending`, `running`, `completed`, `failed`, and `cancelled`.
 - Claiming a queue item moves one due pending row to `running`, increments `attempts`, and records worker/heartbeat timestamps.
@@ -113,6 +122,8 @@
 | Run listing | List/filter compact run metadata without full bodies | `tests/test_storage.py`, `tests/test_cli.py` |
 | Run cancellation | Running run becomes `cancelled`; terminal repeat is unchanged | `tests/test_storage.py`, `tests/test_cli.py` |
 | Web run cancellation | `POST /api/runs/cancel` marks run cancelled and records `run.cancel.requested` | `tests/test_web.py` |
+| L4 session message persistence | Run user and assistant messages are queryable as snippets with conversation/mission/run ids | `tests/test_storage.py` |
+| L4 migration backfill | Existing v5 run input/output rows become searchable session snippets after initialize | `tests/test_storage.py` |
 | Future outbox availability | Exclude future pending rows from due pending list | `tests/test_storage.py` |
 | Failed outbox mark | Increment attempts and store error | `tests/test_storage.py` |
 | Invalid outbox status | Raise `ValueError` | `tests/test_storage.py` |
@@ -142,6 +153,7 @@
 - Good: install generated tools by persisting a manifest row and loading it through `ToolRegistry.from_store()`.
 - Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
+- Good: expose L4 session recall as bounded snippets with provenance ids, not full transcripts.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
 - Bad: overwrite `schema_meta.schema_version` without recording the migration ledger.
@@ -158,6 +170,7 @@
 - Conversation and mission continuity list/show behavior is covered.
 - Appending a run event creates a matching outbox event.
 - Run list/show CLI and compact storage summaries are covered.
+- L4 session message storage, migration backfill, and search snippets are covered.
 - Outbox list and mark lifecycle is covered.
 - Backup export/import round-trip is covered.
 - Import target and archive safety failures are covered.

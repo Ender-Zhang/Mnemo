@@ -27,6 +27,8 @@
 - Provider-native tool schemas are sent through adapter requests, not embedded as raw prompt blocks or prompt metadata.
 - `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
 - `memory_search` may return `linked_page` matches from one-hop memory associations.
+- `memory_search.search_scope`: optional, one of `memory`, `stable`, `sessions`, or `all`; default is `memory`.
+- `memory_search(search_scope="sessions")` returns bounded `session_message` snippets with conversation/mission/run/message ids and no raw transcript body.
 - `memory_read` reads either a memory candidate or a stable memory page by id.
 - `file_patch(path, replacements, replace_all=False)` applies exact UTF-8 text replacements under `ToolContext.workspace_root` and is `admin` risk.
 - `file_patch` rejects missing text, ambiguous text when `replace_all` is false, binary files, and paths outside the workspace.
@@ -74,12 +76,14 @@
 | Generated tool runtime exposure | Provider runtime sends active generated tool specs | `tests/test_runtime.py` |
 | Artifact card projection | Emit id/title/kind without full artifact body | `tests/test_web.py`, `mnemo/runtime/common.py` |
 | Memory page read | Return stable page payload when `memory_read.id` is a memory page id | `tests/test_tools.py` |
+| Session memory search | `memory_search` can target L4 snippets through `search_scope="sessions"` | `tests/test_tools.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new tool by defining `ToolSpec`, registering a handler, and adding summary/evidence projection.
 - Base: read-only tools should be usable by the default policy.
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.
+- Good: expose L4 recall through `memory_search` scope instead of adding a separate session workflow tool.
 - Good: use `file_patch` for bounded edits instead of full-file overwrite when the old text is known.
 - Good: use connector tools as side-effect handoffs from model decisions, not as workflow branches.
 - Bad: adding a handler that performs side effects while declaring `risk="read"`.
@@ -89,6 +93,7 @@
 ### 6. Tests Required
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
+- Memory search session scope: assert session snippets include provenance ids and omit raw content.
 - Working note retention metadata: assert stored metadata and compact result remain small.
 - Skill review: assert status is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.

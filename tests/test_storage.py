@@ -22,10 +22,11 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "runs").is_dir())
             self.assertTrue((Path(tmp) / "artifacts").is_dir())
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6])
             self.assertIn("event_outbox", _tables(Path(tmp) / "state.db"))
             self.assertIn("run_queue", _tables(Path(tmp) / "state.db"))
             self.assertIn("generated_tools", _tables(Path(tmp) / "state.db"))
+            self.assertIn("session_messages", _tables(Path(tmp) / "state.db"))
 
     def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -37,8 +38,8 @@ class StateStoreTests(unittest.TestCase):
             second = store.applied_migrations()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4, 5])
-            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4, 5])
+            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4, 5, 6])
+            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4, 5, 6])
             self.assertEqual(len(first), len(second))
 
     def test_initialize_upgrades_legacy_schema_columns(self) -> None:
@@ -102,13 +103,14 @@ class StateStoreTests(unittest.TestCase):
             store.initialize()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6])
             self.assertIn("path", _columns(db_path, "skills"))
             self.assertIn("result_json", _columns(db_path, "eval_cases"))
             self.assertIn("metadata_json", _columns(db_path, "working_notes"))
             self.assertIn("event_outbox", _tables(db_path))
             self.assertIn("run_queue", _tables(db_path))
             self.assertIn("generated_tools", _tables(db_path))
+            self.assertIn("session_messages", _tables(db_path))
             self.assertIsNone(store.get_skill("legacy")["path"])
             self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
             legacy_note = store.list_working_notes(status=None)[0]
@@ -223,6 +225,113 @@ class StateStoreTests(unittest.TestCase):
                 {completed_id, running_id},
             )
             self.assertEqual(store.list_runs(limit=0), [])
+
+    def test_session_messages_are_recorded_and_searchable_as_snippets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("session search")
+            mission_id = store.create_mission(conversation_id, "recall earlier preference")
+            run_id = store.create_run(
+                conversation_id,
+                mission_id,
+                "Please remember that deployment notes should mention rollback windows.",
+            )
+            store.complete_run(run_id, "Got it. Future deployment notes will mention rollback windows.")
+
+            matches = store.search_session_messages("rollback windows", limit=10)
+
+            self.assertEqual({match["role"] for match in matches}, {"user", "assistant"})
+            self.assertEqual({match["conversation_id"] for match in matches}, {conversation_id})
+            self.assertEqual({match["mission_id"] for match in matches}, {mission_id})
+            self.assertEqual({match["run_id"] for match in matches}, {run_id})
+            self.assertIn("rollback windows", matches[0]["snippet"])
+            self.assertIn("message_id", matches[0])
+            self.assertNotIn("content", matches[0])
+
+    def test_session_message_migration_backfills_existing_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "state.db"
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE schema_meta (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                    INSERT INTO schema_meta(key, value) VALUES('schema_version', '5');
+
+                    CREATE TABLE schema_migrations (
+                        version INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        applied_at REAL NOT NULL
+                    );
+                    INSERT INTO schema_migrations(version, name, applied_at) VALUES
+                        (1, 'initial_schema', 1.0),
+                        (2, 'post_v1_generated_lifecycle_columns', 1.0),
+                        (3, 'event_outbox', 1.0),
+                        (4, 'run_queue', 1.0),
+                        (5, 'generated_tools', 1.0);
+
+                    CREATE TABLE conversations (
+                        id TEXT PRIMARY KEY,
+                        title TEXT,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    );
+                    INSERT INTO conversations(id, title, created_at, updated_at)
+                    VALUES('conv_existing', 'Existing', 1.0, 1.0);
+
+                    CREATE TABLE missions (
+                        id TEXT PRIMARY KEY,
+                        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                        status TEXT NOT NULL,
+                        brief TEXT NOT NULL,
+                        checkpoint_json TEXT NOT NULL,
+                        created_at REAL NOT NULL,
+                        updated_at REAL NOT NULL
+                    );
+                    INSERT INTO missions(id, conversation_id, status, brief, checkpoint_json, created_at, updated_at)
+                    VALUES('mis_existing', 'conv_existing', 'active', 'Existing mission', '{}', 1.0, 1.0);
+
+                    CREATE TABLE runs (
+                        id TEXT PRIMARY KEY,
+                        conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                        mission_id TEXT NOT NULL REFERENCES missions(id),
+                        status TEXT NOT NULL,
+                        input_text TEXT NOT NULL,
+                        output_text TEXT,
+                        created_at REAL NOT NULL,
+                        completed_at REAL
+                    );
+                    INSERT INTO runs(
+                        id, conversation_id, mission_id, status, input_text, output_text, created_at, completed_at
+                    ) VALUES(
+                        'run_existing',
+                        'conv_existing',
+                        'mis_existing',
+                        'completed',
+                        'Existing sessions prefer migration recall.',
+                        'Migration recall is now available.',
+                        2.0,
+                        3.0
+                    );
+                    """
+                )
+            finally:
+                conn.close()
+
+            store = StateStore(tmp)
+            store.initialize()
+            matches = store.search_session_messages("migration recall", limit=10)
+
+            self.assertEqual(store.schema_version(), SCHEMA_VERSION)
+            self.assertEqual({match["role"] for match in matches}, {"user", "assistant"})
+            self.assertEqual({match["conversation_id"] for match in matches}, {"conv_existing"})
+            self.assertEqual({match["mission_id"] for match in matches}, {"mis_existing"})
+            self.assertEqual({match["run_id"] for match in matches}, {"run_existing"})
+            self.assertNotIn("content", matches[0])
 
     def test_list_conversations_and_missions_for_continuity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

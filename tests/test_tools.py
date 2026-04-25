@@ -122,6 +122,29 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(result.result["memory"]["id"], page_id)
             self.assertEqual(result.result["memory"]["content"], "User prefers focused regression tests")
 
+    def test_memory_search_can_target_session_snippets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            store.complete_run(run_id, "I will keep architecture summaries short and concrete.")
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="memory_search",
+                    arguments={"query": "architecture summaries", "search_scope": "sessions", "limit": 5},
+                    call_id="call_memory_search_sessions",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+
+            self.assertTrue(result.ok)
+            self.assertEqual({match["type"] for match in result.result["matches"]}, {"session_message"})
+            self.assertNotIn("content", str(result.result["matches"]))
+            self.assertEqual(compact["evidence"][0]["kind"], "memory_search")
+            self.assertEqual(compact["evidence"][0]["items"][0]["type"], "session_message")
+
     def test_skill_view_records_usage_and_outcome_tool_records_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

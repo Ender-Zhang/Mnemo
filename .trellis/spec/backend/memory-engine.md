@@ -7,8 +7,8 @@
 - Goal: preserve candidate-first learning while producing explicit provenance signals for reinforcement and conflicts.
 
 ### 2. Signatures
-- `MemoryEngine.search(query: str, limit: int = 5) -> list[dict[str, Any]]`
-- `MemoryEngine.context_cards(query: str, limit: int = 5) -> list[dict[str, Any]]`
+- `MemoryEngine.search(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
+- `MemoryEngine.context_cards(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
 - `MemoryEngine.ingest_working_notes(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
@@ -21,11 +21,13 @@
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_candidates(status: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
+- `StateStore.search_session_messages(query: str, limit: int = 5) -> list[dict[str, Any]]`
 - `StateStore.add_working_note(mission_id: str, run_id: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_working_note_status(note_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
 - CLI: `mnemo memory notes [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory list [--kind candidate|page|all] [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory search <query...> [--scope memory|stable|sessions|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
@@ -50,6 +52,12 @@
 - `MemoryEngine.search()` may include `linked_page` results by following one hop from matching active pages through outgoing links and backlinks.
 - `linked_page` results must be active pages, bounded by the search limit, deterministic, and de-duplicated from seed page/candidate ids.
 - Prompt-facing context cards for `linked_page` include compact `summary`, `relation`, and `linked_from`, not raw evidence.
+- `MemoryEngine.search(search_scope="memory")` preserves the default stable-memory behavior: active pages, candidates, and one-hop linked pages.
+- `MemoryEngine.search(search_scope="stable")` is accepted as an alias of `memory`.
+- `MemoryEngine.search(search_scope="sessions")` returns L4 `session_message` snippets from prior run messages without page/candidate results.
+- `MemoryEngine.search(search_scope="all")` includes stable memory results and session snippets.
+- `session_message` results contain `id`, `message_id`, `conversation_id`, `mission_id`, `run_id`, `role`, `snippet`, and `created_at`; they must omit raw `content`.
+- Prompt-facing context cards for `session_message` include compact `summary` and provenance ids, not full transcripts.
 - `memory_read` must read stable memory pages as well as memory candidates.
 - `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.
 - `mnemo memory list` defaults to draft candidates; page listing defaults to active pages.
@@ -78,6 +86,7 @@
 | Direct association | Search returns linked active pages that do not match the query text | `tests/test_memory.py` |
 | Reverse association | Search returns active pages linked back to the query match | `tests/test_memory.py` |
 | Association cards | Context cards include relation metadata without full raw payloads | `tests/test_memory.py` |
+| L4 session search | `search_scope="sessions"` returns bounded message snippets and omits raw content | `tests/test_memory.py` |
 | Memory page read | `memory_read` can load stable pages by id | `tests/test_tools.py` |
 | CLI memory list | Candidate/page listing uses status defaults and `all` filter | `tests/test_cli.py` |
 | CLI memory read | Candidate and page ids return typed memory payloads | `tests/test_cli.py` |
@@ -88,6 +97,7 @@
 ### 5. Good/Base/Bad Cases
 - Good: use links to preserve why memory changed.
 - Good: use one-hop page links to surface adjacent wiki knowledge while keeping tool schemas unchanged.
+- Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
 - Base: deterministic dream logic may emit signals that later model decisions consume.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
 - Bad: hide reinforcement or conflict decisions without a memory link.
@@ -100,6 +110,7 @@
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
 - Search/context cards remain compact and omit raw evidence.
 - Associative recall covers direct links, backlinks, archived-page filtering, and compact context cards.
+- L4 session search covers explicit session scope, compact context cards, and omission of raw message content.
 - `memory_read` covers both candidates and stable pages.
 - CLI `memory list` covers default draft candidates, active pages, unfiltered all inventory, and compact non-JSON rows.
 - CLI `memory read` covers candidates, pages, non-JSON output, and missing ids.
