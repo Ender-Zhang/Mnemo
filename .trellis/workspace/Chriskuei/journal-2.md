@@ -103,18 +103,26 @@ Added read-only mnemo memory list for draft candidates, active pages, and unfilt
 
 ### Main Changes
 
-(Add details)
+- Added `mnemo memory list [--kind candidate|page|all] [--status STATUS|all] [--limit N]`.
+- Default listing shows draft memory candidates; page listing defaults to active pages; `--status all` removes the status filter.
+- Kept the command read-only by reusing existing `StateStore.list_memory_candidates()` and `StateStore.list_memory_pages()` APIs.
+- Updated README, implementation checklist, and backend memory contracts.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `334baf7` | (see git log) |
-| `8e0c5c1` | (see git log) |
+| `334baf7` | feat: expose memory list cli |
+| `8e0c5c1` | chore(task): archive 04-25-expose-memory-list-cli |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_memory_list_command_filters_candidates_and_pages`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `task.py validate 04-25-expose-memory-list-cli`
+- [OK] Temporary venv `pip wheel` install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
