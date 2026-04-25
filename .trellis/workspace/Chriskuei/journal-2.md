@@ -821,3 +821,37 @@ Added durable memory tombstones, compact memory health review cards, provider-na
 ### Next Steps
 
 - None - task complete
+
+
+## Session 81: Memory write taint scanner
+
+**Date**: 2026-04-25
+**Task**: Memory write taint scanner
+**Branch**: `main`
+
+### Summary
+
+Added shared injection warnings, memory candidate taint scanning, write_candidate gating, compact tool evidence, and memory-safety injection regression coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `88f352e` | (see git log) |
+| `3959ce9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
