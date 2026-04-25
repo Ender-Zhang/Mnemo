@@ -18,6 +18,9 @@
 - `memory.l1_snapshot` is daily-cache context and must appear before turn-scoped `memory.index`.
 - `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
 - Tool schemas still travel through provider-native tool definitions; dropping `tools.cards` must not remove actual tool availability.
+- Prompt block budgeting only applies to prompt messages; provider-native tool schemas are tracked in `metadata().tool_schema` separately.
+- `metadata().tool_schema` contains `count`, ordered `names`, `token_estimate`, and `budget_scope="provider_native"`; it must not contain raw schema payloads.
+- `metadata().prompt_token_estimate` equals prompt-message block tokens and excludes tool schema estimates.
 - `metadata().dropped_blocks` records block id, title, estimate, and reason.
 - Large mission checkpoint values must be compacted before token estimates are computed.
 
@@ -31,9 +34,12 @@
 | Metadata inspection | No prompt content or secrets in metadata | `tests/test_prompt.py` |
 | L1 snapshot present | Add `memory.l1_snapshot` with `daily_context` cache segment before `memory.index` | `tests/test_prompt.py` |
 | Empty L1 snapshot | Do not inject `memory.l1_snapshot` | `tests/test_prompt.py` |
+| Tight prompt budget with tools | May drop `tools.cards`; tool schema metadata remains present | `tests/test_prompt.py` |
+| Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: expose compact memory/skill indexes and let the model call tools for details.
+- Good: keep provider-native tool schemas out of prompt block budgeting and metadata payload bodies.
 - Base: keep deterministic block ordering for cache reuse.
 - Bad: append large raw trajectories into the stable prefix.
 - Bad: remove provider-native tool schemas when dropping prompt tool cards.
@@ -42,6 +48,7 @@
 - Block order and cache segment tests.
 - Metadata shape tests that exclude raw content.
 - Budget tests that assert required blocks remain and optional blocks are recorded as dropped.
+- Tool schema budget separation tests that assert compact metadata remains when `tools.cards` is dropped.
 - Runtime/provider tests that assert prompt metadata is persisted in `prompt.assembled`.
 - Runtime/provider tests that assert daily L1 memory snapshot content reaches provider messages when present.
 

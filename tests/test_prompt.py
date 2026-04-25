@@ -86,6 +86,34 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertTrue(all("content" not in block for block in metadata["blocks"]))
         self.assertNotIn("sk-test-secret", str(metadata))
 
+    def test_tool_schema_budget_is_separate_from_prompt_blocks(self) -> None:
+        tool = _tool(
+            "deep_tool",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "payload": {
+                        "type": "string",
+                        "description": "schema detail " * 100,
+                    }
+                },
+                "required": ["payload"],
+                "additionalProperties": False,
+            },
+        )
+
+        prompt = PromptAssembler().assemble("Use a tool", tool_specs=[tool], token_budget=70)
+        metadata = prompt.metadata()
+
+        self.assertIn("tools.cards", [block["id"] for block in metadata["dropped_blocks"]])
+        self.assertNotIn("tools.cards", [block.id for block in prompt.blocks])
+        self.assertGreater(metadata["tool_schema"]["token_estimate"], 70)
+        self.assertEqual(metadata["tool_schema"]["count"], 1)
+        self.assertEqual(metadata["tool_schema"]["names"], ["deep_tool"])
+        self.assertEqual(metadata["tool_schema"]["budget_scope"], "provider_native")
+        self.assertEqual(metadata["total_token_estimate"], metadata["prompt_token_estimate"])
+        self.assertNotIn("schema detail", str(metadata))
+
     def test_memory_and_skill_indexes_are_progressive_blocks(self) -> None:
         prompt = PromptAssembler().assemble(
             "Help with writing",
@@ -236,12 +264,12 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertIn("...", mission.content)
 
 
-def _tool(name: str) -> ToolSpec:
+def _tool(name: str, input_schema: dict | None = None) -> ToolSpec:
     return ToolSpec(
         name=name,
         description=f"Description for {name}",
         risk="read",
-        input_schema={"type": "object", "properties": {}, "required": []},
+        input_schema=input_schema or {"type": "object", "properties": {}, "required": []},
     )
 
 

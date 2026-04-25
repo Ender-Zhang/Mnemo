@@ -24,6 +24,7 @@
 - `ToolResult.result`: full persisted payload for ledger and replay.
 - `ToolResult.summary` and `ToolResult.evidence`: compact model/UI payloads.
 - `ToolContext.workspace_root`: resolved root for local file and shell tools.
+- Provider-native tool schemas are sent through adapter requests, not embedded as raw prompt blocks or prompt metadata.
 - `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
 - `memory_search` may return `linked_page` matches from one-hop memory associations.
 - `memory_read` reads either a memory candidate or a stable memory page by id.
@@ -48,6 +49,7 @@
 | Binary file read | Return failed tool result, no decoded payload | Standard tool test when added |
 | Shell command timeout | Return failed tool result with timeout error | Standard tool test when added |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
+| Prompt metadata | Records compact tool schema count/names/estimate without raw schema payloads | `tests/test_prompt.py`, `tests/test_cli.py` |
 | Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
 | Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |

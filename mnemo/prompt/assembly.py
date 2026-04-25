@@ -36,11 +36,13 @@ class AssembledPrompt:
     blocks: tuple[PromptBlock, ...]
     dropped_blocks: tuple[dict[str, Any], ...] = ()
     token_budget: int | None = None
+    tool_schema_metadata: dict[str, Any] | None = None
 
     def messages(self) -> list[dict[str, str]]:
         return [{"role": block.role, "content": block.content} for block in self.blocks]
 
     def metadata(self) -> dict[str, Any]:
+        prompt_token_estimate = sum(block.token_estimate for block in self.blocks)
         block_metadata = [
             {
                 "id": block.id,
@@ -58,7 +60,9 @@ class AssembledPrompt:
         ]
         return {
             "blocks": block_metadata,
-            "total_token_estimate": sum(block.token_estimate for block in self.blocks),
+            "total_token_estimate": prompt_token_estimate,
+            "prompt_token_estimate": prompt_token_estimate,
+            "tool_schema": self.tool_schema_metadata or _tool_schema_metadata(()),
             "stable_prefix": [block.id for block in self.blocks if block.cache_policy == "stable"],
             "dynamic_tail": [block.id for block in self.blocks if block.cache_policy != "stable"],
             "dropped_blocks": list(self.dropped_blocks),
@@ -103,7 +107,12 @@ class PromptAssembler:
             ]
         )
         kept_blocks, dropped_blocks = _apply_budget(blocks, token_budget)
-        return AssembledPrompt(blocks=tuple(kept_blocks), dropped_blocks=dropped_blocks, token_budget=token_budget)
+        return AssembledPrompt(
+            blocks=tuple(kept_blocks),
+            dropped_blocks=dropped_blocks,
+            token_budget=token_budget,
+            tool_schema_metadata=_tool_schema_metadata(tools),
+        )
 
     def _system_identity(self) -> PromptBlock:
         content = "\n".join(
@@ -356,6 +365,27 @@ def _stable_value(value: Any, *, limit: int) -> str:
     if isinstance(value, str):
         return _compact(value, limit=limit)
     return _compact(dumps(value), limit=limit)
+
+
+def _tool_schema_metadata(tool_specs: Sequence[ToolSpec]) -> dict[str, Any]:
+    tools = tuple(sorted(tool_specs, key=lambda spec: spec.name))
+    return {
+        "count": len(tools),
+        "names": [spec.name for spec in tools],
+        "token_estimate": sum(_estimate_tokens(_tool_schema_estimate_payload(spec)) for spec in tools),
+        "budget_scope": "provider_native",
+    }
+
+
+def _tool_schema_estimate_payload(spec: ToolSpec) -> str:
+    return dumps(
+        {
+            "name": spec.name,
+            "description": spec.description,
+            "risk": spec.risk,
+            "input_schema": spec.input_schema,
+        }
+    )
 
 
 def _memory_card_text(card: dict[str, Any]) -> str:

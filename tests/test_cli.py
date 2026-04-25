@@ -88,6 +88,9 @@ class CliTests(unittest.TestCase):
                 ["system.identity", "developer.operating_principles", "tools.cards"],
             )
             self.assertEqual(prompt["blocks"][0]["id"], "system.identity")
+            self.assertEqual(prompt["tool_schema"]["count"], prompt["tool_count"])
+            self.assertIn("memory_search", prompt["tool_schema"]["names"])
+            self.assertNotIn("input_schema", prompt["tool_schema"])
 
     def test_run_with_anthropic_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
