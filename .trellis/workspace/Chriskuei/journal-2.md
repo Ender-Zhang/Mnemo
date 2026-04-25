@@ -422,12 +422,19 @@ Made CLI trace inspection commands fail clearly for unknown run ids instead of r
 
 | Hash | Message |
 |------|---------|
-| `4f5ef4b` | (see git log) |
-| `1172507` | (see git log) |
+| `4f5ef4b` | fix: normalize missing run trace cli errors |
+| `1172507` | chore(task): archive 04-25-normalize-missing-run-trace-cli-errors |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_events_chat_and_replay_commands`
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_harness_eval_and_replay_commands`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `python3 ./.trellis/scripts/task.py validate 04-25-normalize-missing-run-trace-cli-errors`
+- [OK] `git diff --check`
+- [OK] Temporary venv wheel build/install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
