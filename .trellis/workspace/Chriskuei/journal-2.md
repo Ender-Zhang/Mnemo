@@ -61,18 +61,26 @@ Added mnemo memory read for inspecting memory candidates and stable pages by id,
 
 ### Main Changes
 
-(Add details)
+- Added `mnemo memory read <memory_id> [--json]` to inspect both memory candidates and stable memory pages through the CLI.
+- Reused existing `StateStore.get_memory_candidate()` and `StateStore.get_memory_page()` behavior, so the command does not mutate memory state or add a new workflow.
+- Normalized missing ids as `mnemo: memory not found: <id>` without tracebacks.
+- Updated README, implementation checklist, and backend memory/error contracts.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `f72dd3d` | (see git log) |
-| `8652b04` | (see git log) |
+| `f72dd3d` | feat: expose memory read cli |
+| `8652b04` | chore(task): archive 04-25-expose-memory-read-cli |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_memory_read_command_reads_candidates_and_pages tests.test_cli.CliTests.test_memory_missing_candidate_errors_are_normalized`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `task.py validate 04-25-expose-memory-read-cli`
+- [OK] Temporary venv `pip wheel` install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
