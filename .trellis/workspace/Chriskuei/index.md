@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 76
+- **Total Sessions**: 77
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~687 | Active |
+| `journal-2.md` | ~721 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 77 | 2026-04-25 | ToolBundle epochs | `c53b536`, `f708dd8` | `main` |
 | 76 | 2026-04-25 | Prompt modes | `ac604b3`, `ff4ef10` | `main` |
 | 75 | 2026-04-25 | Inline Recall Cards | `6130d1d` | `main` |
 | 74 | 2026-04-25 | Learning Chip Actions | `d21128c`, `2c81217` | `main` |

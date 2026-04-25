@@ -685,3 +685,37 @@ Implemented full/minimal/capsule/none prompt modes with runtime/CLI propagation,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 77: ToolBundle epochs
+
+**Date**: 2026-04-25
+**Task**: ToolBundle epochs
+**Branch**: `main`
+
+### Summary
+
+Implemented deterministic ToolBundle metadata, reduced prompt-mode tool profiles, provider-loop lazy schema expansion via tool_expand_schema, tests, and spec/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c53b536` | (see git log) |
+| `f708dd8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
