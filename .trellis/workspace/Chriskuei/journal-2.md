@@ -957,3 +957,37 @@ Accepted tool_approval Inbox decisions now execute once through ToolHarness and 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 85: Core SDK and API schema foundation
+
+**Date**: 2026-04-25
+**Task**: Core SDK and API schema foundation
+**Branch**: `main`
+
+### Summary
+
+Added dependency-free mnemo.sdk.MnemoClient and mnemo.core_api.v1 schema for context, recall, run, replay, and evaluate; exposed mnemo api schema and updated integration specs/checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4d0d177` | (see git log) |
+| `1fcf71d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
