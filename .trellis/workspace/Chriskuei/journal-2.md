@@ -1195,3 +1195,37 @@ Added compact Dream delta collection, model-facing maintenance plans, persisted 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 92: Harness variant report
+
+**Date**: 2026-04-25
+**Task**: Harness variant report
+**Branch**: `main`
+
+### Summary
+
+Added no_memory/skills_only/full_mnemo harness variant comparison with compact metrics, design-aligned gates, and CLI/SDK/MCP eval surfaces; updated checklist, README, design, and backend integration/error specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c468e4` | (see git log) |
+| `7863f59` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
