@@ -18,6 +18,9 @@
 - CLI: `mnemo config smoke --provider anthropic --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --stream --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config capabilities [--provider local|openai-compatible|anthropic] [--model MODEL] [--api-key-env ENV|--api-key KEY] [--json]`
+- CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo artifacts read <artifact_id> [--json]`
 - CLI: `mnemo inbox show <item_id> [--json]`
 - CLI: `mnemo inbox resolve <item_id> --accept|--reject|--ignore [--json]`
@@ -46,6 +49,8 @@
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
 - `mnemo memory search --debug-query` remains read-only and returns compact query metadata without raw transcripts.
 - `mnemo memory read` normalizes missing candidate/page ids this way.
+- `mnemo memory tombstone` normalizes missing candidate/page ids this way.
+- `mnemo memory health` and `mnemo memory tombstones` are read-only inspection commands and do not require raw SQLite access.
 - `mnemo artifacts read` normalizes missing artifact ids this way.
 - `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
 - `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
@@ -83,6 +88,8 @@
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Memory query debug | CLI emits compact query plan metadata without changing default JSON shape | `tests/test_cli.py` |
 | Missing memory id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing memory id in CLI tombstone | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Memory health/tombstone listing | CLI exits zero with compact JSON or row output | `tests/test_cli.py` |
 | Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing Inbox item in CLI show/resolve | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -119,6 +126,7 @@
 - CLI run trace/show/cancel tests for missing run ids without tracebacks.
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI memory read tests for missing ids without tracebacks.
+- CLI memory health/tombstone tests for compact output and missing ids without tracebacks.
 - CLI artifact read tests for missing ids without tracebacks.
 - CLI Inbox show/resolve tests for missing item ids without tracebacks.
 - CLI skill command tests for missing skill, eval case, and crystallization run errors without tracebacks.

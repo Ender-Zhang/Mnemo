@@ -52,6 +52,10 @@
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
+- `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
+- `StateStore.add_memory_tombstone(target_id: str, target_type: str, reason: str, *, summary: str = "", target_hash: str | None = None, evidence_run_id: str | None = None, rule: str | None = None, metadata: dict[str, Any] | None = None) -> str`
+- `StateStore.get_memory_tombstone(tombstone_id: str) -> dict[str, Any] | None`
+- `StateStore.list_memory_tombstones(*, target_id: str | None = None, target_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
@@ -117,6 +121,10 @@
 - CLI W0 inspection must use the read API and remain read-only: `mnemo memory notes`.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
 - CLI graph inspection must use these read APIs and remain read-only: `mnemo memory links <memory_id>`.
+- `memory_tombstones` stores compact do-not-resurrect records with target id/type, target hash, reason, summary, optional evidence run id, rule, metadata, and created time.
+- Tombstone APIs validate target type as `candidate` or `page` and never require callers to read raw SQLite rows.
+- `list_memory_tombstones()` orders by newest first and supports target id/type filters.
+- `update_memory_page_status()` updates `updated_at` with the status change.
 - Chat replay by `event_id` is derived from persisted `chat.event` payloads in run order.
 - Unknown chat `event_id` returns all chat events for the run so clients can safely rehydrate.
 
@@ -153,6 +161,7 @@
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
+| Memory tombstones | Tombstone table initializes, round-trips metadata, filters by target, and hashes compact summaries | `tests/test_storage.py` |
 | Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -167,6 +176,7 @@
 - Good: store user decisions as Inbox items and return item ids in chat events.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Good: expose L4 session recall as bounded snippets with provenance ids, not full transcripts.
+- Good: keep tombstones compact and structured so deleted/rejected memory is not reintroduced through raw historical content.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
 - Bad: overwrite `schema_meta.schema_version` without recording the migration ledger.
@@ -194,5 +204,6 @@
 - Artifact storage round-trip by id is covered.
 - Artifact metadata list/filter behavior is covered without duplicating body text.
 - Inbox storage round-trip, filters, and resolution lifecycle are covered.
+- Memory tombstone schema and read/write/filter APIs are covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.

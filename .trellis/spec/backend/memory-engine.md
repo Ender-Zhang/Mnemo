@@ -14,15 +14,21 @@
 - `MemoryEngine.ingest_working_notes(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
+- `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto") -> dict[str, Any]`
+- `MemoryEngine.health_report(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
 - `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
 - `EvalHarness.run_suite("memory-safety") -> SuiteReport`
 - CLI: `mnemo harness eval memory-safety --json`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
+- `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_candidates(status: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
+- `StateStore.add_memory_tombstone(target_id: str, target_type: str, reason: str, *, summary: str = "", target_hash: str | None = None, evidence_run_id: str | None = None, rule: str | None = None, metadata: dict[str, Any] | None = None) -> str`
+- `StateStore.get_memory_tombstone(tombstone_id: str) -> dict[str, Any] | None`
+- `StateStore.list_memory_tombstones(*, target_id: str | None = None, target_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.search_session_messages(query: str, limit: int = 5) -> list[dict[str, Any]]`
 - `StateStore.add_working_note(mission_id: str, run_id: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
@@ -33,6 +39,9 @@
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
+- CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
 
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
@@ -44,6 +53,7 @@
 - `mnemo memory notes` must expose read-only W0 working note inventory for DreamCycle inspection.
 - `mnemo memory notes` defaults to open notes; `--status all` means no status filter.
 - Duplicate candidates are rejected as `rejected:duplicate`.
+- Rejected candidates create a durable `memory_tombstones` row with compact summary, target hash, evidence run id, and do-not-resurrect rule.
 - Duplicate candidates may reinforce existing page confidence and must create a `reinforces` memory link.
 - Conflicting candidates are not promoted automatically.
 - Conflicting candidates are marked `needs_review:conflict` and linked with `conflicts_with`.
@@ -64,7 +74,10 @@
 - `MemoryEngine.search_with_plan()` returns `query_plan` plus `matches`; `MemoryEngine.search()` preserves the list-only compatibility wrapper.
 - Multi-route page, candidate, and session retrieval is fused by reciprocal-rank-style scoring and compact de-duplication.
 - Memory match annotations include retrieval score, matched routes, detected dimensions, temporal hint, stale flag, and tombstone flag.
-- Stale/tombstone annotations are advisory until durable tombstone and decay storage lands.
+- Tombstoned stable pages are moved out of active page search and L1 snapshot compilation.
+- Durable tombstones are explicit curation records; they do not physically delete memory content unless a future private-delete path provides a redacted summary/hash.
+- `MemoryEngine.health_report()` returns compact counts, configured-dimension coverage, scalar component scores, and bounded review cards for model-led memory cultivation.
+- Memory health review cards are advisory input to the model; they do not schedule or execute a fixed maintenance workflow.
 - `mnemo memory search --debug-query` includes the compact query plan; default search output remains matches-only.
 - `session_message` results contain `id`, `message_id`, `conversation_id`, `mission_id`, `run_id`, `role`, `snippet`, and `created_at`; they must omit raw `content`.
 - Prompt-facing context cards for `session_message` include compact `summary` and provenance ids, not full transcripts.
@@ -77,6 +90,9 @@
 - `mnemo memory links` should not require the id to resolve as a candidate/page; an empty graph result is valid.
 - `mnemo memory snapshot` must load the existing L1 snapshot without regenerating it.
 - `mnemo memory snapshot` must report `exists=false` for missing or invalid snapshot files without failing.
+- `mnemo memory health` must inspect memory state without mutating it.
+- `mnemo memory tombstone` must update the candidate/page status and create a durable tombstone record.
+- `mnemo memory tombstones` must expose durable tombstone records without loading raw page/candidate bodies beyond compact summaries.
 - The `memory-safety` eval suite must remain deterministic and local.
 - The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
 
@@ -106,18 +122,24 @@
 | Query planning | Plan reports routes, dimensions, and temporal hints without external dependencies | `tests/test_memory.py` |
 | Fused retrieval | Dimension routes can recover relevant pages and annotate matched routes | `tests/test_memory.py` |
 | Tombstone annotation | Rejected/tombstoned candidates are marked advisory tombstones | `tests/test_memory.py` |
+| Candidate rejection tombstone | Rejected candidates get durable tombstone rows | `tests/test_memory.py` |
+| Page tombstone | Page status becomes `tombstoned:<reason>` and active recall omits it | `tests/test_memory.py` |
+| Memory health report | Counts, coverage, score, and review cards stay compact | `tests/test_memory.py` |
 | CLI query debug | `--debug-query` includes query plan metadata while default JSON omits it | `tests/test_cli.py` |
+| CLI health and tombstones | Health, tombstone, and tombstone listing commands normalize output/errors | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: use links to preserve why memory changed.
 - Good: use one-hop page links to surface adjacent wiki knowledge while keeping tool schemas unchanged.
 - Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
 - Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
+- Good: expose health cards as compact model input so the model chooses whether to verify, link, archive, or ignore.
 - Base: deterministic dream logic may emit signals that later model decisions consume.
 - Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
 - Bad: hide reinforcement or conflict decisions without a memory link.
 - Bad: treat advisory tombstone annotations as durable deletion records.
+- Bad: let tombstoned stable pages remain in active recall or L1 snapshots.
 
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
@@ -129,6 +151,8 @@
 - Associative recall covers direct links, backlinks, archived-page filtering, and compact context cards.
 - L4 session search covers explicit session scope, compact context cards, and omission of raw message content.
 - QueryPlanner covers lexical/dimension/temporal route generation, fused retrieval annotations, and CLI debug output.
+- Durable tombstones cover candidate rejection, explicit page tombstone, filtered tombstone listing, and compact read payloads.
+- Memory health covers counts, coverage, review cards, compact tool evidence, and CLI output.
 - `memory_read` covers both candidates and stable pages.
 - CLI `memory list` covers default draft candidates, active pages, unfiltered all inventory, and compact non-JSON rows.
 - CLI `memory read` covers candidates, pages, non-JSON output, and missing ids.

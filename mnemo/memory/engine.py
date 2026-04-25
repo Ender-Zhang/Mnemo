@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
-from .query import MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
+from .query import CONTENT_DIMENSIONS, MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
 
 L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
 W0_MEMORY_RETENTION = "memory_candidate"
@@ -202,12 +202,160 @@ class MemoryEngine:
         if not candidate:
             raise ValueError(f"Memory candidate not found: {candidate_id}")
 
-        status = f"rejected:{_status_reason(reason)}"
+        reason_text = _normalize_space(reason) or "unspecified"
+        status = f"rejected:{_status_reason(reason_text)}"
         self.store.update_memory_candidate_status(candidate_id, status)
-        return {
+        result = {
             "candidate_id": candidate_id,
             "status": status,
-            "reason": reason,
+            "reason": reason_text,
+        }
+        add_tombstone = getattr(self.store, "add_memory_tombstone", None)
+        if add_tombstone:
+            result["tombstone_id"] = add_tombstone(
+                candidate_id,
+                "candidate",
+                reason_text,
+                summary=_truncate(candidate.get("claim", ""), limit=180),
+                evidence_run_id=candidate.get("run_id"),
+                metadata={
+                    "status": status,
+                    "dimension": candidate.get("dimension"),
+                    "scope": candidate.get("scope"),
+                },
+            )
+        return result
+
+    def tombstone_memory(
+        self,
+        memory_id: str,
+        reason: str,
+        *,
+        target_type: str = "auto",
+    ) -> dict[str, Any]:
+        normalized_target_type = _normalize_tombstone_target_type(target_type)
+        reason_text = _normalize_space(reason) or "unspecified"
+        reason_slug = _status_reason(reason_text)
+        if normalized_target_type in {"auto", "page"}:
+            page = self._get_page(memory_id)
+            if page:
+                status = f"tombstoned:{reason_slug}"
+                update_page_status = getattr(self.store, "update_memory_page_status", None)
+                if not update_page_status:
+                    raise ValueError("memory page tombstone is not supported by this store")
+                update_page_status(memory_id, status)
+                tombstone_id = self.store.add_memory_tombstone(
+                    memory_id,
+                    "page",
+                    reason_text,
+                    summary=_truncate(page.get("content", ""), limit=180),
+                    metadata={
+                        "title": page.get("title"),
+                        "scope": page.get("scope"),
+                        "previous_status": page.get("status"),
+                    },
+                )
+                return {
+                    "memory_id": memory_id,
+                    "target_type": "page",
+                    "status": status,
+                    "reason": reason_text,
+                    "tombstone_id": tombstone_id,
+                    "memory": self._get_page(memory_id),
+                }
+
+        if normalized_target_type in {"auto", "candidate"}:
+            candidate = self._get_candidate(memory_id)
+            if candidate:
+                status = f"tombstoned:{reason_slug}"
+                self.store.update_memory_candidate_status(memory_id, status)
+                tombstone_id = self.store.add_memory_tombstone(
+                    memory_id,
+                    "candidate",
+                    reason_text,
+                    summary=_truncate(candidate.get("claim", ""), limit=180),
+                    evidence_run_id=candidate.get("run_id"),
+                    metadata={
+                        "dimension": candidate.get("dimension"),
+                        "scope": candidate.get("scope"),
+                        "previous_status": candidate.get("status"),
+                    },
+                )
+                return {
+                    "memory_id": memory_id,
+                    "target_type": "candidate",
+                    "status": status,
+                    "reason": reason_text,
+                    "tombstone_id": tombstone_id,
+                    "memory": self._get_candidate(memory_id),
+                }
+
+        raise ValueError(f"Memory item not found for tombstone: {memory_id}")
+
+    def health_report(self, limit: int = 20) -> dict[str, Any]:
+        card_limit = max(1, min(50, int(limit)))
+        inventory_limit = max(50, card_limit * 5)
+        pages = self.store.list_memory_pages(status=None, limit=inventory_limit)
+        candidates = self.store.list_memory_candidates(status=None, limit=inventory_limit)
+        list_tombstones = getattr(self.store, "list_memory_tombstones", None)
+        tombstones = list_tombstones(limit=inventory_limit) if list_tombstones else []
+        active_pages = [page for page in pages if page.get("status") == "active"]
+        stale_pages = [page for page in pages if _is_stale_status(page.get("status"))]
+        tombstoned_pages = [page for page in pages if _is_tombstone_status(page.get("status"))]
+        draft_candidates = [item for item in candidates if item.get("status") == "draft"]
+        review_candidates = [item for item in candidates if str(item.get("status") or "").startswith("needs_review")]
+        rejected_candidates = [item for item in candidates if _is_tombstone_status(item.get("status"))]
+        orphan_pages = [page for page in active_pages if self._is_orphan_page(page["id"])]
+        low_confidence_pages = [
+            page
+            for page in active_pages
+            if float(page.get("confidence") or 0.0) < 0.65
+        ]
+        dimensions = _dimension_counts(active_pages, candidates)
+        review_cards = _bounded_cards(
+            [
+                *[_page_review_card("verify_stale", page) for page in stale_pages],
+                *[_page_review_card("improve_evidence", page) for page in low_confidence_pages],
+                *[_candidate_review_card("review_conflict", candidate) for candidate in review_candidates],
+                *[_tombstone_review_card(tombstone) for tombstone in tombstones[:card_limit]],
+                *[_page_review_card("connect_orphan", page) for page in orphan_pages],
+            ],
+            limit=card_limit,
+        )
+        return {
+            "kind": "memory_health_report",
+            "generated_at": time.time(),
+            "counts": {
+                "pages": {
+                    "total": len(pages),
+                    "active": len(active_pages),
+                    "stale": len(stale_pages),
+                    "tombstoned": len(tombstoned_pages),
+                    "orphan_active": len(orphan_pages),
+                    "low_confidence_active": len(low_confidence_pages),
+                },
+                "candidates": {
+                    "total": len(candidates),
+                    "draft": len(draft_candidates),
+                    "needs_review": len(review_candidates),
+                    "rejected_or_tombstoned": len(rejected_candidates),
+                },
+                "tombstones": len(tombstones),
+            },
+            "coverage": {
+                "dimensions": dimensions,
+                "covered": sum(1 for count in dimensions.values() if count > 0),
+                "total": len(dimensions),
+            },
+            "score": _health_score(
+                dimensions=dimensions,
+                active_pages=active_pages,
+                stale_pages=stale_pages,
+                orphan_pages=orphan_pages,
+                low_confidence_pages=low_confidence_pages,
+                review_candidates=review_candidates,
+            ),
+            "review_cards": review_cards,
         }
 
     def dream_consolidate(self, limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]:
@@ -348,6 +496,15 @@ class MemoryEngine:
                 item[0].get("id", ""),
             ),
         )
+
+    def _is_orphan_page(self, page_id: str) -> bool:
+        list_links = getattr(self.store, "list_memory_links", None)
+        if list_links and list_links(page_id):
+            return False
+        list_backlinks = getattr(self.store, "list_memory_backlinks", None)
+        if list_backlinks and list_backlinks(page_id):
+            return False
+        return True
 
     def _find_duplicate_page(self, claim: str) -> dict[str, Any] | None:
         matches = self.store.search_memory_pages(claim, limit=1)
@@ -569,6 +726,138 @@ def _normalize_search_scope(value: str) -> str:
     if normalized == "stable":
         return "memory"
     return normalized
+
+
+def _normalize_tombstone_target_type(value: str) -> str:
+    normalized = str(value or "auto").strip().casefold()
+    if normalized not in {"auto", "candidate", "page"}:
+        raise ValueError(f"invalid memory tombstone target type: {value}")
+    return normalized
+
+
+def _dimension_counts(pages: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> dict[str, int]:
+    counts = {dimension: 0 for dimension in CONTENT_DIMENSIONS}
+    for page in pages:
+        dimension = _infer_dimension(page.get("title") or page.get("scope") or "")
+        if dimension in counts:
+            counts[dimension] += 1
+    for candidate in candidates:
+        if candidate.get("status") not in {"draft", "needs_review:conflict"}:
+            continue
+        dimension = _infer_dimension(candidate.get("dimension") or candidate.get("scope") or "")
+        if dimension in counts:
+            counts[dimension] += 1
+    return counts
+
+
+def _infer_dimension(value: str) -> str:
+    text = str(value or "").strip().casefold()
+    head = text.split(":", 1)[0].strip()
+    if head in CONTENT_DIMENSIONS:
+        return head
+    for dimension in CONTENT_DIMENSIONS:
+        if dimension in text:
+            return dimension
+    return "context"
+
+
+def _bounded_cards(cards: list[dict[str, Any]], *, limit: int) -> list[dict[str, Any]]:
+    return cards[: max(0, int(limit))]
+
+
+def _page_review_card(kind: str, page: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "target_type": "page",
+        "target_id": page.get("id"),
+        "title": _truncate(page.get("title", ""), limit=96),
+        "summary": _truncate(page.get("content", ""), limit=180),
+        "status": page.get("status"),
+        "confidence": page.get("confidence"),
+        "updated_at": page.get("updated_at"),
+        "actions": _review_actions(kind),
+    }
+
+
+def _candidate_review_card(kind: str, candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "target_type": "candidate",
+        "target_id": candidate.get("id"),
+        "title": candidate.get("dimension") or "memory candidate",
+        "summary": _truncate(candidate.get("claim", ""), limit=180),
+        "status": candidate.get("status"),
+        "confidence": candidate.get("confidence"),
+        "created_at": candidate.get("created_at"),
+        "actions": _review_actions(kind),
+    }
+
+
+def _tombstone_review_card(tombstone: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "respect_tombstone",
+        "target_type": tombstone.get("target_type"),
+        "target_id": tombstone.get("target_id"),
+        "tombstone_id": tombstone.get("id"),
+        "title": f"Do not resurrect: {tombstone.get('reason')}",
+        "summary": _truncate(tombstone.get("summary", ""), limit=180),
+        "reason": tombstone.get("reason"),
+        "created_at": tombstone.get("created_at"),
+        "actions": ["avoid_relearning"],
+    }
+
+
+def _review_actions(kind: str) -> list[str]:
+    if kind == "verify_stale":
+        return ["confirm", "archive", "tombstone"]
+    if kind == "review_conflict":
+        return ["promote", "reject", "tombstone"]
+    if kind == "connect_orphan":
+        return ["link", "leave"]
+    if kind == "improve_evidence":
+        return ["verify", "leave"]
+    return ["review"]
+
+
+def _health_score(
+    *,
+    dimensions: dict[str, int],
+    active_pages: list[dict[str, Any]],
+    stale_pages: list[dict[str, Any]],
+    orphan_pages: list[dict[str, Any]],
+    low_confidence_pages: list[dict[str, Any]],
+    review_candidates: list[dict[str, Any]],
+) -> dict[str, float]:
+    total_dimensions = max(1, len(dimensions))
+    active_count = max(1, len(active_pages))
+    coverage = sum(1 for count in dimensions.values() if count > 0) / total_dimensions
+    freshness = 1.0 - min(1.0, len(stale_pages) / max(1, len(active_pages) + len(stale_pages)))
+    connectedness = 1.0 - min(1.0, len(orphan_pages) / active_count)
+    evidence_quality = 1.0 - min(1.0, len(low_confidence_pages) / active_count)
+    safety = 1.0 - min(1.0, len(review_candidates) / max(1, len(review_candidates) + active_count))
+    return {
+        "coverage": round(coverage, 3),
+        "freshness": round(freshness, 3),
+        "connectedness": round(connectedness, 3),
+        "evidence_quality": round(evidence_quality, 3),
+        "safety": round(safety, 3),
+        "overall": round((coverage + freshness + connectedness + evidence_quality + safety) / 5, 3),
+    }
+
+
+def _is_stale_status(status: Any) -> bool:
+    normalized = str(status or "").casefold()
+    return normalized.startswith("stale") or normalized.startswith("archived") or "stale" in normalized
+
+
+def _is_tombstone_status(status: Any) -> bool:
+    normalized = str(status or "").casefold()
+    return (
+        "tombstone" in normalized
+        or normalized.startswith("rejected")
+        or "private_delete" in normalized
+        or "deleted" in normalized
+    )
 
 
 def _truncate(value: str, limit: int = 220) -> str:

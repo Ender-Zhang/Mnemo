@@ -127,6 +127,34 @@ CORE_TOOL_SPECS = [
         input_schema=_schema(["id"], {"id": {"type": "string"}}),
     ),
     ToolSpec(
+        name="memory_health_report",
+        description="Read compact memory health counts and model-actionable review cards.",
+        risk="read",
+        input_schema=_schema(
+            [],
+            {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="memory_tombstone",
+        description="Move a memory candidate or stable page out of active use and record a durable tombstone.",
+        risk="write",
+        input_schema=_schema(
+            ["id", "reason"],
+            {
+                "id": {"type": "string"},
+                "reason": {"type": "string"},
+                "target_type": {
+                    "type": "string",
+                    "enum": ["auto", "candidate", "page"],
+                    "default": "auto",
+                },
+            },
+        ),
+    ),
+    ToolSpec(
         name="recall_search",
         description="Find compact, actionable cards across memory, prior work, artifacts, and decisions.",
         risk="read",
@@ -393,6 +421,8 @@ class ToolRegistry:
             "tool_expand_schema": self._tool_expand_schema,
             "memory_search": self._memory_search,
             "memory_read": self._memory_read,
+            "memory_health_report": self._memory_health_report,
+            "memory_tombstone": self._memory_tombstone,
             "recall_search": self._recall_search,
             "working_note": self._working_note,
             "skills_list": self._skills_list,
@@ -553,11 +583,33 @@ class ToolRegistry:
         memory_id = _require_str(args, "id")
         candidate = context.store.get_memory_candidate(memory_id)
         if candidate:
-            return {"memory": {"type": "candidate", **candidate}}
+            return {
+                "memory": {
+                    "type": "candidate",
+                    **candidate,
+                    "tombstones": context.store.list_memory_tombstones(target_id=memory_id, limit=10),
+                }
+            }
         page = context.store.get_memory_page(memory_id)
         if page:
-            return {"memory": {"type": "page", **page}}
+            return {
+                "memory": {
+                    "type": "page",
+                    **page,
+                    "tombstones": context.store.list_memory_tombstones(target_id=memory_id, limit=10),
+                }
+            }
         raise NotFoundError(f"memory not found: {memory_id}")
+
+    def _memory_health_report(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        limit = _bounded_limit(args.get("limit"), default=20, maximum=50)
+        return MemoryEngine(context.store).health_report(limit=limit)
+
+    def _memory_tombstone(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        memory_id = _require_str(args, "id")
+        reason = _require_str(args, "reason")
+        target_type = _memory_tombstone_target_type(args)
+        return MemoryEngine(context.store).tombstone_memory(memory_id, reason, target_type=target_type)
 
     def _recall_search(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         query = _require_str(args, "query")
@@ -999,6 +1051,7 @@ def _is_profile_safe_tool(name: str) -> bool:
     return name in {
         "memory_search",
         "memory_read",
+        "memory_health_report",
         "recall_search",
         "skills_list",
         "skill_view",
@@ -1060,6 +1113,10 @@ def _tool_summary(result: ToolResult) -> str:
         return f"Prepared {len(result.result.get('expanded_tool_names', []))} tool schemas for the next model round."
     if result.name == "memory_read":
         return "Memory item loaded."
+    if result.name == "memory_health_report":
+        return f"Memory health report has {len(result.result.get('review_cards', []))} review cards."
+    if result.name == "memory_tombstone":
+        return "Memory tombstone recorded."
     if result.name == "working_note":
         return "Working note recorded."
     if result.name == "skills_list":
@@ -1150,6 +1207,28 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
     if result.name == "memory_read":
         memory = result.result.get("memory") or {}
         return [_evidence("memory", memory.get("id"), str(memory.get("claim") or memory.get("title") or "Memory"))]
+    if result.name == "memory_health_report":
+        counts = result.result.get("counts") or {}
+        score = result.result.get("score") or {}
+        return [
+            {
+                "kind": "memory_health",
+                "summary": f"{len(result.result.get('review_cards', []))} review cards",
+                "counts": counts,
+                "score": score,
+                "review_cards": result.result.get("review_cards", [])[:5],
+            }
+        ]
+    if result.name == "memory_tombstone":
+        return [
+            {
+                "kind": "memory_tombstone",
+                "id": str(result.result.get("tombstone_id") or ""),
+                "target_id": result.result.get("memory_id"),
+                "target_type": result.result.get("target_type"),
+                "reason": result.result.get("reason"),
+            }
+        ]
     if result.name == "working_note":
         return [_evidence("working_note", result.result.get("note_id"), "Working note")]
     if result.name == "skills_list":
@@ -1469,6 +1548,13 @@ def _memory_search_scope(args: dict[str, Any]) -> str:
     if scope not in {"memory", "stable", "sessions", "all"}:
         raise ToolError(f"invalid memory search scope: {scope}")
     return scope
+
+
+def _memory_tombstone_target_type(args: dict[str, Any]) -> str:
+    target_type = str(args.get("target_type") or "auto")
+    if target_type not in {"auto", "candidate", "page"}:
+        raise ToolError(f"invalid memory tombstone target_type: {target_type}")
+    return target_type
 
 
 def _recall_scope(args: dict[str, Any]) -> str:

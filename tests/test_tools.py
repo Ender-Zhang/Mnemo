@@ -200,6 +200,61 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(result.result["memory"]["type"], "page")
             self.assertEqual(result.result["memory"]["id"], page_id)
             self.assertEqual(result.result["memory"]["content"], "User prefers focused regression tests")
+            self.assertEqual(result.result["memory"]["tombstones"], [])
+
+    def test_memory_health_report_tool_returns_compact_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            store.upsert_memory_page(
+                "preferences: evidence",
+                "User prefers compact tool evidence",
+                confidence=0.4,
+            )
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="memory_health_report",
+                    arguments={"limit": 5},
+                    call_id="call_memory_health",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["kind"], "memory_health_report")
+            self.assertIn("score", compact["evidence"][0])
+            self.assertEqual(compact["evidence"][0]["kind"], "memory_health")
+            self.assertIn("review cards", compact["summary"])
+
+    def test_memory_tombstone_tool_records_durable_tombstone(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: obsolete tool",
+                "User prefers an obsolete tool",
+                confidence=0.8,
+            )
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="memory_tombstone",
+                    arguments={"id": page_id, "reason": "superseded", "target_type": "page"},
+                    call_id="call_memory_tombstone",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["target_type"], "page")
+            self.assertEqual(store.get_memory_page(page_id)["status"], "tombstoned:superseded")
+            self.assertEqual(store.list_memory_tombstones(target_id=page_id)[0]["reason"], "superseded")
+            self.assertEqual(compact["evidence"][0]["kind"], "memory_tombstone")
 
     def test_memory_search_can_target_session_snippets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

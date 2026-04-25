@@ -37,7 +37,71 @@ class MemoryEngineTests(unittest.TestCase):
             result = MemoryEngine(store).reject_candidate(candidate_id, "not durable")
 
             self.assertEqual(result["status"], "rejected:not_durable")
+            self.assertTrue(result["tombstone_id"].startswith("tomb_"))
             self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "rejected:not_durable")
+            tombstones = store.list_memory_tombstones(target_id=candidate_id)
+            self.assertEqual(tombstones[0]["reason"], "not durable")
+            self.assertEqual(tombstones[0]["target_type"], "candidate")
+
+    def test_tombstone_page_removes_it_from_active_recall(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: obsolete editor",
+                "User prefers OldEdit for project notes",
+                confidence=0.83,
+            )
+
+            result = MemoryEngine(store).tombstone_memory(page_id, "superseded", target_type="page")
+
+            page = store.get_memory_page(page_id)
+            self.assertEqual(result["target_type"], "page")
+            self.assertEqual(page["status"], "tombstoned:superseded")
+            self.assertEqual(store.list_memory_tombstones(target_id=page_id)[0]["reason"], "superseded")
+            self.assertEqual(MemoryEngine(store).search("OldEdit", limit=5), [])
+
+    def test_memory_health_report_surfaces_counts_and_review_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            active_id = store.upsert_memory_page(
+                "preferences: updates",
+                "User prefers direct updates",
+                confidence=0.9,
+            )
+            low_id = store.upsert_memory_page(
+                "context: weak signal",
+                "Possibly useful but weak memory",
+                confidence=0.4,
+            )
+            store.add_memory_link(active_id, low_id, "related", weight=0.8)
+            stale_id = store.upsert_memory_page(
+                "goals: stale project",
+                "User wanted to try an old project",
+                status="stale",
+                confidence=0.5,
+            )
+            conflict_id = store.add_memory_candidate(
+                run_id,
+                "User dislikes direct updates",
+                dimension="preferences",
+                confidence=0.9,
+            )
+            store.update_memory_candidate_status(conflict_id, "needs_review:conflict")
+            MemoryEngine(store).tombstone_memory(stale_id, "rejected", target_type="page")
+
+            report = MemoryEngine(store).health_report(limit=10)
+
+            self.assertEqual(report["kind"], "memory_health_report")
+            self.assertEqual(report["counts"]["pages"]["active"], 2)
+            self.assertEqual(report["counts"]["pages"]["low_confidence_active"], 1)
+            self.assertEqual(report["counts"]["candidates"]["needs_review"], 1)
+            self.assertEqual(report["counts"]["tombstones"], 1)
+            self.assertGreaterEqual(report["coverage"]["dimensions"]["preferences"], 1)
+            self.assertIn("overall", report["score"])
+            card_kinds = {card["kind"] for card in report["review_cards"]}
+            self.assertIn("improve_evidence", card_kinds)
+            self.assertIn("review_conflict", card_kinds)
+            self.assertIn("respect_tombstone", card_kinds)
 
     def test_search_returns_pages_and_candidates_with_type(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

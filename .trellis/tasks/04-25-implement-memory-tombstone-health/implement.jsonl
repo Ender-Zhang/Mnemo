@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory tombstone and health contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Provider-native memory curation tools"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Durable tombstone schema and migrations"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI service error normalization"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation and package smoke gate"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer storage/service/tool/CLI payload flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing memory/tool/CLI patterns"}

@@ -22,12 +22,13 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "runs").is_dir())
             self.assertTrue((Path(tmp) / "artifacts").is_dir())
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6, 7])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], list(range(1, SCHEMA_VERSION + 1)))
             self.assertIn("event_outbox", _tables(Path(tmp) / "state.db"))
             self.assertIn("run_queue", _tables(Path(tmp) / "state.db"))
             self.assertIn("generated_tools", _tables(Path(tmp) / "state.db"))
             self.assertIn("session_messages", _tables(Path(tmp) / "state.db"))
             self.assertIn("inbox_items", _tables(Path(tmp) / "state.db"))
+            self.assertIn("memory_tombstones", _tables(Path(tmp) / "state.db"))
 
     def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -39,8 +40,8 @@ class StateStoreTests(unittest.TestCase):
             second = store.applied_migrations()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4, 5, 6, 7])
-            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4, 5, 6, 7])
+            self.assertEqual([item["version"] for item in first], list(range(1, SCHEMA_VERSION + 1)))
+            self.assertEqual([item["version"] for item in second], list(range(1, SCHEMA_VERSION + 1)))
             self.assertEqual(len(first), len(second))
 
     def test_initialize_upgrades_legacy_schema_columns(self) -> None:
@@ -104,7 +105,7 @@ class StateStoreTests(unittest.TestCase):
             store.initialize()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6, 7])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], list(range(1, SCHEMA_VERSION + 1)))
             self.assertIn("path", _columns(db_path, "skills"))
             self.assertIn("result_json", _columns(db_path, "eval_cases"))
             self.assertIn("metadata_json", _columns(db_path, "working_notes"))
@@ -113,6 +114,7 @@ class StateStoreTests(unittest.TestCase):
             self.assertIn("generated_tools", _tables(db_path))
             self.assertIn("session_messages", _tables(db_path))
             self.assertIn("inbox_items", _tables(db_path))
+            self.assertIn("memory_tombstones", _tables(db_path))
             self.assertIsNone(store.get_skill("legacy")["path"])
             self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
             legacy_note = store.list_working_notes(status=None)[0]
@@ -536,6 +538,42 @@ class StateStoreTests(unittest.TestCase):
             matches = store.search_memory_candidates("concise")
             self.assertEqual(matches[0]["id"], candidate_id)
             self.assertEqual(store.get_memory_candidate(candidate_id)["claim"], matches[0]["claim"])
+
+    def test_memory_tombstones_round_trip_and_filter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("test")
+            mission_id = store.create_mission(conversation_id, "test mission")
+            run_id = store.create_run(conversation_id, mission_id, "remember")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User no longer wants a legacy preference remembered",
+                dimension="preferences",
+                confidence=0.8,
+            )
+
+            tombstone_id = store.add_memory_tombstone(
+                candidate_id,
+                "candidate",
+                "rejected",
+                summary="Legacy preference",
+                evidence_run_id=run_id,
+                metadata={"dimension": "preferences"},
+            )
+            all_tombstones = store.list_memory_tombstones()
+            filtered = store.list_memory_tombstones(target_id=candidate_id, target_type="candidate")
+
+            tombstone = store.get_memory_tombstone(tombstone_id)
+            self.assertEqual(tombstone["target_id"], candidate_id)
+            self.assertEqual(tombstone["target_type"], "candidate")
+            self.assertEqual(tombstone["reason"], "rejected")
+            self.assertEqual(tombstone["summary"], "Legacy preference")
+            self.assertEqual(tombstone["evidence_run_id"], run_id)
+            self.assertEqual(tombstone["metadata"], {"dimension": "preferences"})
+            self.assertTrue(tombstone["target_hash"].startswith("sha256:"))
+            self.assertEqual([item["id"] for item in all_tombstones], [tombstone_id])
+            self.assertEqual([item["id"] for item in filtered], [tombstone_id])
 
     def test_working_notes_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

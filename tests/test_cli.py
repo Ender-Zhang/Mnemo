@@ -368,6 +368,55 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: memory not found: mem_missing", missing.stderr)
             self.assertNotIn("Traceback", missing.stderr)
 
+    def test_memory_health_and_tombstone_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            page_id = store.upsert_memory_page(
+                "preferences: old cli",
+                "User prefers an old CLI behavior",
+                confidence=0.4,
+            )
+
+            health_before = _run_cli(["memory", "health", "--state-dir", tmp, "--json"])
+            tombstone = _run_cli(
+                [
+                    "memory",
+                    "tombstone",
+                    page_id,
+                    "--reason",
+                    "superseded",
+                    "--target-type",
+                    "page",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            tombstones = _run_cli(["memory", "tombstones", "--target-id", page_id, "--state-dir", tmp, "--json"])
+            health_plain = _run_cli(["memory", "health", "--state-dir", tmp])
+            tombstones_plain = _run_cli(["memory", "tombstones", "--target-id", page_id, "--state-dir", tmp])
+            missing = _run_cli(
+                ["memory", "tombstone", "mem_missing", "--reason", "rejected", "--state-dir", tmp]
+            )
+
+            self.assertEqual(health_before.returncode, 0, health_before.stderr)
+            self.assertEqual(json.loads(health_before.stdout)["kind"], "memory_health_report")
+            self.assertEqual(tombstone.returncode, 0, tombstone.stderr)
+            tombstone_payload = json.loads(tombstone.stdout)
+            self.assertEqual(tombstone_payload["target_type"], "page")
+            self.assertEqual(tombstone_payload["status"], "tombstoned:superseded")
+            self.assertEqual(store.get_memory_page(page_id)["status"], "tombstoned:superseded")
+            self.assertEqual(tombstones.returncode, 0, tombstones.stderr)
+            listed = json.loads(tombstones.stdout)["tombstones"]
+            self.assertEqual(listed[0]["target_id"], page_id)
+            self.assertEqual(listed[0]["reason"], "superseded")
+            self.assertIn("Memory health overall=", health_plain.stdout)
+            self.assertIn(f"tombstone {listed[0]['id']} page:{page_id}", tombstones_plain.stdout)
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: Memory item not found for tombstone: mem_missing", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+
     def test_memory_links_command_reads_outgoing_and_incoming_edges(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

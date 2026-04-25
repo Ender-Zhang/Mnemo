@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 import re
@@ -14,7 +15,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
@@ -23,6 +24,9 @@ QUEUE_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
 SESSION_MESSAGE_ROLES = ("user", "assistant", "tool", "system")
 INBOX_STATUSES = ("open", "resolved")
 INBOX_RESOLUTIONS = ("accepted", "rejected", "ignored")
+_DEFAULT_TOMBSTONE_RULE = (
+    "Do not recreate this memory from historical context unless the user explicitly restates it."
+)
 
 
 @dataclass(frozen=True)
@@ -179,6 +183,19 @@ class StateStore:
                     created_at REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS memory_tombstones (
+                    id TEXT PRIMARY KEY,
+                    target_id TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    target_hash TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    evidence_run_id TEXT,
+                    rule TEXT NOT NULL,
+                    metadata_json TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS skills (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL UNIQUE,
@@ -276,6 +293,10 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_memory_pages_title ON memory_pages(title);
                 CREATE INDEX IF NOT EXISTS idx_memory_pages_content ON memory_pages(content);
                 CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
+                CREATE INDEX IF NOT EXISTS idx_memory_tombstones_target
+                    ON memory_tombstones(target_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_memory_tombstones_type_created
+                    ON memory_tombstones(target_type, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name);
                 CREATE INDEX IF NOT EXISTS idx_skill_usage_skill_name ON skill_usage_events(skill_name, created_at);
                 CREATE INDEX IF NOT EXISTS idx_skill_usage_run ON skill_usage_events(run_id);
@@ -1143,6 +1164,13 @@ class StateStore:
                 (status, candidate_id),
             )
 
+    def update_memory_page_status(self, page_id: str, status: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE memory_pages SET status = ?, updated_at = ? WHERE id = ?",
+                (status, time.time(), page_id),
+            )
+
     def update_memory_page_confidence(self, page_id: str, confidence: float) -> None:
         with self.connect() as conn:
             conn.execute(
@@ -1300,6 +1328,97 @@ class StateStore:
                 (target_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def add_memory_tombstone(
+        self,
+        target_id: str,
+        target_type: str,
+        reason: str,
+        *,
+        summary: str = "",
+        target_hash: str | None = None,
+        evidence_run_id: str | None = None,
+        rule: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        clean_target_id = str(target_id or "").strip()
+        clean_target_type = str(target_type or "").strip().casefold()
+        clean_reason = str(reason or "").strip()
+        if not clean_target_id:
+            raise ValueError("memory tombstone target_id is required")
+        if clean_target_type not in {"candidate", "page"}:
+            raise ValueError(f"invalid memory tombstone target_type: {target_type}")
+        if not clean_reason:
+            raise ValueError("memory tombstone reason is required")
+        clean_summary = " ".join(str(summary or "").split())
+        tombstone_id = new_id("tomb")
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO memory_tombstones(
+                    id, target_id, target_type, target_hash, reason, summary,
+                    evidence_run_id, rule, metadata_json, created_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tombstone_id,
+                    clean_target_id,
+                    clean_target_type,
+                    _target_hash(target_hash, clean_summary or clean_target_id),
+                    clean_reason,
+                    clean_summary,
+                    evidence_run_id,
+                    rule or _DEFAULT_TOMBSTONE_RULE,
+                    dumps(metadata or {}),
+                    time.time(),
+                ),
+            )
+        return tombstone_id
+
+    def get_memory_tombstone(self, tombstone_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, target_id, target_type, target_hash, reason, summary,
+                       evidence_run_id, rule, metadata_json, created_at
+                FROM memory_tombstones
+                WHERE id = ?
+                """,
+                (tombstone_id,),
+            ).fetchone()
+        return _memory_tombstone_from_row(row) if row else None
+
+    def list_memory_tombstones(
+        self,
+        *,
+        target_id: str | None = None,
+        target_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, target_id, target_type, target_hash, reason, summary,
+                   evidence_run_id, rule, metadata_json, created_at
+            FROM memory_tombstones
+        """
+        params: list[Any] = []
+        clauses: list[str] = []
+        if target_id:
+            clauses.append("target_id = ?")
+            params.append(target_id)
+        if target_type:
+            clean_target_type = str(target_type).strip().casefold()
+            if clean_target_type not in {"candidate", "page"}:
+                raise ValueError(f"invalid memory tombstone target_type: {target_type}")
+            clauses.append("target_type = ?")
+            params.append(clean_target_type)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC, id DESC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_memory_tombstone_from_row(row) for row in rows]
 
     def upsert_skill(
         self,
@@ -1898,6 +2017,20 @@ def _memory_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return result
 
 
+def _memory_tombstone_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json"), {})
+    return result
+
+
+def _target_hash(explicit_hash: str | None, fallback: str) -> str:
+    clean_hash = str(explicit_hash or "").strip()
+    if clean_hash:
+        return clean_hash
+    digest = hashlib.sha256(str(fallback or "").encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
 def _run_summary_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     input_text = str(result.pop("input_text", "") or "")
@@ -2290,6 +2423,30 @@ def _migration_inbox_items(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_memory_tombstones(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS memory_tombstones (
+            id TEXT PRIMARY KEY,
+            target_id TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_hash TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            evidence_run_id TEXT,
+            rule TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            created_at REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_tombstones_target
+            ON memory_tombstones(target_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_memory_tombstones_type_created
+            ON memory_tombstones(target_type, created_at DESC);
+        """
+    )
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
@@ -2298,6 +2455,7 @@ MIGRATIONS = (
     SchemaMigration(5, "generated_tools", _migration_generated_tools),
     SchemaMigration(6, "session_messages_fts", _migration_session_messages_fts),
     SchemaMigration(7, "inbox_items", _migration_inbox_items),
+    SchemaMigration(8, "memory_tombstones", _migration_memory_tombstones),
 )
 
 

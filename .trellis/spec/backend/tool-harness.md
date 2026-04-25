@@ -41,6 +41,9 @@
 - `memory_search` returns compact `query_plan` metadata plus `matches`; the plan contains routes and annotations, not raw transcripts.
 - `memory_search(search_scope="sessions")` returns bounded `session_message` snippets with conversation/mission/run/message ids and no raw transcript body.
 - `memory_read` reads either a memory candidate or a stable memory page by id.
+- `memory_read` includes durable tombstone metadata for the requested id and still requires explicit read intent.
+- `memory_health_report(limit=20)` is read-only and returns compact counts, scores, configured-dimension coverage, and bounded review cards.
+- `memory_tombstone(id, reason, target_type="auto")` is write risk and records a durable tombstone while updating candidate/page status.
 - `recall_search(query, scope="all", limit=8)` returns compact actionable cards across knowledge, past work, artifacts, and decisions.
 - `recall_search.scope` is one of `all`, `knowledge`, `past_work`, `artifacts`, or `decisions`.
 - `recall_search` is read-only and must omit full artifact bodies and raw session transcripts from result cards and compact evidence.
@@ -101,6 +104,8 @@
 | Memory page read | Return stable page payload when `memory_read.id` is a memory page id | `tests/test_tools.py` |
 | Session memory search | `memory_search` can target L4 snippets through `search_scope="sessions"` | `tests/test_tools.py` |
 | Memory query plan | `memory_search` result includes compact query plan metadata | `tests/test_tools.py` |
+| Memory health report | Return compact health evidence without raw page bodies beyond review summaries | `tests/test_tools.py` |
+| Memory tombstone | Write policy records durable tombstone and compact evidence | `tests/test_tools.py` |
 | Recall search | Return compact actionable cards for memory/session/artifact/decision matches without raw bodies | `tests/test_tools.py`, `tests/test_runtime.py`, `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -109,6 +114,7 @@
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.
 - Good: expose L4 recall through `memory_search` scope instead of adding a separate session workflow tool.
+- Good: expose memory maintenance through ordinary read/write tools so the model decides when to call them.
 - Good: expose user-facing cross-surface recall through one read-only `recall_search` tool instead of separate dashboard workflows.
 - Good: expose large or rare tool surfaces through `tool_search` and `tool_expand_schema` rather than dumping every schema into every reduced prompt mode.
 - Good: represent user approvals as Inbox decision item ids, not transient-only chat text.
@@ -122,6 +128,8 @@
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
 - Memory search session scope: assert session snippets include provenance ids and omit raw content.
+- Memory health report: assert compact counts, score, and review-card evidence.
+- Memory tombstone: assert status mutation, durable tombstone row, and compact evidence.
 - Recall search: assert compact cards include `kind`, `item_id`, `title`, `summary`, provenance ids, and action hints while omitting full bodies/transcripts.
 - Working note retention metadata: assert stored metadata and compact result remain small.
 - Skill review: assert status is persisted and compact result omits full skill body.

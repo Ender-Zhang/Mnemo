@@ -253,6 +253,22 @@ def build_parser() -> argparse.ArgumentParser:
     memory_snapshot_parser = memory_subparsers.add_parser("snapshot", help="Inspect the compiled L1 memory snapshot")
     _add_state_dir(memory_snapshot_parser)
     memory_snapshot_parser.add_argument("--json", action="store_true")
+    memory_health_parser = memory_subparsers.add_parser("health", help="Inspect compact memory health and review cards")
+    _add_state_dir(memory_health_parser)
+    memory_health_parser.add_argument("--limit", type=int, default=20)
+    memory_health_parser.add_argument("--json", action="store_true")
+    memory_tombstones_parser = memory_subparsers.add_parser("tombstones", help="List durable memory tombstones")
+    _add_state_dir(memory_tombstones_parser)
+    memory_tombstones_parser.add_argument("--target-id")
+    memory_tombstones_parser.add_argument("--target-type", choices=["candidate", "page"])
+    memory_tombstones_parser.add_argument("--limit", type=int, default=50)
+    memory_tombstones_parser.add_argument("--json", action="store_true")
+    memory_tombstone_parser = memory_subparsers.add_parser("tombstone", help="Tombstone a memory candidate or page")
+    _add_state_dir(memory_tombstone_parser)
+    memory_tombstone_parser.add_argument("memory_id")
+    memory_tombstone_parser.add_argument("--reason", required=True)
+    memory_tombstone_parser.add_argument("--target-type", choices=["auto", "candidate", "page"], default="auto")
+    memory_tombstone_parser.add_argument("--json", action="store_true")
     memory_promote_parser = memory_subparsers.add_parser("promote", help="Promote a memory candidate")
     _add_state_dir(memory_promote_parser)
     memory_promote_parser.add_argument("candidate_id")
@@ -927,6 +943,21 @@ def _cmd_memory(args: argparse.Namespace) -> int:
         elif args.memory_command == "snapshot":
             snapshot = engine.load_l1_snapshot()
             result = {"exists": snapshot is not None, "snapshot": snapshot}
+        elif args.memory_command == "health":
+            result = engine.health_report(limit=args.limit)
+        elif args.memory_command == "tombstones":
+            result = {
+                "limit": max(0, int(args.limit)),
+                "target_id": args.target_id,
+                "target_type": args.target_type,
+                "tombstones": store.list_memory_tombstones(
+                    target_id=args.target_id,
+                    target_type=args.target_type,
+                    limit=args.limit,
+                ),
+            }
+        elif args.memory_command == "tombstone":
+            result = engine.tombstone_memory(args.memory_id, args.reason, target_type=args.target_type)
         elif args.memory_command == "promote":
             result = engine.promote_candidate(args.candidate_id)
         elif args.memory_command == "reject":
@@ -996,6 +1027,33 @@ def _print_memory_result(result: dict) -> None:
                 f"scope={item.get('scope', '')}: {_short_text(item.get('title', ''))} :: "
                 f"{_short_text(item.get('summary', ''))}"
             )
+        return
+    if result.get("kind") == "memory_health_report":
+        counts = result.get("counts", {})
+        score = result.get("score", {})
+        pages = counts.get("pages", {})
+        candidates = counts.get("candidates", {})
+        print(
+            "Memory health "
+            f"overall={float(score.get('overall', 0.0)):.3f} "
+            f"active_pages={pages.get('active', 0)} stale={pages.get('stale', 0)} "
+            f"tombstones={counts.get('tombstones', 0)} draft_candidates={candidates.get('draft', 0)}"
+        )
+        for card in result.get("review_cards", []):
+            print(
+                f"- {card.get('kind')} {card.get('target_type')}:{card.get('target_id')} "
+                f"[{card.get('status') or card.get('reason') or '-'}] {_short_text(card.get('summary', ''))}"
+            )
+        return
+    if "tombstones" in result and "matches" not in result:
+        for tombstone in result.get("tombstones", []):
+            print(_format_memory_tombstone(tombstone))
+        return
+    if "tombstone_id" in result and "memory_id" in result:
+        print(
+            f"tombstoned {result['target_type']} {result['memory_id']} "
+            f"-> {result['tombstone_id']} reason={result.get('reason', '')}"
+        )
         return
     if "memory_id" in result and ("outgoing" in result or "incoming" in result):
         for link in result.get("outgoing", []):
@@ -1104,6 +1162,13 @@ def _format_memory_link(direction: str, link: dict[str, Any]) -> str:
     )
 
 
+def _format_memory_tombstone(tombstone: dict[str, Any]) -> str:
+    return (
+        f"tombstone {tombstone['id']} {tombstone['target_type']}:{tombstone['target_id']} "
+        f"reason={tombstone['reason']}: {_short_text(tombstone.get('summary', ''))}"
+    )
+
+
 def _memory_status_filter(status: str | None, *, default: str) -> str | None:
     if status is None:
         return default
@@ -1115,10 +1180,18 @@ def _memory_status_filter(status: str | None, *, default: str) -> str | None:
 def _read_memory_item(store: StateStore, memory_id: str) -> dict[str, Any]:
     candidate = store.get_memory_candidate(memory_id)
     if candidate:
-        return {"type": "candidate", **candidate}
+        return {
+            "type": "candidate",
+            **candidate,
+            "tombstones": store.list_memory_tombstones(target_id=memory_id, limit=10),
+        }
     page = store.get_memory_page(memory_id)
     if page:
-        return {"type": "page", **page}
+        return {
+            "type": "page",
+            **page,
+            "tombstones": store.list_memory_tombstones(target_id=memory_id, limit=10),
+        }
     raise MnemoError(f"memory not found: {memory_id}")
 
 
