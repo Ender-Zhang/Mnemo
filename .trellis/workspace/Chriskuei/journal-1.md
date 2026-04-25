@@ -1930,3 +1930,36 @@ Added a shared mnemo evals CLI for listing stored eval cases and recording pass/
 ### Next Steps
 
 - None - task complete
+
+
+## Session 58: Expose eval case creation CLI
+
+**Date**: 2026-04-25
+**Task**: Expose eval case creation CLI
+**Branch**: `main`
+
+### Summary
+
+Added mnemo evals create for draft eval case creation from existing runs, reused StateStore add/list/update eval APIs, covered create/list/record and normalized missing-run and invalid JSON errors, and updated README, backend contracts, and implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `37caf37` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
