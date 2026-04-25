@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI parser and memory command handler"}
+{"file": "mnemo/storage/sqlite.py", "reason": "existing memory candidate/page read APIs"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "memory read contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI error normalization contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "CLI test and package quality gate"}
+{"file": "README.md", "reason": "document memory read command"}

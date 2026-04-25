@@ -176,6 +176,42 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_memory_read_command_reads_candidates_and_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("memory read")
+            mission_id = store.create_mission(conversation_id, "read memory items")
+            run_id = store.create_run(conversation_id, mission_id, "remember read command")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers compact memory inspection",
+                dimension="preference",
+                confidence=0.83,
+            )
+            page_id = store.upsert_memory_page(
+                "preferences: memory inspection",
+                "User wants direct CLI access to stable memory pages",
+                confidence=0.91,
+            )
+
+            candidate = _run_cli(["memory", "read", candidate_id, "--state-dir", tmp, "--json"])
+            page = _run_cli(["memory", "read", page_id, "--state-dir", tmp, "--json"])
+            plain = _run_cli(["memory", "read", page_id, "--state-dir", tmp])
+            missing = _run_cli(["memory", "read", "mem_missing", "--state-dir", tmp])
+
+            self.assertEqual(candidate.returncode, 0, candidate.stderr)
+            self.assertEqual(json.loads(candidate.stdout)["memory"]["type"], "candidate")
+            self.assertEqual(json.loads(candidate.stdout)["memory"]["id"], candidate_id)
+            self.assertEqual(page.returncode, 0, page.stderr)
+            self.assertEqual(json.loads(page.stdout)["memory"]["type"], "page")
+            self.assertEqual(json.loads(page.stdout)["memory"]["id"], page_id)
+            self.assertIn(f"page {page_id} [active] confidence=0.91", plain.stdout)
+            self.assertIn("User wants direct CLI access to stable memory pages", plain.stdout)
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: memory not found: mem_missing", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+
     def test_memory_missing_candidate_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             promote = _run_cli(["memory", "promote", "mem_missing", "--state-dir", tmp])

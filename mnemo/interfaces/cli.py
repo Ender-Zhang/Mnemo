@@ -130,6 +130,10 @@ def build_parser() -> argparse.ArgumentParser:
     memory_search_parser.add_argument("query", nargs="+")
     memory_search_parser.add_argument("--limit", type=int, default=5)
     memory_search_parser.add_argument("--json", action="store_true")
+    memory_read_parser = memory_subparsers.add_parser("read", help="Read a memory candidate or page by id")
+    _add_state_dir(memory_read_parser)
+    memory_read_parser.add_argument("memory_id")
+    memory_read_parser.add_argument("--json", action="store_true")
     memory_promote_parser = memory_subparsers.add_parser("promote", help="Promote a memory candidate")
     _add_state_dir(memory_promote_parser)
     memory_promote_parser.add_argument("candidate_id")
@@ -476,6 +480,8 @@ def _cmd_memory(args: argparse.Namespace) -> int:
     try:
         if args.memory_command == "search":
             result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
+        elif args.memory_command == "read":
+            result = {"memory": _read_memory_item(store, args.memory_id)}
         elif args.memory_command == "promote":
             result = engine.promote_candidate(args.candidate_id)
         elif args.memory_command == "reject":
@@ -518,7 +524,27 @@ def _print_memory_result(result: dict) -> None:
             else:
                 print(f"candidate {item['id']}: {item['claim']} [{item['status']}]")
         return
+    if "memory" in result:
+        item = result["memory"]
+        confidence = float(item.get("confidence", 0.0))
+        print(f"{item['type']} {item['id']} [{item.get('status', 'unknown')}] confidence={confidence:.2f} scope={item.get('scope', '')}")
+        if item["type"] == "page":
+            print(item.get("title", ""))
+            print(item.get("content", ""))
+        else:
+            print(item.get("claim", ""))
+        return
     print(dumps(result))
+
+
+def _read_memory_item(store: StateStore, memory_id: str) -> dict[str, Any]:
+    candidate = store.get_memory_candidate(memory_id)
+    if candidate:
+        return {"type": "candidate", **candidate}
+    page = store.get_memory_page(memory_id)
+    if page:
+        return {"type": "page", **page}
+    raise MnemoError(f"memory not found: {memory_id}")
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:
