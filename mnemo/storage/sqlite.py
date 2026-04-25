@@ -18,7 +18,7 @@ EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
 MANAGED_STATE_FILES = ("state.db",)
-QUEUE_STATUSES = ("pending", "running", "completed", "failed")
+QUEUE_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
 
 
 @dataclass(frozen=True)
@@ -387,6 +387,61 @@ class StateStore:
                 (status, output_text, now, run_id),
             )
 
+    def get_run(self, run_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, conversation_id, mission_id, status, input_text, output_text, created_at, completed_at
+                FROM runs
+                WHERE id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def cancel_run(self, run_id: str, *, reason: str = "cancelled") -> dict[str, Any]:
+        now = time.time()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, conversation_id, mission_id, status, input_text, output_text, created_at, completed_at
+                FROM runs
+                WHERE id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"run not found: {run_id}")
+            status = str(row["status"])
+            if status in {"completed", "failed", "cancelled"}:
+                result = dict(row)
+                result["changed"] = False
+                return result
+            conn.execute(
+                """
+                UPDATE runs
+                SET status = 'cancelled', output_text = ?, completed_at = ?
+                WHERE id = ?
+                """,
+                (reason, now, run_id),
+            )
+            updated = conn.execute(
+                """
+                SELECT id, conversation_id, mission_id, status, input_text, output_text, created_at, completed_at
+                FROM runs
+                WHERE id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+        result = dict(updated)
+        result["changed"] = True
+        return result
+
+    def is_run_cancelled(self, run_id: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute("SELECT status FROM runs WHERE id = ?", (run_id,)).fetchone()
+        return bool(row and row["status"] == "cancelled")
+
     def update_mission_checkpoint(self, mission_id: str, checkpoint: dict[str, Any]) -> None:
         with self.connect() as conn:
             conn.execute(
@@ -611,6 +666,48 @@ class StateStore:
                 """,
                 (status, run_id, now, None if status == "completed" else error, now, queue_id),
             )
+
+    def cancel_queue_item(self, queue_id: str, *, reason: str = "cancelled") -> dict[str, Any]:
+        now = time.time()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                       worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                       last_error, created_at, updated_at
+                FROM run_queue
+                WHERE id = ?
+                """,
+                (queue_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"queue item not found: {queue_id}")
+            status = str(row["status"])
+            if status != "pending":
+                result = _queue_item_from_row(row)
+                result["changed"] = False
+                return result
+            cursor = conn.execute(
+                """
+                UPDATE run_queue
+                SET status = 'cancelled', completed_at = ?, last_error = ?, updated_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (now, reason, now, queue_id),
+            )
+            updated = conn.execute(
+                """
+                SELECT id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                       worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                       last_error, created_at, updated_at
+                FROM run_queue
+                WHERE id = ?
+                """,
+                (queue_id,),
+            ).fetchone()
+        result = _queue_item_from_row(updated)
+        result["changed"] = cursor.rowcount == 1
+        return result
 
     def recover_stale_queue_items(self, stale_after_s: float = 900.0) -> list[dict[str, Any]]:
         now = time.time()

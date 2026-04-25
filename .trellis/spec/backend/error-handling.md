@@ -25,6 +25,7 @@
 - Non-streaming provider JSON requests retry timeout errors, connection errors, and `retry_status_codes` up to `retry_count`.
 - Streaming provider requests remain single-attempt because retrying after partial deltas can duplicate model output or tool calls.
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
+- Runtime cancellation is cooperative state, not a provider/tool error; observed cancellation completes the run with `status="cancelled"`.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
@@ -44,6 +45,7 @@
 | Non-retryable provider status | Adapter fails without extra attempts | `tests/test_providers.py` |
 | Streaming provider status | Streaming adapter fails without retry | `tests/test_providers.py` |
 | Retry config resolution | Runtime config resolves retry fields and redacts secrets | `tests/test_config.py` |
+| Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
@@ -51,8 +53,10 @@
 - Good: set `retry_count` only for transient endpoint instability and keep default at zero.
 - Base: `--api-key` is supported for local smoke but is redacted in output.
 - Base: streaming calls rely on timeout and normalized errors, not retries.
+- Base: blocking provider calls may only observe cancellation after the provider call returns or times out.
 - Bad: print Authorization headers, API keys, or full provider error bodies to stdout.
 - Bad: retry streaming calls after text/tool deltas have already been emitted.
+- Bad: reporting an observed user cancellation as `run.error`.
 
 ### 6. Tests Required
 - CLI success for OpenAI-compatible smoke.
@@ -61,6 +65,7 @@
 - Existing provider adapter status/payload/timeout tests still pass.
 - Provider retry tests for OpenAI-compatible and Anthropic non-streaming calls.
 - Config resolver test for `retry_count` and `retry_backoff_s`.
+- Runtime cancellation test for cancelled completion status.
 
 ### 7. Wrong vs Correct
 #### Wrong

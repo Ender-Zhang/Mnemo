@@ -32,7 +32,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] OpenAI-compatible provider-backed runtime.
 - [x] Provider-native tool calls bridged into ToolHarness.
 - [x] True streaming provider delta support.
-- [~] Timeout/retry/cancellation policy: provider timeout and non-streaming retry policy exist; explicit cancellation remains.
+- [x] Timeout/retry/cancellation policy: provider timeout, non-streaming retry, and cooperative persisted cancellation exist.
 - [x] Daemon, queue, single-instance lock, crash recovery.
 - [x] Replay harness.
 
@@ -129,12 +129,12 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Remaining Trellis Focus
 
-- [~] Explicit cancellation: provider timeout and non-streaming retry policy exist; cancellation signals and persisted cancellation state remain.
 - [~] Browser/app connectors: local workspace, HTTP, and shell tools exist; browser/app connector tools remain.
 
 ## Recently Landed Trellis Tasks
 
 - [x] `04-25-04-25-implement-provider-retry-policy`: provider config supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
+- [x] `04-25-04-25-implement-run-cancellation-foundation`: runs and queued daemon jobs can be cancelled durably, and provider/local runtimes complete observed cancellations with `status="cancelled"`.
 - [x] `04-25-04-25-implement-skill-patch-candidates`: model-directed `skill_patch_candidate` creates draft skill revisions with exact replacement checks, compact evidence, and unchanged source skills.
 - [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
 - [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.

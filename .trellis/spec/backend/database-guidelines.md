@@ -16,11 +16,15 @@
 - `StateStore.mark_outbox_event(event_id: str, status: str, *, error: str | None = None) -> None`
 - `StateStore.export_state(archive_path: str | Path) -> dict[str, Any]`
 - `StateStore.import_state(archive_path: str | Path, *, replace: bool = False) -> dict[str, Any]`
+- `StateStore.get_run(run_id: str) -> dict[str, Any] | None`
+- `StateStore.cancel_run(run_id: str, *, reason: str = "cancelled") -> dict[str, Any]`
+- `StateStore.is_run_cancelled(run_id: str) -> bool`
 - `StateStore.enqueue_run_request(message: str, *, conversation_id: str | None = None, mission_id: str | None = None, metadata: dict[str, Any] | None = None, available_at: float | None = None) -> str`
 - `StateStore.list_queue_items(status: str | None = None, *, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.claim_next_queue_item(worker_id: str) -> dict[str, Any] | None`
 - `StateStore.heartbeat_queue_item(queue_id: str) -> None`
 - `StateStore.complete_queue_item(queue_id: str, status: str, *, run_id: str | None = None, error: str | None = None) -> None`
+- `StateStore.cancel_queue_item(queue_id: str, *, reason: str = "cancelled") -> dict[str, Any]`
 - `StateStore.recover_stale_queue_items(stale_after_s: float = 900.0) -> list[dict[str, Any]]`
 - `StateStore.queue_stats() -> dict[str, Any]`
 - `StateStore.upsert_generated_tool(*, candidate_id: str, name: str, description: str, risk: str, input_schema: dict[str, Any], implementation: dict[str, Any], status: str = "active") -> str`
@@ -55,10 +59,15 @@
 - `import_state()` validates the manifest, rejects archives from newer schema versions, rejects unsafe paths, and migrates the restored database through `initialize()`.
 - Import into non-empty managed state requires `replace=True`.
 - Replace mode removes only managed Mnemo paths, not unrelated files in the state directory.
+- Runs may be `running`, `completed`, `failed`, or `cancelled`.
+- `cancel_run()` marks only non-terminal runs as `cancelled`; terminal runs return unchanged.
+- Runtime code should check `is_run_cancelled()` between provider/tool steps and complete with `status="cancelled"`.
 - `run_queue` stores durable local work with `message`, optional conversation/mission ids, structured metadata, status, attempts, worker id, produced run id, timing fields, and last error.
-- Queue statuses are `pending`, `running`, `completed`, and `failed`.
+- Queue statuses are `pending`, `running`, `completed`, `failed`, and `cancelled`.
 - Claiming a queue item moves one due pending row to `running`, increments `attempts`, and records worker/heartbeat timestamps.
 - Completing a queue item accepts only `completed` or `failed`; completed rows store the produced `run_id`, failed rows store `last_error`.
+- Cancelling a pending queue item marks it `cancelled` so it cannot be claimed.
+- Cancelling a non-pending queue item returns unchanged; active work should be cancelled through its `run_id`.
 - Stale recovery moves old `running` rows back to `pending` and clears worker/claim/heartbeat fields.
 - Daemon code must execute queued work through the existing `RunRequest` runtime path.
 - `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled status.
@@ -77,6 +86,7 @@
 | Legacy v1 DB missing generated lifecycle columns | Add missing columns and preserve existing rows | `tests/test_storage.py` |
 | Pre-initialized version read | Return `0` or empty migration list instead of crashing | Storage API behavior |
 | Run event append | Persist run event and matching pending outbox row in one call | `tests/test_storage.py` |
+| Run cancellation | Running run becomes `cancelled`; terminal repeat is unchanged | `tests/test_storage.py`, `tests/test_cli.py` |
 | Future outbox availability | Exclude future pending rows from due pending list | `tests/test_storage.py` |
 | Failed outbox mark | Increment attempts and store error | `tests/test_storage.py` |
 | Invalid outbox status | Raise `ValueError` | `tests/test_storage.py` |
@@ -84,6 +94,7 @@
 | Non-empty import target | Reject unless `replace=True` | `tests/test_storage.py` |
 | Unsafe archive path | Reject path traversal or unsupported archive members before extraction | `tests/test_storage.py` |
 | Queue lifecycle | Enqueue, claim, heartbeat, complete, and stats preserve expected state | `tests/test_storage.py` |
+| Queue cancellation | Pending queue item becomes `cancelled` and cannot be claimed; running items remain unchanged | `tests/test_storage.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
 | Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
@@ -97,6 +108,7 @@
 - Good: consume pending outbox events through `list_outbox_events()` and mark delivery through `mark_outbox_event()`.
 - Good: keep backup archives limited to managed state paths and validate every member before extraction.
 - Good: drain queued work through the same runtime entry points used by CLI/web runs.
+- Good: check run cancellation between interruptible runtime steps.
 - Good: install generated tools by persisting a manifest row and loading it through `ToolRegistry.from_store()`.
 - Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
@@ -106,6 +118,7 @@
 - Bad: poll `run_events` directly from daemon code when outbox delivery state is needed.
 - Bad: extract zip members directly with `extractall()`.
 - Bad: create a second daemon worker for the same state directory without acquiring the local lock.
+- Bad: treating cancellation as provider failure after the cancellation signal has been observed.
 
 ### 6. Tests Required
 - Fresh initialization records all migrations.
@@ -117,6 +130,7 @@
 - Backup export/import round-trip is covered.
 - Import target and archive safety failures are covered.
 - Queue lifecycle, daemon drain, single-instance lock, and stale recovery are covered.
+- Run and queue cancellation are covered at storage, CLI, daemon, and provider runtime boundaries.
 - Generated tool manifest round-trip and migration coverage are covered.
 - Artifact storage round-trip by id is covered.
 - Web event replay by `sinceEventId` is covered.

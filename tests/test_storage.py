@@ -158,6 +158,27 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(artifact["kind"], "markdown")
             self.assertIsNone(store.get_artifact("art_missing"))
 
+    def test_cancel_run_marks_running_run_and_is_terminal_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("cancel")
+            mission_id = store.create_mission(conversation_id, "cancel mission")
+            run_id = store.create_run(conversation_id, mission_id, "long work")
+
+            cancelled = store.cancel_run(run_id, reason="user requested")
+            repeated = store.cancel_run(run_id, reason="again")
+
+            self.assertTrue(cancelled["changed"])
+            self.assertEqual(cancelled["status"], "cancelled")
+            self.assertEqual(store.get_run(run_id)["status"], "cancelled")
+            self.assertTrue(store.is_run_cancelled(run_id))
+            self.assertFalse(repeated["changed"])
+
+            missing_id = "run_missing"
+            with self.assertRaisesRegex(ValueError, "run not found"):
+                store.cancel_run(missing_id)
+
     def test_outbox_enqueue_list_and_mark_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -228,6 +249,26 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(recovered[0]["status"], "pending")
             self.assertEqual(store.list_queue_items(status="pending")[0]["id"], stale_id)
 
+    def test_cancel_queue_item_prevents_pending_claim(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            queue_id = store.enqueue_run_request("remember: cancel queued")
+            running_id = store.enqueue_run_request("remember: running queued")
+
+            cancelled = store.cancel_queue_item(queue_id, reason="user requested")
+            claimed = store.claim_next_queue_item("worker")
+            repeated = store.cancel_queue_item(queue_id)
+            running_cancelled = store.cancel_queue_item(running_id)
+
+            self.assertTrue(cancelled["changed"])
+            self.assertEqual(cancelled["status"], "cancelled")
+            self.assertEqual(claimed["id"], running_id)
+            self.assertEqual(store.queue_stats()["counts"]["cancelled"], 1)
+            self.assertFalse(repeated["changed"])
+            self.assertFalse(running_cancelled["changed"])
+            self.assertEqual(running_cancelled["status"], "running")
+
     def test_run_queue_rejects_invalid_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -240,6 +281,8 @@ class StateStoreTests(unittest.TestCase):
                 store.list_queue_items(status="unknown")
             with self.assertRaisesRegex(ValueError, "invalid queue completion status"):
                 store.complete_queue_item(queue_id, "running")
+            with self.assertRaisesRegex(ValueError, "queue item not found"):
+                store.cancel_queue_item("queue_missing")
 
     def test_memory_candidate_search_and_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -14,6 +14,7 @@ from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
 from .common import (
     action_card,
+    cancellation_result,
     make_chat_event_emitter,
     project_tool_result,
     result_as_dict,
@@ -112,6 +113,17 @@ class LocalAgentRuntime:
         tool_results: list[ToolResult] = []
         try:
             for call in tool_calls:
+                if store.is_run_cancelled(run_id):
+                    yield from cancellation_result(
+                        store=store,
+                        ledger=ledger,
+                        emit=emit,
+                        run_id=run_id,
+                        conversation_id=conversation_id,
+                        mission_id=mission_id,
+                        tool_results=tool_results,
+                    )
+                    return
                 action = action_card(registry, call)
                 yield emit("action.queued", {"action": action, "provider_call_id": call.call_id})
                 yield emit("action.started", {"action": action})
@@ -128,6 +140,17 @@ class LocalAgentRuntime:
                 )
                 for projected in project_tool_result(result, emit):
                     yield projected
+                if store.is_run_cancelled(run_id):
+                    yield from cancellation_result(
+                        store=store,
+                        ledger=ledger,
+                        emit=emit,
+                        run_id=run_id,
+                        conversation_id=conversation_id,
+                        mission_id=mission_id,
+                        tool_results=tool_results,
+                    )
+                    return
 
             response = self._render_response(request.message, tool_results)
             checkpoint = self._checkpoint(store, mission_id, request.message, response, run_id, tool_results)

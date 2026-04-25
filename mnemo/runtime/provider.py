@@ -13,6 +13,7 @@ from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, compact_tool_result, tool_specs_as_json_schema
 from .common import (
     action_card,
+    cancellation_result,
     make_chat_event_emitter,
     project_tool_result,
     result_as_dict,
@@ -134,6 +135,18 @@ class ProviderAgentRuntime:
 
                 assistant_text = "".join(assistant_parts)
 
+                if store.is_run_cancelled(run_id):
+                    yield from cancellation_result(
+                        store=store,
+                        ledger=ledger,
+                        emit=emit,
+                        run_id=run_id,
+                        conversation_id=conversation_id,
+                        mission_id=mission_id,
+                        tool_results=tool_results,
+                    )
+                    return
+
                 ledger.append(
                     run_id,
                     "provider.completed",
@@ -150,6 +163,17 @@ class ProviderAgentRuntime:
 
                 messages.append(_assistant_tool_call_message(tool_calls, assistant_text))
                 for call in tool_calls:
+                    if store.is_run_cancelled(run_id):
+                        yield from cancellation_result(
+                            store=store,
+                            ledger=ledger,
+                            emit=emit,
+                            run_id=run_id,
+                            conversation_id=conversation_id,
+                            mission_id=mission_id,
+                            tool_results=tool_results,
+                        )
+                        return
                     action = action_card(registry, call)
                     yield emit("action.queued", {"action": action, "provider_call_id": call.call_id})
                     yield emit("action.started", {"action": action})
@@ -166,6 +190,17 @@ class ProviderAgentRuntime:
                     )
                     for projected in project_tool_result(result, emit):
                         yield projected
+                    if store.is_run_cancelled(run_id):
+                        yield from cancellation_result(
+                            store=store,
+                            ledger=ledger,
+                            emit=emit,
+                            run_id=run_id,
+                            conversation_id=conversation_id,
+                            mission_id=mission_id,
+                            tool_results=tool_results,
+                        )
+                        return
                     messages.append(_tool_result_message(result))
             else:
                 raise MnemoError("provider exceeded maximum tool rounds")

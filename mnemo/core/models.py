@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 
 RiskLevel = Literal["read", "write", "external", "admin"]
-RunStatus = Literal["running", "completed", "failed"]
+RunStatus = Literal["running", "completed", "failed", "cancelled"]
 MissionStatus = Literal["active", "paused", "completed", "cancelled", "archived"]
 ChatEventType = Literal[
     "conversation.hydrated",

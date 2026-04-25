@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Run and queue cancellation persistence"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Cancellation is normalized runtime state"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Test gates"}

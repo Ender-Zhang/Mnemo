@@ -554,6 +554,30 @@ class CliTests(unittest.TestCase):
             self.assertEqual(recover.returncode, 0, recover.stderr)
             self.assertEqual(json.loads(recover.stdout)["recovered"][0]["id"], stale_id)
 
+    def test_runs_cancel_and_daemon_cancel_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("cancel")
+            mission_id = store.create_mission(conversation_id, "cancel")
+            run_id = store.create_run(conversation_id, mission_id, "long work")
+            queue_id = store.enqueue_run_request("remember: cancel queued")
+
+            run_cancel = _run_cli(["runs", "cancel", run_id, "--state-dir", tmp, "--reason", "user stop", "--json"])
+            queue_cancel = _run_cli(["daemon", "cancel", queue_id, "--state-dir", tmp, "--json"])
+
+            self.assertEqual(run_cancel.returncode, 0, run_cancel.stderr)
+            self.assertEqual(queue_cancel.returncode, 0, queue_cancel.stderr)
+            run_payload = json.loads(run_cancel.stdout)
+            queue_payload = json.loads(queue_cancel.stdout)
+            self.assertTrue(run_payload["changed"])
+            self.assertEqual(run_payload["status"], "cancelled")
+            self.assertTrue(queue_payload["changed"])
+            self.assertEqual(queue_payload["status"], "cancelled")
+            self.assertEqual(store.get_run(run_id)["status"], "cancelled")
+            self.assertEqual(store.list_queue_items(status="cancelled")[0]["id"], queue_id)
+            self.assertIn("run.cancel.requested", [event["event_type"] for event in store.get_run_events(run_id)])
+
 
 def _run_cli(
     args: list[str],

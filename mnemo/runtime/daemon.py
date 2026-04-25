@@ -128,6 +128,11 @@ class DaemonRunner:
         recovered = self.store.recover_stale_queue_items(stale_after_s=stale_after_s)
         return {"recovered": recovered, "stats": self.store.queue_stats()}
 
+    def cancel(self, queue_id: str, *, reason: str = "cancelled") -> dict[str, Any]:
+        self.store.initialize()
+        item = self.store.cancel_queue_item(queue_id, reason=reason)
+        return {"queue_id": queue_id, "status": item["status"], "changed": item["changed"]}
+
     def drain(
         self,
         executor: RunExecutor,

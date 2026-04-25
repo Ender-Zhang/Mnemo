@@ -35,6 +35,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_init(args)
         if args.command == "run":
             return _cmd_run(args)
+        if args.command == "runs":
+            return _cmd_runs(args)
         if args.command == "events":
             return _cmd_events(args)
         if args.command == "memory":
@@ -98,6 +100,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
     run_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
     run_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+
+    runs_parser = subparsers.add_parser("runs", help="Inspect and control runs")
+    runs_subparsers = runs_parser.add_subparsers(dest="runs_command")
+    runs_cancel_parser = runs_subparsers.add_parser("cancel", help="Request cancellation for a running run")
+    _add_state_dir(runs_cancel_parser)
+    runs_cancel_parser.add_argument("run_id")
+    runs_cancel_parser.add_argument("--reason", default="cancelled")
+    runs_cancel_parser.add_argument("--json", action="store_true")
 
     events_parser = subparsers.add_parser("events", help="Print RunLedger events for a run")
     _add_state_dir(events_parser)
@@ -245,6 +255,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(daemon_recover_parser)
     daemon_recover_parser.add_argument("--stale-after-s", type=float, default=900.0)
     daemon_recover_parser.add_argument("--json", action="store_true")
+    daemon_cancel_parser = daemon_subparsers.add_parser("cancel", help="Cancel a queued run request")
+    _add_state_dir(daemon_cancel_parser)
+    daemon_cancel_parser.add_argument("queue_id")
+    daemon_cancel_parser.add_argument("--reason", default="cancelled")
+    daemon_cancel_parser.add_argument("--json", action="store_true")
 
     backup_parser = subparsers.add_parser("backup", help="Export or import Mnemo state")
     backup_subparsers = backup_parser.add_subparsers(dest="backup_command")
@@ -330,6 +345,29 @@ def _cmd_run(args: argparse.Namespace) -> int:
     print(f"conversation_id={result.conversation_id}")
     print(f"mission_id={result.mission_id}")
     print(f"run_id={result.run_id}")
+    return 0
+
+
+def _cmd_runs(args: argparse.Namespace) -> int:
+    if args.runs_command != "cancel":
+        raise MnemoError("runs command requires a subcommand")
+    store = StateStore(args.state_dir)
+    store.initialize()
+    try:
+        result = store.cancel_run(args.run_id, reason=args.reason)
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
+    store.append_event(
+        args.run_id,
+        "run.cancel.requested",
+        {"reason": args.reason, "changed": result["changed"], "status": result["status"]},
+    )
+    payload = {"run_id": args.run_id, "status": result["status"], "changed": result["changed"]}
+    if args.json:
+        print(dumps(payload))
+    else:
+        changed = "cancelled" if result["changed"] else "unchanged"
+        print(f"Run {args.run_id} {changed} status={result['status']}")
     return 0
 
 
@@ -664,6 +702,11 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
         result = DaemonRunner(args.state_dir).status()
     elif args.daemon_command == "recover":
         result = DaemonRunner(args.state_dir).recover(stale_after_s=args.stale_after_s)
+    elif args.daemon_command == "cancel":
+        try:
+            result = DaemonRunner(args.state_dir).cancel(args.queue_id, reason=args.reason)
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
     else:
         raise MnemoError("daemon command requires a subcommand")
 
@@ -706,6 +749,10 @@ def _print_daemon_result(command: str, result: dict[str, Any]) -> None:
         return
     if command == "recover":
         print(f"Recovered {len(result['recovered'])} queued run(s)")
+        return
+    if command == "cancel":
+        changed = "cancelled" if result.get("changed") else "unchanged"
+        print(f"Queue item {result['queue_id']} {changed} status={result['status']}")
         return
     print(dumps(result))
 

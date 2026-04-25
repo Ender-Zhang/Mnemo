@@ -41,6 +41,19 @@ class DaemonRunnerTests(unittest.TestCase):
             self.assertEqual(result["processed"], [{"id": queue_id, "status": "failed", "error": "boom"}])
             self.assertEqual(failed[0]["last_error"], "boom")
 
+    def test_cancelled_queue_item_is_not_drained(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runner = DaemonRunner(tmp)
+            queue_id = runner.enqueue("remember: cancelled daemon")
+
+            cancelled = runner.cancel(queue_id, reason="user requested")
+            result = runner.drain(run_local, limit=5)
+
+            self.assertTrue(cancelled["changed"])
+            self.assertEqual(cancelled["status"], "cancelled")
+            self.assertEqual(result["processed"], [])
+            self.assertEqual(StateStore(tmp).list_queue_items(status="cancelled")[0]["id"], queue_id)
+
     def test_lock_blocks_second_worker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             lock = DaemonLock(tmp)

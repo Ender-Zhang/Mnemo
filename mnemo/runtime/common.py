@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..core.events import chat_event_as_dict, new_chat_event
 from ..core.models import ChatEvent, ChatEventType, RunResult, ToolCallEnvelope, ToolResult
 from ..tools import ToolRegistry
 from .ledger import RunLedger
+
+if TYPE_CHECKING:
+    from ..storage import StateStore
 
 
 EmitChatEvent = Callable[[ChatEventType, dict[str, Any] | None], ChatEvent]
@@ -129,3 +132,29 @@ def run_result_from_dict(value: dict[str, Any]) -> RunResult:
             for item in value.get("tool_results", [])
         ],
     )
+
+
+def cancellation_result(
+    *,
+    store: "StateStore",
+    ledger: RunLedger,
+    emit: EmitChatEvent,
+    run_id: str,
+    conversation_id: str,
+    mission_id: str,
+    tool_results: list[ToolResult],
+    reason: str = "cancelled",
+) -> Iterator[ChatEvent]:
+    response = "已取消。"
+    yield emit("status.updated", {"text": response, "tone": "cancelled"})
+    yield emit("assistant.message", {"text": response, "final": True})
+    ledger.append(run_id, "run.completed", {"status": "cancelled", "reason": reason})
+    store.complete_run(run_id, response, status="cancelled")
+    result = RunResult(
+        conversation_id=conversation_id,
+        mission_id=mission_id,
+        run_id=run_id,
+        response=response,
+        tool_results=tool_results,
+    )
+    yield emit("run.completed", {"status": "cancelled", "result": result_as_dict(result)})

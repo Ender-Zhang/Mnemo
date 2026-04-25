@@ -192,6 +192,19 @@ class LocalRuntimeTests(unittest.TestCase):
             tool_names = [tool.name for tool in provider.requests[0].tools]
             self.assertIn("lookup_memory", tool_names)
 
+    def test_provider_runtime_completes_cancelled_when_signal_is_observed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = CancellingProvider(tmp)
+
+            events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="cancel me", state_dir=tmp)))
+
+            completed = events[-1]
+            store = StateStore(tmp)
+            self.assertEqual(completed.type, "run.completed")
+            self.assertEqual(completed.data["status"], "cancelled")
+            self.assertEqual(store.get_run(completed.run_id)["status"], "cancelled")
+            self.assertEqual(completed.data["result"]["response"], "已取消。")
+
 
 class FakeProvider:
     name = "fake"
@@ -205,6 +218,17 @@ class FakeProvider:
         if not self.rounds:
             return [ProviderEvent(type="completed")]
         return self.rounds.pop(0)
+
+
+class CancellingProvider:
+    name = "fake"
+
+    def __init__(self, state_dir: str) -> None:
+        self.state_dir = state_dir
+
+    def stream(self, request):
+        StateStore(self.state_dir).cancel_run(request.metadata["run_id"], reason="test cancellation")
+        return [ProviderEvent(type="completed")]
 
 
 if __name__ == "__main__":
