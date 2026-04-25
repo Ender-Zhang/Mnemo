@@ -23,7 +23,7 @@
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
 | --- | --- | --- |
-| Missing optional event data | Renderer falls back instead of crashing | Asset/manual check |
+| Missing optional event data | Renderer falls back instead of crashing | `tests/test_web.py` |
 | Duplicate event id | Set membership prevents double render | `tests/test_web.py` |
 | Unknown event type | Ignored by default route | Asset review |
 | Artifact cache | Map stores loaded artifacts for the session | `tests/test_web.py` asset assertion |

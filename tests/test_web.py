@@ -93,6 +93,17 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("sinceEventId", body)
                 self.assertIn("renderedEventIds", body)
 
+    def test_web_client_asset_guards_untrusted_event_shapes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request("GET", "/app.js")
+
+                self.assertEqual(status, 200)
+                self.assertIn('if (!event || typeof event !== "object" || Array.isArray(event)) return;', body)
+                self.assertIn("event.data?.artifact", body)
+                self.assertIn("event.data?.decision", body)
+                self.assertIn("event.data?.item", body)
+
     def test_web_artifact_api_returns_stored_artifact_on_demand(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:

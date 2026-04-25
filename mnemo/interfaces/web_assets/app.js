@@ -159,6 +159,7 @@ async function readNdjson(stream, onEvent) {
 }
 
 function handleEvent(event) {
+  if (!event || typeof event !== "object" || Array.isArray(event)) return;
   persistEventEnvelope(event);
   updateComposerState();
   if (event.event_id) {

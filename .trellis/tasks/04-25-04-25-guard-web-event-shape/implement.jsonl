@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "mnemo/interfaces/web_assets/app.js", "reason": "Guard event handling against non-object stream/replay payloads."}
+{"file": "tests/test_web.py", "reason": "Add asset assertion for event shape guard."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Replace missing optional event data manual check with concrete asset test point."}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Track the landed web event-shape guard task."}

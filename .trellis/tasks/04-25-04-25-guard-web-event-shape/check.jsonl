@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Run web asset and transport checks."}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Confirm no-build static asset layout remains unchanged."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Check render functions keep compact fallbacks and textContent."}
