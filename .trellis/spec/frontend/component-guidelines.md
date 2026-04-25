@@ -11,6 +11,7 @@
 - Reusable visual units are CSS classes in `app.css`: `.message`, `.event-card`, `.event-title`, `.event-body`, `.composer`.
 - The primary screen is always the chat shell: top status, timeline, and one composer.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
+- Busy-state commands such as stop/cancel belong inside the existing composer.
 
 ### 3. Contracts
 - Render functions must tolerate missing optional fields with concise fallbacks.
@@ -26,11 +27,13 @@
 | Action event | Renders queued/started/completed card state | Asset behavior in `tests/test_web.py` |
 | Artifact card | Shows metadata and opens body on demand | `tests/test_web.py` |
 | Duplicate replay event | Ignored by `renderedEventIds` | `tests/test_web.py` |
+| Stop control | Appears as a composer command while a run is busy | `tests/test_web.py` |
 | Error event | Renders visible error card | Manual/asset check |
 
 ### 5. Good/Base/Bad Cases
 - Good: `card.querySelector(".event-body").textContent = summary`.
 - Good: keep all user task interaction in the single composer.
+- Good: use a busy-state composer button for run cancellation instead of a separate operations area.
 - Base: small helper functions can create DOM nodes directly.
 - Bad: `element.innerHTML = modelOutput`.
 - Bad: adding a second operations dashboard for normal user workflows.

@@ -89,6 +89,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Action and learning events are representable in stream.
 - [x] User-facing single-chat web frontend.
 - [x] Universal composer.
+- [x] Busy-state stop/cancel control in the single composer.
 - [x] Inline action cards.
 - [x] Inline artifact cards and artifact viewer.
 - [x] Inline decision cards.
@@ -136,6 +137,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-04-25-implement-provider-retry-policy`: provider config supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
 - [x] `04-25-04-25-implement-run-cancellation-foundation`: runs and queued daemon jobs can be cancelled durably, and provider/local runtimes complete observed cancellations with `status="cancelled"`.
 - [x] `04-25-04-25-implement-browser-app-connectors`: lightweight `browser_open` and `app_open` connector tools are provider-native, policy-gated, dry-run testable, and compact in results.
+- [x] `04-25-04-25-implement-web-run-cancellation`: web chat uses a threaded server, `/api/runs/cancel`, and composer stop control for cooperative run cancellation.
 - [x] `04-25-04-25-implement-skill-patch-candidates`: model-directed `skill_patch_candidate` creates draft skill revisions with exact replacement checks, compact evidence, and unchanged source skills.
 - [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
 - [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.

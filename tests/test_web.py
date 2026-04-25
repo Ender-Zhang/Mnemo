@@ -7,9 +7,15 @@ import threading
 import unittest
 
 from mnemo.interfaces.web import WebServerConfig, build_http_server
+from mnemo.storage import StateStore
 
 
 class WebInterfaceTests(unittest.TestCase):
+    def test_web_server_uses_threaded_handlers_for_stream_and_cancel(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                self.assertTrue(getattr(server.server, "daemon_threads", False))
+
     def test_web_chat_streams_chat_events_and_preserves_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
@@ -121,6 +127,46 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(status, 404)
                 self.assertEqual(json.loads(unknown_body)["error"], "artifact not found")
 
+    def test_web_cancel_run_endpoint_marks_run_and_records_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("web cancel")
+            mission_id = store.create_mission(conversation_id, "web cancel")
+            run_id = store.create_run(conversation_id, mission_id, "long work")
+
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request(
+                    "POST",
+                    "/api/runs/cancel",
+                    {"run_id": run_id, "reason": "user stop"},
+                )
+                repeated_status, _, repeated_body = server.request(
+                    "POST",
+                    "/api/runs/cancel",
+                    {"run_id": run_id},
+                )
+                missing_status, _, missing_body = server.request("POST", "/api/runs/cancel", {})
+                unknown_status, _, unknown_body = server.request(
+                    "POST",
+                    "/api/runs/cancel",
+                    {"run_id": "run_missing"},
+                )
+
+            payload = json.loads(body)
+            repeated_payload = json.loads(repeated_body)
+            self.assertEqual(status, 200)
+            self.assertEqual(payload, {"run_id": run_id, "status": "cancelled", "changed": True})
+            self.assertEqual(repeated_status, 200)
+            self.assertFalse(repeated_payload["changed"])
+            self.assertEqual(store.get_run(run_id)["status"], "cancelled")
+            event_types = [event["event_type"] for event in store.get_run_events(run_id)]
+            self.assertEqual(event_types.count("run.cancel.requested"), 2)
+            self.assertEqual(missing_status, 400)
+            self.assertEqual(json.loads(missing_body)["error"], "run_id is required")
+            self.assertEqual(unknown_status, 404)
+            self.assertEqual(json.loads(unknown_body)["error"], "run not found: run_missing")
+
     def test_web_client_asset_renders_artifact_viewer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
@@ -130,6 +176,20 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("/api/artifacts?artifact_id=", body)
                 self.assertIn("toggleArtifact", body)
                 self.assertIn("artifact-body", body)
+
+    def test_web_client_asset_exposes_stop_control(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, html = server.request("GET", "/")
+                script_status, _, script = server.request("GET", "/app.js")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(script_status, 200)
+                self.assertIn('id="stop"', html)
+                self.assertIn("/api/runs/cancel", script)
+                self.assertIn("requestCancel", script)
+                self.assertIn("cancelRequested", script)
+                self.assertIn("updateComposerState", script)
 
 
 class RunningServer:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 import json
 import socket
@@ -35,14 +35,15 @@ class WebServerConfig:
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 
 
-def build_http_server(config: WebServerConfig) -> HTTPServer:
+def build_http_server(config: WebServerConfig) -> ThreadingHTTPServer:
     StateStore(config.state_dir).initialize()
     handler = _handler_for(config)
     return MnemoHTTPServer((config.host, config.port), handler)
 
 
-class MnemoHTTPServer(HTTPServer):
+class MnemoHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
+    daemon_threads = True
 
     def server_bind(self) -> None:
         self.socket.bind(self.server_address)
@@ -88,6 +89,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
             parsed = urlparse(self.path)
             if parsed.path == "/api/chat":
                 self._handle_chat()
+            elif parsed.path == "/api/runs/cancel":
+                self._handle_run_cancel()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -124,6 +127,30 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 except OSError:
                     pass
                 self.close_connection = True
+
+        def _handle_run_cancel(self) -> None:
+            try:
+                body = self._read_json_body()
+                run_id = _required_string(body, "run_id")
+                reason = _optional_string(body.get("reason")) or "cancelled"
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            store = StateStore(config.state_dir)
+            store.initialize()
+            try:
+                result = store.cancel_run(run_id, reason=reason)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            store.append_event(
+                run_id,
+                "run.cancel.requested",
+                {"reason": reason, "changed": result["changed"], "status": result["status"], "source": "web"},
+            )
+            self._send_json({"run_id": run_id, "status": result["status"], "changed": result["changed"]})
 
         def _handle_events(self, query: str) -> None:
             params = parse_qs(query)

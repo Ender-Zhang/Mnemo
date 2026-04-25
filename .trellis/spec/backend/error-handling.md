@@ -26,6 +26,7 @@
 - Streaming provider requests remain single-attempt because retrying after partial deltas can duplicate model output or tool calls.
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
 - Runtime cancellation is cooperative state, not a provider/tool error; observed cancellation completes the run with `status="cancelled"`.
+- Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
@@ -46,6 +47,7 @@
 | Streaming provider status | Streaming adapter fails without retry | `tests/test_providers.py` |
 | Retry config resolution | Runtime config resolves retry fields and redacts secrets | `tests/test_config.py` |
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
+| Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
@@ -54,9 +56,11 @@
 - Base: `--api-key` is supported for local smoke but is redacted in output.
 - Base: streaming calls rely on timeout and normalized errors, not retries.
 - Base: blocking provider calls may only observe cancellation after the provider call returns or times out.
+- Base: the web stop control requests cancellation and then waits for the stream to finish.
 - Bad: print Authorization headers, API keys, or full provider error bodies to stdout.
 - Bad: retry streaming calls after text/tool deltas have already been emitted.
 - Bad: reporting an observed user cancellation as `run.error`.
+- Bad: using a single-threaded web server that blocks cancellation while `/api/chat` streams.
 
 ### 6. Tests Required
 - CLI success for OpenAI-compatible smoke.
@@ -66,6 +70,7 @@
 - Provider retry tests for OpenAI-compatible and Anthropic non-streaming calls.
 - Config resolver test for `retry_count` and `retry_backoff_s`.
 - Runtime cancellation test for cancelled completion status.
+- Web cancellation endpoint test for success and JSON error responses.
 
 ### 7. Wrong vs Correct
 #### Wrong

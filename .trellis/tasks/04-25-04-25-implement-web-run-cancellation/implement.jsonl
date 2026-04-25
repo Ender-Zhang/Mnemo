@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "mnemo/interfaces/web.py", "reason": "Add threaded web server and POST /api/runs/cancel endpoint using StateStore.cancel_run."}
+{"file": "mnemo/interfaces/web_assets/app.js", "reason": "Wire busy-state stop control to cancellation endpoint while preserving streaming/resume behavior."}
+{"file": "mnemo/interfaces/web_assets/index.html", "reason": "Add the single composer stop control."}
+{"file": "mnemo/interfaces/web_assets/app.css", "reason": "Style stop control without adding extra panels."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Cancellation endpoint maps storage errors to JSON responses and keeps cancellation out of provider error flow."}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Run cancellation status and ledger event contracts."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Preserve conversation/run replay state while adding stop control."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Composer UI changes should stay user-facing and compact."}

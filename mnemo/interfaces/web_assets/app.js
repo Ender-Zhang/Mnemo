@@ -8,12 +8,14 @@ const state = {
   assistantNode: null,
   actions: new Map(),
   artifacts: new Map(),
+  cancelRequested: false,
 };
 
 const timeline = document.querySelector("#timeline");
 const form = document.querySelector("#composer");
 const input = document.querySelector("#message");
 const send = document.querySelector("#send");
+const stop = document.querySelector("#stop");
 const reset = document.querySelector("#reset");
 const statusText = document.querySelector("#status");
 
@@ -27,12 +29,16 @@ form.addEventListener("submit", (event) => {
 });
 
 input.addEventListener("input", resizeInput);
+stop.addEventListener("click", () => {
+  requestCancel();
+});
 
 reset.addEventListener("click", () => {
   state.conversationId = "";
   state.missionId = "";
   state.lastRunId = "";
   state.lastEventId = "";
+  state.cancelRequested = false;
   state.renderedEventIds.clear();
   state.artifacts.clear();
   localStorage.removeItem("mnemo.conversation_id");
@@ -40,6 +46,7 @@ reset.addEventListener("click", () => {
   localStorage.removeItem("mnemo.last_run_id");
   localStorage.removeItem("mnemo.last_event_id");
   timeline.replaceChildren();
+  updateComposerState();
   setStatus("Ready");
 });
 
@@ -49,8 +56,9 @@ window.addEventListener("online", () => {
 
 async function runTurn(message) {
   state.busy = true;
+  state.cancelRequested = false;
   state.assistantNode = null;
-  send.disabled = true;
+  updateComposerState();
   addMessage("user", message);
   setStatus("Working");
 
@@ -75,11 +83,34 @@ async function runTurn(message) {
     addCard("error", "Error", error.message || String(error));
   } finally {
     state.busy = false;
-    send.disabled = false;
+    state.cancelRequested = false;
+    updateComposerState();
     state.assistantNode = null;
     await resumeLastRun({ incremental: true });
     setStatus("Ready");
     input.focus();
+  }
+}
+
+async function requestCancel() {
+  if (!state.busy || state.cancelRequested || !state.lastRunId) return;
+  state.cancelRequested = true;
+  updateComposerState();
+  setStatus("Cancelling");
+  try {
+    const response = await fetch("/api/runs/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: state.lastRunId, reason: "user requested" }),
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || `HTTP ${response.status}`);
+    }
+  } catch (error) {
+    state.cancelRequested = false;
+    updateComposerState();
+    addCard("error", "Error", error.message || String(error));
   }
 }
 
@@ -124,6 +155,7 @@ async function readNdjson(stream, onEvent) {
 
 function handleEvent(event) {
   persistEventEnvelope(event);
+  updateComposerState();
   if (event.event_id) {
     if (state.renderedEventIds.has(event.event_id)) return;
     state.renderedEventIds.add(event.event_id);
@@ -164,6 +196,8 @@ function handleEvent(event) {
       break;
     case "run.completed":
       persistRun(event);
+      state.cancelRequested = false;
+      updateComposerState();
       setStatus("Ready");
       break;
     case "run.error":
@@ -338,6 +372,13 @@ function persistRun(event) {
   localStorage.setItem("mnemo.last_event_id", state.lastEventId);
 }
 
+function updateComposerState() {
+  send.disabled = state.busy;
+  stop.hidden = !state.busy;
+  stop.disabled = !state.lastRunId || state.cancelRequested;
+  stop.textContent = state.cancelRequested ? "Stopping" : "Stop";
+}
+
 function addMessage(role, text) {
   const node = document.createElement("div");
   node.className = `message ${role}`;
@@ -381,4 +422,5 @@ function scrollToEnd() {
 }
 
 input.focus();
+updateComposerState();
 resumeLastRun();

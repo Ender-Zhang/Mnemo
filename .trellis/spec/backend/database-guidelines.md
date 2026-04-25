@@ -62,6 +62,7 @@
 - Runs may be `running`, `completed`, `failed`, or `cancelled`.
 - `cancel_run()` marks only non-terminal runs as `cancelled`; terminal runs return unchanged.
 - Runtime code should check `is_run_cancelled()` between provider/tool steps and complete with `status="cancelled"`.
+- Web and CLI cancellation entry points append `run.cancel.requested` with reason, changed flag, and observed status.
 - `run_queue` stores durable local work with `message`, optional conversation/mission ids, structured metadata, status, attempts, worker id, produced run id, timing fields, and last error.
 - Queue statuses are `pending`, `running`, `completed`, `failed`, and `cancelled`.
 - Claiming a queue item moves one due pending row to `running`, increments `attempts`, and records worker/heartbeat timestamps.
@@ -87,6 +88,7 @@
 | Pre-initialized version read | Return `0` or empty migration list instead of crashing | Storage API behavior |
 | Run event append | Persist run event and matching pending outbox row in one call | `tests/test_storage.py` |
 | Run cancellation | Running run becomes `cancelled`; terminal repeat is unchanged | `tests/test_storage.py`, `tests/test_cli.py` |
+| Web run cancellation | `POST /api/runs/cancel` marks run cancelled and records `run.cancel.requested` | `tests/test_web.py` |
 | Future outbox availability | Exclude future pending rows from due pending list | `tests/test_storage.py` |
 | Failed outbox mark | Increment attempts and store error | `tests/test_storage.py` |
 | Invalid outbox status | Raise `ValueError` | `tests/test_storage.py` |
