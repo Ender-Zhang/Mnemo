@@ -173,6 +173,30 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_memory_search_command_includes_associated_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            seed_id = store.upsert_memory_page(
+                "preferences: python",
+                "User prefers pytest for Python tests",
+                confidence=0.91,
+            )
+            linked_id = store.upsert_memory_page(
+                "preferences: reporting",
+                "User expects concise failure summaries",
+                confidence=0.84,
+            )
+            store.add_memory_link(seed_id, linked_id, "related", weight=0.8)
+
+            search = _run_cli(["memory", "search", "pytest", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(search.returncode, 0, search.stderr)
+            matches = json.loads(search.stdout)["matches"]
+            linked = [item for item in matches if item["type"] == "linked_page"]
+            self.assertEqual(linked[0]["id"], linked_id)
+            self.assertEqual(linked[0]["relation"], "related")
+
     def test_events_chat_and_replay_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run = _run_cli(["run", "remember: replay CLI", "--state-dir", tmp, "--json"])

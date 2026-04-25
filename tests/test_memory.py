@@ -60,6 +60,57 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertIn(("page", page_id), typed_ids)
             self.assertIn(("candidate", candidate_id), typed_ids)
 
+    def test_search_returns_directly_linked_active_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            seed_id = store.upsert_memory_page(
+                "preferences: python",
+                "User prefers pytest for Python tests",
+                confidence=0.9,
+            )
+            linked_id = store.upsert_memory_page(
+                "preferences: reporting",
+                "User wants concise failure summaries",
+                confidence=0.86,
+            )
+            archived_id = store.upsert_memory_page(
+                "archived: old",
+                "Old linked memory",
+                status="archived",
+            )
+            store.add_memory_link(seed_id, linked_id, "related", weight=0.8)
+            store.add_memory_link(seed_id, archived_id, "related", weight=0.9)
+
+            results = MemoryEngine(store).search("pytest", limit=5)
+
+            linked = [item for item in results if item["type"] == "linked_page"]
+            self.assertEqual([item["id"] for item in linked], [linked_id])
+            self.assertEqual(linked[0]["relation"], "related")
+            self.assertEqual(linked[0]["linked_from"], seed_id)
+            self.assertEqual(linked[0]["content"], "User wants concise failure summaries")
+
+    def test_search_returns_reverse_linked_active_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            seed_id = store.upsert_memory_page(
+                "preferences: python",
+                "User prefers pytest for Python tests",
+                confidence=0.9,
+            )
+            source_id = store.upsert_memory_page(
+                "preferences: ci",
+                "User expects CI examples",
+                confidence=0.82,
+            )
+            store.add_memory_link(source_id, seed_id, "supports", weight=0.7)
+
+            results = MemoryEngine(store).search("pytest", limit=5)
+
+            linked = [item for item in results if item["type"] == "linked_page"]
+            self.assertEqual([item["id"] for item in linked], [source_id])
+            self.assertEqual(linked[0]["relation"], "supports")
+            self.assertEqual(linked[0]["linked_from"], seed_id)
+
     def test_context_cards_are_compact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)
@@ -75,6 +126,31 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(cards[0]["type"], "candidate")
             self.assertIn("summary", cards[0])
             self.assertNotIn("evidence", cards[0])
+
+    def test_context_cards_include_compact_association_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            seed_id = store.upsert_memory_page(
+                "preferences: python",
+                "User prefers pytest for Python tests",
+                confidence=0.9,
+            )
+            linked_id = store.upsert_memory_page(
+                "preferences: output",
+                "User wants compact test output",
+                confidence=0.86,
+            )
+            store.add_memory_link(seed_id, linked_id, "related", weight=0.8)
+
+            cards = MemoryEngine(store).context_cards("pytest", limit=5)
+
+            linked_cards = [card for card in cards if card["type"] == "linked_page"]
+            self.assertEqual(linked_cards[0]["id"], linked_id)
+            self.assertEqual(linked_cards[0]["relation"], "related")
+            self.assertEqual(linked_cards[0]["linked_from"], seed_id)
+            self.assertIn("summary", linked_cards[0])
+            self.assertNotIn("content", linked_cards[0])
+            self.assertNotIn("evidence", linked_cards[0])
 
     def test_dream_consolidate_promotes_confident_drafts_and_skips_low_confidence(
         self,

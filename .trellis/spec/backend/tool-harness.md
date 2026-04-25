@@ -25,6 +25,8 @@
 - `ToolResult.summary` and `ToolResult.evidence`: compact model/UI payloads.
 - `ToolContext.workspace_root`: resolved root for local file and shell tools.
 - `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
+- `memory_search` may return `linked_page` matches from one-hop memory associations.
+- `memory_read` reads either a memory candidate or a stable memory page by id.
 - OpenAI-compatible adapters convert `tool_calls[].function` into `ToolCallEnvelope`.
 - Anthropic adapters convert `tool_use` content blocks into `ToolCallEnvelope` and return tool results as `tool_result` content blocks.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
@@ -56,11 +58,13 @@
 | Generated tool execution | Execute through existing handler and return generated-tool evidence | `tests/test_tools.py` |
 | Generated tool runtime exposure | Provider runtime sends active generated tool specs | `tests/test_runtime.py` |
 | Artifact card projection | Emit id/title/kind without full artifact body | `tests/test_web.py`, `mnemo/runtime/common.py` |
+| Memory page read | Return stable page payload when `memory_read.id` is a memory page id | `tests/test_tools.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new tool by defining `ToolSpec`, registering a handler, and adding summary/evidence projection.
 - Base: read-only tools should be usable by the default policy.
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
+- Good: expose associative memory through existing memory tools instead of a separate workflow router.
 - Bad: adding a handler that performs side effects while declaring `risk="read"`.
 - Bad: returning large raw payloads to the model instead of compact summaries and evidence cards.
 

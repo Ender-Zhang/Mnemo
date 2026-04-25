@@ -54,7 +54,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Memory candidate search/read.
 - [x] Stable memory is not directly mutated by normal task tools.
 - [x] Memory engine pages/indexes beyond candidates.
-- [~] Associative recall / LLM Wiki style memory graph.
+- [x] Associative recall / LLM Wiki style memory graph.
 - [x] Conflict detection and confidence updates.
 - [x] W0 working memory to long-term candidate pipeline.
 - [x] DreamCycle idle memory consolidation.
@@ -164,3 +164,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-provider-smoke-command`: `mnemo config smoke` checks OpenAI-compatible `/models` plus chat, Anthropic chat, redacted output, and provider error exits.
 - [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.
 - [x] `04-25-implement-cross-client-skill-roots`: default skill roots now include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.
+- [x] `04-25-implement-associative-memory-recall`: memory search now surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.

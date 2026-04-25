@@ -97,6 +97,31 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(notes[0]["metadata"]["scope"], "global")
             self.assertEqual(notes[0]["metadata"]["confidence"], 0.84)
 
+    def test_memory_read_loads_stable_page_by_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: tests",
+                "User prefers focused regression tests",
+                confidence=0.9,
+            )
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="memory_read",
+                    arguments={"id": page_id},
+                    call_id="call_memory_read",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["memory"]["type"], "page")
+            self.assertEqual(result.result["memory"]["id"], page_id)
+            self.assertEqual(result.result["memory"]["content"], "User prefers focused regression tests")
+
     def test_skill_view_records_usage_and_outcome_tool_records_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

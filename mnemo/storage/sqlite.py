@@ -984,6 +984,19 @@ class StateStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_memory_backlinks(self, target_id: str) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, source_id, target_id, relation, weight, created_at
+                FROM memory_links
+                WHERE target_id = ?
+                ORDER BY weight DESC, created_at DESC
+                """,
+                (target_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def upsert_skill(
         self,
         name: str,

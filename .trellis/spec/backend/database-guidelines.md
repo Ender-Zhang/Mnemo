@@ -29,6 +29,8 @@
 - `StateStore.update_generated_tool_status(name: str, status: str) -> None`
 - `StateStore.upsert_artifact(mission_id: str, run_id: str, title: str, body: str, kind: str = "markdown") -> str`
 - `StateStore.get_artifact(artifact_id: str) -> dict[str, Any] | None`
+- `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
+- `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
@@ -63,6 +65,7 @@
 - Generated tool implementations are data, not executable code.
 - `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
 - `get_artifact()` returns `None` for unknown ids and a plain JSON-serializable dict for known ids.
+- `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
 - Chat replay by `event_id` is derived from persisted `chat.event` payloads in run order.
 - Unknown chat `event_id` returns all chat events for the run so clients can safely rehydrate.
 
@@ -85,6 +88,7 @@
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
 | Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
 | Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
+| Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases

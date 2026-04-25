@@ -369,11 +369,14 @@ class ToolRegistry:
         return {"matches": MemoryEngine(context.store).search(query, limit=limit)}
 
     def _memory_read(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
-        candidate_id = _require_str(args, "id")
-        candidate = context.store.get_memory_candidate(candidate_id)
-        if not candidate:
-            raise NotFoundError(f"memory not found: {candidate_id}")
-        return {"memory": candidate}
+        memory_id = _require_str(args, "id")
+        candidate = context.store.get_memory_candidate(memory_id)
+        if candidate:
+            return {"memory": {"type": "candidate", **candidate}}
+        page = context.store.get_memory_page(memory_id)
+        if page:
+            return {"memory": {"type": "page", **page}}
+        raise NotFoundError(f"memory not found: {memory_id}")
 
     def _working_note(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         content = _require_str(args, "content")

@@ -54,6 +54,7 @@ class MemoryEngine:
                     "evidence": candidate.get("evidence", []),
                 }
             )
+        results.extend(self._associated_pages(pages, seen_ids={item["id"] for item in results}, limit=limit))
         return results
 
     def context_cards(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
@@ -247,6 +248,66 @@ class MemoryEngine:
             return get_page(page_id)
         return None
 
+    def _associated_pages(
+        self,
+        pages: list[dict[str, Any]],
+        *,
+        seen_ids: set[str],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        associated: list[dict[str, Any]] = []
+        max_associations = max(0, int(limit))
+        if not pages or max_associations == 0:
+            return associated
+
+        for page in pages:
+            page_id = page["id"]
+            for link, linked_page_id in self._page_association_links(page_id):
+                if linked_page_id in seen_ids:
+                    continue
+                linked_page = self._get_page(linked_page_id)
+                if not linked_page or linked_page.get("status") != "active":
+                    continue
+                associated.append(
+                    {
+                        "type": "linked_page",
+                        "id": linked_page["id"],
+                        "title": linked_page["title"],
+                        "content": linked_page["content"],
+                        "scope": linked_page["scope"],
+                        "confidence": linked_page["confidence"],
+                        "status": linked_page["status"],
+                        "source_candidate_id": linked_page.get("source_candidate_id"),
+                        "relation": link["relation"],
+                        "linked_from": page_id,
+                        "link_id": link["id"],
+                        "link_weight": link["weight"],
+                    }
+                )
+                seen_ids.add(linked_page_id)
+                if len(associated) >= max_associations:
+                    return associated
+        return associated
+
+    def _page_association_links(self, page_id: str) -> list[tuple[dict[str, Any], str]]:
+        links: list[tuple[dict[str, Any], str]] = []
+        list_links = getattr(self.store, "list_memory_links", None)
+        if list_links:
+            links.extend((link, link["target_id"]) for link in list_links(page_id))
+
+        list_backlinks = getattr(self.store, "list_memory_backlinks", None)
+        if list_backlinks:
+            links.extend((link, link["source_id"]) for link in list_backlinks(page_id))
+
+        return sorted(
+            links,
+            key=lambda item: (
+                -float(item[0].get("weight", 0.0)),
+                -float(item[0].get("created_at", 0.0)),
+                item[0].get("id", ""),
+            ),
+        )
+
     def _find_duplicate_page(self, claim: str) -> dict[str, Any] | None:
         matches = self.store.search_memory_pages(claim, limit=1)
         return next(
@@ -311,15 +372,19 @@ def _candidate_title(candidate: dict[str, Any]) -> str:
 
 
 def _context_card(item: dict[str, Any]) -> dict[str, Any]:
-    if item["type"] == "page":
-        return {
+    if item["type"] in {"page", "linked_page"}:
+        card = {
             "id": item["id"],
-            "type": "page",
+            "type": item["type"],
             "title": item["title"],
             "summary": _truncate(item["content"]),
             "confidence": item.get("confidence"),
             "status": item.get("status"),
         }
+        if item["type"] == "linked_page":
+            card["relation"] = item.get("relation")
+            card["linked_from"] = item.get("linked_from")
+        return card
     return {
         "id": item["id"],
         "type": "candidate",

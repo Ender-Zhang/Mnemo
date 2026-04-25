@@ -19,6 +19,7 @@
 - CLI: `mnemo harness eval memory-safety --json`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
 - `StateStore.add_working_note(mission_id: str, run_id: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_working_note_status(note_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
@@ -38,6 +39,10 @@
 - L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
 - L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
 - Prompt-facing snapshots must omit raw evidence and full page content.
+- `MemoryEngine.search()` may include `linked_page` results by following one hop from matching active pages through outgoing links and backlinks.
+- `linked_page` results must be active pages, bounded by the search limit, deterministic, and de-duplicated from seed page/candidate ids.
+- Prompt-facing context cards for `linked_page` include compact `summary`, `relation`, and `linked_from`, not raw evidence.
+- `memory_read` must read stable memory pages as well as memory candidates.
 - The `memory-safety` eval suite must remain deterministic and local.
 - The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
 
@@ -53,10 +58,15 @@
 | W0 note without memory retention | Mark note `skipped:ephemeral`, create no candidate | `tests/test_memory.py` |
 | Missing or invalid snapshot file | Return `None` | `tests/test_memory.py` |
 | Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
+| Direct association | Search returns linked active pages that do not match the query text | `tests/test_memory.py` |
+| Reverse association | Search returns active pages linked back to the query match | `tests/test_memory.py` |
+| Association cards | Context cards include relation metadata without full raw payloads | `tests/test_memory.py` |
+| Memory page read | `memory_read` can load stable pages by id | `tests/test_tools.py` |
 | Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: use links to preserve why memory changed.
+- Good: use one-hop page links to surface adjacent wiki knowledge while keeping tool schemas unchanged.
 - Base: deterministic dream logic may emit signals that later model decisions consume.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
 - Bad: hide reinforcement or conflict decisions without a memory link.
@@ -67,6 +77,8 @@
 - Duplicate reinforcement updates confidence and creates `reinforces`.
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
 - Search/context cards remain compact and omit raw evidence.
+- Associative recall covers direct links, backlinks, archived-page filtering, and compact context cards.
+- `memory_read` covers both candidates and stable pages.
 - L1 snapshot compile/load behavior is covered, including invalid files.
 - Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
 
