@@ -651,3 +651,37 @@ Added model-callable recall_search, recall.card projection, inline web recall ca
 ### Next Steps
 
 - None - task complete
+
+
+## Session 76: Prompt modes
+
+**Date**: 2026-04-25
+**Task**: Prompt modes
+**Branch**: `main`
+
+### Summary
+
+Implemented full/minimal/capsule/none prompt modes with runtime/CLI propagation, disclosure metadata, tests, and prompt spec/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ac604b3` | (see git log) |
+| `ff4ef10` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
