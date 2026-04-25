@@ -349,6 +349,7 @@ def build_parser() -> argparse.ArgumentParser:
     config_smoke_parser.add_argument("--retry-backoff-s", type=float)
     config_smoke_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
     config_smoke_parser.add_argument("--message", default="Hello, introduce yourself in one sentence.")
+    config_smoke_parser.add_argument("--stream", action="store_true", help="Probe chat through provider streaming")
     config_smoke_parser.add_argument("--json", action="store_true")
     return parser
 
@@ -849,10 +850,10 @@ def _cmd_config_smoke(args: argparse.Namespace) -> int:
         raise MnemoError("config smoke requires --provider openai-compatible or anthropic")
 
     if config.provider == "openai-compatible":
-        adapter = _openai_adapter_from_config(config)
+        adapter = _openai_adapter_from_config(config, stream=args.stream)
         models = _openai_models_smoke(adapter)
     else:
-        adapter = _anthropic_adapter_from_config(config)
+        adapter = _anthropic_adapter_from_config(config, stream=args.stream)
         models = {"ok": True, "skipped": True, "reason": "Anthropic-compatible model listing is not probed"}
 
     chat = _provider_chat_smoke(adapter, args.message)
@@ -863,6 +864,7 @@ def _cmd_config_smoke(args: argparse.Namespace) -> int:
         "base_url": config.base_url,
         "models": models,
         "chat": chat,
+        "stream": args.stream,
         "config": config.redacted(),
     }
     if args.json:

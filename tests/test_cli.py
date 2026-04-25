@@ -676,6 +676,43 @@ class CliTests(unittest.TestCase):
         self.assertEqual([request["path"] for request in server.requests], ["/models", "/chat/completions"])
         self.assertEqual(server.requests[0]["headers"]["Authorization"], "Bearer secret-value")
 
+    def test_config_smoke_can_probe_openai_streaming_chat(self) -> None:
+        with FakeChatServer(
+            {"unused": True},
+            models_response={"data": [{"id": "fake-stream-model"}]},
+            stream_chunks=[
+                {
+                    "id": "chatcmpl_stream",
+                    "choices": [{"delta": {"content": "Stream "}, "finish_reason": None}],
+                },
+                {
+                    "id": "chatcmpl_stream",
+                    "choices": [{"delta": {"content": "reply"}, "finish_reason": "stop"}],
+                },
+            ],
+        ) as server:
+            smoke = _run_cli(
+                [
+                    "config",
+                    "smoke",
+                    "--provider",
+                    "openai-compatible",
+                    "--base-url",
+                    server.base_url,
+                    "--model",
+                    "fake-stream-model",
+                    "--stream",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(smoke.returncode, 0, smoke.stderr)
+        payload = json.loads(smoke.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["stream"])
+        self.assertEqual(payload["chat"]["response_preview"], "Stream reply")
+        self.assertEqual(server.requests[1]["body"]["stream"], True)
+
     def test_config_smoke_checks_anthropic_chat(self) -> None:
         with FakeChatServer(
             {
@@ -854,11 +891,13 @@ class FakeChatServer:
         delay_s: float = 0.0,
         *,
         models_response: dict[str, Any] | None = None,
+        stream_chunks: list[dict[str, Any]] | None = None,
         status: int = 200,
     ) -> None:
         self.response = response
         self.delay_s = delay_s
         self.models_response = models_response or {"data": []}
+        self.stream_chunks = stream_chunks
         self.status = status
         self.requests: list[dict[str, Any]] = []
         self._server = DaemonThreadingHTTPServer(("127.0.0.1", 0), self._handler())
@@ -906,7 +945,27 @@ class FakeChatServer:
                         "body": json.loads(raw_body.decode("utf-8")),
                     }
                 )
+                if fake_server.stream_chunks is not None and fake_server.requests[-1]["body"].get("stream"):
+                    self._send_sse(fake_server.stream_chunks)
+                    return
                 self._send_json(fake_server.response)
+
+            def _send_sse(self, chunks: list[dict[str, Any]]) -> None:
+                response_body = b"".join(
+                    f"data: {json.dumps(chunk)}\n\n".encode("utf-8")
+                    for chunk in chunks
+                ) + b"data: [DONE]\n\n"
+                self.send_response(fake_server.status)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Content-Length", str(len(response_body)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                try:
+                    self.wfile.write(response_body)
+                    self.wfile.flush()
+                except BrokenPipeError:
+                    pass
+                self.close_connection = True
 
             def _send_json(self, payload: dict[str, Any]) -> None:
                 response_body = json.dumps(payload).encode("utf-8")

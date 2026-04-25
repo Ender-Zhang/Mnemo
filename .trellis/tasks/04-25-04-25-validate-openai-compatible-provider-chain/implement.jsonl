@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "Provider smoke CLI and run commands"}
+{"file": "mnemo/providers/base.py", "reason": "OpenAI-compatible provider adapter behavior"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Provider smoke and normalized failures"}
+{"file": "mnemo/runtime/provider.py", "reason": "Provider-backed run loop"}

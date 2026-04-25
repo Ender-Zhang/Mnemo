@@ -16,6 +16,7 @@
 - `ProviderConfig(timeout_s: float, retry_count: int = 0, retry_backoff_s: float = 0.0, retry_status_codes=(429, 500, 502, 503, 504))`
 - CLI: `mnemo config smoke --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --provider anthropic --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
+- CLI: `mnemo config smoke --stream --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 
 ### 3. Contracts
 - Provider adapters raise `ProviderStatusError` for non-2xx HTTP responses.
@@ -34,6 +35,7 @@
 - `mnemo evals create` and `record` normalize missing runs/eval cases and invalid JSON payloads this way.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
+- `mnemo config smoke --stream` probes chat through the provider streaming path while keeping model listing non-streaming.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
 - CLI output must use redacted config and must never print the API key value.
 - Expected provider errors bubble through the top-level `MnemoError` handler and produce a non-zero exit.
@@ -42,6 +44,7 @@
 | Case | Expected Behavior | Test Point |
 | --- | --- | --- |
 | OpenAI-compatible smoke succeeds | JSON includes passed models and chat checks | `tests/test_cli.py` |
+| OpenAI-compatible streaming smoke succeeds | JSON includes `stream=true` and streamed chat text | `tests/test_cli.py` |
 | Anthropic smoke succeeds | JSON includes skipped models and passed chat check | `tests/test_cli.py` |
 | API key supplied | Request header uses key, stdout redacts it | `tests/test_cli.py` |
 | Provider returns HTTP error | CLI exits non-zero and stderr includes normalized status | `tests/test_cli.py` |
@@ -74,6 +77,7 @@
 
 ### 6. Tests Required
 - CLI success for OpenAI-compatible smoke.
+- CLI success for OpenAI-compatible streaming smoke.
 - CLI success for Anthropic smoke.
 - CLI failure for provider status errors.
 - Existing provider adapter status/payload/timeout tests still pass.

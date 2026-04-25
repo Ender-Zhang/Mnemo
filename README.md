@@ -42,6 +42,12 @@ mnemo config smoke \
   --model local-model \
   --api-key-env MNEMO_API_KEY
 
+mnemo config smoke --stream \
+  --provider openai-compatible \
+  --base-url http://localhost:8000/v1 \
+  --model local-model \
+  --api-key-env MNEMO_API_KEY
+
 mnemo run "Summarize the current repo state" \
   --state-dir .mnemo \
   --provider openai-compatible \
