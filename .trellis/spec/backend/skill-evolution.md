@@ -22,6 +22,7 @@
 - Tool: `skill_patch_candidate(source_name: str, name: str, replacements: [{old: str, new: str}], description?: str, replace_all?: bool)`
 - Tool: `skill_run_eval_case(case_id: str)`
 - Tool: `skill_review_candidate(name: str)`
+- CLI: `mnemo skills usage [name] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo evals create <run_id> <name> --case-json OBJECT [--state-dir DIR] [--json]`
 - CLI: `mnemo evals list [--status STATUS] [--skill-name NAME] [--state-dir DIR] [--json]`
 - CLI: `mnemo evals record <case_id> passed|failed [--result-json OBJECT] [--state-dir DIR] [--json]`
@@ -36,6 +37,7 @@
 - Default skill roots must be de-duplicated while preserving first-seen order.
 - Explicit `skills scan --root` paths are additive to default roots.
 - Evidence is stored as JSON and returned only through explicit usage inspection APIs, not prompt cards.
+- `mnemo skills usage` is read-only and returns usage events plus aggregate stats from `StateStore`.
 - `skill_crystallize_from_run` is model-directed: the model decides when to call it and supplies the name/description.
 - Crystallization reads completed run events and stores a `draft` skill with `source="run:<run_id>:crystallized"`.
 - Crystallized skill bodies may include compact tool names, summaries, evidence counts, and source run id.
@@ -80,6 +82,7 @@
 | Crystallization tool | Return compact summary/evidence without body or raw payloads | `tests/test_tools.py` |
 | Eval tool | Return compact summary/evidence without body | `tests/test_tools.py` |
 | Shared eval CLI | Create/list skill-targeted eval cases and record external outcomes | `tests/test_cli.py` |
+| Skill usage CLI | Return usage events and aggregate stats without mutating skill state | `tests/test_cli.py` |
 | Skill cards | Include compact usage stats and omit body | `tests/test_skills_filesystem.py` |
 | Default roots | Include mainstream client roots and de-duplicate | `tests/test_skills_filesystem.py` |
 | CLI scan defaults | Import workspace mainstream roots without explicit `--root` | `tests/test_cli.py` |
@@ -106,6 +109,7 @@
 - Tool harness test for `skill_patch_candidate`.
 - Tool harness test for `skill_run_eval_case`.
 - Tool harness test for `skill_review_candidate`.
+- CLI test for skill usage event and stats inspection.
 - CLI test for shared eval case creation, listing, and result recording.
 - Skill service test for usage stats and deterministic ranking.
 - Skill service test for default root ordering and de-duplication.

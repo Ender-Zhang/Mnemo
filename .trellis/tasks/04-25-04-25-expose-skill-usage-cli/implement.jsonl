@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/storage/sqlite.py", "reason": "Existing skill usage APIs"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI parser and skills usage handler"}
+{"file": "tests/test_cli.py", "reason": "CLI regression coverage"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "Skill usage contract"}
+{"file": "README.md", "reason": "Document CLI usage"}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Track landed implementation"}

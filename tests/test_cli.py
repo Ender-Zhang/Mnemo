@@ -274,6 +274,40 @@ class CliTests(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(path.name, "SKILL.md")
 
+    def test_skills_usage_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("skill usage")
+            mission_id = store.create_mission(conversation_id, "skill usage")
+            run_id = store.create_run(conversation_id, mission_id, "skill usage")
+            store.upsert_skill("writer", "Write concise notes", "Use short notes.", status="active")
+            store.record_skill_usage(run_id, "writer", "viewed", evidence=[{"kind": "skill_view"}])
+            store.record_skill_usage(
+                run_id,
+                "writer",
+                "outcome",
+                outcome="success",
+                score=0.75,
+                evidence=[{"kind": "manual"}],
+            )
+            store.record_skill_usage(run_id, "planner", "outcome", outcome="failure", score=-0.25)
+
+            filtered = _run_cli(["skills", "usage", "writer", "--state-dir", tmp, "--json"])
+            all_usage = _run_cli(["skills", "usage", "--state-dir", tmp, "--limit", "2", "--json"])
+            text = _run_cli(["skills", "usage", "writer", "--state-dir", tmp])
+
+            self.assertEqual(filtered.returncode, 0, filtered.stderr)
+            payload = json.loads(filtered.stdout)
+            self.assertEqual([event["event_type"] for event in payload["usage"]], ["outcome", "viewed"])
+            self.assertEqual(payload["stats"]["writer"]["views"], 1)
+            self.assertEqual(payload["stats"]["writer"]["successes"], 1)
+            self.assertEqual(payload["stats"]["writer"]["avg_score"], 0.75)
+            self.assertEqual(all_usage.returncode, 0, all_usage.stderr)
+            self.assertEqual(len(json.loads(all_usage.stdout)["usage"]), 2)
+            self.assertEqual(text.returncode, 0, text.stderr)
+            self.assertIn("writer outcome outcome=success score=0.75", text.stdout)
+
     def test_skill_service_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             promote = _run_cli(["skills", "promote", "missing", "--state-dir", tmp])

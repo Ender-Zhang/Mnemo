@@ -164,6 +164,11 @@ def build_parser() -> argparse.ArgumentParser:
     skills_list_parser = skills_subparsers.add_parser("list", help="List known skills")
     _add_state_dir(skills_list_parser)
     skills_list_parser.add_argument("--json", action="store_true")
+    skills_usage_parser = skills_subparsers.add_parser("usage", help="Inspect stored skill usage and outcome signals")
+    _add_state_dir(skills_usage_parser)
+    skills_usage_parser.add_argument("name", nargs="?")
+    skills_usage_parser.add_argument("--limit", type=int, default=50)
+    skills_usage_parser.add_argument("--json", action="store_true")
     skills_view_parser = skills_subparsers.add_parser("view", help="View a skill")
     _add_state_dir(skills_view_parser)
     skills_view_parser.add_argument("name")
@@ -554,6 +559,12 @@ def _cmd_skills(args: argparse.Namespace) -> int:
             result = {"skills": service.scan()}
         elif args.skills_command == "list":
             result = {"skills": service.list()}
+        elif args.skills_command == "usage":
+            stats = store.skill_usage_stats()
+            result = {
+                "usage": store.list_skill_usage(args.name, limit=max(0, args.limit)),
+                "stats": {args.name: stats.get(args.name, _empty_skill_usage_stats())} if args.name else stats,
+            }
         elif args.skills_command == "view":
             skill = service.view(args.name)
             if not skill:
@@ -596,7 +607,26 @@ def _print_skills_result(result: dict) -> None:
         print()
         print(skill.get("body", ""))
         return
+    if "usage" in result:
+        for event in result["usage"]:
+            outcome = f" outcome={event['outcome']}" if event.get("outcome") else ""
+            score = f" score={event['score']}" if event.get("score") is not None else ""
+            print(f"{event['id']} {event['skill_name']} {event['event_type']}{outcome}{score}")
+        return
     print(dumps(result))
+
+
+def _empty_skill_usage_stats() -> dict[str, Any]:
+    return {
+        "uses": 0,
+        "views": 0,
+        "outcomes": 0,
+        "successes": 0,
+        "failures": 0,
+        "neutral": 0,
+        "last_used_at": None,
+        "avg_score": 0.0,
+    }
 
 
 def _cmd_tools(args: argparse.Namespace) -> int:
