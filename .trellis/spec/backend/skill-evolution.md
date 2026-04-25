@@ -13,11 +13,13 @@
 - `StateStore.list_eval_cases(status: str | None = None, *, tool_name: str | None = None, skill_name: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `SkillService.context_cards(limit: int = 12) -> list[dict[str, Any]]`
 - `SkillService.crystallize_from_run(run_id: str, name: str, *, description: str | None = None, notes: str | None = None) -> dict[str, Any]`
+- `SkillService.patch_candidate(source_name: str, name: str, replacements: Any, *, description: str | None = None, replace_all: Any = False) -> dict[str, Any]`
 - `SkillService.run_eval_case(case_id: str) -> dict[str, Any]`
 - `SkillService.review(name: str) -> dict[str, Any]`
 - `default_skill_roots(state_dir: str | Path, workspace: str | Path | None = None, home: str | Path | None = None) -> list[Path]`
 - Tool: `skill_record_outcome(name: str, outcome: success|failure|neutral, score?: -1..1, evidence?: object[])`
 - Tool: `skill_crystallize_from_run(run_id: str, name: str, description?: str, notes?: str)`
+- Tool: `skill_patch_candidate(source_name: str, name: str, replacements: [{old: str, new: str}], description?: str, replace_all?: bool)`
 - Tool: `skill_run_eval_case(case_id: str)`
 - Tool: `skill_review_candidate(name: str)`
 
@@ -36,6 +38,10 @@
 - Crystallized skill bodies may include compact tool names, summaries, evidence counts, and source run id.
 - Crystallized skill bodies must not include raw user messages, full tool results, or raw payload bodies.
 - Runs without a completed event or without successful tool results are rejected.
+- `skill_patch_candidate` is model-directed and applies exact in-memory replacements to an existing skill body.
+- Skill patch candidates are stored as `draft` with `source="skill:<source_name>:patch"`.
+- Skill patching rejects missing source skills, empty replacements, missing replacement text, ambiguous replacement text unless `replace_all=true`, no-op patches, and patch candidate names that would overwrite an active skill.
+- Skill patching never mutates the source skill and never writes `SKILL.md`.
 - `skill_review_candidate` updates a generated skill candidate to `ready` or `blocked:*`.
 - Review validates name, description, body, and negative usage evidence.
 - Skill eval cases target skills through `case.skill_name`, `case.skill_candidate`, `case.skill`, or `case.name`.
@@ -59,6 +65,9 @@
 | Successful run crystallization | Store a draft skill sourced from the run | `tests/test_skills_filesystem.py` |
 | Incomplete or empty run crystallization | Reject without creating a skill | `tests/test_skills_filesystem.py` |
 | Crystallized body payload safety | Include compact summaries and omit raw tool payloads | `tests/test_skills_filesystem.py` |
+| Skill patch success | Create a draft patched candidate without mutating source skill | `tests/test_skills_filesystem.py` |
+| Skill patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_skills_filesystem.py` |
+| Skill patch tool | Return compact summary/evidence without body | `tests/test_tools.py` |
 | Skill eval pass | Persist eval case `passed` with assertion results | `tests/test_skills_filesystem.py` |
 | Skill eval failure | Persist eval case `failed` with errors | `tests/test_skills_filesystem.py` |
 | Linked eval missing pass | Review marks skill `blocked:missing_eval` | `tests/test_skills_filesystem.py` |
@@ -75,11 +84,13 @@
 ### 5. Good/Base/Bad Cases
 - Good: model calls `skill_record_outcome` after observing whether a skill helped.
 - Good: model calls `skill_crystallize_from_run` after a repeated or high-value successful run, then proposes evals before promotion.
+- Good: model calls `skill_patch_candidate` to create a bounded draft revision from a useful existing skill, then evaluates and reviews it.
 - Good: model proposes an eval case, calls `skill_run_eval_case`, then reviews the candidate.
 - Good: model calls `skill_review_candidate` before requesting explicit promotion.
 - Good: reuse `default_skill_roots()` for runtime and CLI scanning so prompt cards and `skills scan` see the same client roots.
 - Base: skill ranking uses `avg_score`, success count, use count, then name.
 - Bad: automatically rewriting a skill body from one successful run.
+- Bad: mutating an active source skill directly from a patch proposal.
 - Bad: promoting a generated skill without review when review evidence is available.
 - Bad: hiding large evidence payloads inside prompt skill cards.
 
@@ -87,12 +98,14 @@
 - Storage round-trip for usage events and aggregate stats.
 - Tool harness test for `skill_view` and `skill_record_outcome`.
 - Tool harness test for `skill_crystallize_from_run`.
+- Tool harness test for `skill_patch_candidate`.
 - Tool harness test for `skill_run_eval_case`.
 - Tool harness test for `skill_review_candidate`.
 - Skill service test for usage stats and deterministic ranking.
 - Skill service test for default root ordering and de-duplication.
 - CLI test for scanning a workspace mainstream root without `--root`.
 - Skill service tests for crystallized draft body shape and rejection paths.
+- Skill service tests for patch candidate success, source immutability, missing source, and ambiguity handling.
 - Skill service tests for running linked eval cases and review gating.
 - Skill service tests for ready and blocked review states.
 - Harness suite `skill-evolution`: assert crystallization omits raw payloads, eval pass enables review, failed or missing evals block review, and context cards omit bodies.

@@ -251,6 +251,43 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact["evidence"][0]["kind"], "skill_candidate_review")
             self.assertNotIn("body", str(compact))
 
+    def test_skill_patch_candidate_returns_compact_evidence_without_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            store.upsert_skill(
+                "writer",
+                "Draft concise notes",
+                "Use short sentences and keep project references concrete.",
+                status="active",
+            )
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_patch_candidate",
+                    arguments={
+                        "source_name": "writer",
+                        "name": "writer-patch",
+                        "description": "Draft concise notes with paragraph guidance",
+                        "replacements": [{"old": "short sentences", "new": "short paragraphs"}],
+                    },
+                    call_id="call_skill_patch",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            compact = compact_tool_result(result)
+            candidate = store.get_skill("writer-patch")
+            self.assertTrue(result.ok)
+            self.assertEqual(candidate["status"], "draft")
+            self.assertIn("short paragraphs", candidate["body"])
+            self.assertEqual(compact["evidence"][0]["kind"], "skill_patch_candidate")
+            self.assertEqual(compact["evidence"][0]["source_skill"], "writer")
+            self.assertEqual(compact["evidence"][0]["replacement_count"], 1)
+            self.assertNotIn("short paragraphs", str(compact))
+
     def test_skill_run_eval_case_records_result_and_returns_compact_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

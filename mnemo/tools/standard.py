@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 
 from ..core.errors import NotFoundError, ToolError
 from ..core.models import ToolResult, ToolSpec
+from ..core.text_patch import apply_exact_replacements, normalize_text_replacements, optional_bool
 
 if TYPE_CHECKING:
     from .registry import ToolContext
@@ -204,30 +205,10 @@ def file_patch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
     path = _resolve_workspace_path(context.workspace_root, _require_str(args, "path"))
     if not path.is_file():
         raise NotFoundError(f"file not found: {_relative_path(path, context.workspace_root)}")
-    replacements = _require_replacements(args, "replacements")
-    replace_all = _optional_bool(args.get("replace_all"), default=False)
+    replacements = normalize_text_replacements(args.get("replacements"))
+    replace_all = optional_bool(args.get("replace_all"), default=False)
     content = _read_text_prefix(path, 2_000_000)
-    updated = content
-    applied: list[dict[str, Any]] = []
-
-    for index, replacement in enumerate(replacements):
-        old = replacement["old"]
-        new = replacement["new"]
-        count = updated.count(old)
-        if count == 0:
-            raise ToolError(f"replacement {index} text not found")
-        if count > 1 and not replace_all:
-            raise ToolError(f"replacement {index} is ambiguous; pass replace_all=true")
-        applied_count = count if replace_all else 1
-        updated = updated.replace(old, new, applied_count)
-        applied.append(
-            {
-                "index": index,
-                "count": applied_count,
-                "old_bytes": len(old.encode("utf-8")),
-                "new_bytes": len(new.encode("utf-8")),
-            }
-        )
+    updated, applied = apply_exact_replacements(content, replacements, replace_all=replace_all)
 
     path.write_text(updated, encoding="utf-8")
     return {
@@ -402,32 +383,6 @@ def _require_str_list(args: dict[str, Any], key: str) -> list[str]:
             raise ToolError(f"expected non-empty string array argument: {key}")
         strings.append(item)
     return strings
-
-
-def _require_replacements(args: dict[str, Any], key: str) -> list[dict[str, str]]:
-    value = args.get(key)
-    if not isinstance(value, list) or not value:
-        raise ToolError(f"missing replacement array argument: {key}")
-    replacements: list[dict[str, str]] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, dict):
-            raise ToolError(f"replacement {index} must be an object")
-        old = item.get("old")
-        new = item.get("new")
-        if not isinstance(old, str) or not old:
-            raise ToolError(f"replacement {index} old text must be a non-empty string")
-        if not isinstance(new, str):
-            raise ToolError(f"replacement {index} new text must be a string")
-        replacements.append({"old": old, "new": new})
-    return replacements
-
-
-def _optional_bool(value: Any, *, default: bool) -> bool:
-    if value is None:
-        return default
-    if not isinstance(value, bool):
-        raise ToolError("expected boolean argument")
-    return value
 
 
 def _bounded_int(value: Any, *, minimum: int, maximum: int) -> int:

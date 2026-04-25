@@ -68,7 +68,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
 - [x] Progressive skill index/summary/full load.
 - [x] Skill usage tracking and outcome scoring.
-- [~] Skill patch/proposal review lifecycle: proposal review gate exists; patch-specific diff/apply remains pending.
+- [x] Skill patch/proposal review lifecycle: proposal, exact patch candidate, eval, review, and promotion gates exist.
 - [x] SOP crystallization from successful runs.
 - [x] Skill eval harness.
 
@@ -167,3 +167,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-associative-memory-recall`: memory search now surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.
 - [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata now separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.
 - [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
+- [x] `04-25-04-25-implement-skill-patch-candidates`: model-directed `skill_patch_candidate` creates draft skill revisions with exact replacement checks, compact evidence, and unchanged source skills.

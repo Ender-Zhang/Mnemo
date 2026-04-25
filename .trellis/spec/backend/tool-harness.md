@@ -36,6 +36,7 @@
 - `working_note` with `retention="memory_candidate"` stores metadata for DreamCycle; it does not create a memory candidate synchronously.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
 - `compact_tool_result` for crystallization must not include the generated skill body or raw source run payloads.
+- `skill_patch_candidate` is exposed as a normal provider-native tool call and returns patch metadata, not the patched skill body.
 - Active generated tools are loaded from `StateStore.list_generated_tools(status="active")`.
 - Generated tools are normal provider-native tools once loaded into `ToolRegistry`.
 - Generated tool aliases execute by mapping model arguments to an existing target tool handler.
@@ -59,6 +60,7 @@
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
+| Skill patch candidate | Return compact patch evidence without body and leave source skill unchanged | `tests/test_tools.py`, `tests/test_skills_filesystem.py` |
 | Skill eval case run | Return compact eval status/evidence without body | `tests/test_tools.py` |
 | Generated tool install | Return compact install evidence without implementation payload | `tests/test_tools.py` |
 | Generated tool execution | Execute through existing handler and return generated-tool evidence | `tests/test_tools.py` |
@@ -81,6 +83,7 @@
 - Working note retention metadata: assert stored metadata and compact result remain small.
 - Skill review: assert status is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.
+- Skill patch: assert draft status is persisted and compact result omits full skill body.
 - Skill eval case: assert eval status is persisted and compact result omits full skill body.
 - Generated tool install: assert active tool row is persisted and compact result omits implementation payload.
 - Generated tool execution: assert alias argument mapping reaches the target handler.

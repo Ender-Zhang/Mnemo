@@ -4,6 +4,7 @@ from pathlib import Path
 import re
 from typing import Any
 
+from ..core.text_patch import apply_exact_replacements, normalize_text_replacements, optional_bool
 from ..storage import StateStore
 from .filesystem import SkillFile, load_skill_metadata, scan_skill_files
 
@@ -130,6 +131,60 @@ class SkillService:
             "status": "draft",
             "source_run_id": run_id,
             "tool_names": _unique_tool_names(tool_results),
+        }
+
+    def patch_candidate(
+        self,
+        source_name: str,
+        name: str,
+        replacements: Any,
+        *,
+        description: str | None = None,
+        replace_all: Any = False,
+    ) -> dict[str, Any]:
+        source_name = source_name.strip()
+        candidate_name = name.strip()
+        if not source_name:
+            raise ValueError("Source skill name is required")
+        if not candidate_name:
+            raise ValueError("Patch candidate name is required")
+        if candidate_name == source_name:
+            raise ValueError("Patch candidate name must differ from source skill name")
+
+        source = self.store.get_skill(source_name)
+        if not source:
+            raise ValueError(f"Skill not found: {source_name}")
+        existing_candidate = self.store.get_skill(candidate_name)
+        if existing_candidate and existing_candidate.get("status") == "active":
+            raise ValueError(f"Patch candidate name already active: {candidate_name}")
+
+        normalized_replacements = normalize_text_replacements(replacements)
+        replace_all_value = optional_bool(replace_all, default=False)
+        body = str(source.get("body") or "")
+        updated_body, applied = apply_exact_replacements(
+            body,
+            normalized_replacements,
+            replace_all=replace_all_value,
+        )
+        if updated_body == body:
+            raise ValueError("Patch did not change the skill body")
+
+        skill_description = (description or source.get("description") or "").strip()
+        skill_id = self.store.upsert_skill(
+            candidate_name,
+            skill_description,
+            updated_body,
+            source=f"skill:{source_name}:patch",
+            status="draft",
+        )
+        return {
+            "skill_id": skill_id,
+            "name": candidate_name,
+            "source_skill": source_name,
+            "status": "draft",
+            "replacements": applied,
+            "replace_all": replace_all_value,
+            "body_chars": len(updated_body),
         }
 
     def review(self, name: str) -> dict[str, Any]:

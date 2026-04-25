@@ -321,6 +321,57 @@ class SkillFilesystemTests(unittest.TestCase):
             self.assertEqual(stored["status"], "failed")
             self.assertIn("body_missing_text", stored["result"]["errors"])
 
+    def test_patch_candidate_creates_draft_without_mutating_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            store.upsert_skill(
+                "writer",
+                "Draft concise project notes",
+                "Use short sentences and preserve concrete file references.",
+                status="active",
+            )
+
+            result = SkillService(store).patch_candidate(
+                "writer",
+                "writer-more-specific",
+                [{"old": "short sentences", "new": "short paragraphs"}],
+                description="Draft concise project notes with paragraph guidance",
+            )
+
+            source = store.get_skill("writer")
+            candidate = store.get_skill("writer-more-specific")
+            self.assertEqual(result["status"], "draft")
+            self.assertEqual(result["source_skill"], "writer")
+            self.assertEqual(result["replacements"][0]["count"], 1)
+            self.assertEqual(source["status"], "active")
+            self.assertIn("short sentences", source["body"])
+            self.assertEqual(candidate["status"], "draft")
+            self.assertEqual(candidate["source"], "skill:writer:patch")
+            self.assertIn("short paragraphs", candidate["body"])
+
+    def test_patch_candidate_rejects_missing_skill_and_ambiguous_replacement(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            store.upsert_skill("writer", "Draft concise notes", "needle\nneedle\n", status="active")
+            service = SkillService(store)
+
+            with self.assertRaisesRegex(ValueError, "Skill not found"):
+                service.patch_candidate("missing", "missing-patch", [{"old": "x", "new": "y"}])
+            with self.assertRaisesRegex(ValueError, "ambiguous"):
+                service.patch_candidate("writer", "writer-patch", [{"old": "needle", "new": "patched"}])
+
+            accepted = service.patch_candidate(
+                "writer",
+                "writer-patch",
+                [{"old": "needle", "new": "patched"}],
+                replace_all=True,
+            )
+
+            self.assertEqual(accepted["replacements"][0]["count"], 2)
+            self.assertIn("patched\npatched", store.get_skill("writer-patch")["body"])
+
     def test_crystallize_from_run_creates_draft_skill_from_compact_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

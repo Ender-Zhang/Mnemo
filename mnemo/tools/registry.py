@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from ..core.errors import NotFoundError, ToolError
 from ..core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolPermission, ToolResult, ToolSpec
+from ..core.text_patch import optional_bool
 from ..memory import MemoryEngine
 from ..skills import SkillService
 from ..storage import StateStore
@@ -151,6 +152,33 @@ LEARNING_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="skill_patch_candidate",
+        description="Create a draft skill candidate by applying exact replacements to an existing skill body.",
+        risk="write",
+        input_schema=_schema(
+            ["source_name", "name", "replacements"],
+            {
+                "source_name": {"type": "string"},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "replacements": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["old", "new"],
+                        "properties": {
+                            "old": {"type": "string"},
+                            "new": {"type": "string"},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "replace_all": {"type": "boolean", "default": False},
+            },
+        ),
+    ),
+    ToolSpec(
         name="skill_review_candidate",
         description="Review a draft skill candidate and mark it ready or blocked before explicit promotion.",
         risk="write",
@@ -287,6 +315,7 @@ class ToolRegistry:
             **standard_tool_handlers(),
             "memory_write_candidate": self._memory_write_candidate,
             "skill_propose_candidate": self._skill_propose_candidate,
+            "skill_patch_candidate": self._skill_patch_candidate,
             "skill_review_candidate": self._skill_review_candidate,
             "skill_crystallize_from_run": self._skill_crystallize_from_run,
             "skill_run_eval_case": self._skill_run_eval_case,
@@ -441,6 +470,15 @@ class ToolRegistry:
             source=f"run:{context.run_id}",
         )
         return {"skill_id": skill_id, "status": "draft"}
+
+    def _skill_patch_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        return SkillService(context.store).patch_candidate(
+            _require_str(args, "source_name"),
+            _require_str(args, "name"),
+            args.get("replacements"),
+            description=_optional_str(args, "description"),
+            replace_all=optional_bool(args.get("replace_all"), default=False),
+        )
 
     def _skill_review_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         return SkillService(context.store).review(_require_str(args, "name"))
@@ -769,6 +807,8 @@ def _tool_summary(result: ToolResult) -> str:
         return f"Ran generated tool {result.name} via {result.result.get('target_tool', 'unknown')}."
     if result.name == "skill_review_candidate":
         return f"Reviewed skill candidate: {result.result.get('status', 'unknown')}."
+    if result.name == "skill_patch_candidate":
+        return f"Patched draft skill candidate: {result.result.get('name', 'unknown')}."
     if result.name == "skill_crystallize_from_run":
         return f"Crystallized draft skill: {result.result.get('name', 'unknown')}."
     if result.name == "skill_run_eval_case":
@@ -882,6 +922,16 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "title": str(result.result.get("name") or "Skill candidate"),
                 "status": result.result.get("status"),
                 "errors": result.result.get("errors", [])[:5],
+            }
+        ]
+    if result.name == "skill_patch_candidate":
+        return [
+            {
+                "kind": "skill_patch_candidate",
+                "id": str(result.result.get("skill_id") or ""),
+                "title": str(result.result.get("name") or "Skill patch candidate"),
+                "source_skill": result.result.get("source_skill"),
+                "replacement_count": sum(item.get("count", 0) for item in result.result.get("replacements", [])),
             }
         ]
     if result.name == "skill_crystallize_from_run":
