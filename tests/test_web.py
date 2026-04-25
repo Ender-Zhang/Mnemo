@@ -5,6 +5,7 @@ import json
 import tempfile
 import threading
 import unittest
+from pathlib import Path
 
 from mnemo.interfaces.web import WebServerConfig, build_http_server
 from mnemo.storage import StateStore
@@ -47,6 +48,33 @@ class WebInterfaceTests(unittest.TestCase):
                 followup_result = followup_events[-1]["data"]["result"]
                 self.assertEqual(result["conversation_id"], followup_result["conversation_id"])
                 self.assertEqual(result["mission_id"], followup_result["mission_id"])
+
+    def test_web_chat_passes_workspace_bootstrap_to_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            workspace = root / "workspace"
+            state_dir.mkdir()
+            workspace.mkdir()
+            (state_dir / "SOUL.md").write_text("User prefers web continuity.", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("Workspace bootstrap from web config.", encoding="utf-8")
+
+            with RunningServer(WebServerConfig(state_dir=str(state_dir), port=0, workspace_root=str(workspace))) as server:
+                status, _, body = server.request("POST", "/api/chat", {"message": "remember: web bootstrap"})
+
+            self.assertEqual(status, 200)
+            events = [json.loads(line) for line in body.splitlines() if line.strip()]
+            run_id = events[-1]["run_id"]
+            store = StateStore(str(state_dir))
+            prompt_event = next(
+                event for event in store.get_run_events(run_id) if event["event_type"] == "prompt.assembled"
+            )
+            blocks = {block["id"]: block for block in prompt_event["payload"]["blocks"]}
+
+            self.assertIn("soul.user_contract", blocks)
+            self.assertIn("workspace.bootstrap.agents_md", blocks)
+            self.assertEqual(blocks["workspace.bootstrap.agents_md"]["metadata"]["path"], "AGENTS.md")
+            self.assertNotIn("Workspace bootstrap from web config.", str(prompt_event["payload"]))
 
     def test_web_serves_assets_and_event_replay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

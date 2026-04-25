@@ -23,6 +23,7 @@ class WebServerConfig:
     state_dir: str
     host: str = "127.0.0.1"
     port: int = 8765
+    workspace_root: str | None = None
     provider: str = "local"
     base_url: str | None = None
     model: str | None = None
@@ -103,6 +104,7 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                     state_dir=config.state_dir,
                     conversation_id=_optional_string(body.get("conversation_id")),
                     mission_id=_optional_string(body.get("mission_id")),
+                    workspace_root=config.workspace_root,
                 )
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)

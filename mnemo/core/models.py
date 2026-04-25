@@ -94,6 +94,7 @@ class RunRequest:
     state_dir: str
     conversation_id: str | None = None
     mission_id: str | None = None
+    workspace_root: str | None = None
 
 
 @dataclass(frozen=True)

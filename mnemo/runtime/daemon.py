@@ -166,6 +166,7 @@ class DaemonRunner:
                     state_dir=str(self.store.state_dir),
                     conversation_id=item.get("conversation_id"),
                     mission_id=item.get("mission_id"),
+                    workspace_root=_workspace_root_from_item(item),
                 )
             )
         except Exception as exc:
@@ -185,3 +186,11 @@ def _pid_is_running(pid: int) -> bool:
     except PermissionError:
         return True
     return True
+
+
+def _workspace_root_from_item(item: dict[str, Any]) -> str | None:
+    metadata = item.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    value = metadata.get("workspace_root")
+    return value if isinstance(value, str) and value.strip() else None

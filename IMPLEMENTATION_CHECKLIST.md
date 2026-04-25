@@ -92,8 +92,8 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] KV-cache-first prompt assembly ordering.
 - [x] Prompt inspection command.
 - [~] Context compression exists at a basic budget/drop level; full pre-run safety compression, in-loop compaction, mission checkpoint compression, and provider cache-control integration are not complete.
-- [ ] Soul.md loading, sanitization, injection scanning, cache invalidation, and user-confirmed Soul evolution.
-- [ ] Workspace bootstrap blocks for `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `BOOTSTRAP.md`, `MEMORY.md`, `CLAUDE.md`, and cursor rules with caps and truncation markers.
+- [~] Soul.md loading and bounded prompt injection are implemented; user-confirmed Soul evolution and explicit cache invalidation are not complete.
+- [~] Workspace bootstrap blocks for `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `BOOTSTRAP.md`, `MEMORY.md`, `CLAUDE.md`, and cursor rules load with caps, truncation markers, and warning metadata; prompt modes/provider cache controls are not complete.
 - [ ] Prompt modes beyond recorded `full`: `minimal`, `capsule`, and `none` with enforced disclosure boundaries.
 - [ ] Stable ToolBundle epochs and lazy schema expansion for large MCP/external tool surfaces.
 
@@ -160,7 +160,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
-- [~] Highest-priority core alignment: L4 memory search foundation is implemented; Soul/bootstrap prompt input, unified after-turn learning packet, interactive Decision/Inbox loop, and frontend recall/learning actions remain.
+- [~] Highest-priority core alignment: L4 memory search and Soul/bootstrap prompt input foundations are implemented; unified after-turn learning packet, interactive Decision/Inbox loop, and frontend recall/learning actions remain.
 - [ ] Highest-priority integration alignment: SDK/MCP server and external RuntimeAdapter with context capsule boundaries.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
@@ -197,6 +197,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-04-25-implement-skill-patch-candidates`: model-directed `skill_patch_candidate` creates draft skill revisions with exact replacement checks, compact evidence, and unchanged source skills.
 - [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
 - [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.
+- [x] `04-25-implement-prompt-bootstrap-foundation`: runtime, provider, CLI, and Web now inject bounded `SOUL.md` and workspace bootstrap context into cache-aware prompt assembly while keeping prompt metadata content-free.
 - [x] `04-25-implement-associative-memory-recall`: memory search surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.
 - [x] `04-25-implement-cross-client-skill-roots`: default skill roots include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.
 - [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.

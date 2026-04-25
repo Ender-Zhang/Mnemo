@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from ..core.jsonutil import dumps
 from ..core.models import ToolSpec
+from .bootstrap import PromptContextItem
 
 
 PromptRole = Literal["system", "developer", "user", "assistant", "tool"]
@@ -29,6 +30,7 @@ class PromptBlock:
     token_estimate: int
     priority: int
     can_drop: bool
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,7 @@ class AssembledPrompt:
                 "token_estimate": block.token_estimate,
                 "priority": block.priority,
                 "can_drop": block.can_drop,
+                **({"metadata": block.metadata} if block.metadata else {}),
             }
             for block in self.blocks
         ]
@@ -82,6 +85,8 @@ class PromptAssembler:
         mission: dict[str, Any] | None = None,
         checkpoint: dict[str, Any] | None = None,
         tool_specs: Sequence[ToolSpec] | None = None,
+        soul_context: PromptContextItem | None = None,
+        workspace_context: Sequence[PromptContextItem] | None = None,
         memory_snapshot: dict[str, Any] | None = None,
         memory_cards: Sequence[dict[str, Any]] | None = None,
         skill_cards: Sequence[dict[str, Any]] | None = None,
@@ -92,8 +97,12 @@ class PromptAssembler:
         blocks = [
             self._system_identity(),
             self._operating_principles(),
-            self._tool_cards(tools),
         ]
+        if soul_context:
+            blocks.append(self._context_item_block(soul_context, layer="L0"))
+        blocks.append(self._tool_cards(tools))
+        for item in workspace_context or ():
+            blocks.append(self._context_item_block(item, layer="workspace"))
         if _snapshot_items(memory_snapshot):
             blocks.append(self._memory_snapshot(memory_snapshot))
         if memory_cards:
@@ -195,6 +204,21 @@ class PromptAssembler:
             can_drop=True,
         )
 
+    def _context_item_block(self, item: PromptContextItem, *, layer: str) -> PromptBlock:
+        return _block(
+            id=item.id,
+            role="developer",
+            layer=layer,
+            title=item.title,
+            content=item.content,
+            source=item.source,
+            cache_policy=item.cache_policy,
+            cache_segment=item.cache_segment,
+            priority=item.priority,
+            can_drop=item.can_drop,
+            metadata=item.metadata,
+        )
+
     def _memory_index(self, cards: Sequence[dict[str, Any]]) -> PromptBlock:
         lines = [
             "Relevant memory index:",
@@ -284,6 +308,7 @@ def _block(
     cache_segment: CacheSegment,
     priority: int,
     can_drop: bool,
+    metadata: dict[str, Any] | None = None,
 ) -> PromptBlock:
     return PromptBlock(
         id=id,
@@ -297,6 +322,7 @@ def _block(
         token_estimate=_estimate_tokens(content),
         priority=priority,
         can_drop=can_drop,
+        metadata=metadata or {},
     )
 
 

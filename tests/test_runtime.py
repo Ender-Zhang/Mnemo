@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from pathlib import Path
 
 from mnemo.core.models import RunRequest, ToolCallEnvelope
 from mnemo.memory import MemoryEngine
@@ -136,6 +137,38 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("Available skill index", prompt_text)
             self.assertIn("writer [active]", prompt_text)
             self.assertNotIn("Full skill body", prompt_text)
+
+    def test_provider_runtime_adds_soul_and_workspace_bootstrap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            workspace = root / "workspace"
+            state_dir.mkdir()
+            workspace.mkdir()
+            (state_dir / "SOUL.md").write_text("User likes direct runtime answers.", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("Project context: use bootstrap path.", encoding="utf-8")
+            provider = FakeProvider([[ProviderEvent(type="text_delta", text="Ready"), ProviderEvent(type="completed")]])
+
+            events = list(
+                ProviderAgentRuntime(provider).stream(
+                    RunRequest(message="hello", state_dir=str(state_dir), workspace_root=str(workspace))
+                )
+            )
+
+            prompt_text = "\n".join(message["content"] for message in provider.requests[0].messages)
+            self.assertIn("User likes direct runtime answers.", prompt_text)
+            self.assertIn("Project context: use bootstrap path.", prompt_text)
+
+            store = StateStore(str(state_dir))
+            prompt_event = next(
+                event for event in store.get_run_events(events[-1].run_id) if event["event_type"] == "prompt.assembled"
+            )
+            blocks = {block["id"]: block for block in prompt_event["payload"]["blocks"]}
+            self.assertIn("soul.user_contract", blocks)
+            self.assertIn("workspace.bootstrap.agents_md", blocks)
+            self.assertEqual(blocks["soul.user_contract"]["cache_segment"], "user_profile")
+            self.assertEqual(blocks["workspace.bootstrap.agents_md"]["metadata"]["path"], "AGENTS.md")
+            self.assertNotIn("Project context: use bootstrap path.", str(prompt_event["payload"]))
 
     def test_provider_runtime_exposes_active_generated_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

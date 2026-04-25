@@ -76,10 +76,10 @@ class CliTests(unittest.TestCase):
             payload = json.loads(run.stdout)
             self.assertEqual(payload["response"], "Provider reply")
             self.assertEqual(server.requests[0]["body"]["model"], "fake-model")
-            self.assertEqual(
-                [message["role"] for message in server.requests[0]["body"]["messages"]],
-                ["system", "system", "system", "system", "user"],
-            )
+            roles = [message["role"] for message in server.requests[0]["body"]["messages"]]
+            self.assertEqual(roles[0], "system")
+            self.assertEqual(roles[-1], "user")
+            self.assertGreaterEqual(len(roles), 5)
 
             inspect = _run_cli(["prompt", "inspect", payload["run_id"], "--state-dir", tmp, "--json"])
             self.assertEqual(inspect.returncode, 0, inspect.stderr)
@@ -92,6 +92,52 @@ class CliTests(unittest.TestCase):
             self.assertEqual(prompt["tool_schema"]["count"], prompt["tool_count"])
             self.assertIn("memory_search", prompt["tool_schema"]["names"])
             self.assertNotIn("input_schema", prompt["tool_schema"])
+
+    def test_run_injects_soul_and_workspace_bootstrap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            workspace = root / "workspace"
+            state_dir.mkdir()
+            workspace.mkdir()
+            (state_dir / "SOUL.md").write_text("User prefers CLI bootstrap continuity.", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("Workspace bootstrap from CLI cwd.", encoding="utf-8")
+            with FakeChatServer(
+                {
+                    "choices": [{"message": {"content": "Provider reply"}, "finish_reason": "stop"}],
+                }
+            ) as server:
+                run = _run_cli(
+                    [
+                        "run",
+                        "hello bootstrap",
+                        "--state-dir",
+                        str(state_dir),
+                        "--provider",
+                        "openai-compatible",
+                        "--base-url",
+                        server.base_url,
+                        "--model",
+                        "fake-model",
+                        "--json",
+                    ],
+                    cwd=workspace,
+                )
+
+            self.assertEqual(run.returncode, 0, run.stderr)
+            payload = json.loads(run.stdout)
+            prompt_text = "\n".join(message["content"] for message in server.requests[0]["body"]["messages"])
+            self.assertIn("User prefers CLI bootstrap continuity.", prompt_text)
+            self.assertIn("Workspace bootstrap from CLI cwd.", prompt_text)
+
+            inspect = _run_cli(["prompt", "inspect", payload["run_id"], "--state-dir", str(state_dir), "--json"])
+            self.assertEqual(inspect.returncode, 0, inspect.stderr)
+            prompt = json.loads(inspect.stdout)["prompt"]
+            blocks = {block["id"]: block for block in prompt["blocks"]}
+            self.assertIn("soul.user_contract", blocks)
+            self.assertIn("workspace.bootstrap.agents_md", blocks)
+            self.assertEqual(blocks["workspace.bootstrap.agents_md"]["metadata"]["path"], "AGENTS.md")
+            self.assertNotIn("Workspace bootstrap from CLI cwd.", inspect.stdout)
 
     def test_run_with_anthropic_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

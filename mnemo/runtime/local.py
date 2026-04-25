@@ -8,7 +8,7 @@ from ..core.errors import MnemoError
 from ..core.ids import new_id
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolCallEnvelope, ToolResult
 from ..memory import MemoryEngine
-from ..prompt import PromptAssembler
+from ..prompt import PromptAssembler, load_prompt_bootstrap
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
@@ -89,10 +89,13 @@ class LocalAgentRuntime:
         )
         mission = store.get_mission(mission_id) or {}
         memory_engine = MemoryEngine(store)
+        bootstrap = load_prompt_bootstrap(request.state_dir, workspace_root=request.workspace_root)
         assembled_prompt = PromptAssembler().assemble(
             request.message,
             mission=mission,
             tool_specs=registry.specs(),
+            soul_context=bootstrap.soul,
+            workspace_context=bootstrap.workspace,
             memory_snapshot=memory_engine.load_l1_snapshot(),
             memory_cards=memory_engine.context_cards(request.message, limit=5),
             skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),

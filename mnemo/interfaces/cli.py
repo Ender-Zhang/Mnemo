@@ -458,6 +458,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         state_dir=config.state_dir,
         conversation_id=args.conversation_id,
         mission_id=args.mission_id,
+        workspace_root=os.getcwd(),
     )
     if args.stream:
         event_stream = stream_local(request) if config.provider == "local" else stream_provider(request, _provider_adapter(args, stream=True))
@@ -1138,6 +1139,7 @@ def _cmd_web(args: argparse.Namespace) -> int:
             state_dir=config.state_dir,
             host=args.host,
             port=args.port,
+            workspace_root=os.getcwd(),
             provider=config.provider,
             base_url=config.base_url,
             model=config.model,
@@ -1318,7 +1320,7 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                 " ".join(args.message),
                 conversation_id=args.conversation_id,
                 mission_id=args.mission_id,
-                metadata={"source": "cli"},
+                metadata={"source": "cli", "workspace_root": os.getcwd()},
             )
         except ValueError as exc:
             raise MnemoError(str(exc)) from exc
