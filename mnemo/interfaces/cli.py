@@ -580,9 +580,7 @@ def _cmd_runs(args: argparse.Namespace) -> int:
             _print_runs_result(result)
         return 0
     if args.runs_command == "show":
-        run = store.get_run(args.run_id)
-        if not run:
-            raise MnemoError(f"run not found: {args.run_id}")
+        run = _require_run(store, args.run_id)
         result = {"run": run}
         if args.json:
             print(dumps(result))
@@ -613,6 +611,13 @@ def _status_filter(status: str | None) -> str | None:
     return status
 
 
+def _require_run(store: StateStore, run_id: str) -> dict[str, Any]:
+    run = store.get_run(run_id)
+    if not run:
+        raise MnemoError(f"run not found: {run_id}")
+    return run
+
+
 def _print_runs_result(result: dict[str, Any]) -> None:
     if "runs" in result:
         for run in result["runs"]:
@@ -641,6 +646,7 @@ def _print_runs_result(result: dict[str, Any]) -> None:
 def _cmd_events(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     store.initialize()
+    _require_run(store, args.run_id)
     ledger = RunLedger(store)
     events = ledger.chat_events(args.run_id, since=args.since) if args.chat else ledger.events_since(args.run_id, args.since)
     if args.json:
@@ -706,6 +712,7 @@ def _print_artifacts_result(result: dict[str, Any]) -> None:
 def _cmd_replay(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     store.initialize()
+    _require_run(store, args.run_id)
     ledger = RunLedger(store)
     trace = ledger.load_trace(args.run_id)
     summary = {
@@ -1145,6 +1152,9 @@ def _cmd_harness(args: argparse.Namespace) -> int:
         report = EvalHarness(state_dir=args.state_dir).run_suite("smoke")
         return _print_harness_report(report.as_dict(), json_output=args.json)
     if args.harness_command == "replay":
+        store = StateStore(args.state_dir)
+        store.initialize()
+        _require_run(store, args.run_id)
         result = replay_summary(args.state_dir, args.run_id)
         if args.json:
             print(dumps(result))
@@ -1171,8 +1181,7 @@ def _cmd_evals(args: argparse.Namespace) -> int:
     store.initialize()
 
     if args.evals_command == "create":
-        if not store.get_run(args.run_id):
-            raise MnemoError(f"run not found: {args.run_id}")
+        _require_run(store, args.run_id)
         case_id = store.add_eval_case(
             args.run_id,
             args.name,

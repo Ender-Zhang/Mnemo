@@ -158,6 +158,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-expose-artifacts-cli`: CLI now lists and reads stored mission artifacts while keeping list/event payloads free of body text.
 - [x] `04-25-expose-runs-inspection-cli`: CLI now lists compact run history and shows full run records by id before users open events, replay, prompts, or artifacts.
 - [x] `04-25-expose-continuity-inspection-cli`: CLI now lists and reads conversation/mission continuity ids, with mission checkpoints only returned by explicit mission reads.
+- [x] `04-25-normalize-missing-run-trace-cli-errors`: CLI trace commands now fail clearly for missing runs instead of returning empty events or empty replay summaries.
 - [x] `04-25-04-25-implement-provider-retry-policy`: provider config supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
 - [x] `04-25-04-25-implement-run-cancellation-foundation`: runs and queued daemon jobs can be cancelled durably, and provider/local runtimes complete observed cancellations with `status="cancelled"`.
 - [x] `04-25-04-25-implement-browser-app-connectors`: lightweight `browser_open` and `app_open` connector tools are provider-native, policy-gated, dry-run testable, and compact in results.

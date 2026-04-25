@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI events/replay/harness handlers"}
+{"file": "tests/test_cli.py", "reason": "CLI missing-run regression coverage"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI missing run error contract"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "CLI placement contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation gate"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "CLI to storage validation boundary"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing run validation pattern"}

@@ -497,6 +497,15 @@ class CliTests(unittest.TestCase):
             self.assertTrue(replay_payload["completed"])
             self.assertGreater(replay_payload["event_count"], 0)
 
+            missing_events = _run_cli(["events", "run_missing", "--state-dir", tmp, "--json"])
+            missing_replay = _run_cli(["replay", "run_missing", "--state-dir", tmp, "--json"])
+            self.assertEqual(missing_events.returncode, 1)
+            self.assertIn("mnemo: run not found: run_missing", missing_events.stderr)
+            self.assertNotIn("Traceback", missing_events.stderr)
+            self.assertEqual(missing_replay.returncode, 1)
+            self.assertIn("mnemo: run not found: run_missing", missing_replay.stderr)
+            self.assertNotIn("Traceback", missing_replay.stderr)
+
     def test_runs_list_and_show_commands_inspect_run_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -790,6 +799,10 @@ class CliTests(unittest.TestCase):
             replay_payload = json.loads(replay.stdout)
             self.assertTrue(replay_payload["completed"])
             self.assertGreater(replay_payload["event_count"], 0)
+            missing_replay = _run_cli(["harness", "replay", "run_missing", "--state-dir", tmp, "--json"])
+            self.assertEqual(missing_replay.returncode, 1)
+            self.assertIn("mnemo: run not found: run_missing", missing_replay.stderr)
+            self.assertNotIn("Traceback", missing_replay.stderr)
 
     def test_tools_command_can_list_installed_generated_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
