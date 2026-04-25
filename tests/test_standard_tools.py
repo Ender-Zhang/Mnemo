@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -74,6 +75,31 @@ class StandardToolTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertIn("outside the workspace root", result.error or "")
 
+    def test_file_read_rejects_binary_files_without_decoded_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            binary_path = workspace / "blob.bin"
+            binary_path.write_bytes(b"hello\0secret")
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(store=store, ledger=RunLedger(store), workspace_root=workspace)
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="file_read",
+                    arguments={"path": "blob.bin"},
+                    call_id="call_binary",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.result, {})
+            self.assertIn("file appears to be binary", result.error or "")
+            self.assertEqual(result.evidence[0]["kind"], "tool_error")
+
     def test_risky_tools_are_denied_by_default_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -140,6 +166,36 @@ class StandardToolTests(unittest.TestCase):
             self.assertTrue(shell.ok)
             self.assertEqual(shell.result["exit_code"], 0)
             self.assertEqual(shell.result["stdout"], "done\n")
+
+    def test_shell_exec_timeout_returns_failed_tool_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "write", "admin")),
+            )
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="shell_exec",
+                    arguments={
+                        "command": [sys.executable, "-c", "import time; time.sleep(1)"],
+                        "timeout_s": 0.1,
+                    },
+                    call_id="call_shell_timeout",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("command timed out after 0.1s", result.error or "")
+            self.assertEqual(result.evidence[0]["kind"], "tool_error")
 
     def test_admin_policy_can_enable_file_patch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

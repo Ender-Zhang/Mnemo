@@ -54,8 +54,8 @@
 | Path outside workspace | Return failed tool result with boundary error | `tests/test_standard_tools.py` |
 | File patch exact edit | Admin policy applies exact replacement and returns compact patch evidence | `tests/test_standard_tools.py` |
 | File patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_standard_tools.py` |
-| Binary file read | Return failed tool result, no decoded payload | Standard tool test when added |
-| Shell command timeout | Return failed tool result with timeout error | Standard tool test when added |
+| Binary file read | Return failed tool result, no decoded payload | `tests/test_standard_tools.py` |
+| Shell command timeout | Return failed tool result with timeout error | `tests/test_standard_tools.py` |
 | Browser connector | External policy gates URL open; dry-run validates HTTP/HTTPS URL without launching browser | `tests/test_standard_tools.py` |
 | App connector | Admin policy gates OS app open; path traversal is rejected before opener execution | `tests/test_standard_tools.py` |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |

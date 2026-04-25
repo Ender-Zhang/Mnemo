@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "tests/test_standard_tools.py", "reason": "Add focused binary file read and shell timeout coverage."}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Update validation matrix now that edge tests exist."}
