@@ -229,18 +229,26 @@ Added read-only mnemo memory notes for inspecting W0 working notes that feed Dre
 
 ### Main Changes
 
-(Add details)
+- Added `mnemo memory notes [--status STATUS|all] [--limit N] [--json]` for W0 working note inspection.
+- Default output shows open notes, matching DreamCycle's input path; `--status all` includes processed and skipped notes.
+- Kept the command read-only by reusing `StateStore.list_working_notes()` and not changing note state or result payloads.
+- Updated README, implementation checklist, and backend memory/database contracts.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `40ed2cc` | (see git log) |
-| `284e793` | (see git log) |
+| `40ed2cc` | feat: expose memory notes cli |
+| `284e793` | chore(task): archive 04-25-expose-memory-notes-cli |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_memory_notes_command_lists_open_and_processed_w0_notes`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `task.py validate 04-25-expose-memory-notes-cli`
+- [OK] Temporary venv `pip wheel` install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
