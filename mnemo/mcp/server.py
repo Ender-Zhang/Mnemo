@@ -4,7 +4,7 @@ from copy import deepcopy
 import json
 import sys
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, BinaryIO, TextIO
 
 from .. import __version__
 from ..core.config import DEFAULT_STATE_DIR
@@ -108,6 +108,29 @@ class MnemoMcpServer:
                 continue
             writer.write(dumps(response) + "\n")
             writer.flush()
+
+    def serve_content_length(
+        self,
+        *,
+        input_stream: BinaryIO | None = None,
+        output_stream: BinaryIO | None = None,
+    ) -> None:
+        reader = input_stream or sys.stdin.buffer
+        writer = output_stream or sys.stdout.buffer
+        while True:
+            try:
+                message = _read_framed_json_rpc(reader)
+            except _McpFrameError as exc:
+                _write_framed_json_rpc(writer, _json_rpc_error(None, -32700, str(exc)))
+                if not exc.recoverable:
+                    break
+                continue
+            if message is None:
+                break
+            response = self.handle_json_rpc(message)
+            if response is None:
+                continue
+            _write_framed_json_rpc(writer, response)
 
     def _context(self, args: dict[str, Any]) -> dict[str, Any]:
         return self.client.context(
@@ -308,6 +331,72 @@ class MnemoMcpServer:
 
 def mcp_tool_descriptors() -> list[dict[str, Any]]:
     return deepcopy(_TOOL_DESCRIPTORS)
+
+
+class _McpFrameError(ValueError):
+    def __init__(self, message: str, *, recoverable: bool) -> None:
+        super().__init__(message)
+        self.recoverable = recoverable
+
+
+def _read_framed_json_rpc(reader: BinaryIO) -> dict[str, Any] | None:
+    header = bytearray()
+    while not header.endswith(b"\r\n\r\n"):
+        chunk = reader.read(1)
+        if not chunk:
+            if not header:
+                return None
+            raise _McpFrameError("truncated MCP frame header", recoverable=False)
+        header.extend(chunk)
+        if len(header) > 32_768:
+            raise _McpFrameError("MCP frame header too large", recoverable=False)
+
+    try:
+        header_text = bytes(header[:-4]).decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise _McpFrameError("MCP frame header must be ASCII", recoverable=False) from exc
+
+    content_length: int | None = None
+    for line in header_text.split("\r\n"):
+        if not line:
+            continue
+        name, separator, value = line.partition(":")
+        if not separator:
+            raise _McpFrameError("malformed MCP frame header", recoverable=False)
+        if name.strip().casefold() == "content-length":
+            try:
+                content_length = int(value.strip())
+            except ValueError as exc:
+                raise _McpFrameError("invalid Content-Length header", recoverable=False) from exc
+
+    if content_length is None:
+        raise _McpFrameError("missing Content-Length header", recoverable=False)
+    if content_length <= 0:
+        raise _McpFrameError("invalid Content-Length header", recoverable=False)
+
+    body = reader.read(content_length)
+    if len(body) != content_length:
+        raise _McpFrameError("truncated MCP frame body", recoverable=False)
+
+    try:
+        text = body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _McpFrameError("MCP frame body must be UTF-8 JSON", recoverable=True) from exc
+
+    try:
+        message = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise _McpFrameError(f"parse error: {exc.msg}", recoverable=True) from exc
+    if not isinstance(message, dict):
+        raise _McpFrameError("MCP frame body must be a JSON object", recoverable=True)
+    return message
+
+
+def _write_framed_json_rpc(writer: BinaryIO, message: dict[str, Any]) -> None:
+    payload = dumps(message).encode("utf-8")
+    writer.write(f"Content-Length: {len(payload)}\r\n\r\n".encode("ascii"))
+    writer.write(payload)
+    writer.flush()
 
 
 def _schema(

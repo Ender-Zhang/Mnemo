@@ -70,6 +70,8 @@ def main() -> int:
         raise AssertionError("packaged SDK schema is missing context method")
     if "mnemo_context" not in {tool["name"] for tool in MnemoMcpServer().tools()}:
         raise AssertionError("packaged MCP server is missing context tool")
+    if not hasattr(MnemoMcpServer(), "serve_content_length"):
+        raise AssertionError("packaged MCP server is missing content-length serve transport")
 
     print(f"installed mnemo {version} smoke passed")
     return 0

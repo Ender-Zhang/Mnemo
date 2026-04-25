@@ -1,0 +1,8 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "Verify MCP transport follows backend integration contracts"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Verify MCP transport follows backend integration contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify MCP transport follows backend integration contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify MCP transport follows backend integration contracts"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify MCP transport follows backend integration contracts"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify MCP transport follows backend integration contracts"}

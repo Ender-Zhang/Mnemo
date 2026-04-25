@@ -131,9 +131,10 @@ mnemo api schema --json
 mnemo mcp tools --state-dir .mnemo --json
 mnemo mcp call mnemo_context --state-dir .mnemo --arguments-json '{"intent":"status update"}' --json
 mnemo mcp serve --state-dir .mnemo
+mnemo mcp serve --state-dir .mnemo --transport jsonl
 ```
 
-The MCP-style server exposes compact context, update, recall, search, skills, tools, watch, cron, run, replay, eval, and status surfaces. Watch and cron register durable scheduled items; due items enqueue normal daemon runs so the existing runtime/model decides what to do.
+The MCP-style server exposes compact context, update, recall, search, skills, tools, watch, cron, run, replay, eval, and status surfaces. `serve` defaults to standard MCP stdio `Content-Length` framing; JSONL is kept for local debugging. Watch and cron register durable scheduled items; due items enqueue normal daemon runs so the existing runtime/model decides what to do.
 
 ## Backup And Validation
 

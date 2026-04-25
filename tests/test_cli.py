@@ -1503,6 +1503,27 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: invalid --arguments-json", invalid.stderr)
             self.assertNotIn("Traceback", invalid.stderr)
 
+    def test_mcp_serve_transports(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            content_length = _run_cli(
+                ["mcp", "serve", "--state-dir", tmp],
+                input_text=_mcp_text_frame({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+            )
+            jsonl = _run_cli(
+                ["mcp", "serve", "--transport", "jsonl", "--state-dir", tmp],
+                input_text=json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) + "\n",
+            )
+
+            self.assertEqual(content_length.returncode, 0, content_length.stderr)
+            content_length_frames = _read_mcp_text_frames(content_length.stdout)
+            self.assertEqual(content_length_frames[0]["id"], 1)
+            self.assertIn("tools", content_length_frames[0]["result"])
+
+            self.assertEqual(jsonl.returncode, 0, jsonl.stderr)
+            jsonl_response = json.loads(jsonl.stdout)
+            self.assertEqual(jsonl_response["id"], 2)
+            self.assertIn("tools", jsonl_response["result"])
+
     def test_backup_export_and_import_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1638,6 +1659,7 @@ def _run_cli(
     *,
     cwd: Path | None = None,
     env_overrides: dict[str, str] | None = None,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
@@ -1647,10 +1669,43 @@ def _run_cli(
         [sys.executable, "-m", "mnemo", *args],
         cwd=cwd or ROOT,
         env=env,
+        input=input_text,
         text=True,
         capture_output=True,
         check=False,
     )
+
+
+def _mcp_text_frame(message: dict[str, Any]) -> str:
+    body = json.dumps(message)
+    return f"Content-Length: {len(body.encode('utf-8'))}\r\n\r\n{body}"
+
+
+def _read_mcp_text_frames(text: str) -> list[dict[str, Any]]:
+    data = text.encode("utf-8")
+    frames: list[dict[str, Any]] = []
+    offset = 0
+    while offset < len(data):
+        header_end = data.find(b"\r\n\r\n", offset)
+        separator_length = 4
+        if header_end == -1:
+            header_end = data.find(b"\n\n", offset)
+            separator_length = 2
+        if header_end == -1:
+            raise AssertionError(f"missing MCP frame separator in {text[offset:]!r}")
+        header = data[offset:header_end].decode("ascii")
+        content_length: int | None = None
+        for line in header.split("\r\n"):
+            name, separator, value = line.partition(":")
+            if separator and name.casefold() == "content-length":
+                content_length = int(value.strip())
+        if content_length is None:
+            raise AssertionError(f"missing Content-Length in {header!r}")
+        body_start = header_end + separator_length
+        body_end = body_start + content_length
+        frames.append(json.loads(data[body_start:body_end].decode("utf-8")))
+        offset = body_end
+    return frames
 
 
 def _tool_alias_spec(name: str) -> dict[str, Any]:

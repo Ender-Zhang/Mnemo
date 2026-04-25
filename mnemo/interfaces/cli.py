@@ -568,8 +568,14 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_call_parser.add_argument("tool_name")
     mcp_call_parser.add_argument("--arguments-json", default="{}", help="Tool arguments as a JSON object")
     mcp_call_parser.add_argument("--json", action="store_true")
-    mcp_serve_parser = mcp_subparsers.add_parser("serve", help="Serve MCP-style JSON-RPC over JSON lines")
+    mcp_serve_parser = mcp_subparsers.add_parser("serve", help="Serve MCP-style JSON-RPC over stdio")
     _add_state_dir(mcp_serve_parser)
+    mcp_serve_parser.add_argument(
+        "--transport",
+        choices=["content-length", "jsonl"],
+        default="content-length",
+        help="stdio transport framing (default: content-length)",
+    )
     return parser
 
 
@@ -635,7 +641,10 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         print(dumps(result))
         return 0
 
-    server.serve_jsonl()
+    if args.transport == "jsonl":
+        server.serve_jsonl()
+        return 0
+    server.serve_content_length()
     return 0
 
 

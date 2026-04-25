@@ -64,10 +64,11 @@
 - `MnemoMcpServer.call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]`
 - `MnemoMcpServer.call_tool_result(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]`
 - `MnemoMcpServer.handle_json_rpc(message: dict[str, Any]) -> dict[str, Any] | None`
+- `MnemoMcpServer.serve_content_length(input_stream=None, output_stream=None) -> None`
 - `MnemoMcpServer.serve_jsonl(input_stream=None, output_stream=None) -> None`
 - CLI: `mnemo mcp tools [--state-dir DIR] [--json]`
 - CLI: `mnemo mcp call TOOL --arguments-json JSON [--state-dir DIR] [--json]`
-- CLI: `mnemo mcp serve [--state-dir DIR]`
+- CLI: `mnemo mcp serve [--state-dir DIR] [--transport content-length|jsonl]`
 
 ### 3. Contracts
 - MCP is a transport/tool facade; it must reuse SDK and domain services rather than defining workflow steps.
@@ -80,7 +81,7 @@
 - `mnemo_watch` and `mnemo_cron` create durable scheduled items through `ScheduleService`; due processing still runs through the normal daemon queue.
 - `mnemo_runtime_status` includes compact scheduled-item status.
 - JSON-RPC support covers `initialize`, `tools/list`, and `tools/call` with structured error responses.
-- JSONL stdio is the current lightweight serving mode; full MCP Content-Length framing can be added as a transport layer later.
+- `mnemo mcp serve` defaults to MCP stdio `Content-Length` framing; JSONL stdio remains an explicit debug transport.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -90,8 +91,8 @@
 | Update writes | External facts become memory candidates and observations become W0 notes | `tests/test_mcp.py` |
 | Watch/Cron calls | MCP calls create scheduled watch/cron items and runtime status reports due count | `tests/test_mcp.py` |
 | Runtime calls | Run/replay/eval/status reuse existing services and compact results | `tests/test_mcp.py` |
-| JSON-RPC | Initialize, list, call, unknown-method, and JSONL serving behave predictably | `tests/test_mcp.py` |
-| CLI | `mnemo mcp tools` and `mnemo mcp call` support JSON and normalized errors | `tests/test_cli.py` |
+| JSON-RPC | Initialize, list, call, unknown-method, JSONL serving, and Content-Length framing behave predictably | `tests/test_mcp.py` |
+| CLI | `mnemo mcp tools`, `mnemo mcp call`, and both serve transports support JSON and normalized errors | `tests/test_cli.py` |
 | Package install | Installed wheel exposes `mnemo.mcp.MnemoMcpServer` | `tests/package_install_smoke.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -103,6 +104,6 @@
 
 ### 6. Tests Required
 - Direct MCP server tests for descriptors, calls, compactness, and scheduled watch/cron surfaces.
-- JSON-RPC tests for success and structured errors.
-- CLI tests for JSON output and error normalization.
+- JSON-RPC tests for success, Content-Length framing, JSONL debug serving, and structured errors.
+- CLI tests for JSON output, serve transport selection, and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.

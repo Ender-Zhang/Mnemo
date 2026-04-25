@@ -1,12 +1,39 @@
 from __future__ import annotations
 
-from io import StringIO
+from io import BytesIO, StringIO
 import json
 import tempfile
 import unittest
 
 from mnemo.mcp import MnemoMcpServer, mcp_tool_descriptors
 from mnemo.storage import StateStore
+
+
+def _mcp_frame(message: dict[str, object]) -> bytes:
+    body = json.dumps(message).encode("utf-8")
+    return b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
+
+
+def _read_mcp_frames(data: bytes) -> list[dict[str, object]]:
+    frames: list[dict[str, object]] = []
+    offset = 0
+    while offset < len(data):
+        header_end = data.find(b"\r\n\r\n", offset)
+        if header_end == -1:
+            raise AssertionError(f"missing MCP frame separator in {data[offset:]!r}")
+        header = data[offset:header_end].decode("ascii")
+        content_length: int | None = None
+        for line in header.split("\r\n"):
+            name, separator, value = line.partition(":")
+            if separator and name.casefold() == "content-length":
+                content_length = int(value.strip())
+        if content_length is None:
+            raise AssertionError(f"missing Content-Length in {header!r}")
+        body_start = header_end + 4
+        body_end = body_start + content_length
+        frames.append(json.loads(data[body_start:body_end].decode("utf-8")))
+        offset = body_end
+    return frames
 
 
 class MnemoMcpTests(unittest.TestCase):
@@ -150,6 +177,66 @@ class MnemoMcpTests(unittest.TestCase):
             response = json.loads(output_stream.getvalue())
             self.assertEqual(response["id"], 5)
             self.assertIn("tools", response["result"])
+
+    def test_content_length_serve_handles_initialize_list_and_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = MnemoMcpServer(state_dir=tmp)
+            input_stream = BytesIO(
+                b"".join(
+                    [
+                        _mcp_frame({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+                        _mcp_frame({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+                        _mcp_frame(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 3,
+                                "method": "tools/call",
+                                "params": {
+                                    "name": "mnemo_context",
+                                    "arguments": {"intent": "content-length"},
+                                },
+                            }
+                        ),
+                    ]
+                )
+            )
+            output_stream = BytesIO()
+
+            server.serve_content_length(input_stream=input_stream, output_stream=output_stream)
+
+            responses = _read_mcp_frames(output_stream.getvalue())
+            self.assertEqual([response["id"] for response in responses], [1, 2, 3])
+            self.assertEqual(responses[0]["result"]["serverInfo"]["name"], "mnemo")
+            self.assertIn("tools", responses[1]["result"])
+            self.assertEqual(responses[2]["result"]["structuredContent"]["kind"], "context_block")
+
+    def test_content_length_serve_returns_parse_and_framing_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            server = MnemoMcpServer(state_dir=tmp)
+            bad_json = b"{"
+            recoverable_input = BytesIO(
+                b"Content-Length: 1\r\n\r\n"
+                + bad_json
+                + _mcp_frame({"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
+            )
+            recoverable_output = BytesIO()
+
+            server.serve_content_length(input_stream=recoverable_input, output_stream=recoverable_output)
+
+            recoverable_responses = _read_mcp_frames(recoverable_output.getvalue())
+            self.assertEqual(recoverable_responses[0]["error"]["code"], -32700)
+            self.assertEqual(recoverable_responses[1]["id"], 9)
+            self.assertIn("tools", recoverable_responses[1]["result"])
+
+            framing_output = BytesIO()
+            server.serve_content_length(
+                input_stream=BytesIO(b"Content-Length: nope\r\n\r\n{}"),
+                output_stream=framing_output,
+            )
+            framing_responses = _read_mcp_frames(framing_output.getvalue())
+            self.assertEqual(len(framing_responses), 1)
+            self.assertEqual(framing_responses[0]["error"]["code"], -32700)
+            self.assertIn("Content-Length", framing_responses[0]["error"]["message"])
 
 
 if __name__ == "__main__":
