@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "Verify skill evolution contract"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Verify compact tool result"}
