@@ -1317,3 +1317,37 @@ Separated prompt block token estimates from provider-native tool schema estimate
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: File patch tool
+
+**Date**: 2026-04-25
+**Task**: File patch tool
+**Branch**: `main`
+
+### Summary
+
+Added admin-gated file_patch for exact workspace-scoped UTF-8 replacements, ambiguity/traversal protections, compact evidence, tests, and specs/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `363f91f` | (see git log) |
+| `8c9f0de` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
