@@ -443,3 +443,41 @@ Made CLI trace inspection commands fail clearly for unknown run ids instead of r
 ### Next Steps
 
 - None - task complete
+
+
+## Session 70: Align implementation checklist with design gaps
+
+**Date**: 2026-04-25
+**Task**: Align implementation checklist with design gaps
+**Branch**: `main`
+
+### Summary
+
+Recalibrated the implementation checklist so runnable foundations, partial product work, and future extensions are clearly separated.
+
+### Main Changes
+
+- Added a current alignment snapshot for runnable core, partial product completeness, and extension backlog.
+- Downgraded over-marked items to partial where only foundation slices exist.
+- Added explicit gaps for L4 memory search, QueryPlanner, tombstone/decay, Soul/bootstrap, SDK/MCP, Decision/Inbox, frontend recall/learning actions, RuntimeAdapter, Watch/Sense, and stronger harness gates.
+- Preserved the design scope while making future Trellis prioritization clearer.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0e139f` | (see git log) |
+| `e458964` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

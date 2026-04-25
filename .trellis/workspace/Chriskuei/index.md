@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 69
+- **Total Sessions**: 70
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~438 | Active |
+| `journal-2.md` | ~483 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 70 | 2026-04-25 | Align implementation checklist with design gaps | `a0e139f`, `e458964` | `main` |
 | 69 | 2026-04-25 | Normalize missing run trace CLI errors | `4f5ef4b`, `1172507` | `main` |
 | 68 | 2026-04-25 | Expose continuity inspection CLI | `292e6e8`, `dd8e25a` | `main` |
 | 67 | 2026-04-25 | Expose runs inspection CLI | `622c7fe`, `60ddea2` | `main` |
