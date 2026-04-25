@@ -90,7 +90,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] User-facing single-chat web frontend.
 - [x] Universal composer.
 - [x] Inline action cards.
-- [~] Inline artifact cards and artifact viewer.
+- [x] Inline artifact cards and artifact viewer.
 - [x] Inline decision cards.
 - [x] Event replay/resume with `sinceEventId`.
 - [x] Streaming transport API.
@@ -162,3 +162,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-generated-tool-installation`: ready generated tool candidates can install as safe aliases to existing tools, load into runtime registries, execute through the harness, and uninstall cleanly.
 - [x] `04-25-implement-web-event-resume-since-event-id`: web replay supports `sinceEventId`, the client stores `last_event_id`, de-duplicates events, and rehydrates the last run.
 - [x] `04-25-implement-provider-smoke-command`: `mnemo config smoke` checks OpenAI-compatible `/models` plus chat, Anthropic chat, redacted output, and provider error exits.
+- [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.

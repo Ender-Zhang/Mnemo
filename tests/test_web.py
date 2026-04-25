@@ -87,6 +87,50 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("sinceEventId", body)
                 self.assertIn("renderedEventIds", body)
 
+    def test_web_artifact_api_returns_stored_artifact_on_demand(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, run_body = server.request("POST", "/api/chat", {"message": "artifact: Launch secret body"})
+
+                self.assertEqual(status, 200)
+                events = [json.loads(line) for line in run_body.splitlines() if line.strip()]
+                artifact_event = next(event for event in events if event["type"] == "artifact.card")
+                artifact_card = artifact_event["data"]["artifact"]
+                artifact_id = artifact_card["artifact_id"]
+                self.assertEqual(artifact_card["title"], "Draft Artifact")
+                self.assertEqual(artifact_card["kind"], "markdown")
+                self.assertNotIn("Launch secret body", json.dumps(artifact_event))
+
+                status, _, artifact_body = server.request("GET", f"/api/artifacts?artifact_id={artifact_id}")
+                self.assertEqual(status, 200)
+                artifact = json.loads(artifact_body)["artifact"]
+                self.assertEqual(artifact["id"], artifact_id)
+                self.assertEqual(artifact["mission_id"], artifact_event["mission_id"])
+                self.assertEqual(artifact["run_id"], artifact_event["run_id"])
+                self.assertEqual(artifact["title"], "Draft Artifact")
+                self.assertEqual(artifact["kind"], "markdown")
+                self.assertEqual(artifact["body"], "Launch secret body")
+                self.assertIn("created_at", artifact)
+                self.assertIn("updated_at", artifact)
+
+                status, _, missing_body = server.request("GET", "/api/artifacts")
+                self.assertEqual(status, 400)
+                self.assertEqual(json.loads(missing_body)["error"], "artifact_id is required")
+
+                status, _, unknown_body = server.request("GET", "/api/artifacts?artifact_id=art_missing")
+                self.assertEqual(status, 404)
+                self.assertEqual(json.loads(unknown_body)["error"], "artifact not found")
+
+    def test_web_client_asset_renders_artifact_viewer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request("GET", "/app.js")
+
+                self.assertEqual(status, 200)
+                self.assertIn("/api/artifacts?artifact_id=", body)
+                self.assertIn("toggleArtifact", body)
+                self.assertIn("artifact-body", body)
+
 
 class RunningServer:
     def __init__(self, config: WebServerConfig) -> None:

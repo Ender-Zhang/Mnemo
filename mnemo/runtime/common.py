@@ -95,8 +95,8 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
             {
                 "artifact": {
                     "artifact_id": result.result["artifact_id"],
-                    "title": "Draft Artifact",
-                    "kind": "markdown",
+                    "title": result.result.get("title") or "Artifact",
+                    "kind": result.result.get("kind") or "markdown",
                 }
             },
         )

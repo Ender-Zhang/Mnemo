@@ -138,6 +138,26 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(outbox[0]["payload"]["event_type"], "request.received")
             self.assertEqual(outbox[0]["payload"]["payload"], {"message": "hello"})
 
+    def test_artifact_round_trip_by_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("test")
+            mission_id = store.create_mission(conversation_id, "test mission")
+            run_id = store.create_run(conversation_id, mission_id, "artifact")
+
+            artifact_id = store.upsert_artifact(mission_id, run_id, "Draft", "Artifact body", "markdown")
+
+            artifact = store.get_artifact(artifact_id)
+            self.assertIsNotNone(artifact)
+            self.assertEqual(artifact["id"], artifact_id)
+            self.assertEqual(artifact["mission_id"], mission_id)
+            self.assertEqual(artifact["run_id"], run_id)
+            self.assertEqual(artifact["title"], "Draft")
+            self.assertEqual(artifact["body"], "Artifact body")
+            self.assertEqual(artifact["kind"], "markdown")
+            self.assertIsNone(store.get_artifact("art_missing"))
+
     def test_outbox_enqueue_list_and_mark_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

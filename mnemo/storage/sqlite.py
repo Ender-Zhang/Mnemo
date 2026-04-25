@@ -1371,6 +1371,18 @@ class StateStore:
             )
         return artifact_id
 
+    def get_artifact(self, artifact_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, mission_id, run_id, kind, title, body, created_at, updated_at
+                FROM artifacts
+                WHERE id = ?
+                """,
+                (artifact_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def get_run_events(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(

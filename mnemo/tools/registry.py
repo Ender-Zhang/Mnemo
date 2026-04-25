@@ -407,7 +407,7 @@ class ToolRegistry:
         body = _require_str(args, "body")
         kind = str(args.get("kind") or "markdown")
         artifact_id = context.store.upsert_artifact(context.mission_id, context.run_id, title, body, kind)
-        return {"artifact_id": artifact_id}
+        return {"artifact_id": artifact_id, "title": title, "kind": kind}
 
     def _ask_user(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         return {

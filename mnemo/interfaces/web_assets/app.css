@@ -125,6 +125,11 @@ textarea {
   border-left: 4px solid var(--accent);
 }
 
+.event-card.artifact {
+  background: #ffffff;
+  border-left: 4px solid #6b5f28;
+}
+
 .event-card.error {
   background: var(--warn);
   border-left: 4px solid var(--accent-2);
@@ -145,6 +150,48 @@ textarea {
   font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.artifact-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.artifact-toggle {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.artifact-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.artifact-viewer {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.artifact-body {
+  margin: 0;
+  max-height: min(420px, 48vh);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .chips {

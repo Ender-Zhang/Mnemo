@@ -27,6 +27,8 @@
 - `StateStore.get_generated_tool(name: str) -> dict[str, Any] | None`
 - `StateStore.list_generated_tools(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_generated_tool_status(name: str, status: str) -> None`
+- `StateStore.upsert_artifact(mission_id: str, run_id: str, title: str, body: str, kind: str = "markdown") -> str`
+- `StateStore.get_artifact(artifact_id: str) -> dict[str, Any] | None`
 - `SchemaMigration(version: int, name: str, apply: Callable[[sqlite3.Connection], None])`
 - Internal: `_apply_schema_migrations(conn: sqlite3.Connection) -> None`
 - Internal: `_ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None`
@@ -59,6 +61,8 @@
 - Daemon code must execute queued work through the existing `RunRequest` runtime path.
 - `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled status.
 - Generated tool implementations are data, not executable code.
+- `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
+- `get_artifact()` returns `None` for unknown ids and a plain JSON-serializable dict for known ids.
 - Chat replay by `event_id` is derived from persisted `chat.event` payloads in run order.
 - Unknown chat `event_id` returns all chat events for the run so clients can safely rehydrate.
 
@@ -80,6 +84,7 @@
 | Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
 | Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
+| Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
 | Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -89,6 +94,7 @@
 - Good: keep backup archives limited to managed state paths and validate every member before extraction.
 - Good: drain queued work through the same runtime entry points used by CLI/web runs.
 - Good: install generated tools by persisting a manifest row and loading it through `ToolRegistry.from_store()`.
+- Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
 - Bad: mutate the schema in feature code outside `StateStore.initialize()`.
@@ -108,5 +114,6 @@
 - Import target and archive safety failures are covered.
 - Queue lifecycle, daemon drain, single-instance lock, and stale recovery are covered.
 - Generated tool manifest round-trip and migration coverage are covered.
+- Artifact storage round-trip by id is covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.

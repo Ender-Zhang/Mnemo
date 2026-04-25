@@ -24,6 +24,7 @@
 - `ToolResult.result`: full persisted payload for ledger and replay.
 - `ToolResult.summary` and `ToolResult.evidence`: compact model/UI payloads.
 - `ToolContext.workspace_root`: resolved root for local file and shell tools.
+- `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
 - OpenAI-compatible adapters convert `tool_calls[].function` into `ToolCallEnvelope`.
 - Anthropic adapters convert `tool_use` content blocks into `ToolCallEnvelope` and return tool results as `tool_result` content blocks.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
@@ -34,6 +35,7 @@
 - Generated tools are normal provider-native tools once loaded into `ToolRegistry`.
 - Generated tool aliases execute by mapping model arguments to an existing target tool handler.
 - Compact results for install/uninstall and generated tool execution must not include implementation payloads.
+- `artifact.card` events carry artifact metadata only; clients fetch body content explicitly when the user opens the artifact.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -53,10 +55,12 @@
 | Generated tool install | Return compact install evidence without implementation payload | `tests/test_tools.py` |
 | Generated tool execution | Execute through existing handler and return generated-tool evidence | `tests/test_tools.py` |
 | Generated tool runtime exposure | Provider runtime sends active generated tool specs | `tests/test_runtime.py` |
+| Artifact card projection | Emit id/title/kind without full artifact body | `tests/test_web.py`, `mnemo/runtime/common.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new tool by defining `ToolSpec`, registering a handler, and adding summary/evidence projection.
 - Base: read-only tools should be usable by the default policy.
+- Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Bad: adding a handler that performs side effects while declaring `risk="read"`.
 - Bad: returning large raw payloads to the model instead of compact summaries and evidence cards.
 
@@ -69,6 +73,7 @@
 - Skill eval case: assert eval status is persisted and compact result omits full skill body.
 - Generated tool install: assert active tool row is persisted and compact result omits implementation payload.
 - Generated tool execution: assert alias argument mapping reaches the target handler.
+- Artifact update: assert card payload has id/title/kind and omits body content.
 - Local path tools: assert workspace scoping and traversal rejection.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.

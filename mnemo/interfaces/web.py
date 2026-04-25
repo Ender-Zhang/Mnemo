@@ -77,6 +77,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"ok": True, "provider": config.provider})
             elif parsed.path == "/api/events":
                 self._handle_events(parsed.query)
+            elif parsed.path == "/api/artifacts":
+                self._handle_artifact(parsed.query)
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -141,6 +143,21 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
             else:
                 events = ledger.events_since(run_id, since=since)
             self._send_json({"events": events, "last_event_id": _last_chat_event_id(events)})
+
+        def _handle_artifact(self, query: str) -> None:
+            params = parse_qs(query)
+            artifact_id = _first_param(params, "artifact_id")
+            if not artifact_id:
+                self._send_json({"error": "artifact_id is required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            store = StateStore(config.state_dir)
+            store.initialize()
+            artifact = store.get_artifact(artifact_id)
+            if not artifact:
+                self._send_json({"error": "artifact not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            self._send_json({"artifact": artifact})
 
         def _send_asset(self, name: str, content_type: str) -> None:
             try:
