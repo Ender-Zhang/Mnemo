@@ -1283,3 +1283,37 @@ Added one-hop associative memory recall through direct and reverse memory links,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: Tool schema budget separation
+
+**Date**: 2026-04-25
+**Task**: Tool schema budget separation
+**Branch**: `main`
+
+### Summary
+
+Separated prompt block token estimates from provider-native tool schema estimates in prompt metadata; kept raw schemas out of prompt.assembled metadata; added prompt/CLI tests and updated specs/checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35ebe1e` | (see git log) |
+| `b8df508` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

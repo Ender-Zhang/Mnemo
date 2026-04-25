@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 38
+- **Total Sessions**: 39
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1285 | Active |
+| `journal-1.md` | ~1319 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 39 | 2026-04-25 | Tool schema budget separation | `35ebe1e`, `b8df508` | `main` |
 | 38 | 2026-04-25 | Associative memory recall | `436e081`, `5dc3d18` | `main` |
 | 37 | 2026-04-25 | Cross-client skill roots | `7512220`, `05e5124` | `main` |
 | 36 | 2026-04-25 | Web artifact viewer | `8a6c5b6`, `4c06ba8` | `main` |
