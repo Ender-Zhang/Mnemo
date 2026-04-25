@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict, new_chat_event
 from ..core.models import ChatEvent, ChatEventType, PromptMode, RunResult, ToolCallEnvelope, ToolResult
-from ..tools import ToolRegistry
+from ..tools import ToolBundle, ToolRegistry
 from .ledger import RunLedger
 
 if TYPE_CHECKING:
@@ -20,6 +20,51 @@ EmitChatEvent = Callable[[ChatEventType, dict[str, Any] | None], ChatEvent]
 def ensure_executable_prompt_mode(mode: PromptMode) -> None:
     if mode == "none":
         raise MnemoError("prompt mode 'none' is diagnostic-only and cannot execute user tasks")
+
+
+def build_tool_bundle(
+    registry: ToolRegistry,
+    *,
+    prompt_mode: PromptMode,
+    provider_name: str,
+) -> ToolBundle:
+    return registry.tool_bundle(
+        profile=_tool_profile_for_prompt_mode(prompt_mode),
+        provider_adapter_version=f"{provider_name}.v1",
+    )
+
+
+def expand_tool_bundle_from_result(
+    registry: ToolRegistry,
+    bundle: ToolBundle,
+    result: ToolResult,
+) -> ToolBundle | None:
+    if result.name != "tool_expand_schema" or not result.ok:
+        return None
+    expanded = result.result.get("expanded_tool_names")
+    if not isinstance(expanded, list) or not expanded:
+        return None
+    selected = [*bundle.tool_names]
+    for name in expanded:
+        if isinstance(name, str) and name not in selected:
+            selected.append(name)
+    return registry.tool_bundle(
+        profile=bundle.profile,
+        provider_adapter_version=bundle.provider_adapter_version,
+        selected_tool_names=selected,
+        epoch=bundle.epoch + 1,
+        cache_bust_reason="lazy_schema_expansion",
+    )
+
+
+def _tool_profile_for_prompt_mode(mode: PromptMode) -> str:
+    if mode == "full":
+        return "full.v1"
+    if mode == "minimal":
+        return "minimal.v1"
+    if mode == "capsule":
+        return "capsule.v1"
+    return "none.v1"
 
 
 def make_chat_event_emitter(

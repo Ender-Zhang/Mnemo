@@ -10,6 +10,56 @@ from mnemo.tools import ToolHarness, ToolRegistry, compact_tool_result
 
 
 class ToolHarnessBoundaryTests(unittest.TestCase):
+    def test_tool_bundle_metadata_is_stable_and_content_free(self) -> None:
+        registry = ToolRegistry()
+
+        first = registry.tool_bundle(provider_adapter_version="openai.v1")
+        second = registry.tool_bundle(provider_adapter_version="openai.v1")
+        minimal = registry.tool_bundle(profile="minimal.v1", provider_adapter_version="openai.v1")
+
+        self.assertEqual(first.bundle_id, second.bundle_id)
+        self.assertEqual(first.epoch, 1)
+        self.assertIn("memory_write_candidate", first.tool_names)
+        self.assertNotIn("memory_write_candidate", minimal.tool_names)
+        self.assertIn("tool_search", minimal.tool_names)
+        self.assertIn("tool_expand_schema", minimal.tool_names)
+        self.assertGreater(first.schema_token_estimate, minimal.schema_token_estimate)
+        self.assertNotIn("input_schema", str(first.metadata()))
+
+    def test_tool_search_and_expand_schema_are_compact_read_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            searched = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_search",
+                    arguments={"query": "memory", "limit": 3},
+                    call_id="call_tool_search",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            expanded = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_expand_schema",
+                    arguments={"names": ["memory_write_candidate", "missing_tool"]},
+                    call_id="call_tool_expand",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(searched.ok)
+            self.assertLessEqual(len(searched.result["tools"]), 3)
+            self.assertNotIn("input_schema", str(searched.result))
+            self.assertTrue(expanded.ok)
+            self.assertEqual(expanded.result["expanded_tool_names"], ["memory_write_candidate"])
+            self.assertEqual(expanded.result["missing_tool_names"], ["missing_tool"])
+            self.assertIn("tool schemas", compact_tool_result(expanded)["summary"])
+
     def test_harness_blocks_disallowed_risk_without_calling_handler(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

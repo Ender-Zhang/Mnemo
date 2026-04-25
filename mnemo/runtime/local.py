@@ -6,7 +6,7 @@ from typing import Any
 
 from ..core.errors import MnemoError
 from ..core.ids import new_id
-from ..core.models import ChatEvent, RunRequest, RunResult, ToolCallEnvelope, ToolResult
+from ..core.models import ChatEvent, RunRequest, RunResult, ToolCallEnvelope, ToolExecutionPolicy, ToolResult
 from ..memory import MemoryEngine
 from ..prompt import PromptAssembler, load_prompt_bootstrap
 from ..skills import SkillService, default_skill_roots
@@ -14,6 +14,7 @@ from ..storage import StateStore
 from ..tools import ToolHarness, ToolRegistry, tool_specs_as_json_schema
 from .common import (
     action_card,
+    build_tool_bundle,
     cancellation_result,
     ensure_executable_prompt_mode,
     make_chat_event_emitter,
@@ -54,11 +55,18 @@ class LocalAgentRuntime:
         registry = self.registry or ToolRegistry.from_store(store)
         if self.registry is not None:
             registry.load_generated_tools(store.list_generated_tools(status="active", limit=100))
-        harness = ToolHarness(store=store, ledger=ledger, registry=registry)
 
         conversation_id = resolve_conversation(store, request, title=_short_title(request.message))
         mission_id = resolve_mission(store, conversation_id, request, brief=_short_title(request.message, limit=120))
         run_id = store.create_run(conversation_id, mission_id, request.message)
+        tool_bundle = build_tool_bundle(registry, prompt_mode=request.prompt_mode, provider_name="local")
+        harness = ToolHarness(
+            store=store,
+            ledger=ledger,
+            registry=registry,
+            policy=ToolExecutionPolicy(allowed_tools=tool_bundle.tool_names),
+            workspace_root=request.workspace_root,
+        )
         emit = make_chat_event_emitter(
             ledger=ledger,
             run_id=run_id,
@@ -95,7 +103,7 @@ class LocalAgentRuntime:
         assembled_prompt = PromptAssembler().assemble(
             request.message,
             mission=mission,
-            tool_specs=registry.specs(),
+            tool_specs=tool_bundle.specs,
             soul_context=bootstrap.soul,
             workspace_context=bootstrap.workspace,
             memory_snapshot=memory_engine.load_l1_snapshot(),
@@ -108,8 +116,9 @@ class LocalAgentRuntime:
             "prompt.assembled",
             {
                 **assembled_prompt.metadata(),
-                "tool_count": len(registry.specs()),
-                "tools": [spec["name"] for spec in tool_specs_as_json_schema(registry.specs())],
+                "tool_bundle": tool_bundle.metadata(),
+                "tool_count": len(tool_bundle.tool_names),
+                "tools": [spec["name"] for spec in tool_specs_as_json_schema(list(tool_bundle.specs))],
             },
         )
         yield emit("status.updated", {"text": "正在处理请求。", "tone": "working"})

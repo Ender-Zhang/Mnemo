@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..core.errors import NotFoundError, ToolError
+from ..core.jsonutil import dumps
 from ..core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolPermission, ToolResult, ToolSpec
 from ..core.text_patch import optional_bool
 from ..memory import MemoryEngine
@@ -20,6 +22,37 @@ if TYPE_CHECKING:
 
 
 ToolHandler = Callable[[dict[str, Any], "ToolContext"], dict[str, Any]]
+TOOL_SCHEMA_SERIALIZER_VERSION = "mnemo.tool_schema.v1"
+DEFAULT_TOOL_PROFILE = "full.v1"
+MINIMAL_TOOL_PROFILE = "minimal.v1"
+CAPSULE_TOOL_PROFILE = "capsule.v1"
+DISCOVERY_TOOL_NAMES = ("tool_search", "tool_expand_schema")
+
+
+@dataclass(frozen=True)
+class ToolBundle:
+    bundle_id: str
+    epoch: int
+    profile: str
+    provider_adapter_version: str
+    schema_serializer_version: str
+    tool_names: tuple[str, ...]
+    schema_token_estimate: int
+    specs: tuple[ToolSpec, ...]
+    cache_bust_reason: str = "initial"
+
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "bundle_id": self.bundle_id,
+            "epoch": self.epoch,
+            "profile": self.profile,
+            "provider_adapter_version": self.provider_adapter_version,
+            "schema_serializer_version": self.schema_serializer_version,
+            "tool_count": len(self.tool_names),
+            "tool_names": list(self.tool_names),
+            "schema_token_estimate": self.schema_token_estimate,
+            "cache_bust_reason": self.cache_bust_reason,
+        }
 
 
 class ToolContext:
@@ -41,6 +74,35 @@ def _schema(required: list[str], properties: dict[str, dict[str, Any]]) -> dict[
 
 
 CORE_TOOL_SPECS = [
+    ToolSpec(
+        name="tool_search",
+        description="Search available tool cards without loading full provider schemas.",
+        risk="read",
+        input_schema=_schema(
+            [],
+            {
+                "query": {"type": "string"},
+                "risk": {"type": "string", "enum": ["read", "write", "external", "admin"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 20},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="tool_expand_schema",
+        description="Request additional provider-native tool schemas for the next model round.",
+        risk="read",
+        input_schema=_schema(
+            ["names"],
+            {
+                "names": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "items": {"type": "string"},
+                }
+            },
+        ),
+    ),
     ToolSpec(
         name="memory_search",
         description="Search stable memory, prior session snippets, or both by query.",
@@ -327,6 +389,8 @@ class ToolRegistry:
     def __init__(self, *, generated_tools: Iterable[dict[str, Any]] | None = None) -> None:
         self._specs = {spec.name: spec for spec in [*CORE_TOOL_SPECS, *STANDARD_TOOL_SPECS, *LEARNING_TOOL_SPECS]}
         self._handlers: dict[str, ToolHandler] = {
+            "tool_search": self._tool_search,
+            "tool_expand_schema": self._tool_expand_schema,
             "memory_search": self._memory_search,
             "memory_read": self._memory_read,
             "recall_search": self._recall_search,
@@ -359,6 +423,39 @@ class ToolRegistry:
 
     def specs(self) -> list[ToolSpec]:
         return list(self._specs.values())
+
+    def tool_bundle(
+        self,
+        *,
+        profile: str = DEFAULT_TOOL_PROFILE,
+        provider_adapter_version: str = "local",
+        schema_serializer_version: str = TOOL_SCHEMA_SERIALIZER_VERSION,
+        selected_tool_names: Iterable[str] | None = None,
+        epoch: int = 1,
+        cache_bust_reason: str = "initial",
+    ) -> ToolBundle:
+        specs = _select_tool_specs(self._specs, profile=profile, selected_tool_names=selected_tool_names)
+        tool_names = tuple(spec.name for spec in specs)
+        schema_payload = tool_specs_as_json_schema(list(specs))
+        bundle_payload = {
+            "profile": profile,
+            "provider_adapter_version": provider_adapter_version,
+            "schema_serializer_version": schema_serializer_version,
+            "tool_names": list(tool_names),
+            "schemas": schema_payload,
+        }
+        digest = hashlib.sha256(dumps(bundle_payload).encode("utf-8")).hexdigest()[:16]
+        return ToolBundle(
+            bundle_id=f"tb_{digest}",
+            epoch=max(1, int(epoch)),
+            profile=profile,
+            provider_adapter_version=provider_adapter_version,
+            schema_serializer_version=schema_serializer_version,
+            tool_names=tool_names,
+            schema_token_estimate=_estimate_schema_tokens(schema_payload),
+            specs=tuple(specs),
+            cache_bust_reason=cache_bust_reason,
+        )
 
     def register(self, spec: ToolSpec, handler: ToolHandler) -> None:
         self._specs[spec.name] = spec
@@ -414,6 +511,37 @@ class ToolRegistry:
             ok=True,
             result=handler(call.arguments, context),
         )
+
+    def _tool_search(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        query = str(args.get("query") or "").strip().casefold()
+        risk = _optional_str(args, "risk")
+        limit = _bounded_limit(args.get("limit"), default=20, maximum=50)
+        tools: list[dict[str, Any]] = []
+        for spec in sorted(self._specs.values(), key=lambda item: item.name):
+            if risk and spec.risk != risk:
+                continue
+            searchable = f"{spec.name} {spec.description}".casefold()
+            if query and query not in searchable:
+                continue
+            tools.append({"name": spec.name, "description": spec.description, "risk": spec.risk})
+            if len(tools) >= limit:
+                break
+        return {"tools": tools, "count": len(tools)}
+
+    def _tool_expand_schema(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        requested = _require_str_list(args, "names")
+        expanded: list[str] = []
+        missing: list[str] = []
+        for name in requested:
+            if name in self._specs:
+                expanded.append(name)
+            else:
+                missing.append(name)
+        return {
+            "expanded_tool_names": expanded,
+            "missing_tool_names": missing,
+            "status": "ready_next_round" if expanded else "no_matching_tools",
+        }
 
     def _memory_search(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         query = _require_str(args, "query")
@@ -836,6 +964,65 @@ def tool_specs_as_json_schema(specs: list[ToolSpec]) -> list[dict[str, Any]]:
     ]
 
 
+def _select_tool_specs(
+    specs_by_name: dict[str, ToolSpec],
+    *,
+    profile: str,
+    selected_tool_names: Iterable[str] | None,
+) -> tuple[ToolSpec, ...]:
+    if selected_tool_names is None:
+        selected_names = _profile_tool_names(specs_by_name, profile)
+    else:
+        selected_names = tuple(dict.fromkeys(str(name) for name in selected_tool_names if str(name) in specs_by_name))
+        selected_names = _with_discovery_tools(selected_names, specs_by_name)
+    return tuple(specs_by_name[name] for name in sorted(selected_names) if name in specs_by_name)
+
+
+def _profile_tool_names(specs_by_name: dict[str, ToolSpec], profile: str) -> tuple[str, ...]:
+    if profile == DEFAULT_TOOL_PROFILE:
+        return tuple(specs_by_name)
+    if profile in {MINIMAL_TOOL_PROFILE, CAPSULE_TOOL_PROFILE}:
+        names = [
+            name
+            for name, spec in specs_by_name.items()
+            if spec.risk == "read" and _is_profile_safe_tool(name)
+        ]
+        return _with_discovery_tools(names, specs_by_name)
+    raise ToolError(f"unknown tool profile: {profile}")
+
+
+def _is_profile_safe_tool(name: str) -> bool:
+    if name in DISCOVERY_TOOL_NAMES:
+        return True
+    if name.startswith("tool_"):
+        return True
+    return name in {
+        "memory_search",
+        "memory_read",
+        "recall_search",
+        "skills_list",
+        "skill_view",
+        "file_search",
+        "file_read",
+        "web_fetch",
+    }
+
+
+def _with_discovery_tools(names: Iterable[str], specs_by_name: dict[str, ToolSpec]) -> tuple[str, ...]:
+    ordered = list(dict.fromkeys(str(name) for name in names))
+    for name in DISCOVERY_TOOL_NAMES:
+        if name in specs_by_name and name not in ordered:
+            ordered.append(name)
+    return tuple(ordered)
+
+
+def _estimate_schema_tokens(schema_payload: list[dict[str, Any]]) -> int:
+    content = dumps(schema_payload)
+    if not content:
+        return 0
+    return max(1, (len(content) + 3) // 4)
+
+
 def compact_tool_result(result: ToolResult) -> dict[str, Any]:
     """Compact payload sent back to the model after a tool call."""
     compact: dict[str, Any] = {
@@ -867,6 +1054,10 @@ def _tool_summary(result: ToolResult) -> str:
         return f"Found {len(result.result.get('matches', []))} memory matches."
     if result.name == "recall_search":
         return f"Found {len(result.result.get('items', []))} recall items."
+    if result.name == "tool_search":
+        return f"Found {len(result.result.get('tools', []))} tool cards."
+    if result.name == "tool_expand_schema":
+        return f"Prepared {len(result.result.get('expanded_tool_names', []))} tool schemas for the next model round."
     if result.name == "memory_read":
         return "Memory item loaded."
     if result.name == "working_note":
@@ -937,6 +1128,23 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "kind": "recall_search",
                 "summary": f"{len(items)} items",
                 "items": [_compact_recall_item(item) for item in items[:6]],
+            }
+        ]
+    if result.name == "tool_search":
+        tools = result.result.get("tools", [])
+        return [
+            {
+                "kind": "tool_search",
+                "summary": f"{len(tools)} tool cards",
+                "items": tools[:10],
+            }
+        ]
+    if result.name == "tool_expand_schema":
+        return [
+            {
+                "kind": "tool_bundle_expansion",
+                "expanded_tool_names": result.result.get("expanded_tool_names", []),
+                "missing_tool_names": result.result.get("missing_tool_names", []),
             }
         ]
     if result.name == "memory_read":
@@ -1209,6 +1417,18 @@ def _require_str(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ToolError(f"missing string argument: {key}")
     return value.strip()
+
+
+def _require_str_list(args: dict[str, Any], key: str) -> list[str]:
+    value = args.get(key)
+    if not isinstance(value, list) or not value:
+        raise ToolError(f"missing string list argument: {key}")
+    result: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            raise ToolError(f"invalid string list argument: {key}")
+        result.append(item.strip())
+    return result
 
 
 def _require_outcome(args: dict[str, Any], key: str) -> str:

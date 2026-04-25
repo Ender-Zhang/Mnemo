@@ -33,6 +33,8 @@
 - Tool schemas still travel through provider-native tool definitions; dropping `tools.cards` must not remove actual tool availability.
 - Prompt block budgeting only applies to prompt messages; provider-native tool schemas are tracked in `metadata().tool_schema` separately.
 - `metadata().tool_schema` contains `count`, ordered `names`, `token_estimate`, and `budget_scope="provider_native"`; it must not contain raw schema payloads.
+- Runtime `prompt.assembled` events include compact `tool_bundle` metadata with `bundle_id`, `epoch`, `profile`, `tool_count`, ordered `tool_names`, `schema_token_estimate`, and cache bust reason.
+- `prompt.assembled.tool_bundle` must not contain raw `input_schema` payloads.
 - `metadata().prompt_token_estimate` equals prompt-message block tokens and excludes tool schema estimates.
 - `metadata().dropped_blocks` records block id, title, estimate, and reason.
 - Large mission checkpoint values must be compacted before token estimates are computed.
@@ -53,6 +55,7 @@
 | CLI snapshot inspection | Existing compiled snapshot is inspectable without full page bodies | `tests/test_cli.py` |
 | Tight prompt budget with tools | May drop `tools.cards`; tool schema metadata remains present | `tests/test_prompt.py` |
 | Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |
+| Prompt inspect ToolBundle metadata | Includes compact bundle id/profile/epoch/token estimate without raw schemas | `tests/test_cli.py` |
 | Minimal mode | Omits Soul, memory, and skills while preserving provider-native tool schema metadata | `tests/test_prompt.py`, `tests/test_runtime.py`, `tests/test_cli.py` |
 | Capsule mode | Omits personal and workspace context while keeping task, mission, and allowed tool cards | `tests/test_prompt.py` |
 | None mode | Assembles diagnostic shell and marks `execution_allowed=false`; runtime rejects execution | `tests/test_prompt.py` |

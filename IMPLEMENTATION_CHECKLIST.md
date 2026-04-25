@@ -95,7 +95,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] Soul.md loading and bounded prompt injection are implemented; user-confirmed Soul evolution and explicit cache invalidation are not complete.
 - [~] Workspace bootstrap blocks for `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `BOOTSTRAP.md`, `MEMORY.md`, `CLAUDE.md`, and cursor rules load with caps, truncation markers, warning metadata, and prompt-mode filtering; provider cache controls are not complete.
 - [x] Prompt modes beyond recorded `full`: `minimal`, `capsule`, and `none` with enforced disclosure boundaries.
-- [ ] Stable ToolBundle epochs and lazy schema expansion for large MCP/external tool surfaces.
+- [~] Stable ToolBundle epochs and lazy schema expansion exist for built-in/provider-native tool surfaces; MCP/external large-surface discovery is not complete.
 
 ## Frontend Experience
 
@@ -204,3 +204,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-associative-memory-recall`: memory search surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.
 - [x] `04-25-implement-cross-client-skill-roots`: default skill roots include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.
 - [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.
+- [x] `04-25-implement-tool-bundle-epochs`: runtime now compiles deterministic ToolBundles, records compact bundle metadata, filters reduced prompt-mode tool profiles, and supports provider-loop schema expansion epochs through `tool_expand_schema`.

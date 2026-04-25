@@ -109,6 +109,9 @@ class CliTests(unittest.TestCase):
             self.assertEqual(prompt["blocks"][0]["id"], "system.identity")
             self.assertEqual(prompt["tool_schema"]["count"], prompt["tool_count"])
             self.assertIn("memory_search", prompt["tool_schema"]["names"])
+            self.assertEqual(prompt["tool_bundle"]["tool_count"], prompt["tool_count"])
+            self.assertTrue(prompt["tool_bundle"]["bundle_id"].startswith("tb_"))
+            self.assertNotIn("input_schema", str(prompt["tool_bundle"]))
             self.assertNotIn("input_schema", prompt["tool_schema"])
 
     def test_run_injects_soul_and_workspace_bootstrap(self) -> None:

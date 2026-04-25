@@ -170,7 +170,7 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("writer [active]", prompt_text)
             self.assertNotIn("Full skill body", prompt_text)
 
-    def test_provider_runtime_minimal_prompt_mode_limits_disclosure_but_keeps_tools(self) -> None:
+    def test_provider_runtime_minimal_prompt_mode_limits_disclosure_and_write_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             state_dir = root / "state"
@@ -216,12 +216,59 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertNotIn("Available skill index", prompt_text)
             self.assertNotIn("Legacy memory dump.", prompt_text)
             self.assertIn("memory_search", tool_names)
-            self.assertIn("memory_write_candidate", tool_names)
+            self.assertIn("tool_search", tool_names)
+            self.assertIn("tool_expand_schema", tool_names)
+            self.assertNotIn("memory_write_candidate", tool_names)
+            self.assertNotIn("skill_propose_candidate", tool_names)
             self.assertEqual(prompt_event["payload"]["mode"], "minimal")
+            self.assertEqual(prompt_event["payload"]["tool_bundle"]["profile"], "minimal.v1")
+            self.assertEqual(prompt_event["payload"]["tool_bundle"]["tool_count"], len(tool_names))
             self.assertIn("workspace.bootstrap.agents_md", block_ids)
             self.assertNotIn("soul.user_contract", block_ids)
             self.assertNotIn("memory.index", block_ids)
             self.assertNotIn("skills.index", block_ids)
+
+    def test_provider_runtime_expands_tool_bundle_after_model_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="tool_expand_schema",
+                                arguments={"names": ["memory_write_candidate"]},
+                                call_id="call_expand",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="text_delta", text="Expanded."), ProviderEvent(type="completed")],
+                ]
+            )
+
+            events = list(
+                ProviderAgentRuntime(provider).stream(
+                    RunRequest(message="expand tools", state_dir=tmp, prompt_mode="minimal")
+                )
+            )
+
+            first_tool_names = [tool.name for tool in provider.requests[0].tools]
+            second_tool_names = [tool.name for tool in provider.requests[1].tools]
+            store = StateStore(tmp)
+            expanded_event = next(
+                event for event in store.get_run_events(events[-1].run_id) if event["event_type"] == "tool_bundle.expanded"
+            )
+
+            self.assertNotIn("memory_write_candidate", first_tool_names)
+            self.assertIn("memory_write_candidate", second_tool_names)
+            self.assertEqual(provider.requests[1].metadata["tool_bundle"]["epoch"], 2)
+            self.assertEqual(
+                expanded_event["payload"]["tool_bundle"]["cache_bust_reason"],
+                "lazy_schema_expansion",
+            )
 
     def test_provider_runtime_adds_soul_and_workspace_bootstrap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

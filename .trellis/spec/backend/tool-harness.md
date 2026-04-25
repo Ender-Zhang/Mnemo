@@ -10,6 +10,8 @@
 - `ToolRegistry.specs() -> list[ToolSpec]`
 - `ToolRegistry.from_store(store: StateStore) -> ToolRegistry`
 - `ToolRegistry.load_generated_tools(generated_tools: Iterable[dict[str, Any]]) -> None`
+- `ToolRegistry.tool_bundle(profile="full.v1", provider_adapter_version="local", schema_serializer_version="mnemo.tool_schema.v1", selected_tool_names=None, epoch=1, cache_bust_reason="initial") -> ToolBundle`
+- `ToolBundle.metadata() -> dict[str, Any]`
 - `ToolRegistry.execute(call: ToolCallEnvelope, context: ToolContext) -> ToolResult`
 - `ToolHarness.execute(call: ToolCallEnvelope, *, run_id: str, mission_id: str) -> ToolResult`
 - `ToolExecutionPolicy.check(spec: ToolSpec) -> ToolPermission`
@@ -25,6 +27,13 @@
 - `ToolResult.summary` and `ToolResult.evidence`: compact model/UI payloads.
 - `ToolContext.workspace_root`: resolved root for local file and shell tools.
 - Provider-native tool schemas are sent through adapter requests, not embedded as raw prompt blocks or prompt metadata.
+- Provider-native tool schemas are grouped into deterministic `ToolBundle` objects with a stable `bundle_id`, `epoch`, `profile`, `provider_adapter_version`, `schema_serializer_version`, ordered `tool_names`, and compact `schema_token_estimate`.
+- `ToolBundle.metadata()` must not contain raw `input_schema` payloads.
+- Default `full.v1` bundles preserve the existing complete tool surface.
+- `minimal.v1` and `capsule.v1` bundles expose only low-risk read/discovery tools by default; model-requested expansion can add more tool schemas in a later provider round.
+- `tool_search(query?, risk?, limit=20)` returns compact tool cards without raw schemas.
+- `tool_expand_schema(names)` returns matching tool names for the runtime to add to the next provider `ToolBundle` epoch; it does not return raw schemas to the model.
+- Provider runtime records `tool_bundle.expanded` with `cache_bust_reason="lazy_schema_expansion"` when a successful `tool_expand_schema` call changes the active bundle.
 - `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
 - `memory_search` may return `linked_page` matches from one-hop memory associations.
 - `memory_search.search_scope`: optional, one of `memory`, `stable`, `sessions`, or `all`; default is `memory`.
@@ -72,6 +81,10 @@
 | Ask user decision | Creates a persistent Inbox item and returns compact decision evidence | `tests/test_tools.py`, `tests/test_web.py` |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
 | Prompt metadata | Records compact tool schema count/names/estimate without raw schema payloads | `tests/test_prompt.py`, `tests/test_cli.py` |
+| Stable ToolBundle | Recompiling the same profile/provider produces the same `bundle_id` and content-free metadata | `tests/test_tools.py` |
+| Minimal ToolBundle profile | Omits memory/skill write tools while preserving discovery/read tools | `tests/test_tools.py`, `tests/test_runtime.py` |
+| Tool search | Returns compact tool cards without schemas | `tests/test_tools.py` |
+| Lazy schema expansion | Provider runtime creates a new bundle epoch after `tool_expand_schema` | `tests/test_runtime.py` |
 | Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
 | Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
@@ -94,6 +107,7 @@
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.
 - Good: expose L4 recall through `memory_search` scope instead of adding a separate session workflow tool.
 - Good: expose user-facing cross-surface recall through one read-only `recall_search` tool instead of separate dashboard workflows.
+- Good: expose large or rare tool surfaces through `tool_search` and `tool_expand_schema` rather than dumping every schema into every reduced prompt mode.
 - Good: represent user approvals as Inbox decision item ids, not transient-only chat text.
 - Good: use `file_patch` for bounded edits instead of full-file overwrite when the old text is known.
 - Good: use connector tools as side-effect handoffs from model decisions, not as workflow branches.
@@ -119,6 +133,7 @@
 - Connector tools: assert default policy denial, dry-run success, compact evidence, URL validation, and workspace path traversal rejection.
 - Ask-user decisions: assert persistent Inbox item id appears in compact evidence and `decision.card` payload.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
+- ToolBundle tests: assert stable ids, compact metadata, profile filtering, and lazy expansion epochs.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
 
 ### 7. Wrong vs Correct
