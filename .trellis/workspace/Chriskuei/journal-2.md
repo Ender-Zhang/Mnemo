@@ -89,3 +89,37 @@ Added mnemo memory read for inspecting memory candidates and stable pages by id,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: Expose memory list CLI
+
+**Date**: 2026-04-25
+**Task**: Expose memory list CLI
+**Branch**: `main`
+
+### Summary
+
+Added read-only mnemo memory list for draft candidates, active pages, and unfiltered memory inventory; documented the command and memory contract; covered default candidate listing, page listing, all-status inventory, and compact non-JSON output with CLI regression tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `334baf7` | (see git log) |
+| `8e0c5c1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

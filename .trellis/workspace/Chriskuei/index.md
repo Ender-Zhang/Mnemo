@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 61
+- **Total Sessions**: 62
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~83 | Active |
+| `journal-2.md` | ~125 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 62 | 2026-04-25 | Expose memory list CLI | `334baf7`, `8e0c5c1` | `main` |
 | 61 | 2026-04-25 | Expose memory read CLI | `f72dd3d`, `8652b04` | `main` |
 | 60 | 2026-04-25 | Validate OpenAI-compatible provider chain | `73477de`, `102bf6c` | `main` |
 | 59 | 2026-04-25 | Expose skill usage CLI | `89d26a5` | `main` |
