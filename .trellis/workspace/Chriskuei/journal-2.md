@@ -467,12 +467,14 @@ Recalibrated the implementation checklist so runnable foundations, partial produ
 
 | Hash | Message |
 |------|---------|
-| `a0e139f` | (see git log) |
-| `e458964` | (see git log) |
+| `a0e139f` | docs: align implementation checklist with design gaps |
+| `e458964` | chore(task): archive 04-25-align-implementation-checklist-design-gaps |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `git diff --check`
+- [OK] `python3 ./.trellis/scripts/task.py validate 04-25-align-implementation-checklist-design-gaps`
+- [OK] Manual design review against `design/README.md`, `design/01-memory-engine.md`, `design/05-interfaces-data-security.md`, `design/07-runtime-harness.md`, `design/08-frontend-chat.md`, and `design/09-roadmap-principles.md`
 
 ### Status
 
