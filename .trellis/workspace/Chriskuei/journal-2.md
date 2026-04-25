@@ -516,3 +516,37 @@ Added SQLite-backed L4 session message persistence/search, memory_search scope s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 72: Prompt bootstrap foundation
+
+**Date**: 2026-04-25
+**Task**: Prompt bootstrap foundation
+**Branch**: `main`
+
+### Summary
+
+Implemented bounded SOUL.md and workspace bootstrap prompt loading, wired runtime/CLI/Web/daemon workspace roots, added prompt metadata contracts and regression coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9e81666` | (see git log) |
+| `ad60de5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
