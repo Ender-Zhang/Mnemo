@@ -1963,3 +1963,36 @@ Added mnemo evals create for draft eval case creation from existing runs, reused
 ### Next Steps
 
 - None - task complete
+
+
+## Session 59: Expose skill usage CLI
+
+**Date**: 2026-04-25
+**Task**: Expose skill usage CLI
+**Branch**: `main`
+
+### Summary
+
+Added mnemo skills usage for read-only inspection of stored skill usage/outcome events and aggregate stats, reused StateStore skill usage APIs, covered JSON and compact text output, and updated README, backend contracts, and implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `89d26a5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

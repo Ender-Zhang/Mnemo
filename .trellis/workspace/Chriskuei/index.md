@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 58
+- **Total Sessions**: 59
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1965 | Active |
+| `journal-1.md` | ~1998 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 59 | 2026-04-25 | Expose skill usage CLI | `89d26a5` | `main` |
 | 58 | 2026-04-25 | Expose eval case creation CLI | `37caf37` | `main` |
 | 57 | 2026-04-25 | Expose eval case CLI | `286947b` | `main` |
 | 56 | 2026-04-25 | Expose tool evolution CLI | `84023e7` | `main` |
