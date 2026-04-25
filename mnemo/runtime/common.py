@@ -157,7 +157,7 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
                 "item": {
                     "item_id": result.result["candidate_id"],
                     "kind": "memory",
-                    "status": "draft",
+                    "status": result.result.get("status") or "draft",
                     "summary": "可能学到一个偏好或事实。",
                 }
             },

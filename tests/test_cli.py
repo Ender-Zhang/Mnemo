@@ -1006,7 +1006,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(memory_safety.returncode, 0, memory_safety.stderr)
         memory_safety_payload = json.loads(memory_safety.stdout)
         self.assertTrue(memory_safety_payload["passed"])
-        self.assertEqual(memory_safety_payload["case_count"], 4)
+        self.assertEqual(memory_safety_payload["case_count"], 5)
 
         skill_evolution = _run_cli(["harness", "eval", "skill-evolution", "--json"])
         self.assertEqual(skill_evolution.returncode, 0, skill_evolution.stderr)

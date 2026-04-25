@@ -11,6 +11,7 @@
 - `MemoryEngine.plan_query(query: str) -> MemoryQueryPlan`
 - `MemoryEngine.search_with_plan(query: str, limit: int = 5, *, search_scope: str = "memory") -> dict[str, Any]`
 - `MemoryEngine.context_cards(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
+- `MemoryEngine.write_candidate(run_id: str, claim: str, *, dimension: str | None = None, scope: str = "global", confidence: float = 0.5, evidence: list[dict[str, Any]] | None = None) -> dict[str, Any]`
 - `MemoryEngine.ingest_working_notes(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
@@ -45,6 +46,11 @@
 
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
+- Normal tools and W0 ingestion write memory candidates through `MemoryEngine.write_candidate()`.
+- Candidate writes append compact `memory_safety` evidence with taint, risk, review flag, warning labels, and source summaries.
+- Candidate evidence source taint is deterministic and recognizes trusted user/run/work-note sources, external web/file/tool/imported-skill/MCP/runtime sources, and unknown sources.
+- Candidate claim/evidence text is scanned for prompt override, secret request, and tool-call injection markers through the shared injection warning helper.
+- Candidate writes with injection warnings are marked `needs_review:prompt_injection` and must not be promoted by Dream consolidation.
 - Stable memory pages are created through promotion or explicit curation.
 - W0 working notes are mission-scoped scratchpad entries.
 - DreamCycle only turns W0 notes into memory candidates when the note metadata has `retention="memory_candidate"`.
@@ -94,12 +100,14 @@
 - `mnemo memory tombstone` must update the candidate/page status and create a durable tombstone record.
 - `mnemo memory tombstones` must expose durable tombstone records without loading raw page/candidate bodies beyond compact summaries.
 - The `memory-safety` eval suite must remain deterministic and local.
-- The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
+- The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
 | --- | --- | --- |
 | Empty candidate | `rejected:empty` | `tests/test_memory.py` |
+| Safe candidate write | Draft candidate with low-risk `memory_safety` evidence | `tests/test_memory.py` |
+| Injected candidate write | `needs_review:prompt_injection` with high-risk safety evidence | `tests/test_memory.py`, `tests/test_tools.py` |
 | Exact duplicate of active page | Reject candidate, raise page confidence, add `reinforces` link | `tests/test_memory.py` |
 | Obvious contradiction | Mark `needs_review:conflict`, add `conflicts_with` link, do not promote | `tests/test_memory.py` |
 | Low confidence non-conflict | Keep `draft`, return skipped entry | `tests/test_memory.py` |
@@ -119,6 +127,7 @@
 | CLI memory links | Outgoing and incoming links can be inspected by id | `tests/test_cli.py` |
 | CLI memory snapshot | Existing L1 snapshot can be inspected without full page bodies | `tests/test_cli.py` |
 | Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
+| Prompt injection safety eval | Memory-safety suite includes a no-promotion injected external evidence case | `tests/test_harness.py` |
 | Query planning | Plan reports routes, dimensions, and temporal hints without external dependencies | `tests/test_memory.py` |
 | Fused retrieval | Dimension routes can recover relevant pages and annotate matched routes | `tests/test_memory.py` |
 | Tombstone annotation | Rejected/tombstoned candidates are marked advisory tombstones | `tests/test_memory.py` |
@@ -130,6 +139,7 @@
 
 ### 5. Good/Base/Bad Cases
 - Good: use links to preserve why memory changed.
+- Good: store scanner output as compact evidence on the candidate instead of adding a separate workflow.
 - Good: use one-hop page links to surface adjacent wiki knowledge while keeping tool schemas unchanged.
 - Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
 - Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
@@ -137,6 +147,7 @@
 - Base: deterministic dream logic may emit signals that later model decisions consume.
 - Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
+- Bad: bypass `MemoryEngine.write_candidate()` from tools or W0 ingestion.
 - Bad: hide reinforcement or conflict decisions without a memory link.
 - Bad: treat advisory tombstone annotations as durable deletion records.
 - Bad: let tombstoned stable pages remain in active recall or L1 snapshots.
@@ -144,6 +155,7 @@
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
 - W0 ingestion creates candidates from model-marked working notes and skips ephemeral notes.
+- Candidate writes cover trusted/low-risk and injected/high-risk safety scans.
 - CLI `memory notes` covers default open notes, unfiltered notes, metadata/result payloads, and compact non-JSON rows.
 - Duplicate reinforcement updates confidence and creates `reinforces`.
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
@@ -159,7 +171,7 @@
 - CLI `memory links` covers outgoing-only, incoming-only, both directions, and compact non-JSON rows.
 - CLI `memory snapshot` covers missing snapshots, loaded snapshots, and compact non-JSON rows.
 - L1 snapshot compile/load behavior is covered, including invalid files.
-- Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
+- Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
 
 ### 7. Wrong vs Correct
 #### Wrong

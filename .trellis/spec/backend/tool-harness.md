@@ -58,6 +58,9 @@
 - Anthropic adapters convert `tool_use` content blocks into `ToolCallEnvelope` and return tool results as `tool_result` content blocks.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
 - `working_note` with `retention="memory_candidate"` stores metadata for DreamCycle; it does not create a memory candidate synchronously.
+- `memory_write_candidate` must call `MemoryEngine.write_candidate()` so taint scanning and prompt-injection review gates apply consistently.
+- `memory_write_candidate` returns `candidate_id`, candidate `status`, and compact `safety` metadata.
+- Compact `memory_write_candidate` evidence includes candidate id, status, and compact safety metadata, never raw external evidence text.
 - `ask_user` is `write` risk because it persists an Inbox decision item.
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
@@ -93,6 +96,7 @@
 | Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
 | Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
+| Memory write safety scan | External prompt-injection evidence is stored as `needs_review:prompt_injection` with compact safety evidence | `tests/test_tools.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
 | Skill patch candidate | Return compact patch evidence without body and leave source skill unchanged | `tests/test_tools.py`, `tests/test_skills_filesystem.py` |
@@ -132,6 +136,7 @@
 - Memory tombstone: assert status mutation, durable tombstone row, and compact evidence.
 - Recall search: assert compact cards include `kind`, `item_id`, `title`, `summary`, provenance ids, and action hints while omitting full bodies/transcripts.
 - Working note retention metadata: assert stored metadata and compact result remain small.
+- Memory write safety scan: assert status, safety risk, review flag, and compact evidence shape.
 - Skill review: assert status is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.
 - Skill patch: assert draft status is persisted and compact result omits full skill body.

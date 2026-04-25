@@ -720,15 +720,15 @@ class ToolRegistry:
 
     def _memory_write_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         claim = _require_str(args, "claim")
-        candidate_id = context.store.add_memory_candidate(
+        confidence = _optional_float(args, "confidence") if "confidence" in args else None
+        return MemoryEngine(context.store).write_candidate(
             context.run_id,
             claim,
             dimension=_optional_str(args, "dimension"),
             scope=str(args.get("scope") or "global"),
-            confidence=float(args.get("confidence", 0.5)),
-            evidence=args.get("evidence") or [],
+            confidence=0.5 if confidence is None else confidence,
+            evidence=_optional_evidence(args.get("evidence")),
         )
-        return {"candidate_id": candidate_id, "status": "draft"}
 
     def _skill_propose_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         skill_id = context.store.upsert_skill(
@@ -1102,6 +1102,9 @@ def _tool_summary(result: ToolResult) -> str:
     if not result.ok:
         return result.error or "Tool call failed."
     if result.name == "memory_write_candidate":
+        status = str(result.result.get("status") or "draft")
+        if status.startswith("needs_review"):
+            return f"Memory candidate recorded for review: {status}."
         return "Memory candidate recorded for later consolidation."
     if result.name == "memory_search":
         return f"Found {len(result.result.get('matches', []))} memory matches."
@@ -1168,7 +1171,11 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
             }
         ]
     if result.name == "memory_write_candidate":
-        return [_evidence("memory_candidate", result.result.get("candidate_id"), "Memory candidate")]
+        evidence = _evidence("memory_candidate", result.result.get("candidate_id"), "Memory candidate")
+        evidence["status"] = result.result.get("status")
+        if result.result.get("safety"):
+            evidence["safety"] = result.result["safety"]
+        return [evidence]
     if result.name == "memory_search":
         matches = result.result.get("matches", [])
         return [
@@ -1590,6 +1597,19 @@ def _require_dict(args: dict[str, Any], key: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ToolError(f"missing object argument: {key}")
     return value
+
+
+def _optional_evidence(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ToolError("evidence must be a list")
+    evidence: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ToolError("evidence items must be objects")
+        evidence.append(item)
+    return evidence
 
 
 def _map_alias_arguments(args: dict[str, Any], argument_map: dict[str, Any]) -> dict[str, Any]:

@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory write candidate safety contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Provider-native memory_write_candidate contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation and package smoke gate"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Existing prompt injection warning pattern"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer tool/engine/eval payload flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing scanner and evidence patterns"}

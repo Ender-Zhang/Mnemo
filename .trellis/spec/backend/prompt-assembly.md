@@ -8,6 +8,7 @@
 
 ### 2. Signatures
 - `load_prompt_bootstrap(state_dir: str | Path, *, workspace_root: str | Path | None = None, per_file_char_limit=BOOTSTRAP_FILE_CHAR_LIMIT, total_char_limit=BOOTSTRAP_TOTAL_CHAR_LIMIT) -> PromptBootstrapContext`
+- `mnemo.core.injection.injection_warnings(value: str) -> list[str]`
 - `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET, mode: PromptMode = "full") -> AssembledPrompt`
 - `AssembledPrompt.messages() -> list[dict[str, str]]`
 - `AssembledPrompt.metadata() -> dict[str, Any]`
@@ -27,6 +28,7 @@
 - Workspace bootstrap content must be bounded by per-file and total character caps and may be dropped under prompt budget pressure.
 - Bootstrap metadata may include path, truncation flag, char count, and warning labels; it must not include raw file content.
 - Bootstrap content that resembles prompt injection, secret requests, or fake tool calls is labeled in metadata and remains quoted context.
+- Prompt/bootstrap and memory-write scanning share `mnemo.core.injection.injection_warnings()` for warning label consistency.
 - `memory.l1_snapshot` is daily-cache context and must appear before turn-scoped `memory.index`.
 - `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
 - CLI inspection of the same compiled context is read-only: `mnemo memory snapshot`.

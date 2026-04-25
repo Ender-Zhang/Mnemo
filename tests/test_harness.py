@@ -22,7 +22,7 @@ class EvalHarnessTests(unittest.TestCase):
         report = EvalHarness().run_suite("memory-safety")
 
         self.assertTrue(report.passed)
-        self.assertEqual(report.case_count, 4)
+        self.assertEqual(report.case_count, 5)
         self.assertEqual(report.failed_count, 0)
         self.assertIn("memory-safety", list_suites())
         assertion_names = {
@@ -34,6 +34,7 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertIn("stable_pages_not_created", assertion_names)
         self.assertIn("candidate_needs_review", assertion_names)
         self.assertIn("snapshot_omits_full_page_tail", assertion_names)
+        self.assertIn("candidate_needs_prompt_injection_review", assertion_names)
 
     def test_skill_evolution_suite_passes(self) -> None:
         report = EvalHarness().run_suite("skill-evolution")

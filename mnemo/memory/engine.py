@@ -7,6 +7,7 @@ from typing import Any
 
 from ..core.jsonutil import dumps, loads
 from .query import CONTENT_DIMENSIONS, MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
+from .safety import append_safety_evidence, scan_memory_candidate
 
 L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
 W0_MEMORY_RETENTION = "memory_candidate"
@@ -93,6 +94,35 @@ class MemoryEngine:
     def context_cards(self, query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]:
         return [_context_card(item) for item in self.search(query, limit=limit, search_scope=search_scope)]
 
+    def write_candidate(
+        self,
+        run_id: str,
+        claim: str,
+        *,
+        dimension: str | None = None,
+        scope: str = "global",
+        confidence: float = 0.5,
+        evidence: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        scan = scan_memory_candidate(claim, evidence)
+        candidate_id = self.store.add_memory_candidate(
+            run_id,
+            claim,
+            dimension=dimension,
+            scope=scope,
+            confidence=confidence,
+            evidence=append_safety_evidence(evidence, scan),
+        )
+        status = "draft"
+        if scan.get("requires_review"):
+            status = f"needs_review:{scan.get('review_reason') or 'memory_safety'}"
+            self.store.update_memory_candidate_status(candidate_id, status)
+        return {
+            "candidate_id": candidate_id,
+            "status": status,
+            "safety": _compact_safety_scan(scan),
+        }
+
     def ingest_working_notes(self, limit: int = 20) -> dict[str, Any]:
         list_notes = getattr(self.store, "list_working_notes", None)
         update_note = getattr(self.store, "update_working_note_status", None)
@@ -113,7 +143,7 @@ class MemoryEngine:
                 skipped.append(_skip_working_note(self.store, note, "ephemeral"))
                 continue
 
-            candidate_id = self.store.add_memory_candidate(
+            candidate = self.write_candidate(
                 note["run_id"],
                 content,
                 dimension=metadata.get("dimension") or "working_note",
@@ -128,10 +158,13 @@ class MemoryEngine:
                     }
                 ],
             )
+            candidate_id = candidate["candidate_id"]
             result = {
                 "note_id": note["id"],
                 "candidate_id": candidate_id,
                 "status": "candidate_created",
+                "candidate_status": candidate["status"],
+                "safety": candidate["safety"],
             }
             self.store.update_working_note_status(
                 note["id"],
@@ -316,7 +349,10 @@ class MemoryEngine:
             [
                 *[_page_review_card("verify_stale", page) for page in stale_pages],
                 *[_page_review_card("improve_evidence", page) for page in low_confidence_pages],
-                *[_candidate_review_card("review_conflict", candidate) for candidate in review_candidates],
+                *[
+                    _candidate_review_card(_candidate_review_kind(candidate), candidate)
+                    for candidate in review_candidates
+                ],
                 *[_tombstone_review_card(tombstone) for tombstone in tombstones[:card_limit]],
                 *[_page_review_card("connect_orphan", page) for page in orphan_pages],
             ],
@@ -735,6 +771,17 @@ def _normalize_tombstone_target_type(value: str) -> str:
     return normalized
 
 
+def _compact_safety_scan(scan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "taint": scan.get("taint"),
+        "risk": scan.get("risk"),
+        "requires_review": bool(scan.get("requires_review")),
+        "review_reason": scan.get("review_reason"),
+        "sources": scan.get("sources", [])[:6],
+        "warnings": scan.get("warnings", [])[:6],
+    }
+
+
 def _dimension_counts(pages: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> dict[str, int]:
     counts = {dimension: 0 for dimension in CONTENT_DIMENSIONS}
     for page in pages:
@@ -793,6 +840,13 @@ def _candidate_review_card(kind: str, candidate: dict[str, Any]) -> dict[str, An
     }
 
 
+def _candidate_review_kind(candidate: dict[str, Any]) -> str:
+    status = str(candidate.get("status") or "")
+    if "prompt_injection" in status or "memory_safety" in status:
+        return "review_memory_safety"
+    return "review_conflict"
+
+
 def _tombstone_review_card(tombstone: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": "respect_tombstone",
@@ -812,6 +866,8 @@ def _review_actions(kind: str) -> list[str]:
         return ["confirm", "archive", "tombstone"]
     if kind == "review_conflict":
         return ["promote", "reject", "tombstone"]
+    if kind == "review_memory_safety":
+        return ["reject", "tombstone", "manual_review"]
     if kind == "connect_orphan":
         return ["link", "leave"]
     if kind == "improve_evidence":

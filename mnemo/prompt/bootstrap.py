@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ..core.injection import injection_warnings
+
 
 SOUL_FILENAME = "SOUL.md"
 BOOTSTRAP_FILE_CHAR_LIMIT = 12_000
@@ -179,7 +181,7 @@ def _prepare_content(raw: str, *, limit: int) -> dict[str, Any]:
     return {
         "content": content,
         "truncated": truncated,
-        "warnings": _injection_warnings(normalized),
+        "warnings": injection_warnings(normalized),
     }
 
 
@@ -196,38 +198,5 @@ def _head_tail_truncate(value: str, *, limit: int) -> str:
     return value[:head_len].rstrip() + TRUNCATION_MARKER + value[-tail_len:].lstrip()
 
 
-def _injection_warnings(value: str) -> list[str]:
-    text = value.casefold()
-    warnings: list[str] = []
-    if any(marker in text for marker in _PROMPT_OVERRIDE_MARKERS):
-        warnings.append("possible_prompt_override")
-    if any(marker in text for marker in _SECRET_REQUEST_MARKERS):
-        warnings.append("possible_secret_request")
-    if any(marker in text for marker in _TOOL_INJECTION_MARKERS):
-        warnings.append("possible_tool_injection")
-    return warnings
-
-
 def _block_id_fragment(value: str) -> str:
     return "".join(char if char.isalnum() else "_" for char in value.casefold()).strip("_") or "context"
-
-
-_PROMPT_OVERRIDE_MARKERS = (
-    "ignore previous instructions",
-    "ignore all previous",
-    "override system",
-    "developer instructions",
-    "system prompt",
-)
-_SECRET_REQUEST_MARKERS = (
-    "reveal hidden",
-    "show hidden",
-    "print secrets",
-    "api key",
-)
-_TOOL_INJECTION_MARKERS = (
-    "<tool_call",
-    "<function_call",
-    "\"tool_calls\"",
-    "call tool",
-)

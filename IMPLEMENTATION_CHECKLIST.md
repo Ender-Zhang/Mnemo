@@ -65,11 +65,11 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] W0 working memory to long-term candidate pipeline.
 - [~] DreamCycle idle memory consolidation exists as deterministic candidate promotion and L1 snapshot compilation; it is not yet model-led, scheduled by idle windows, or delta-only across all memory maintenance tasks.
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
-- [~] Memory eval cases and regression gates cover smoke/safety cases plus L4 session-search regressions; full wrong-memory, over-personalization, Memory Health, and injection-scan gates are not complete.
+- [~] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, and a deterministic injection-scan gate; full wrong-memory, over-personalization, and Memory Health gates are not complete.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
 - [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, and CLI debug output exist; vector semantic retrieval, true MMR, tombstone-aware session suppression, and stale decay passes remain.
 - [~] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, compact health scores/cards, tool calls, and CLI inspection exist; decay passes, stale review execution, private-delete redaction, and full selective forgetting remain.
-- [ ] Memory write taint tracking and prompt-injection scanner across user, web, file, tool result, imported skill, MCP, and external runtime sources.
+- [~] Memory write taint tracking and prompt-injection scanner foundation: `memory_write_candidate` and W0 candidate writes append safety evidence, detect prompt override/secret/tool-call injection, and route suspicious writes to review; deeper source-boundary enforcement across MCP/external runtimes remains.
 
 ## Skills And Evolution
 
@@ -169,6 +169,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-04-25-refresh-readme-current-capabilities`: README and public runtime wording now describe the current single-chat runtime, provider setup, web UI, daemon, cancellation, memory/skill/tool operations, backup, and validation workflows.
 - [x] `04-25-implement-memory-query-planner`: Memory search now produces compact query plans, multi-route fused retrieval, stale/tombstone annotations, tool query-plan metadata, and `mnemo memory search --debug-query`.
 - [x] `04-25-implement-memory-tombstone-health`: Memory now has durable tombstones for rejected candidates and explicit page/candidate curation, compact Memory Health reports/cards, provider-native `memory_health_report`/`memory_tombstone` tools, and CLI health/tombstone commands.
+- [x] `04-25-implement-memory-write-taint-scanner`: Candidate memory writes now preserve taint/safety evidence, route prompt-injection-like writes to `needs_review:prompt_injection`, reuse shared warning labels, and extend the memory-safety harness with an injection scanner case.
 - [x] `04-25-implement-provider-capability-registry`: Provider capability metadata now centralizes prompt cache strategy, ToolBundle adapter epochs, context-window source, fallback modes, CLI inspection, and provider cache-token normalization.
 - [x] `04-25-04-25-tighten-web-fetch-url-validation`: `web_fetch` now rejects malformed HTTP/HTTPS URLs before network I/O and has standard tool regression coverage.
 - [x] `04-25-04-25-cover-prompt-required-budget-overflow`: prompt budgeting now has regression coverage for impossible budgets that drop optional blocks while preserving required blocks and reporting `budget_exceeded=true`.
