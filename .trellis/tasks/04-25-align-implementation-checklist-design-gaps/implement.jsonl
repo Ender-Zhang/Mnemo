@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": "design/README.md", "reason": "Design package entry and less-is-more boundaries"}
+{"file": "design/01-memory-engine.md", "reason": "Memory design gaps and core differentiation"}
+{"file": "design/05-interfaces-data-security.md", "reason": "SDK MCP security and exposure design gaps"}
+{"file": "design/07-runtime-harness.md", "reason": "Runtime adapter supervisor and harness gap mapping"}
+{"file": "design/08-frontend-chat.md", "reason": "Single chat frontend gap mapping"}
+{"file": "design/09-roadmap-principles.md", "reason": "Roadmap phases and extension boundaries"}

@@ -8,6 +8,12 @@ This file tracks implementation status against the design package. Keep it updat
 - `[~]` partially implemented or scaffolded
 - `[ ]` not implemented yet
 
+## Current Alignment Snapshot
+
+- [x] Runnable core: CLI/Web/local/provider runtime, RunLedger, basic memory/skill/tool loops, streaming events, package smoke, and core eval suites work.
+- [~] Product completeness: several systems exist as foundations but do not yet satisfy the full design package contracts.
+- [ ] Extensions: Watch/Sense/Sub-Agent/RuntimeAdapter/MCP/SDK and richer external integrations remain future Trellis work unless explicitly prioritized.
+
 ## Foundation
 
 - [x] Trellis project workflow initialized.
@@ -33,8 +39,8 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider-native tool calls bridged into ToolHarness.
 - [x] True streaming provider delta support.
 - [x] Timeout/retry/cancellation policy: provider timeout, non-streaming retry, and cooperative persisted cancellation exist.
-- [x] Daemon, queue, single-instance lock, crash recovery.
-- [x] Replay harness.
+- [~] Daemon, queue, single-instance lock, and stale queue recovery exist; full Supervisor priority classes, Inbox recovery, Watch recovery, child runtime cleanup, and W0 pending recovery are not implemented.
+- [~] Replay harness exists as trace summary and smoke/eval support; full deterministic/live-tools/dry-run replay diff modes are not implemented.
 
 ## Tools
 
@@ -44,9 +50,9 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
 - [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
-- [x] Lightweight permission gate for read/write/external/admin.
+- [~] Lightweight permission gate for read/write/external/admin exists; side-effect flags, Decision Card escalation, standing authority, and sandbox profile enforcement are not complete.
 - [x] Tool result compression and evidence cards.
-- [x] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, and safe alias installation exist.
+- [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, and safe alias installation exist; shadow dry-run, rollback, extension packaging, and richer eval gates are not complete.
 
 ## Memory
 
@@ -55,11 +61,15 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Stable memory is not directly mutated by normal task tools.
 - [x] Memory engine pages/indexes beyond candidates.
 - [x] Associative recall / LLM Wiki style memory graph.
-- [x] Conflict detection and confidence updates.
+- [~] Conflict detection and confidence updates exist for simple duplicate/conflict cases; tombstone, decay, stale review, and selective forgetting are not implemented.
 - [x] W0 working memory to long-term candidate pipeline.
-- [x] DreamCycle idle memory consolidation.
-- [x] Daily compiled L1 cache-friendly memory snapshot.
-- [x] Memory eval cases and regression gates.
+- [~] DreamCycle idle memory consolidation exists as deterministic candidate promotion and L1 snapshot compilation; it is not yet model-led, scheduled by idle windows, or delta-only across all memory maintenance tasks.
+- [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
+- [~] Memory eval cases and regression gates cover smoke/safety cases; full wrong-memory, over-personalization, L4 session search, Memory Health, and injection-scan gates are not complete.
+- [ ] L4 cross-session FTS5/BM25 search over raw messages and bounded snippets.
+- [ ] Memory QueryPlanner with lexical/semantic/temporal/dimension planning, RRF/MMR fusion, and tombstone/stale annotations.
+- [ ] Memory tombstones, decay passes, selective forgetting, memory health reports, and low-friction memory cultivation cards.
+- [ ] Memory write taint tracking and prompt-injection scanner across user, web, file, tool result, imported skill, MCP, and external runtime sources.
 
 ## Skills And Evolution
 
@@ -68,9 +78,9 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
 - [x] Progressive skill index/summary/full load.
 - [x] Skill usage tracking and outcome scoring.
-- [x] Skill patch/proposal review lifecycle: proposal, exact patch candidate, eval, review, and promotion gates exist.
-- [x] SOP crystallization from successful runs.
-- [x] Skill eval harness.
+- [~] Skill patch/proposal review lifecycle: proposal, exact patch candidate, eval, review, and promotion gates exist; import/export/update/enable/disable/rollback/doctor/why operations and external shadow-copy lifecycle are not complete.
+- [~] SOP crystallization from successful runs exists; automatic after-turn learning packets and model-selected 0..N mixed candidate generation are not a standard runtime phase yet.
+- [~] Skill eval harness exists for built-in cases; full red-team, selection precision, rollback-rate, and cross-client compatibility suites are not complete.
 
 ## Prompt And Context
 
@@ -81,22 +91,30 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Skill and memory progressive disclosure.
 - [x] KV-cache-first prompt assembly ordering.
 - [x] Prompt inspection command.
-- [x] Context compression.
+- [~] Context compression exists at a basic budget/drop level; full pre-run safety compression, in-loop compaction, mission checkpoint compression, and provider cache-control integration are not complete.
+- [ ] Soul.md loading, sanitization, injection scanning, cache invalidation, and user-confirmed Soul evolution.
+- [ ] Workspace bootstrap blocks for `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `BOOTSTRAP.md`, `MEMORY.md`, `CLAUDE.md`, and cursor rules with caps and truncation markers.
+- [ ] Prompt modes beyond recorded `full`: `minimal`, `capsule`, and `none` with enforced disclosure boundaries.
+- [ ] Stable ToolBundle epochs and lazy schema expansion for large MCP/external tool surfaces.
 
 ## Frontend Experience
 
 - [x] Backend `ChatEvent` stream contract started.
 - [x] Action and learning events are representable in stream.
 - [x] User-facing single-chat web frontend.
-- [x] Universal composer.
+- [~] Universal composer exists for text; voice, files, screenshots, links, app mention, and selected artifact/span context are not complete.
 - [x] Busy-state stop/cancel control in the single composer.
 - [x] Stop control targets the current active run rather than replay state.
 - [x] New/reset is guarded while a run is streaming.
 - [x] Inline action cards.
 - [x] Inline artifact cards and artifact viewer.
-- [x] Inline decision cards.
+- [~] Inline decision cards can render; card actions, response API, persistence, standing authority, and high-risk approval flow are not implemented.
 - [x] Event replay/resume with `sinceEventId`.
 - [x] Streaming transport API.
+- [ ] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
+- [ ] Learning chips with user actions such as "以后这样", "这次而已", undo, and high-risk confirmation.
+- [ ] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, and data controls.
+- [ ] Artifact operations beyond open/view: continue edit, export, compare versions, apply/revert diff, and send draft.
 
 ## Provider And Model Integration
 
@@ -104,10 +122,11 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] OpenAI-compatible chat completions adapter.
 - [x] Anthropic adapter.
 - [x] Provider config from environment/CLI without persisting secrets.
-- [x] Model/tool loop with provider-native tool call schema.
+- [x] Model/tool loop with provider-native OpenAI/Anthropic tool call schema.
 - [x] Streaming response parser.
 - [x] Provider error normalization.
 - [x] Local endpoint smoke command using user-provided credentials.
+- [ ] Generic provider capability registry for prompt cache controls, tool bundle epochs, model context limits, and provider-specific fallback modes.
 
 ## Evaluation And Harness
 
@@ -119,6 +138,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider fake server tests.
 - [x] Standard tool edge regression tests for binary file reads and shell timeouts.
 - [x] CLI and package install tests in CI.
+- [~] Harness gates exist as built-in smoke suites; variant comparison (`no_memory`, `skills_only`, `full_mnemo`), quantitative thresholds, external-harness suite, proactive-watch suite, and release gate reports are not complete.
 
 ## Persistence And Operations
 
@@ -130,11 +150,19 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Config file and env override model.
 - [x] Daemon status command.
 - [x] Backup/export/import.
+- [ ] Core SDK / OpenAPI or IDL contract for language-neutral integrations.
+- [ ] MCP server exposing context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status tools.
+- [ ] Minimal Inbox/Decision persistence tables and CLI/API inspection.
+- [ ] Watch/Cron persistence and scheduled event processing.
+- [ ] Sessions/messages/L4 search tables and FTS5 indexes.
 
 ## Remaining Trellis Focus
 
-- [x] No known checklist gaps after the browser/app connector task.
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
+- [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
+- [ ] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, unified after-turn learning packet, interactive Decision/Inbox loop, and frontend recall/learning actions.
+- [ ] Highest-priority integration alignment: SDK/MCP server and external RuntimeAdapter with context capsule boundaries.
+- [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
 ## Recently Landed Trellis Tasks
 
