@@ -1599,3 +1599,37 @@ Fixed the web Stop control to cancel only the current active streaming run by se
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: Guard web reset during active run
+
+**Date**: 2026-04-25
+**Task**: Guard web reset during active run
+**Branch**: `main`
+
+### Summary
+
+Disabled and guarded the web New/reset action while a run is streaming so users use Stop for active interruption and single-chat continuity is preserved. Added web asset regression checks and updated frontend specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7d7e7df` | (see git log) |
+| `2fef62e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
