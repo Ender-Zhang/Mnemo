@@ -376,12 +376,20 @@ Added compact conversation and mission inspection commands so CLI users can reco
 
 | Hash | Message |
 |------|---------|
-| `292e6e8` | (see git log) |
-| `dd8e25a` | (see git log) |
+| `292e6e8` | feat: expose continuity inspection cli |
+| `dd8e25a` | chore(task): archive 04-25-expose-continuity-inspection-cli |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_storage.StateStoreTests.test_list_conversations_and_missions_for_continuity`
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_conversations_and_missions_commands_inspect_continuity_ids`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest tests.test_storage`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `task.py validate 04-25-expose-continuity-inspection-cli`
+- [OK] `git diff --check`
+- [OK] Temporary venv wheel build/install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
