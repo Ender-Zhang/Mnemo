@@ -1,0 +1,14 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/11-prompt-system.md", "reason": "Provider cache and capability design"}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Checklist target for provider capability registry"}
+{"file": "mnemo/providers/base.py", "reason": "Provider adapter boundary and metadata"}
+{"file": "mnemo/runtime/provider.py", "reason": "Provider runtime metadata flow"}
+{"file": "mnemo/runtime/local.py", "reason": "Local runtime metadata flow"}
+{"file": "mnemo/interfaces/cli.py", "reason": "Config CLI inspection"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Provider boundary errors and config CLI contracts"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Prompt metadata contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "ToolBundle metadata and adapter version contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation gates"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer capability metadata flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Registry abstraction and reuse"}

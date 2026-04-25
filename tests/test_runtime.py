@@ -103,6 +103,15 @@ class LocalRuntimeTests(unittest.TestCase):
                 [message["role"] for message in provider.requests[0].messages],
                 ["system", "developer", "developer", "developer", "user"],
             )
+            self.assertEqual(provider.requests[0].metadata["provider_capabilities"]["provider"], "fake")
+            self.assertEqual(provider.requests[0].metadata["cache_plan"]["tool_bundle"]["epoch"], 1)
+
+            store = StateStore(tmp)
+            prompt_event = next(
+                event for event in store.get_run_events(events[-1].run_id) if event["event_type"] == "prompt.assembled"
+            )
+            self.assertEqual(prompt_event["payload"]["provider_capabilities"]["provider"], "fake")
+            self.assertEqual(prompt_event["payload"]["cache_plan"]["tool_bundle"]["epoch"], 1)
 
     def test_runtime_rejects_none_prompt_mode_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -265,10 +274,12 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertNotIn("memory_write_candidate", first_tool_names)
             self.assertIn("memory_write_candidate", second_tool_names)
             self.assertEqual(provider.requests[1].metadata["tool_bundle"]["epoch"], 2)
+            self.assertEqual(provider.requests[1].metadata["cache_plan"]["tool_bundle"]["epoch"], 2)
             self.assertEqual(
                 expanded_event["payload"]["tool_bundle"]["cache_bust_reason"],
                 "lazy_schema_expansion",
             )
+            self.assertEqual(expanded_event["payload"]["cache_plan"]["tool_bundle"]["epoch"], 2)
 
     def test_provider_runtime_adds_soul_and_workspace_bootstrap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

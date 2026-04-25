@@ -126,7 +126,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Streaming response parser.
 - [x] Provider error normalization.
 - [x] Local endpoint smoke command using user-provided credentials.
-- [ ] Generic provider capability registry for prompt cache controls, tool bundle epochs, model context limits, and provider-specific fallback modes.
+- [x] Generic provider capability registry for prompt cache controls, tool bundle epochs, model context limits, and provider-specific fallback modes.
 
 ## Evaluation And Harness
 
@@ -167,6 +167,7 @@ This file tracks implementation status against the design package. Keep it updat
 ## Recently Landed Trellis Tasks
 
 - [x] `04-25-04-25-refresh-readme-current-capabilities`: README and public runtime wording now describe the current single-chat runtime, provider setup, web UI, daemon, cancellation, memory/skill/tool operations, backup, and validation workflows.
+- [x] `04-25-implement-provider-capability-registry`: Provider capability metadata now centralizes prompt cache strategy, ToolBundle adapter epochs, context-window source, fallback modes, CLI inspection, and provider cache-token normalization.
 - [x] `04-25-04-25-tighten-web-fetch-url-validation`: `web_fetch` now rejects malformed HTTP/HTTPS URLs before network I/O and has standard tool regression coverage.
 - [x] `04-25-04-25-cover-prompt-required-budget-overflow`: prompt budgeting now has regression coverage for impossible budgets that drop optional blocks while preserving required blocks and reporting `budget_exceeded=true`.
 - [x] `04-25-04-25-cover-tool-evolution-missing-candidate`: tool evolution missing-candidate paths now have service-level `NotFoundError` coverage and model-facing compact failed `ToolResult` coverage.

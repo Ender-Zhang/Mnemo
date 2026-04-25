@@ -8,6 +8,7 @@ from ..core.errors import MnemoError
 from ..core.ids import new_id
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolCallEnvelope, ToolExecutionPolicy, ToolResult
 from ..memory import MemoryEngine
+from ..providers import provider_capabilities
 from ..prompt import PromptAssembler, load_prompt_bootstrap
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
@@ -59,7 +60,9 @@ class LocalAgentRuntime:
         conversation_id = resolve_conversation(store, request, title=_short_title(request.message))
         mission_id = resolve_mission(store, conversation_id, request, brief=_short_title(request.message, limit=120))
         run_id = store.create_run(conversation_id, mission_id, request.message)
-        tool_bundle = build_tool_bundle(registry, prompt_mode=request.prompt_mode, provider_name="local")
+        capabilities = provider_capabilities("local")
+        tool_bundle = build_tool_bundle(registry, prompt_mode=request.prompt_mode, capabilities=capabilities)
+        cache_plan = capabilities.cache_plan(tool_bundle.metadata())
         harness = ToolHarness(
             store=store,
             ledger=ledger,
@@ -117,6 +120,8 @@ class LocalAgentRuntime:
             {
                 **assembled_prompt.metadata(),
                 "tool_bundle": tool_bundle.metadata(),
+                "provider_capabilities": capabilities.metadata(),
+                "cache_plan": cache_plan,
                 "tool_count": len(tool_bundle.tool_names),
                 "tools": [spec["name"] for spec in tool_specs_as_json_schema(list(tool_bundle.specs))],
             },

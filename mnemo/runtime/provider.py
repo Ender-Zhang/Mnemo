@@ -6,7 +6,7 @@ from typing import Any
 from ..core.errors import MnemoError
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolExecutionPolicy, ToolResult
 from ..memory import MemoryEngine
-from ..providers import ProviderAdapter, ProviderRunInput
+from ..providers import ProviderAdapter, ProviderRunInput, provider_capabilities_for_adapter
 from ..prompt import PromptAssembler, load_prompt_bootstrap
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
@@ -61,7 +61,9 @@ class ProviderAgentRuntime:
         conversation_id = resolve_conversation(store, request, title=_short_title(request.message))
         mission_id = resolve_mission(store, conversation_id, request, brief=_short_title(request.message, limit=120))
         run_id = store.create_run(conversation_id, mission_id, request.message)
-        active_tool_bundle = build_tool_bundle(registry, prompt_mode=request.prompt_mode, provider_name=self.provider.name)
+        capabilities = provider_capabilities_for_adapter(self.provider)
+        active_tool_bundle = build_tool_bundle(registry, prompt_mode=request.prompt_mode, capabilities=capabilities)
+        active_cache_plan = capabilities.cache_plan(active_tool_bundle.metadata())
         harness = ToolHarness(
             store=store,
             ledger=ledger,
@@ -116,6 +118,8 @@ class ProviderAgentRuntime:
             {
                 **assembled_prompt.metadata(),
                 "tool_bundle": active_tool_bundle.metadata(),
+                "provider_capabilities": capabilities.metadata(),
+                "cache_plan": active_cache_plan,
                 "tool_count": len(active_tool_bundle.tool_names),
                 "tools": [spec["name"] for spec in tool_specs_as_json_schema(list(active_tool_bundle.specs))],
                 "provider": self.provider.name,
@@ -140,6 +144,8 @@ class ProviderAgentRuntime:
                             "run_id": run_id,
                             "tool_round": tool_round,
                             "tool_bundle": active_tool_bundle.metadata(),
+                            "provider_capabilities": capabilities.metadata(),
+                            "cache_plan": active_cache_plan,
                         },
                     )
                 ):
@@ -201,12 +207,14 @@ class ProviderAgentRuntime:
                     expanded_bundle = expand_tool_bundle_from_result(registry, active_tool_bundle, result)
                     if expanded_bundle is not None:
                         active_tool_bundle = expanded_bundle
+                        active_cache_plan = capabilities.cache_plan(active_tool_bundle.metadata())
                         harness.policy = ToolExecutionPolicy(allowed_tools=active_tool_bundle.tool_names)
                         ledger.append(
                             run_id,
                             "tool_bundle.expanded",
                             {
                                 "tool_bundle": active_tool_bundle.metadata(),
+                                "cache_plan": active_cache_plan,
                                 "call_id": call.call_id,
                             },
                         )

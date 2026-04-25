@@ -9,7 +9,14 @@ from typing import Any
 
 from mnemo.core.errors import ProviderPayloadError, ProviderStatusError, ProviderTimeoutError
 from mnemo.core.models import ToolSpec
-from mnemo.providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig, ProviderRunInput
+from mnemo.providers import (
+    AnthropicProviderAdapter,
+    OpenAIProviderAdapter,
+    ProviderConfig,
+    ProviderRunInput,
+    provider_capabilities,
+    provider_capabilities_for_adapter,
+)
 
 
 class ProviderAdapterTests(unittest.TestCase):
@@ -19,7 +26,12 @@ class ProviderAdapterTests(unittest.TestCase):
                 "id": "chatcmpl_test",
                 "model": "test-model",
                 "choices": [{"message": {"content": "Hello from the provider"}, "finish_reason": "stop"}],
-                "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+                "usage": {
+                    "prompt_tokens": 3,
+                    "completion_tokens": 4,
+                    "total_tokens": 7,
+                    "prompt_tokens_details": {"cached_tokens": 2},
+                },
             }
         ) as server:
             adapter = OpenAIProviderAdapter(
@@ -32,6 +44,7 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual(events[0].text, "Hello from the provider")
         self.assertEqual(events[1].metadata["id"], "chatcmpl_test")
         self.assertEqual(events[1].metadata["finish_reason"], "stop")
+        self.assertEqual(events[1].metadata["cache_metrics"], {"cached_input_tokens": 2})
 
         request = server.requests[0]
         self.assertEqual(request["path"], "/chat/completions")
@@ -246,7 +259,12 @@ class ProviderAdapterTests(unittest.TestCase):
                 "role": "assistant",
                 "content": [{"type": "text", "text": "Hello from Claude"}],
                 "stop_reason": "end_turn",
-                "usage": {"input_tokens": 3, "output_tokens": 4},
+                "usage": {
+                    "input_tokens": 3,
+                    "output_tokens": 4,
+                    "cache_read_input_tokens": 2,
+                    "cache_creation_input_tokens": 1,
+                },
             }
         ) as server:
             adapter = AnthropicProviderAdapter(
@@ -270,6 +288,10 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual(events[0].text, "Hello from Claude")
         self.assertEqual(events[1].metadata["id"], "msg_test")
         self.assertEqual(events[1].metadata["stop_reason"], "end_turn")
+        self.assertEqual(
+            events[1].metadata["cache_metrics"],
+            {"cached_input_tokens": 2, "cache_creation_input_tokens": 1},
+        )
 
         request = server.requests[0]
         self.assertEqual(request["path"], "/messages")
@@ -451,6 +473,48 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual([event.type for event in events], ["text_delta", "completed"])
         self.assertEqual(events[0].text, "Recovered")
         self.assertEqual(len(server.requests), 2)
+
+    def test_provider_capability_registry_resolves_provider_families(self) -> None:
+        openai = provider_capabilities("openai-compatible", model="fake-model")
+        anthropic = provider_capabilities("anthropic", model="claude-fake")
+        unknown = provider_capabilities("custom-provider", model="custom-model")
+
+        self.assertEqual(openai.adapter_version, "openai.v1")
+        self.assertEqual(openai.prompt_cache_strategy, "automatic_prefix")
+        self.assertTrue(openai.supports_tool_bundle_epochs)
+        self.assertEqual(anthropic.prompt_cache_strategy, "cache_control")
+        self.assertIn("tools", anthropic.cache_control_surfaces)
+        self.assertEqual(anthropic.context_window_tokens, 200_000)
+        self.assertEqual(unknown.prompt_cache_strategy, "none")
+        self.assertEqual(unknown.context_window_source, "unknown_model")
+
+    def test_provider_capability_cache_plan_includes_tool_bundle_epoch(self) -> None:
+        capabilities = provider_capabilities("anthropic", model="claude-fake")
+
+        plan = capabilities.cache_plan(
+            {
+                "bundle_id": "tb_123",
+                "epoch": 2,
+                "profile": "minimal.v1",
+                "provider_adapter_version": "anthropic.v1",
+                "schema_serializer_version": "mnemo.tool_schema.v1",
+                "cache_bust_reason": "lazy_schema_expansion",
+            }
+        )
+
+        self.assertEqual(plan["strategy"], "cache_control")
+        self.assertEqual(plan["tool_bundle"]["bundle_id"], "tb_123")
+        self.assertEqual(plan["tool_bundle"]["epoch"], 2)
+        self.assertIn("tool_bundle", plan["boundaries"])
+
+    def test_provider_capabilities_for_adapter_uses_adapter_config_model(self) -> None:
+        adapter = OpenAIProviderAdapter(ProviderConfig(base_url="http://127.0.0.1:1", model="fake-model"))
+
+        capabilities = provider_capabilities_for_adapter(adapter)
+
+        self.assertEqual(capabilities.provider, "openai-compatible")
+        self.assertEqual(capabilities.adapter_version, "openai.v1")
+        self.assertEqual(capabilities.model, "fake-model")
 
 
 class FakeOpenAIServer:

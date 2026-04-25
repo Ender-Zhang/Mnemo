@@ -28,6 +28,7 @@
 - `ToolContext.workspace_root`: resolved root for local file and shell tools.
 - Provider-native tool schemas are sent through adapter requests, not embedded as raw prompt blocks or prompt metadata.
 - Provider-native tool schemas are grouped into deterministic `ToolBundle` objects with a stable `bundle_id`, `epoch`, `profile`, `provider_adapter_version`, `schema_serializer_version`, ordered `tool_names`, and compact `schema_token_estimate`.
+- Runtime ToolBundles use `ProviderCapabilities.adapter_version` for `provider_adapter_version`.
 - `ToolBundle.metadata()` must not contain raw `input_schema` payloads.
 - Default `full.v1` bundles preserve the existing complete tool surface.
 - `minimal.v1` and `capsule.v1` bundles expose only low-risk read/discovery tools by default; model-requested expansion can add more tool schemas in a later provider round.

@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, CI gates, and package smoke contracts | Active |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Active |
 | [Tool Harness Contracts](./tool-harness.md) | Provider-native tool specs, policy gates, and compact results | Active |
+| [Provider Capability Contracts](./provider-capabilities.md) | Provider cache, ToolBundle epoch, context-window, and fallback metadata | Active |
 | [Prompt Assembly Contracts](./prompt-assembly.md) | Cache-friendly prompt ordering, context budgeting, and metadata | Active |
 | [Memory Engine Contracts](./memory-engine.md) | Candidate consolidation, reinforcement, conflict signals, and provenance links | Active |
 | [Skill Evolution Contracts](./skill-evolution.md) | Skill usage/outcome signals, compact cards, and model-driven evolution | Active |

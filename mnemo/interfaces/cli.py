@@ -13,7 +13,14 @@ from ..core.jsonutil import dumps, loads
 from ..core.models import PROMPT_MODES, RunRequest
 from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
-from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderAdapter, ProviderConfig, ProviderRunInput
+from ..providers import (
+    AnthropicProviderAdapter,
+    OpenAIProviderAdapter,
+    ProviderAdapter,
+    ProviderConfig,
+    ProviderRunInput,
+    provider_capabilities,
+)
 from ..runtime import DaemonRunner, result_as_dict, run_local, run_provider, stream_local
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
@@ -452,6 +459,25 @@ def build_parser() -> argparse.ArgumentParser:
     config_inspect_parser.add_argument("--retry-backoff-s", type=float)
     config_inspect_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
     config_inspect_parser.add_argument("--json", action="store_true")
+    config_capabilities_parser = config_subparsers.add_parser(
+        "capabilities",
+        help="Print resolved provider capability metadata",
+    )
+    _add_state_dir(config_capabilities_parser)
+    config_capabilities_parser.add_argument(
+        "--provider",
+        choices=["local", "openai-compatible", "anthropic"],
+        default=None,
+    )
+    config_capabilities_parser.add_argument("--base-url")
+    config_capabilities_parser.add_argument("--model")
+    config_capabilities_parser.add_argument("--api-key")
+    config_capabilities_parser.add_argument("--api-key-env")
+    config_capabilities_parser.add_argument("--timeout-s", type=float)
+    config_capabilities_parser.add_argument("--retry-count", type=int)
+    config_capabilities_parser.add_argument("--retry-backoff-s", type=float)
+    config_capabilities_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+    config_capabilities_parser.add_argument("--json", action="store_true")
     config_smoke_parser = config_subparsers.add_parser("smoke", help="Smoke test the configured provider endpoint")
     _add_state_dir(config_smoke_parser)
     config_smoke_parser.add_argument("--provider", choices=["openai-compatible", "anthropic"], default=None)
@@ -1395,6 +1421,8 @@ def _parse_json_object_arg(value: str, flag: str) -> dict[str, Any]:
 def _cmd_config(args: argparse.Namespace) -> int:
     if args.config_command == "smoke":
         return _cmd_config_smoke(args)
+    if args.config_command == "capabilities":
+        return _cmd_config_capabilities(args)
     if args.config_command != "inspect":
         raise MnemoError("config command requires a subcommand")
     config = _runtime_config_from_args(args)
@@ -1418,6 +1446,27 @@ def _cmd_config(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_config_capabilities(args: argparse.Namespace) -> int:
+    config = _runtime_config_from_args(args)
+    capabilities = provider_capabilities(config.provider, model=config.model)
+    payload = {
+        "provider": config.provider,
+        "model": config.model,
+        "capabilities": capabilities.metadata(),
+        "cache_plan": capabilities.cache_plan(),
+        "config": config.redacted(),
+    }
+    if args.json:
+        print(dumps(payload))
+        return 0
+    print(f"provider={payload['provider']} model={payload['model']}")
+    print(f"adapter_version={payload['capabilities']['adapter_version']}")
+    print(f"prompt_cache_strategy={payload['capabilities']['prompt_cache_strategy']}")
+    print(f"tool_schema_cache_strategy={payload['capabilities']['tool_schema_cache_strategy']}")
+    print(f"context_window_tokens={payload['capabilities']['context_window_tokens']}")
+    return 0
+
+
 def _cmd_config_smoke(args: argparse.Namespace) -> int:
     config = _runtime_config_from_args(args)
     _validate_provider_config(config)
@@ -1432,11 +1481,14 @@ def _cmd_config_smoke(args: argparse.Namespace) -> int:
         models = {"ok": True, "skipped": True, "reason": "Anthropic-compatible model listing is not probed"}
 
     chat = _provider_chat_smoke(adapter, args.message)
+    capabilities = provider_capabilities(config.provider, model=config.model)
     result = {
         "ok": bool(models.get("ok")) and bool(chat.get("ok")),
         "provider": config.provider,
         "model": config.model,
         "base_url": config.base_url,
+        "capabilities": capabilities.metadata(),
+        "cache_plan": capabilities.cache_plan(),
         "models": models,
         "chat": chat,
         "stream": args.stream,

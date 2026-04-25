@@ -17,6 +17,7 @@ from ..core.errors import (
     ProviderTimeoutError,
 )
 from ..core.models import ToolCallEnvelope, ToolSpec
+from .capabilities import usage_cache_metrics
 
 
 ProviderEventType = Literal["text_delta", "tool_call", "completed"]
@@ -659,6 +660,9 @@ def _anthropic_completion_metadata(message: dict[str, Any], payload: dict[str, A
     usage = message.get("usage")
     if isinstance(usage, dict):
         metadata["usage"] = usage
+        cache_metrics = usage_cache_metrics("anthropic", usage)
+        if cache_metrics:
+            metadata["cache_metrics"] = cache_metrics
     if payload.get("type") == "message_delta":
         delta = payload.get("delta")
         if isinstance(delta, dict) and "stop_reason" in delta:
@@ -666,6 +670,9 @@ def _anthropic_completion_metadata(message: dict[str, Any], payload: dict[str, A
         usage = payload.get("usage")
         if isinstance(usage, dict):
             metadata["usage"] = usage
+            cache_metrics = usage_cache_metrics("anthropic", usage)
+            if cache_metrics:
+                metadata["cache_metrics"] = cache_metrics
     return metadata
 
 
@@ -679,6 +686,9 @@ def _completion_metadata(payload: dict[str, Any], choice: dict[str, Any], provid
     usage = payload.get("usage")
     if isinstance(usage, dict):
         metadata["usage"] = usage
+        cache_metrics = usage_cache_metrics(provider_name, usage)
+        if cache_metrics:
+            metadata["cache_metrics"] = cache_metrics
     return metadata
 
 

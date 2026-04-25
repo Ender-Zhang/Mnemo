@@ -35,6 +35,8 @@
 - `metadata().tool_schema` contains `count`, ordered `names`, `token_estimate`, and `budget_scope="provider_native"`; it must not contain raw schema payloads.
 - Runtime `prompt.assembled` events include compact `tool_bundle` metadata with `bundle_id`, `epoch`, `profile`, `tool_count`, ordered `tool_names`, `schema_token_estimate`, and cache bust reason.
 - `prompt.assembled.tool_bundle` must not contain raw `input_schema` payloads.
+- Runtime `prompt.assembled` events include compact `provider_capabilities` and `cache_plan` metadata.
+- `prompt.assembled.cache_plan.tool_bundle` must not contain raw `input_schema` payloads.
 - `metadata().prompt_token_estimate` equals prompt-message block tokens and excludes tool schema estimates.
 - `metadata().dropped_blocks` records block id, title, estimate, and reason.
 - Large mission checkpoint values must be compacted before token estimates are computed.

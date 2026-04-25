@@ -1164,6 +1164,29 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["api_key"], "***")
         self.assertNotIn("secret-value", config.stdout)
 
+    def test_config_capabilities_reports_provider_registry_without_leaking_key(self) -> None:
+        config = _run_cli(
+            [
+                "config",
+                "capabilities",
+                "--provider",
+                "openai-compatible",
+                "--model",
+                "fake-model",
+                "--api-key",
+                "secret-value",
+                "--json",
+            ]
+        )
+
+        self.assertEqual(config.returncode, 0, config.stderr)
+        payload = json.loads(config.stdout)
+        self.assertEqual(payload["capabilities"]["adapter_version"], "openai.v1")
+        self.assertEqual(payload["capabilities"]["prompt_cache_strategy"], "automatic_prefix")
+        self.assertEqual(payload["cache_plan"]["strategy"], "automatic_prefix")
+        self.assertEqual(payload["config"]["api_key"], "***")
+        self.assertNotIn("secret-value", config.stdout)
+
     def test_config_smoke_checks_openai_models_and_chat_without_leaking_key(self) -> None:
         with FakeChatServer(
             {
@@ -1195,6 +1218,8 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["models"]["count"], 2)
         self.assertEqual(payload["models"]["ids"][0], "fake-model")
         self.assertEqual(payload["chat"]["response_preview"], "Smoke reply")
+        self.assertEqual(payload["capabilities"]["adapter_version"], "openai.v1")
+        self.assertEqual(payload["cache_plan"]["strategy"], "automatic_prefix")
         self.assertEqual(payload["config"]["api_key"], "***")
         self.assertNotIn("secret-value", smoke.stdout)
         self.assertEqual([request["path"] for request in server.requests], ["/models", "/chat/completions"])

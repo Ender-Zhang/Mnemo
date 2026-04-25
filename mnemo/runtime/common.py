@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict, new_chat_event
 from ..core.models import ChatEvent, ChatEventType, PromptMode, RunResult, ToolCallEnvelope, ToolResult
+from ..providers import ProviderCapabilities, provider_capabilities
 from ..tools import ToolBundle, ToolRegistry
 from .ledger import RunLedger
 
@@ -26,11 +27,13 @@ def build_tool_bundle(
     registry: ToolRegistry,
     *,
     prompt_mode: PromptMode,
-    provider_name: str,
+    capabilities: ProviderCapabilities | None = None,
+    provider_name: str | None = None,
 ) -> ToolBundle:
+    resolved = capabilities or provider_capabilities(provider_name or "local")
     return registry.tool_bundle(
         profile=_tool_profile_for_prompt_mode(prompt_mode),
-        provider_adapter_version=f"{provider_name}.v1",
+        provider_adapter_version=resolved.adapter_version,
     )
 
 

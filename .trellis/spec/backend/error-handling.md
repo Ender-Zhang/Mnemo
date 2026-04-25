@@ -17,6 +17,7 @@
 - CLI: `mnemo config smoke --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --provider anthropic --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --stream --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
+- CLI: `mnemo config capabilities [--provider local|openai-compatible|anthropic] [--model MODEL] [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo artifacts read <artifact_id> [--json]`
 - CLI: `mnemo inbox show <item_id> [--json]`
 - CLI: `mnemo inbox resolve <item_id> --accept|--reject|--ignore [--json]`
@@ -54,6 +55,7 @@
 - `mnemo config smoke --stream` probes chat through the provider streaming path while keeping model listing non-streaming.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
 - CLI output must use redacted config and must never print the API key value.
+- `mnemo config capabilities` is read-only and does not validate provider reachability.
 - Expected provider errors bubble through the top-level `MnemoError` handler and produce a non-zero exit.
 
 ### 4. Validation & Error Matrix
@@ -70,6 +72,7 @@
 | Non-retryable provider status | Adapter fails without extra attempts | `tests/test_providers.py` |
 | Streaming provider status | Streaming adapter fails without retry | `tests/test_providers.py` |
 | Retry config resolution | Runtime config resolves retry fields and redacts secrets | `tests/test_config.py` |
+| Capability inspection | CLI reports provider capability metadata without leaking API keys | `tests/test_cli.py` |
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
 | Web Inbox resolve endpoint | Valid resolve returns item payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
