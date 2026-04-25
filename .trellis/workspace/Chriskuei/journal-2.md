@@ -1229,3 +1229,37 @@ Added no_memory/skills_only/full_mnemo harness variant comparison with compact m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 93: External runtime context capsule
+
+**Date**: 2026-04-25
+**Task**: External runtime context capsule
+**Branch**: `main`
+
+### Summary
+
+Added a minimal-disclosure external runtime ContextCapsuleBuilder with SDK, CLI, MCP, API schema, README/checklist/spec/design updates, plus an external-harness eval that verifies blocked personal context, raw transcripts, skill bodies, full page bodies, and raw tool schemas are not exposed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `90587f9` | (see git log) |
+| `115d284` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
