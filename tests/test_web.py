@@ -189,6 +189,9 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("/api/runs/cancel", script)
                 self.assertIn("requestCancel", script)
                 self.assertIn("cancelRequested", script)
+                self.assertIn("activeRunId", script)
+                self.assertIn("run_id: state.activeRunId", script)
+                self.assertIn("stop.disabled = !state.activeRunId || state.cancelRequested", script)
                 self.assertIn("updateComposerState", script)
 
 

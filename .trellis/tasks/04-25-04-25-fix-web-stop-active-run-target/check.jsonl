@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "tests/test_web.py", "reason": "Add static asset regression checks for activeRunId cancellation target."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Run focused web tests and full source tests."}

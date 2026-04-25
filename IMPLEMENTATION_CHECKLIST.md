@@ -90,6 +90,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] User-facing single-chat web frontend.
 - [x] Universal composer.
 - [x] Busy-state stop/cancel control in the single composer.
+- [x] Stop control targets the current active run rather than replay state.
 - [x] Inline action cards.
 - [x] Inline artifact cards and artifact viewer.
 - [x] Inline decision cards.
@@ -140,6 +141,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-04-25-implement-browser-app-connectors`: lightweight `browser_open` and `app_open` connector tools are provider-native, policy-gated, dry-run testable, and compact in results.
 - [x] `04-25-04-25-implement-web-run-cancellation`: web chat uses a threaded server, `/api/runs/cancel`, and composer stop control for cooperative run cancellation.
 - [x] `04-25-04-25-add-standard-tool-edge-coverage`: standard tool harness now has explicit binary file read and shell timeout regression coverage.
+- [x] `04-25-04-25-fix-web-stop-active-run-target`: web Stop now uses volatile `activeRunId` so a fresh turn cannot cancel the previous replay run.
 - [x] `04-25-04-25-implement-skill-patch-candidates`: model-directed `skill_patch_candidate` creates draft skill revisions with exact replacement checks, compact evidence, and unchanged source skills.
 - [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
 - [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.

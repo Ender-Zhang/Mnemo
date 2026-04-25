@@ -2,6 +2,7 @@ const state = {
   conversationId: localStorage.getItem("mnemo.conversation_id") || "",
   missionId: localStorage.getItem("mnemo.mission_id") || "",
   lastRunId: localStorage.getItem("mnemo.last_run_id") || "",
+  activeRunId: "",
   lastEventId: localStorage.getItem("mnemo.last_event_id") || "",
   renderedEventIds: new Set(),
   busy: false,
@@ -37,6 +38,7 @@ reset.addEventListener("click", () => {
   state.conversationId = "";
   state.missionId = "";
   state.lastRunId = "";
+  state.activeRunId = "";
   state.lastEventId = "";
   state.cancelRequested = false;
   state.renderedEventIds.clear();
@@ -57,6 +59,7 @@ window.addEventListener("online", () => {
 async function runTurn(message) {
   state.busy = true;
   state.cancelRequested = false;
+  state.activeRunId = "";
   state.assistantNode = null;
   updateComposerState();
   addMessage("user", message);
@@ -84,6 +87,7 @@ async function runTurn(message) {
   } finally {
     state.busy = false;
     state.cancelRequested = false;
+    state.activeRunId = "";
     updateComposerState();
     state.assistantNode = null;
     await resumeLastRun({ incremental: true });
@@ -93,7 +97,7 @@ async function runTurn(message) {
 }
 
 async function requestCancel() {
-  if (!state.busy || state.cancelRequested || !state.lastRunId) return;
+  if (!state.busy || state.cancelRequested || !state.activeRunId) return;
   state.cancelRequested = true;
   updateComposerState();
   setStatus("Cancelling");
@@ -101,7 +105,7 @@ async function requestCancel() {
     const response = await fetch("/api/runs/cancel", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ run_id: state.lastRunId, reason: "user requested" }),
+      body: JSON.stringify({ run_id: state.activeRunId, reason: "user requested" }),
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -197,6 +201,7 @@ function handleEvent(event) {
     case "run.completed":
       persistRun(event);
       state.cancelRequested = false;
+      state.activeRunId = "";
       updateComposerState();
       setStatus("Ready");
       break;
@@ -219,6 +224,9 @@ function persistEventEnvelope(event) {
     localStorage.setItem("mnemo.mission_id", state.missionId);
   }
   if (event.run_id) {
+    if (state.busy) {
+      state.activeRunId = event.run_id;
+    }
     state.lastRunId = event.run_id;
     localStorage.setItem("mnemo.last_run_id", state.lastRunId);
   }
@@ -375,7 +383,7 @@ function persistRun(event) {
 function updateComposerState() {
   send.disabled = state.busy;
   stop.hidden = !state.busy;
-  stop.disabled = !state.lastRunId || state.cancelRequested;
+  stop.disabled = !state.activeRunId || state.cancelRequested;
   stop.textContent = state.cancelRequested ? "Stopping" : "Stop";
 }
 
