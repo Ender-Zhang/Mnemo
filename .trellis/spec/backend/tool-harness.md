@@ -28,6 +28,8 @@
 - `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
 - `memory_search` may return `linked_page` matches from one-hop memory associations.
 - `memory_read` reads either a memory candidate or a stable memory page by id.
+- `file_patch(path, replacements, replace_all=False)` applies exact UTF-8 text replacements under `ToolContext.workspace_root` and is `admin` risk.
+- `file_patch` rejects missing text, ambiguous text when `replace_all` is false, binary files, and paths outside the workspace.
 - OpenAI-compatible adapters convert `tool_calls[].function` into `ToolCallEnvelope`.
 - Anthropic adapters convert `tool_use` content blocks into `ToolCallEnvelope` and return tool results as `tool_result` content blocks.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
@@ -46,6 +48,8 @@
 | Unknown tool name | Raise `ToolError` before handler execution | Registry unit test |
 | Disallowed risk | Return `ToolResult(ok=False)`, persist `tool.denied`, do not call handler | `tests/test_tools.py` |
 | Path outside workspace | Return failed tool result with boundary error | `tests/test_standard_tools.py` |
+| File patch exact edit | Admin policy applies exact replacement and returns compact patch evidence | `tests/test_standard_tools.py` |
+| File patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_standard_tools.py` |
 | Binary file read | Return failed tool result, no decoded payload | Standard tool test when added |
 | Shell command timeout | Return failed tool result with timeout error | Standard tool test when added |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
@@ -67,6 +71,7 @@
 - Base: read-only tools should be usable by the default policy.
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.
+- Good: use `file_patch` for bounded edits instead of full-file overwrite when the old text is known.
 - Bad: adding a handler that performs side effects while declaring `risk="read"`.
 - Bad: returning large raw payloads to the model instead of compact summaries and evidence cards.
 
@@ -81,6 +86,7 @@
 - Generated tool execution: assert alias argument mapping reaches the target handler.
 - Artifact update: assert card payload has id/title/kind and omits body content.
 - Local path tools: assert workspace scoping and traversal rejection.
+- File patch: assert admin gating, exact edit success, path traversal rejection, and ambiguous replacement handling.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
 

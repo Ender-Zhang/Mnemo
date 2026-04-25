@@ -67,6 +67,31 @@ STANDARD_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="file_patch",
+        description="Apply exact text replacements to a UTF-8 file under the workspace root. Requires admin policy.",
+        risk="admin",
+        input_schema=_schema(
+            ["path", "replacements"],
+            {
+                "path": {"type": "string"},
+                "replacements": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["old", "new"],
+                        "properties": {
+                            "old": {"type": "string"},
+                            "new": {"type": "string"},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "replace_all": {"type": "boolean", "default": False},
+            },
+        ),
+    ),
+    ToolSpec(
         name="web_fetch",
         description="Fetch an HTTP or HTTPS URL. Requires external policy.",
         risk="external",
@@ -101,6 +126,7 @@ def standard_tool_handlers() -> dict[str, ToolHandler]:
         "file_search": file_search,
         "file_read": file_read,
         "file_write": file_write,
+        "file_patch": file_patch,
         "web_fetch": web_fetch,
         "shell_exec": shell_exec,
     }
@@ -174,6 +200,44 @@ def file_write(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
     }
 
 
+def file_patch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
+    path = _resolve_workspace_path(context.workspace_root, _require_str(args, "path"))
+    if not path.is_file():
+        raise NotFoundError(f"file not found: {_relative_path(path, context.workspace_root)}")
+    replacements = _require_replacements(args, "replacements")
+    replace_all = _optional_bool(args.get("replace_all"), default=False)
+    content = _read_text_prefix(path, 2_000_000)
+    updated = content
+    applied: list[dict[str, Any]] = []
+
+    for index, replacement in enumerate(replacements):
+        old = replacement["old"]
+        new = replacement["new"]
+        count = updated.count(old)
+        if count == 0:
+            raise ToolError(f"replacement {index} text not found")
+        if count > 1 and not replace_all:
+            raise ToolError(f"replacement {index} is ambiguous; pass replace_all=true")
+        applied_count = count if replace_all else 1
+        updated = updated.replace(old, new, applied_count)
+        applied.append(
+            {
+                "index": index,
+                "count": applied_count,
+                "old_bytes": len(old.encode("utf-8")),
+                "new_bytes": len(new.encode("utf-8")),
+            }
+        )
+
+    path.write_text(updated, encoding="utf-8")
+    return {
+        "path": _relative_path(path, context.workspace_root),
+        "replacements": applied,
+        "replace_all": replace_all,
+        "bytes_written": len(updated.encode("utf-8")),
+    }
+
+
 def web_fetch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
     url = _require_str(args, "url")
     parsed = urlparse(url)
@@ -243,6 +307,9 @@ def standard_tool_summary(result: ToolResult) -> str | None:
         return f"Read file: {result.result.get('path', 'unknown')}."
     if result.name == "file_write":
         return f"Wrote file: {result.result.get('path', 'unknown')}."
+    if result.name == "file_patch":
+        count = sum(item.get("count", 0) for item in result.result.get("replacements", []))
+        return f"Patched file: {result.result.get('path', 'unknown')} ({count} replacements)."
     if result.name == "web_fetch":
         return f"Fetched URL with status {result.result.get('status', 'unknown')}."
     if result.name == "shell_exec":
@@ -271,6 +338,15 @@ def standard_tool_evidence(result: ToolResult) -> list[dict[str, Any]] | None:
         ]
     if result.name == "file_write":
         return [_evidence("file", result.result.get("path"), str(result.result.get("path") or "File"))]
+    if result.name == "file_patch":
+        return [
+            {
+                "kind": "file_patch",
+                "id": str(result.result.get("path") or ""),
+                "title": str(result.result.get("path") or "File patch"),
+                "replacement_count": sum(item.get("count", 0) for item in result.result.get("replacements", [])),
+            }
+        ]
     if result.name == "web_fetch":
         return [
             {
@@ -326,6 +402,32 @@ def _require_str_list(args: dict[str, Any], key: str) -> list[str]:
             raise ToolError(f"expected non-empty string array argument: {key}")
         strings.append(item)
     return strings
+
+
+def _require_replacements(args: dict[str, Any], key: str) -> list[dict[str, str]]:
+    value = args.get(key)
+    if not isinstance(value, list) or not value:
+        raise ToolError(f"missing replacement array argument: {key}")
+    replacements: list[dict[str, str]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ToolError(f"replacement {index} must be an object")
+        old = item.get("old")
+        new = item.get("new")
+        if not isinstance(old, str) or not old:
+            raise ToolError(f"replacement {index} old text must be a non-empty string")
+        if not isinstance(new, str):
+            raise ToolError(f"replacement {index} new text must be a string")
+        replacements.append({"old": old, "new": new})
+    return replacements
+
+
+def _optional_bool(value: Any, *, default: bool) -> bool:
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ToolError("expected boolean argument")
+    return value
 
 
 def _bounded_int(value: Any, *, minimum: int, maximum: int) -> int:

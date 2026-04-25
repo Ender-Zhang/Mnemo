@@ -78,6 +78,7 @@ class StandardToolTests(unittest.TestCase):
 
             for tool_name, arguments in [
                 ("file_write", {"path": "out.txt", "content": "hello"}),
+                ("file_patch", {"path": "out.txt", "replacements": [{"old": "hello", "new": "hi"}]}),
                 ("web_fetch", {"url": "https://example.com"}),
                 ("shell_exec", {"command": ["echo", "hello"]}),
             ]:
@@ -131,6 +132,114 @@ class StandardToolTests(unittest.TestCase):
             self.assertTrue(shell.ok)
             self.assertEqual(shell.result["exit_code"], 0)
             self.assertEqual(shell.result["stdout"], "done\n")
+
+    def test_admin_policy_can_enable_file_patch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = workspace / "notes.txt"
+            target.write_text("alpha\nneedle\nomega\n", encoding="utf-8")
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "write", "admin")),
+            )
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="file_patch",
+                    arguments={
+                        "path": "notes.txt",
+                        "replacements": [{"old": "needle", "new": "patched"}],
+                    },
+                    call_id="call_patch",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(target.read_text(encoding="utf-8"), "alpha\npatched\nomega\n")
+            self.assertEqual(result.result["replacements"][0]["count"], 1)
+            compact_evidence = result.evidence[0]
+            self.assertEqual(compact_evidence["kind"], "file_patch")
+            self.assertEqual(compact_evidence["replacement_count"], 1)
+
+    def test_file_patch_blocks_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            outside = root / "outside.txt"
+            outside.write_text("secret", encoding="utf-8")
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "write", "admin")),
+            )
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="file_patch",
+                    arguments={"path": "../outside.txt", "replacements": [{"old": "secret", "new": "patched"}]},
+                    call_id="call_patch_traversal",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("outside the workspace root", result.error or "")
+            self.assertEqual(outside.read_text(encoding="utf-8"), "secret")
+
+    def test_file_patch_rejects_ambiguous_replacement_without_replace_all(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            target = workspace / "notes.txt"
+            target.write_text("needle\nneedle\n", encoding="utf-8")
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "write", "admin")),
+            )
+
+            rejected = harness.execute(
+                ToolCallEnvelope(
+                    name="file_patch",
+                    arguments={"path": "notes.txt", "replacements": [{"old": "needle", "new": "patched"}]},
+                    call_id="call_patch_ambiguous",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            accepted = harness.execute(
+                ToolCallEnvelope(
+                    name="file_patch",
+                    arguments={
+                        "path": "notes.txt",
+                        "replacements": [{"old": "needle", "new": "patched"}],
+                        "replace_all": True,
+                    },
+                    call_id="call_patch_all",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertFalse(rejected.ok)
+            self.assertIn("ambiguous", rejected.error or "")
+            self.assertTrue(accepted.ok)
+            self.assertEqual(accepted.result["replacements"][0]["count"], 2)
+            self.assertEqual(target.read_text(encoding="utf-8"), "patched\npatched\n")
 
 
 def _store_with_run(path: Path) -> tuple[StateStore, str, str]:
