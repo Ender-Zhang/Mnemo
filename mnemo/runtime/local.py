@@ -227,6 +227,16 @@ class LocalAgentRuntime:
                 )
             )
 
+        for question in _extract_prefixed_values(message, ["ask", "decision", "确认"]):
+            calls.append(
+                ToolCallEnvelope(
+                    call_id=new_id("call"),
+                    name="ask_user",
+                    arguments={"question": question, "reason": "Local deterministic decision request."},
+                    risk="write",
+                )
+            )
+
         return calls
 
     def _render_response(self, message: str, tool_results: list[ToolResult]) -> str:
@@ -247,6 +257,9 @@ class LocalAgentRuntime:
                 parts.append(f"找到 {count} 条记忆候选。")
             elif result.name == "artifact_update":
                 parts.append(f"已更新产物 {result.result['artifact_id']}。")
+            elif result.name == "ask_user":
+                decision = result.result.get("decision") or {}
+                parts.append(f"已创建确认项 {decision.get('item_id')}。")
             else:
                 parts.append(f"{result.name} completed.")
         return " ".join(parts)

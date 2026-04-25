@@ -45,6 +45,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_events(args)
         if args.command == "artifacts":
             return _cmd_artifacts(args)
+        if args.command == "inbox":
+            return _cmd_inbox(args)
         if args.command == "memory":
             return _cmd_memory(args)
         if args.command == "dream":
@@ -171,6 +173,35 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(artifacts_read_parser)
     artifacts_read_parser.add_argument("artifact_id")
     artifacts_read_parser.add_argument("--json", action="store_true")
+
+    inbox_parser = subparsers.add_parser("inbox", help="List and resolve Inbox decision items")
+    _add_state_dir(inbox_parser)
+    inbox_parser.add_argument("--status", choices=["open", "resolved", "all"], default="open")
+    inbox_parser.add_argument("--category")
+    inbox_parser.add_argument("--priority", choices=["critical", "high", "normal", "low"])
+    inbox_parser.add_argument("--limit", type=int, default=50)
+    inbox_parser.add_argument("--json", action="store_true")
+    inbox_subparsers = inbox_parser.add_subparsers(dest="inbox_command")
+    inbox_list_parser = inbox_subparsers.add_parser("list", help="List Inbox items")
+    _add_state_dir(inbox_list_parser)
+    inbox_list_parser.add_argument("--status", choices=["open", "resolved", "all"], default="open")
+    inbox_list_parser.add_argument("--category")
+    inbox_list_parser.add_argument("--priority", choices=["critical", "high", "normal", "low"])
+    inbox_list_parser.add_argument("--limit", type=int, default=50)
+    inbox_list_parser.add_argument("--json", action="store_true")
+    inbox_show_parser = inbox_subparsers.add_parser("show", help="Show one Inbox item")
+    _add_state_dir(inbox_show_parser)
+    inbox_show_parser.add_argument("item_id")
+    inbox_show_parser.add_argument("--json", action="store_true")
+    inbox_resolve_parser = inbox_subparsers.add_parser("resolve", help="Resolve an Inbox item")
+    _add_state_dir(inbox_resolve_parser)
+    inbox_resolve_parser.add_argument("item_id")
+    inbox_resolution = inbox_resolve_parser.add_mutually_exclusive_group(required=True)
+    inbox_resolution.add_argument("--accept", action="store_true")
+    inbox_resolution.add_argument("--reject", action="store_true")
+    inbox_resolution.add_argument("--ignore", action="store_true")
+    inbox_resolve_parser.add_argument("--notes")
+    inbox_resolve_parser.add_argument("--json", action="store_true")
 
     replay_parser = subparsers.add_parser("replay", help="Summarize a run trace")
     _add_state_dir(replay_parser)
@@ -709,6 +740,107 @@ def _print_artifacts_result(result: dict[str, Any]) -> None:
         print(artifact.get("body", ""))
         return
     print(dumps(result))
+
+
+def _cmd_inbox(args: argparse.Namespace) -> int:
+    command = args.inbox_command or "list"
+    store = StateStore(args.state_dir)
+    store.initialize()
+
+    try:
+        if command == "list":
+            result = {
+                "items": store.list_inbox_items(
+                    status=_inbox_status_filter(args.status),
+                    category=args.category,
+                    priority_lte=_priority_lte(args.priority),
+                    limit=max(0, args.limit),
+                )
+            }
+        elif command == "show":
+            item = store.get_inbox_item(args.item_id)
+            if not item:
+                raise MnemoError(f"inbox item not found: {args.item_id}")
+            result = {"item": item}
+        elif command == "resolve":
+            result = {
+                "item": store.resolve_inbox_item(
+                    args.item_id,
+                    _inbox_resolution_from_args(args),
+                    notes=args.notes,
+                )
+            }
+        else:
+            raise MnemoError("inbox command requires list, show, or resolve")
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_inbox_result(result)
+    return 0
+
+
+def _print_inbox_result(result: dict[str, Any]) -> None:
+    if "items" in result:
+        for item in result["items"]:
+            print(_format_inbox_item(item))
+        return
+    if "item" in result:
+        item = result["item"]
+        print(_format_inbox_item(item))
+        if item.get("body"):
+            print(item["body"])
+        if item.get("action_data"):
+            print(f"action_data={dumps(item['action_data'])}")
+        return
+    print(dumps(result))
+
+
+def _format_inbox_item(item: dict[str, Any]) -> str:
+    changed = item.get("changed")
+    changed_suffix = f" changed={changed}" if changed is not None else ""
+    resolution = f" resolution={item['resolution']}" if item.get("resolution") else ""
+    return (
+        f"inbox {item['id']} [{item['status']}] priority={_priority_name(int(item['priority']))} "
+        f"category={item['category']} action={item['action_type']}{resolution}{changed_suffix}: "
+        f"{_short_text(item.get('title', ''))}"
+    )
+
+
+def _inbox_status_filter(status: str | None) -> str | None:
+    return None if status == "all" else status
+
+
+def _priority_lte(priority: str | None) -> int | None:
+    if priority is None:
+        return None
+    return {
+        "critical": 0,
+        "high": 1,
+        "normal": 2,
+        "low": 3,
+    }[priority]
+
+
+def _priority_name(priority: int) -> str:
+    return {
+        0: "critical",
+        1: "high",
+        2: "normal",
+        3: "low",
+    }.get(priority, str(priority))
+
+
+def _inbox_resolution_from_args(args: argparse.Namespace) -> str:
+    if args.accept:
+        return "accepted"
+    if args.reject:
+        return "rejected"
+    if args.ignore:
+        return "ignored"
+    raise MnemoError("inbox resolve requires --accept, --reject, or --ignore")
 
 
 def _cmd_replay(args: argparse.Namespace) -> int:

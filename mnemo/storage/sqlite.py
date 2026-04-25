@@ -14,13 +14,15 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
 MANAGED_STATE_FILES = ("state.db",)
 QUEUE_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
 SESSION_MESSAGE_ROLES = ("user", "assistant", "tool", "system")
+INBOX_STATUSES = ("open", "resolved")
+INBOX_RESOLUTIONS = ("accepted", "rejected", "ignored")
 
 
 @dataclass(frozen=True)
@@ -244,6 +246,24 @@ class StateStore:
                     updated_at REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS inbox_items (
+                    id TEXT PRIMARY KEY,
+                    priority INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT,
+                    action_type TEXT NOT NULL,
+                    action_data_json TEXT NOT NULL,
+                    source_run_id TEXT REFERENCES runs(id),
+                    status TEXT NOT NULL,
+                    resolution TEXT,
+                    resolution_notes TEXT,
+                    expires_at REAL,
+                    resolved_at REAL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id, seq);
                 CREATE INDEX IF NOT EXISTS idx_session_messages_conversation
                     ON session_messages(conversation_id, created_at);
@@ -260,6 +280,10 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_skill_usage_skill_name ON skill_usage_events(skill_name, created_at);
                 CREATE INDEX IF NOT EXISTS idx_skill_usage_run ON skill_usage_events(run_id);
                 CREATE INDEX IF NOT EXISTS idx_generated_tools_status_name ON generated_tools(status, name);
+                CREATE INDEX IF NOT EXISTS idx_inbox_items_status_priority
+                    ON inbox_items(status, priority, created_at);
+                CREATE INDEX IF NOT EXISTS idx_inbox_items_category_created
+                    ON inbox_items(category, created_at DESC);
                 """
             )
             _apply_schema_migrations(conn)
@@ -1703,6 +1727,154 @@ class StateStore:
             rows = conn.execute(sql, params).fetchall()
         return [dict(row) for row in rows]
 
+    def add_inbox_item(
+        self,
+        *,
+        category: str,
+        title: str,
+        priority: int = 2,
+        body: str | None = None,
+        action_type: str = "none",
+        action_data: dict[str, Any] | None = None,
+        source_run_id: str | None = None,
+        expires_at: float | None = None,
+    ) -> str:
+        clean_category = " ".join(str(category or "").strip().split())
+        clean_title = " ".join(str(title or "").strip().split())
+        clean_action_type = " ".join(str(action_type or "none").strip().split()) or "none"
+        if not clean_category:
+            raise ValueError("inbox category is required")
+        if not clean_title:
+            raise ValueError("inbox title is required")
+        priority_value = int(priority)
+        if priority_value < 0 or priority_value > 3:
+            raise ValueError("inbox priority must be between 0 and 3")
+        item_id = new_id("inbox")
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO inbox_items(
+                    id, priority, category, title, body, action_type, action_data_json, source_run_id,
+                    status, resolution, resolution_notes, expires_at, resolved_at, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item_id,
+                    priority_value,
+                    clean_category,
+                    clean_title,
+                    body,
+                    clean_action_type,
+                    dumps(action_data or {}),
+                    source_run_id,
+                    "open",
+                    None,
+                    None,
+                    expires_at,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+        return item_id
+
+    def get_inbox_item(self, item_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, priority, category, title, body, action_type, action_data_json, source_run_id,
+                       status, resolution, resolution_notes, expires_at, resolved_at, created_at, updated_at
+                FROM inbox_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+        return _inbox_item_from_row(row) if row else None
+
+    def list_inbox_items(
+        self,
+        *,
+        status: str | None = "open",
+        category: str | None = None,
+        priority_lte: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, priority, category, title, body, action_type, action_data_json, source_run_id,
+                   status, resolution, resolution_notes, expires_at, resolved_at, created_at, updated_at
+            FROM inbox_items
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            if status not in INBOX_STATUSES:
+                raise ValueError(f"invalid inbox status: {status}")
+            clauses.append("status = ?")
+            params.append(status)
+        if category:
+            clauses.append("category = ?")
+            params.append(category)
+        if priority_lte is not None:
+            clauses.append("priority <= ?")
+            params.append(int(priority_lte))
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY priority ASC, created_at ASC, id ASC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_inbox_item_from_row(row) for row in rows]
+
+    def resolve_inbox_item(
+        self,
+        item_id: str,
+        resolution: str,
+        *,
+        notes: str | None = None,
+    ) -> dict[str, Any]:
+        clean_resolution = str(resolution or "").strip()
+        if clean_resolution not in INBOX_RESOLUTIONS:
+            raise ValueError(f"invalid inbox resolution: {resolution}")
+        now = time.time()
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, priority, category, title, body, action_type, action_data_json, source_run_id,
+                       status, resolution, resolution_notes, expires_at, resolved_at, created_at, updated_at
+                FROM inbox_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+            if not row:
+                raise ValueError(f"inbox item not found: {item_id}")
+            if row["status"] != "open":
+                result = _inbox_item_from_row(row)
+                result["changed"] = False
+                return result
+            conn.execute(
+                """
+                UPDATE inbox_items
+                SET status = 'resolved', resolution = ?, resolution_notes = ?, resolved_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'open'
+                """,
+                (clean_resolution, notes, now, now, item_id),
+            )
+            updated = conn.execute(
+                """
+                SELECT id, priority, category, title, body, action_type, action_data_json, source_run_id,
+                       status, resolution, resolution_notes, expires_at, resolved_at, created_at, updated_at
+                FROM inbox_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+        result = _inbox_item_from_row(updated)
+        result["changed"] = True
+        return result
+
     def get_run_events(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(
@@ -1780,6 +1952,12 @@ def _eval_case_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result["case"] = loads(result.pop("case_json"), {})
     raw_result = result.pop("result_json", None)
     result["result"] = loads(raw_result, {}) if raw_result else {}
+    return result
+
+
+def _inbox_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["action_data"] = loads(result.pop("action_data_json"), {})
     return result
 
 
@@ -2083,6 +2261,35 @@ def _migration_session_messages_fts(conn: sqlite3.Connection) -> None:
         raise
 
 
+def _migration_inbox_items(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS inbox_items (
+            id TEXT PRIMARY KEY,
+            priority INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            title TEXT NOT NULL,
+            body TEXT,
+            action_type TEXT NOT NULL,
+            action_data_json TEXT NOT NULL,
+            source_run_id TEXT REFERENCES runs(id),
+            status TEXT NOT NULL,
+            resolution TEXT,
+            resolution_notes TEXT,
+            expires_at REAL,
+            resolved_at REAL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_items_status_priority
+            ON inbox_items(status, priority, created_at);
+        CREATE INDEX IF NOT EXISTS idx_inbox_items_category_created
+            ON inbox_items(category, created_at DESC);
+        """
+    )
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
@@ -2090,6 +2297,7 @@ MIGRATIONS = (
     SchemaMigration(4, "run_queue", _migration_run_queue),
     SchemaMigration(5, "generated_tools", _migration_generated_tools),
     SchemaMigration(6, "session_messages_fts", _migration_session_messages_fts),
+    SchemaMigration(7, "inbox_items", _migration_inbox_items),
 )
 
 

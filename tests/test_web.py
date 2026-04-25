@@ -166,6 +166,50 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(status, 404)
                 self.assertEqual(json.loads(unknown_body)["error"], "artifact not found")
 
+    def test_web_decision_card_is_persisted_and_resolvable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, run_body = server.request("POST", "/api/chat", {"message": "ask: Send external update?"})
+
+                self.assertEqual(status, 200)
+                events = [json.loads(line) for line in run_body.splitlines() if line.strip()]
+                decision_event = next(event for event in events if event["type"] == "decision.card")
+                decision = decision_event["data"]["decision"]
+                self.assertEqual(decision["question"], "Send external update?")
+                self.assertTrue(decision["item_id"].startswith("inbox_"))
+
+                status, _, list_body = server.request("GET", "/api/inbox?status=open&priority=high")
+                self.assertEqual(status, 200)
+                listed = json.loads(list_body)["items"]
+                self.assertEqual([item["id"] for item in listed], [decision["item_id"]])
+                self.assertNotIn("action_data_json", list_body)
+
+                status, _, resolve_body = server.request(
+                    "POST",
+                    "/api/inbox/resolve",
+                    {"item_id": decision["item_id"], "resolution": "accepted", "notes": "ok"},
+                )
+                self.assertEqual(status, 200)
+                resolved = json.loads(resolve_body)["item"]
+                self.assertTrue(resolved["changed"])
+                self.assertEqual(resolved["status"], "resolved")
+                self.assertEqual(resolved["resolution"], "accepted")
+
+                missing_status, _, missing_body = server.request(
+                    "POST",
+                    "/api/inbox/resolve",
+                    {"item_id": "inbox_missing", "resolution": "accepted"},
+                )
+                invalid_status, _, invalid_body = server.request(
+                    "POST",
+                    "/api/inbox/resolve",
+                    {"item_id": decision["item_id"], "resolution": "maybe"},
+                )
+                self.assertEqual(missing_status, 404)
+                self.assertIn("not found", json.loads(missing_body)["error"])
+                self.assertEqual(invalid_status, 400)
+                self.assertIn("invalid inbox resolution", json.loads(invalid_body)["error"])
+
     def test_web_cancel_run_endpoint_marks_run_and_records_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -234,6 +278,21 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("updateComposerState", script)
                 self.assertIn("if (state.busy) return;", script)
                 self.assertIn("reset.disabled = state.busy", script)
+
+    def test_web_client_asset_resolves_decision_cards_inline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn("decision-actions", script)
+                self.assertIn("/api/inbox/resolve", script)
+                self.assertIn("resolveDecision", script)
+                self.assertIn("item_id: itemId", script)
+                self.assertIn("decision-button", css)
+                self.assertIn("event-card.decision", css)
 
 
 class RunningServer:

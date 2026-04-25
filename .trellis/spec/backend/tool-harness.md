@@ -40,6 +40,8 @@
 - Anthropic adapters convert `tool_use` content blocks into `ToolCallEnvelope` and return tool results as `tool_result` content blocks.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
 - `working_note` with `retention="memory_candidate"` stores metadata for DreamCycle; it does not create a memory candidate synchronously.
+- `ask_user` is `write` risk because it persists an Inbox decision item.
+- `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
 - `compact_tool_result` for crystallization must not include the generated skill body or raw source run payloads.
 - `skill_patch_candidate` is exposed as a normal provider-native tool call and returns patch metadata, not the patched skill body.
@@ -62,6 +64,7 @@
 | Web fetch malformed URL | Return failed tool result before network I/O | `tests/test_standard_tools.py` |
 | Browser connector | External policy gates URL open; dry-run validates HTTP/HTTPS URL without launching browser | `tests/test_standard_tools.py` |
 | App connector | Admin policy gates OS app open; path traversal is rejected before opener execution | `tests/test_standard_tools.py` |
+| Ask user decision | Creates a persistent Inbox item and returns compact decision evidence | `tests/test_tools.py`, `tests/test_web.py` |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
 | Prompt metadata | Records compact tool schema count/names/estimate without raw schema payloads | `tests/test_prompt.py`, `tests/test_cli.py` |
 | Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
@@ -84,6 +87,7 @@
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.
 - Good: expose L4 recall through `memory_search` scope instead of adding a separate session workflow tool.
+- Good: represent user approvals as Inbox decision item ids, not transient-only chat text.
 - Good: use `file_patch` for bounded edits instead of full-file overwrite when the old text is known.
 - Good: use connector tools as side-effect handoffs from model decisions, not as workflow branches.
 - Bad: adding a handler that performs side effects while declaring `risk="read"`.
@@ -105,6 +109,7 @@
 - Local path tools: assert workspace scoping and traversal rejection.
 - File patch: assert admin gating, exact edit success, path traversal rejection, and ambiguous replacement handling.
 - Connector tools: assert default policy denial, dry-run success, compact evidence, URL validation, and workspace path traversal rejection.
+- Ask-user decisions: assert persistent Inbox item id appears in compact evidence and `decision.card` payload.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
 

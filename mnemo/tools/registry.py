@@ -111,7 +111,7 @@ CORE_TOOL_SPECS = [
     ToolSpec(
         name="ask_user",
         description="Create a concise user decision request when the model cannot proceed safely.",
-        risk="read",
+        risk="write",
         input_schema=_schema(
             ["question"],
             {
@@ -448,11 +448,31 @@ class ToolRegistry:
         return {"artifact_id": artifact_id, "title": title, "kind": kind}
 
     def _ask_user(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        question = _require_str(args, "question")
+        reason = str(args.get("reason") or "")
+        item_id = context.store.add_inbox_item(
+            category="decision",
+            title=question,
+            priority=1,
+            body=reason or None,
+            action_type="choose",
+            action_data={
+                "options": [
+                    {"id": "accepted", "label": "Approve"},
+                    {"id": "rejected", "label": "Reject"},
+                    {"id": "ignored", "label": "Ignore"},
+                ],
+                "source": "ask_user",
+            },
+            source_run_id=context.run_id,
+        )
         return {
             "decision": {
-                "question": _require_str(args, "question"),
-                "reason": str(args.get("reason") or ""),
+                "item_id": item_id,
+                "question": question,
+                "reason": reason,
                 "status": "open",
+                "options": ["accepted", "rejected", "ignored"],
             }
         }
 
@@ -965,7 +985,7 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
         return [_evidence("artifact", result.result.get("artifact_id"), "Artifact")]
     if result.name == "ask_user":
         decision = result.result.get("decision") or {}
-        return [_evidence("decision", result.call_id, str(decision.get("question") or "Decision request"))]
+        return [_evidence("decision", decision.get("item_id") or result.call_id, str(decision.get("question") or "Decision request"))]
     standard_evidence = standard_tool_evidence(result)
     if standard_evidence is not None:
         return standard_evidence

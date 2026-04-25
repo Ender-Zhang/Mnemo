@@ -489,6 +489,52 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: artifacts command requires a subcommand", no_subcommand.stderr)
             self.assertNotIn("Traceback", no_subcommand.stderr)
 
+    def test_inbox_commands_list_show_and_resolve_decisions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("inbox cli")
+            mission_id = store.create_mission(conversation_id, "inbox cli")
+            run_id = store.create_run(conversation_id, mission_id, "ask")
+            item_id = store.add_inbox_item(
+                category="decision",
+                title="Approve CLI decision?",
+                priority=1,
+                body="Needs confirmation.",
+                action_type="choose",
+                action_data={"options": ["accepted", "rejected", "ignored"]},
+                source_run_id=run_id,
+            )
+            low_id = store.add_inbox_item(
+                category="memory",
+                title="Low priority note",
+                priority=3,
+            )
+
+            listed = _run_cli(["inbox", "--priority", "high", "--state-dir", tmp, "--json"])
+            shown = _run_cli(["inbox", "show", item_id, "--state-dir", tmp, "--json"])
+            plain = _run_cli(["inbox", "--state-dir", tmp])
+            resolved = _run_cli(["inbox", "resolve", item_id, "--accept", "--notes", "approved", "--state-dir", tmp, "--json"])
+            resolved_list = _run_cli(["inbox", "--status", "resolved", "--state-dir", tmp, "--json"])
+            missing = _run_cli(["inbox", "show", "inbox_missing", "--state-dir", tmp])
+
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            self.assertEqual([item["id"] for item in json.loads(listed.stdout)["items"]], [item_id])
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertEqual(json.loads(shown.stdout)["item"]["action_data"]["options"][0], "accepted")
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn(f"inbox {item_id} [open] priority=high category=decision", plain.stdout)
+            self.assertIn(low_id, plain.stdout)
+            self.assertEqual(resolved.returncode, 0, resolved.stderr)
+            resolved_item = json.loads(resolved.stdout)["item"]
+            self.assertTrue(resolved_item["changed"])
+            self.assertEqual(resolved_item["resolution"], "accepted")
+            self.assertEqual(resolved_item["resolution_notes"], "approved")
+            self.assertEqual([item["id"] for item in json.loads(resolved_list.stdout)["items"]], [item_id])
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: inbox item not found: inbox_missing", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+
     def test_memory_missing_candidate_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             promote = _run_cli(["memory", "promote", "mem_missing", "--state-dir", tmp])

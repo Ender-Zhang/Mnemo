@@ -20,6 +20,8 @@
 - API: `GET /api/events?run_id=<run_id>&chat=1&sinceEventId=<event_id>`
 - API: `GET /api/artifacts?artifact_id=<artifact_id>`
 - API: `POST /api/runs/cancel` with JSON `{ "run_id": string, "reason"?: string }`
+- API: `GET /api/inbox?status=open|resolved|all&priority=critical|high|normal|low`
+- API: `POST /api/inbox/resolve` with JSON `{ "item_id": string, "resolution": "accepted"|"rejected"|"ignored", "notes"?: string }`
 
 ### 3. Contracts
 - The browser stores durable conversation, mission, last run, and last processed chat event ids in `localStorage`.
@@ -32,6 +34,7 @@
 - Reset is disabled and guarded while `state.busy` is true; active turns should use Stop instead.
 - Artifact cards render from streamed metadata and fetch artifact body content only when opened.
 - Loaded artifacts are cached in `state.artifacts` for the current browser session.
+- Decision cards resolve persisted Inbox items by id and keep status local to the card.
 - While a run is streaming, the composer exposes one stop control that calls `/api/runs/cancel`.
 - `activeRunId` is a volatile current-stream id and must not be stored in `localStorage`.
 - Stop/cancel requests use `activeRunId`; `lastRunId` remains the durable replay/resume id.
@@ -48,12 +51,14 @@
 | Client asset | Contains `mnemo.last_event_id`, `sinceEventId`, and `renderedEventIds` handling | `tests/test_web.py` |
 | Artifact fetch | Returns stored artifact body by id and rejects missing/unknown ids | `tests/test_web.py` |
 | Artifact viewer asset | Contains on-demand artifact fetch and body rendering hooks | `tests/test_web.py` |
+| Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
 | Busy reset | Reset is disabled/guarded while a stream is active | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: persist `event.event_id` after each processed chat event and use `sinceEventId` for incremental resume.
 - Good: fetch artifact body via `/api/artifacts` after the user opens an artifact card.
+- Good: resolve decision cards by item id through `/api/inbox/resolve`, leaving conversation replay keys untouched.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
 - Good: clear `activeRunId` before each new turn so a stale replay id cannot be cancelled.
 - Good: keep reset as an idle-only operation; use Stop for active run interruption.
@@ -71,6 +76,8 @@
 - Frontend asset includes resume persistence and de-duplication logic.
 - Artifact API covers success, missing id, and unknown id.
 - Frontend asset includes on-demand artifact body loading.
+- Inbox API covers listing and resolution, including missing and invalid resolution errors.
+- Frontend asset includes inline decision resolution hooks.
 - Run cancel API covers success, missing id, unknown id, and frontend stop-control asset hooks.
 
 ### 7. Wrong vs Correct

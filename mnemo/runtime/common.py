@@ -61,6 +61,8 @@ def tool_result_summary(result: ToolResult) -> str:
         return "工作笔记已记录。"
     if result.name == "artifact_update":
         return "产物已更新。"
+    if result.name == "ask_user":
+        return "需要用户确认。"
     return "工具调用已完成。"
 
 
@@ -100,6 +102,20 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
                     "artifact_id": result.result["artifact_id"],
                     "title": result.result.get("title") or "Artifact",
                     "kind": result.result.get("kind") or "markdown",
+                }
+            },
+        )
+    elif result.name == "ask_user":
+        decision = result.result.get("decision") or {}
+        yield emit(
+            "decision.card",
+            {
+                "decision": {
+                    "item_id": decision.get("item_id"),
+                    "question": decision.get("question") or "Decision required",
+                    "reason": decision.get("reason") or "",
+                    "status": decision.get("status") or "open",
+                    "options": decision.get("options") or ["accepted", "rejected", "ignored"],
                 }
             },
         )

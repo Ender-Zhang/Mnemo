@@ -97,6 +97,35 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(notes[0]["metadata"]["scope"], "global")
             self.assertEqual(notes[0]["metadata"]["confidence"], 0.84)
 
+    def test_ask_user_creates_persistent_decision_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="ask_user",
+                    arguments={"question": "Send the message?", "reason": "External delivery needs approval."},
+                    call_id="call_decision",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            compact = compact_tool_result(result)
+            decision = result.result["decision"]
+            item = store.get_inbox_item(decision["item_id"])
+
+            self.assertTrue(result.ok)
+            self.assertEqual(decision["status"], "open")
+            self.assertEqual(item["category"], "decision")
+            self.assertEqual(item["title"], "Send the message?")
+            self.assertEqual(item["body"], "External delivery needs approval.")
+            self.assertEqual(item["source_run_id"], run_id)
+            self.assertEqual(item["action_type"], "choose")
+            self.assertEqual(compact["evidence"][0]["kind"], "decision")
+            self.assertEqual(compact["evidence"][0]["id"], decision["item_id"])
+            self.assertNotIn("action_data_json", str(compact))
+
     def test_memory_read_loads_stable_page_by_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

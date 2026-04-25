@@ -108,7 +108,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] New/reset is guarded while a run is streaming.
 - [x] Inline action cards.
 - [x] Inline artifact cards and artifact viewer.
-- [~] Inline decision cards can render; card actions, response API, persistence, standing authority, and high-risk approval flow are not implemented.
+- [~] Inline decision cards can render and resolve persisted Inbox decisions; standing authority and full high-risk approval execution are not implemented.
 - [x] Event replay/resume with `sinceEventId`.
 - [x] Streaming transport API.
 - [ ] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
@@ -152,7 +152,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Backup/export/import.
 - [ ] Core SDK / OpenAPI or IDL contract for language-neutral integrations.
 - [ ] MCP server exposing context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status tools.
-- [ ] Minimal Inbox/Decision persistence tables and CLI/API inspection.
+- [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
 - [ ] Watch/Cron persistence and scheduled event processing.
 - [x] Sessions/messages/L4 search tables and FTS5 indexes for persisted run messages.
 
@@ -160,7 +160,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
-- [~] Highest-priority core alignment: L4 memory search and Soul/bootstrap prompt input foundations are implemented; unified after-turn learning packet, interactive Decision/Inbox loop, and frontend recall/learning actions remain.
+- [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, and Inbox/Decision persistence foundations are implemented; unified after-turn learning packet, full high-risk approval execution, and frontend recall/learning actions remain.
 - [ ] Highest-priority integration alignment: SDK/MCP server and external RuntimeAdapter with context capsule boundaries.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
@@ -198,6 +198,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
 - [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.
 - [x] `04-25-implement-prompt-bootstrap-foundation`: runtime, provider, CLI, and Web now inject bounded `SOUL.md` and workspace bootstrap context into cache-aware prompt assembly while keeping prompt metadata content-free.
+- [x] `04-25-implement-inbox-decision-foundation`: persisted Inbox decision items now back `ask_user`, CLI/Web inspection, API resolution, and inline frontend decision actions.
 - [x] `04-25-implement-associative-memory-recall`: memory search surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.
 - [x] `04-25-implement-cross-client-skill-roots`: default skill roots include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.
 - [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.

@@ -18,6 +18,8 @@
 - CLI: `mnemo config smoke --provider anthropic --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --stream --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo artifacts read <artifact_id> [--json]`
+- CLI: `mnemo inbox show <item_id> [--json]`
+- CLI: `mnemo inbox resolve <item_id> --accept|--reject|--ignore [--json]`
 - CLI: `mnemo conversations show <conversation_id> [--json]`
 - CLI: `mnemo missions show <mission_id> [--json]`
 - CLI: `mnemo runs show <run_id> [--json]`
@@ -35,12 +37,14 @@
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
 - Runtime cancellation is cooperative state, not a provider/tool error; observed cancellation completes the run with `status="cancelled"`.
 - Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
+- Web Inbox resolve endpoint errors are JSON: missing fields or invalid resolution return 400, unknown item id returns 404.
 - Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
 - `mnemo memory read` normalizes missing candidate/page ids this way.
 - `mnemo artifacts read` normalizes missing artifact ids this way.
+- `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
 - `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
 - `mnemo tools review`, `install`, and `uninstall` normalize missing candidate/generated-tool errors this way.
 - `mnemo evals create` and `record` normalize missing runs/eval cases and invalid JSON payloads this way.
@@ -67,11 +71,13 @@
 | Retry config resolution | Runtime config resolves retry fields and redacts secrets | `tests/test_config.py` |
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
+| Web Inbox resolve endpoint | Valid resolve returns item payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing Inbox item in CLI show/resolve | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing tool candidate/generated tool in CLI lifecycle commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run/eval case or invalid JSON in CLI eval commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -100,11 +106,13 @@
 - Config resolver test for `retry_count` and `retry_backoff_s`.
 - Runtime cancellation test for cancelled completion status.
 - Web cancellation endpoint test for success and JSON error responses.
+- Web Inbox resolve endpoint test for success and JSON error responses.
 - CLI conversation/mission show tests for missing ids without tracebacks.
 - CLI run trace/show/cancel tests for missing run ids without tracebacks.
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI memory read tests for missing ids without tracebacks.
 - CLI artifact read tests for missing ids without tracebacks.
+- CLI Inbox show/resolve tests for missing item ids without tracebacks.
 - CLI skill command tests for missing skill, eval case, and crystallization run errors without tracebacks.
 - CLI tool lifecycle tests for missing candidate and generated tool errors without tracebacks.
 - CLI eval tests for missing runs/eval cases and invalid JSON without tracebacks.

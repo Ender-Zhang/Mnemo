@@ -367,7 +367,74 @@ function renderLearning(item) {
 
 function renderDecision(decision) {
   if (!decision) return;
-  addCard("", "Decision", decision.question || "Decision required");
+  const node = document.createElement("div");
+  node.className = "event-card decision";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "event-title";
+  const title = document.createElement("span");
+  title.textContent = "Decision";
+  const chip = document.createElement("span");
+  chip.className = "chip";
+  chip.textContent = decision.status || "open";
+  titleRow.append(title, chip);
+
+  const body = document.createElement("div");
+  body.className = "event-body";
+  body.textContent = decision.reason
+    ? `${decision.question || "Decision required"} ${decision.reason}`
+    : decision.question || "Decision required";
+
+  const actions = document.createElement("div");
+  actions.className = "decision-actions";
+  const itemId = decision.item_id;
+  const buttons = [
+    decisionButton("Approve", "accepted", itemId, chip),
+    decisionButton("Reject", "rejected", itemId, chip),
+    decisionButton("Ignore", "ignored", itemId, chip),
+  ];
+  actions.append(...buttons);
+
+  node.append(titleRow, body, actions);
+  timeline.appendChild(node);
+  scrollToEnd();
+}
+
+function decisionButton(label, resolution, itemId, statusChip) {
+  const button = document.createElement("button");
+  button.className = "decision-button";
+  button.type = "button";
+  button.textContent = label;
+  button.disabled = !itemId;
+  button.title = itemId ? label : "Decision is not persisted";
+  button.addEventListener("click", () => {
+    resolveDecision(itemId, resolution, statusChip, button.parentElement);
+  });
+  return button;
+}
+
+async function resolveDecision(itemId, resolution, statusChip, actions) {
+  if (!itemId || !actions) return;
+  for (const button of actions.querySelectorAll("button")) {
+    button.disabled = true;
+  }
+  statusChip.textContent = "resolving";
+  try {
+    const response = await fetch("/api/inbox/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_id: itemId, resolution }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    statusChip.textContent = payload.item?.resolution || resolution;
+  } catch (error) {
+    statusChip.textContent = "open";
+    for (const button of actions.querySelectorAll("button")) {
+      button.disabled = false;
+    }
+    addCard("error", "Error", error.message || String(error));
+  }
 }
 
 function persistRun(event) {

@@ -22,11 +22,12 @@ class StateStoreTests(unittest.TestCase):
             self.assertTrue((Path(tmp) / "runs").is_dir())
             self.assertTrue((Path(tmp) / "artifacts").is_dir())
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6, 7])
             self.assertIn("event_outbox", _tables(Path(tmp) / "state.db"))
             self.assertIn("run_queue", _tables(Path(tmp) / "state.db"))
             self.assertIn("generated_tools", _tables(Path(tmp) / "state.db"))
             self.assertIn("session_messages", _tables(Path(tmp) / "state.db"))
+            self.assertIn("inbox_items", _tables(Path(tmp) / "state.db"))
 
     def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,8 +39,8 @@ class StateStoreTests(unittest.TestCase):
             second = store.applied_migrations()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4, 5, 6])
-            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4, 5, 6])
+            self.assertEqual([item["version"] for item in first], [1, 2, 3, 4, 5, 6, 7])
+            self.assertEqual([item["version"] for item in second], [1, 2, 3, 4, 5, 6, 7])
             self.assertEqual(len(first), len(second))
 
     def test_initialize_upgrades_legacy_schema_columns(self) -> None:
@@ -103,7 +104,7 @@ class StateStoreTests(unittest.TestCase):
             store.initialize()
 
             self.assertEqual(store.schema_version(), SCHEMA_VERSION)
-            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6])
+            self.assertEqual([item["version"] for item in store.applied_migrations()], [1, 2, 3, 4, 5, 6, 7])
             self.assertIn("path", _columns(db_path, "skills"))
             self.assertIn("result_json", _columns(db_path, "eval_cases"))
             self.assertIn("metadata_json", _columns(db_path, "working_notes"))
@@ -111,6 +112,7 @@ class StateStoreTests(unittest.TestCase):
             self.assertIn("run_queue", _tables(db_path))
             self.assertIn("generated_tools", _tables(db_path))
             self.assertIn("session_messages", _tables(db_path))
+            self.assertIn("inbox_items", _tables(db_path))
             self.assertIsNone(store.get_skill("legacy")["path"])
             self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
             legacy_note = store.list_working_notes(status=None)[0]
@@ -174,6 +176,54 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in store.list_artifacts(mission_id=mission_id)], [artifact_id])
             self.assertEqual([item["id"] for item in store.list_artifacts(run_id=run_id)], [artifact_id])
             self.assertEqual(store.list_artifacts(limit=0), [])
+
+    def test_inbox_items_round_trip_and_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("inbox")
+            mission_id = store.create_mission(conversation_id, "decision mission")
+            run_id = store.create_run(conversation_id, mission_id, "need decision")
+            high_id = store.add_inbox_item(
+                category="decision",
+                title="Approve publishing?",
+                priority=1,
+                body="External action needs confirmation.",
+                action_type="choose",
+                action_data={"options": ["accepted", "rejected"]},
+                source_run_id=run_id,
+            )
+            low_id = store.add_inbox_item(
+                category="memory",
+                title="Memory update noted",
+                priority=3,
+                action_type="ack",
+            )
+
+            item = store.get_inbox_item(high_id)
+            pending = store.list_inbox_items()
+            high = store.list_inbox_items(priority_lte=1)
+            decisions = store.list_inbox_items(category="decision")
+            resolved = store.resolve_inbox_item(high_id, "accepted", notes="looks good")
+            repeated = store.resolve_inbox_item(high_id, "ignored")
+
+            self.assertEqual(item["id"], high_id)
+            self.assertEqual(item["status"], "open")
+            self.assertEqual(item["action_data"], {"options": ["accepted", "rejected"]})
+            self.assertEqual([entry["id"] for entry in pending], [high_id, low_id])
+            self.assertEqual([entry["id"] for entry in high], [high_id])
+            self.assertEqual([entry["id"] for entry in decisions], [high_id])
+            self.assertTrue(resolved["changed"])
+            self.assertEqual(resolved["status"], "resolved")
+            self.assertEqual(resolved["resolution"], "accepted")
+            self.assertEqual(resolved["resolution_notes"], "looks good")
+            self.assertFalse(repeated["changed"])
+            self.assertEqual([entry["id"] for entry in store.list_inbox_items(status="resolved")], [high_id])
+            self.assertEqual([entry["id"] for entry in store.list_inbox_items()], [low_id])
+            with self.assertRaisesRegex(ValueError, "not found"):
+                store.resolve_inbox_item("inbox_missing", "accepted")
+            with self.assertRaisesRegex(ValueError, "invalid inbox resolution"):
+                store.resolve_inbox_item(low_id, "maybe")
 
     def test_cancel_run_marks_running_run_and_is_terminal_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

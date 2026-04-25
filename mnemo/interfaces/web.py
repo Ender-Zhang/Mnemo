@@ -83,6 +83,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_events(parsed.query)
             elif parsed.path == "/api/artifacts":
                 self._handle_artifact(parsed.query)
+            elif parsed.path == "/api/inbox":
+                self._handle_inbox(parsed.query)
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -92,6 +94,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_chat()
             elif parsed.path == "/api/runs/cancel":
                 self._handle_run_cancel()
+            elif parsed.path == "/api/inbox/resolve":
+                self._handle_inbox_resolve()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -189,6 +193,58 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"error": "artifact not found"}, status=HTTPStatus.NOT_FOUND)
                 return
             self._send_json({"artifact": artifact})
+
+        def _handle_inbox(self, query: str) -> None:
+            params = parse_qs(query)
+            status = _first_param(params, "status") or "open"
+            category = _first_param(params, "category")
+            limit = _int_param(params, "limit", 50)
+            store = StateStore(config.state_dir)
+            store.initialize()
+            try:
+                priority = _priority_lte(_first_param(params, "priority"))
+                items = store.list_inbox_items(
+                    status=None if status == "all" else status,
+                    category=category,
+                    priority_lte=priority,
+                    limit=limit,
+                )
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json({"items": items})
+
+        def _handle_inbox_resolve(self) -> None:
+            try:
+                body = self._read_json_body()
+                item_id = _required_string(body, "item_id")
+                resolution = _required_string(body, "resolution")
+                notes = _optional_string(body.get("notes"))
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            store = StateStore(config.state_dir)
+            store.initialize()
+            try:
+                item = store.resolve_inbox_item(item_id, resolution, notes=notes)
+            except ValueError as exc:
+                message = str(exc)
+                status = HTTPStatus.NOT_FOUND if "not found" in message else HTTPStatus.BAD_REQUEST
+                self._send_json({"error": message}, status=status)
+                return
+            if item.get("source_run_id"):
+                store.append_event(
+                    item["source_run_id"],
+                    "inbox.resolved",
+                    {
+                        "item_id": item["id"],
+                        "resolution": item.get("resolution"),
+                        "changed": item.get("changed"),
+                        "source": "web",
+                    },
+                )
+            self._send_json({"item": item})
 
         def _send_asset(self, name: str, content_type: str) -> None:
             try:
@@ -307,6 +363,21 @@ def _bool_param(params: dict[str, list[str]], key: str, default: bool) -> bool:
     if value is None:
         return default
     return value.casefold() in {"1", "true", "yes", "on"}
+
+
+def _priority_lte(priority: str | None) -> int | None:
+    if priority is None:
+        return None
+    priorities = {
+        "critical": 0,
+        "high": 1,
+        "normal": 2,
+        "low": 3,
+    }
+    value = priorities.get(priority.casefold())
+    if value is None:
+        raise ValueError(f"invalid priority: {priority}")
+    return value
 
 
 def _last_chat_event_id(events: list[dict[str, Any]]) -> str | None:

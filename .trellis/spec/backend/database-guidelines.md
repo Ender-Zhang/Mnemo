@@ -45,6 +45,10 @@
 - `StateStore.upsert_artifact(mission_id: str, run_id: str, title: str, body: str, kind: str = "markdown") -> str`
 - `StateStore.get_artifact(artifact_id: str) -> dict[str, Any] | None`
 - `StateStore.list_artifacts(*, mission_id: str | None = None, run_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.add_inbox_item(*, category: str, title: str, priority: int = 2, body: str | None = None, action_type: str = "none", action_data: dict[str, Any] | None = None, source_run_id: str | None = None, expires_at: float | None = None) -> str`
+- `StateStore.get_inbox_item(item_id: str) -> dict[str, Any] | None`
+- `StateStore.list_inbox_items(*, status: str | None = "open", category: str | None = None, priority_lte: int | None = None, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.resolve_inbox_item(item_id: str, resolution: str, *, notes: str | None = None) -> dict[str, Any]`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
@@ -103,6 +107,12 @@
 - `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
 - `get_artifact()` returns `None` for unknown ids and a plain JSON-serializable dict for known ids.
 - `list_artifacts()` returns artifact metadata ordered by recency, supports mission/run filters, and omits body text.
+- `inbox_items` stores asynchronous user-visible items with priority, category, title/body, action type, structured `action_data`, optional source run, status, resolution, and timestamps.
+- Inbox statuses are `open` and `resolved`; resolutions are `accepted`, `rejected`, and `ignored`.
+- `add_inbox_item()` validates category/title and priority 0..3.
+- `list_inbox_items()` returns parsed `action_data`, supports status/category/priority filters, and orders by priority then creation time.
+- `resolve_inbox_item()` resolves only open items; repeated resolution returns `changed=false` with the existing item.
+- CLI/Web Inbox inspection must use storage APIs and not read raw SQLite rows directly.
 - `working_notes` stores W0 notes with mission/run provenance, metadata, processing status, and result payloads.
 - CLI W0 inspection must use the read API and remain read-only: `mnemo memory notes`.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
@@ -138,6 +148,8 @@
 | Eval case storage | Add, list by target/status, and update result payloads | `tests/test_storage.py`, `tests/test_cli.py` |
 | Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
 | Artifact listing | List/filter artifact metadata without body text | `tests/test_storage.py`, `tests/test_cli.py` |
+| Inbox storage | Add, list/filter, read, and resolve Inbox items with parsed action data | `tests/test_storage.py`, `tests/test_cli.py`, `tests/test_web.py` |
+| Inbox repeated resolve | Resolved item returns unchanged instead of mutating resolution again | `tests/test_storage.py` |
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
@@ -152,6 +164,7 @@
 - Good: check run cancellation between interruptible runtime steps.
 - Good: install generated tools by persisting a manifest row and loading it through `ToolRegistry.from_store()`.
 - Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
+- Good: store user decisions as Inbox items and return item ids in chat events.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Good: expose L4 session recall as bounded snippets with provenance ids, not full transcripts.
 - Base: current full schema may create all tables before migrations reconcile legacy gaps.
@@ -180,5 +193,6 @@
 - Eval case add/list/update behavior is covered.
 - Artifact storage round-trip by id is covered.
 - Artifact metadata list/filter behavior is covered without duplicating body text.
+- Inbox storage round-trip, filters, and resolution lifecycle are covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.
