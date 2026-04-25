@@ -1497,3 +1497,37 @@ Added lightweight provider-native browser_open and app_open connector tools with
 ### Next Steps
 
 - None - task complete
+
+
+## Session 45: Web run cancellation
+
+**Date**: 2026-04-25
+**Task**: Web run cancellation
+**Branch**: `main`
+
+### Summary
+
+Exposed persisted run cancellation in the single-chat web UI with threaded request handling, POST /api/runs/cancel, composer stop control, focused web tests, full unit tests, package smoke, and spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2fa03fc` | (see git log) |
+| `012ccc9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
