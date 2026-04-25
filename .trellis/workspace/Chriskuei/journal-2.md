@@ -787,3 +787,37 @@ Added deterministic Memory QueryPlanner foundations: compact query plans, lexica
 ### Next Steps
 
 - None - task complete
+
+
+## Session 80: Memory tombstone health foundation
+
+**Date**: 2026-04-25
+**Task**: Memory tombstone health foundation
+**Branch**: `main`
+
+### Summary
+
+Added durable memory tombstones, compact memory health review cards, provider-native memory health/tombstone tools, CLI inspection/curation commands, schema/spec/checklist updates, and regression coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e2c10b8` | (see git log) |
+| `6708c1d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
