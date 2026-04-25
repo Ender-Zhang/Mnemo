@@ -72,7 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="mnemo", description="Mnemo personal AI runtime foundation")
+    parser = argparse.ArgumentParser(prog="mnemo", description="Mnemo personal AI runtime")
     parser.add_argument("--version", action="version", version=f"mnemo {__version__}")
     subparsers = parser.add_subparsers(dest="command")
 

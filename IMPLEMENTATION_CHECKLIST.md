@@ -134,9 +134,11 @@ This file tracks implementation status against the design package. Keep it updat
 ## Remaining Trellis Focus
 
 - [x] No known checklist gaps after the browser/app connector task.
+- [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-25-04-25-refresh-readme-current-capabilities`: README and public runtime wording now describe the current single-chat runtime, provider setup, web UI, daemon, cancellation, memory/skill/tool operations, backup, and validation workflows.
 - [x] `04-25-04-25-implement-provider-retry-policy`: provider config supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
 - [x] `04-25-04-25-implement-run-cancellation-foundation`: runs and queued daemon jobs can be cancelled durably, and provider/local runtimes complete observed cancellations with `status="cancelled"`.
 - [x] `04-25-04-25-implement-browser-app-connectors`: lightweight `browser_open` and `app_open` connector tools are provider-native, policy-gated, dry-run testable, and compact in results.

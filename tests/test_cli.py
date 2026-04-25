@@ -22,7 +22,7 @@ class CliTests(unittest.TestCase):
     def test_help_works(self) -> None:
         completed = _run_cli(["--help"])
         self.assertEqual(completed.returncode, 0)
-        self.assertIn("Mnemo personal AI runtime foundation", completed.stdout)
+        self.assertIn("Mnemo personal AI runtime", completed.stdout)
 
     def test_init_and_run_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

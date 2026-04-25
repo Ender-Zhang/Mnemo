@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": "README.md", "reason": "Refresh public entrypoint docs to match current runtime capabilities."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Keep README validation commands aligned with package and smoke contracts."}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Record this documentation completion in landed-task tracking."}
+{"file": "pyproject.toml", "reason": "Refresh package description metadata to match current runtime wording."}
+{"file": "mnemo/interfaces/cli.py", "reason": "Refresh CLI help description without changing command behavior."}
+{"file": "tests/test_cli.py", "reason": "Update CLI help assertion for refreshed public runtime wording."}
