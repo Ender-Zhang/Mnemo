@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 54
+- **Total Sessions**: 55
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1833 | Active |
+| `journal-1.md` | ~1866 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 55 | 2026-04-25 | Normalize CLI skill service errors | `aebe1b3` | `main` |
 | 54 | 2026-04-25 | Normalize CLI memory candidate errors | `2973190` | `main` |
 | 53 | 2026-04-25 | Guard web event shapes | `9694e4c` | `main` |
 | 52 | 2026-04-25 | Cover tool evolution missing candidates | `999322c` | `main` |

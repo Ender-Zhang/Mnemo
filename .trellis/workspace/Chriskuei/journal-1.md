@@ -1831,3 +1831,36 @@ Converted expected memory promote/reject ValueError paths to MnemoError at the C
 ### Next Steps
 
 - None - task complete
+
+
+## Session 55: Normalize CLI skill service errors
+
+**Date**: 2026-04-25
+**Task**: Normalize CLI skill service errors
+**Branch**: `main`
+
+### Summary
+
+Converted expected SkillService ValueError paths to MnemoError at the CLI boundary, added missing skill/eval/run CLI regression coverage without tracebacks, updated the backend error-handling spec, and recorded the task in the implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aebe1b3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
