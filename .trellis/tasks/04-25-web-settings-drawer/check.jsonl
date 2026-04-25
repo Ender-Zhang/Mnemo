@@ -1,0 +1,6 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Verify no-build web asset contract"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Verify single-chat settings component"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Verify settings API state contract"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify web tests and package-safe assets"}

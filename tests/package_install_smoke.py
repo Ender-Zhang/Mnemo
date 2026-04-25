@@ -38,6 +38,8 @@ def _assert_not_source_import(package_file: Path) -> None:
 
 def main() -> int:
     import mnemo
+    from mnemo.core.settings import load_user_settings
+    from mnemo.interfaces.web import WebServerConfig
     from mnemo.mcp import MnemoMcpServer
     from mnemo.runtime import ScheduleService
     from mnemo.sdk import MnemoClient, mnemo_core_api_schema
@@ -46,6 +48,7 @@ def main() -> int:
     _assert_not_source_import(Path(sys.modules[MnemoClient.__module__].__file__ or ""))
     _assert_not_source_import(Path(sys.modules[MnemoMcpServer.__module__].__file__ or ""))
     _assert_not_source_import(Path(sys.modules[ScheduleService.__module__].__file__ or ""))
+    _assert_not_source_import(Path(sys.modules[WebServerConfig.__module__].__file__ or ""))
 
     version = importlib.metadata.version("mnemo")
     if version != mnemo.__version__:
@@ -72,6 +75,8 @@ def main() -> int:
         raise AssertionError("packaged MCP server is missing context tool")
     if not hasattr(MnemoMcpServer(), "serve_content_length"):
         raise AssertionError("packaged MCP server is missing content-length serve transport")
+    if "quiet_hours" not in load_user_settings(Path.cwd()):
+        raise AssertionError("packaged settings loader is missing quiet-hours defaults")
 
     print(f"installed mnemo {version} smoke passed")
     return 0

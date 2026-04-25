@@ -416,6 +416,65 @@ class WebInterfaceTests(unittest.TestCase):
             self.assertEqual(event["payload"]["candidate_id"], reject_id)
             self.assertEqual(event["payload"]["action"], "reject")
 
+    def test_web_settings_api_returns_summary_and_updates_quiet_hours(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("web settings")
+            mission_id = store.create_mission(conversation_id, "web settings")
+            run_id = store.create_run(conversation_id, mission_id, "settings summary")
+            store.upsert_memory_page(
+                "preferences: reports",
+                "User prefers concise report summaries.",
+                confidence=0.88,
+            )
+            store.add_memory_candidate(run_id, "User may prefer settings drawers", dimension="preferences")
+            store.upsert_artifact(mission_id, run_id, "Settings artifact", "Hidden artifact body")
+            store.add_inbox_item(category="decision", title="Approve settings action?", priority=1, source_run_id=run_id)
+
+            workspace = Path(tmp) / "workspace"
+            with RunningServer(
+                WebServerConfig(
+                    state_dir=tmp,
+                    port=0,
+                    workspace_root=str(workspace),
+                    provider="openai-compatible",
+                    model="settings-model",
+                    api_key="secret-settings-key",
+                )
+            ) as server:
+                status, _, body = server.request("GET", "/api/settings")
+                update_status, _, update_body = server.request(
+                    "POST",
+                    "/api/settings",
+                    {"quiet_hours": {"enabled": True, "start": "21:30", "end": "07:15"}},
+                )
+                invalid_status, _, invalid_body = server.request(
+                    "POST",
+                    "/api/settings",
+                    {"quiet_hours": {"enabled": True, "start": "99:00", "end": "07:15"}},
+                )
+
+            payload = json.loads(body)
+            updated = json.loads(update_body)
+            self.assertEqual(status, 200)
+            self.assertNotIn("secret-settings-key", body)
+            self.assertNotIn("Hidden artifact body", body)
+            self.assertEqual(payload["connected_apps"][0]["detail"], "openai-compatible · settings-model")
+            self.assertEqual(payload["permissions"]["open_decisions"], 1)
+            self.assertEqual(payload["learned_preferences"]["count"], 1)
+            self.assertEqual(payload["data_controls"]["counts"]["artifacts"], 1)
+            self.assertEqual(payload["data_controls"]["counts"]["memory_candidates"], 1)
+            self.assertFalse(payload["quiet_hours"]["enabled"])
+
+            self.assertEqual(update_status, 200)
+            self.assertTrue(updated["quiet_hours"]["enabled"])
+            self.assertEqual(updated["quiet_hours"]["start"], "21:30")
+            self.assertEqual(updated["quiet_hours"]["end"], "07:15")
+
+            self.assertEqual(invalid_status, 400)
+            self.assertIn("quiet_hours start", json.loads(invalid_body)["error"])
+
     def test_web_cancel_run_endpoint_marks_run_and_records_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -534,6 +593,25 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("decisionButton(\"Approve\"", script)
                 self.assertIn("event-card.recall", css)
                 self.assertIn("recall-button", css)
+
+    def test_web_client_asset_renders_settings_drawer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, html = server.request("GET", "/")
+                script_status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(script_status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn('id="settingsOpen"', html)
+                self.assertIn('id="settingsOverlay"', html)
+                self.assertIn("/api/settings", script)
+                self.assertIn("renderSettings", script)
+                self.assertIn("settingsQuietHoursSection", script)
+                self.assertIn("prefillMessage(item.prompt", script)
+                self.assertIn("settings-drawer", css)
+                self.assertIn("settings-action", css)
 
 
 class RunningServer:

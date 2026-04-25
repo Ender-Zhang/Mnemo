@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Web settings drawer touches no-build web assets"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Settings drawer is a DOM component inside single chat"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Settings API and local chat prefill interact with browser state"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Web asset quality and package smoke apply"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Package smoke applies to changed web assets"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "New web API must return JSON errors"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Settings spans backend API and frontend drawer"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing web helper patterns"}

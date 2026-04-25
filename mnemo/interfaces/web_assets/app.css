@@ -59,8 +59,16 @@ textarea {
   font-size: 13px;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .topbar button,
-.composer button {
+.composer button,
+.settings-header button,
+.settings-action {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
@@ -314,9 +322,159 @@ textarea {
   color: var(--ink);
 }
 
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(29, 36, 32, 0.2);
+  z-index: 10;
+}
+
+.settings-overlay[hidden] {
+  display: none;
+}
+
+.settings-drawer {
+  width: min(420px, 100vw);
+  height: 100vh;
+  overflow: auto;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  padding: 18px;
+  box-shadow: -12px 0 28px rgba(29, 36, 32, 0.14);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.settings-header p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.settings-content {
+  display: grid;
+  gap: 18px;
+}
+
+.settings-section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.settings-section h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.settings-list,
+.settings-form {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  overflow-wrap: anywhere;
+}
+
+.settings-label,
+.settings-detail,
+.settings-value {
+  display: block;
+  font-size: 13px;
+}
+
+.settings-label {
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.settings-detail,
+.settings-value {
+  color: var(--muted);
+}
+
+.settings-value {
+  justify-self: end;
+  text-align: right;
+}
+
+.settings-check,
+.settings-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.settings-time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.settings-time {
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.settings-time input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--ink);
+  background: #ffffff;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-action {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.settings-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 @media (max-width: 640px) {
   .shell {
     padding: 12px;
+  }
+
+  .topbar {
+    align-items: flex-start;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .message,
@@ -326,5 +484,10 @@ textarea {
 
   .composer {
     grid-template-columns: 1fr;
+  }
+
+  .settings-drawer {
+    width: 100vw;
+    border-left: 0;
   }
 }

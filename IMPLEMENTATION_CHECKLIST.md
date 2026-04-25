@@ -113,7 +113,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Streaming transport API.
 - [x] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
 - [~] Learning chips can resolve memory candidates with "以后这样", "这次而已", and reject actions; undo and high-risk confirmation are not implemented.
-- [ ] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, and data controls.
+- [x] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, and data controls.
 - [ ] Artifact operations beyond open/view: continue edit, export, compare versions, apply/revert diff, and send draft.
 
 ## Provider And Model Integration
@@ -215,4 +215,5 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-associative-memory-recall`: memory search surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.
 - [x] `04-25-implement-cross-client-skill-roots`: default skill roots include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.
 - [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.
+- [x] `04-25-web-settings-drawer`: Web now has a low-frequency settings drawer backed by compact `/api/settings` summaries and quiet-hours persistence, while normal preference/data actions return to the single composer.
 - [x] `04-25-implement-tool-bundle-epochs`: runtime now compiles deterministic ToolBundles, records compact bundle metadata, filters reduced prompt-mode tool profiles, and supports provider-loop schema expansion epochs through `tool_expand_schema`.

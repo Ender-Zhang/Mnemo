@@ -32,6 +32,7 @@ tests/test_web.py     API and static asset behavior tests
 | Chat stream | `/api/chat` returns NDJSON ChatEvent records | `tests/test_web.py` |
 | Replay | `/api/events` supports full and incremental replay | `tests/test_web.py` |
 | Artifact viewer | `/api/artifacts` fetches body on demand | `tests/test_web.py` |
+| Settings drawer | `/api/settings` serves compact settings summaries and web assets render the drawer | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add new UI behavior by extending `app.js` render functions and asserting asset text in `tests/test_web.py`.

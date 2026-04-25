@@ -3,7 +3,7 @@
 ## Scenario: DOM Components Without A Framework
 
 ### 1. Scope / Trigger
-- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, or learning chips.
+- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, learning chips, or settings drawer controls.
 - Goal: keep the UI understandable as a single chat surface while supporting rich action visibility.
 
 ### 2. Component Patterns
@@ -12,6 +12,7 @@
 - The primary screen is always the chat shell: top status, timeline, and one composer.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
 - Busy-state commands such as stop/cancel belong inside the existing composer.
+- Low-frequency settings live in a drawer launched from the chat top bar; they must not become a dashboard-first flow.
 
 ### 3. Contracts
 - Render functions must tolerate missing optional fields with concise fallbacks.
@@ -21,6 +22,8 @@
 - Tool approval cards reuse the same inline Decision Card renderer and should show only compact tool metadata plus compact execution results returned by the resolve API.
 - Recall cards should stay inline in the timeline, show compact result items, and use existing artifact/decision/composer actions.
 - Learning chips should stay inline in the timeline and resolve memory candidates through `/api/learning/memory`.
+- The settings drawer renders compact connected-app, permission, quiet-hours, preference, and data-control summaries from `/api/settings`.
+- Settings drawer actions should either save narrow settings or prefill the single composer for normal user intent.
 - Buttons must have clear text or `title` attributes when their action is not obvious.
 - Text containers must use wrapping constraints so long ids, URLs, and tool names do not overflow.
 
@@ -34,6 +37,7 @@
 | Tool approval card | Denied external/admin tool calls project through the existing decision card path and accepted approvals show compact tool results | `tests/test_web.py`, `tests/test_runtime.py` |
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
 | Learning chip | Shows compact learning text and accept/this-turn/reject actions | `tests/test_web.py` |
+| Settings drawer | Shows compact low-frequency settings, saves quiet hours, and reuses composer prefill actions | `tests/test_web.py` |
 | Duplicate replay event | Ignored by `renderedEventIds` | `tests/test_web.py` |
 | Stop control | Appears as a composer command while a run is busy | `tests/test_web.py` |
 | Error event | Renders visible error card | Manual/asset check |
@@ -46,6 +50,7 @@
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
 - Good: render Recall results as inline item rows with buttons that open artifacts, resolve decisions, or prefill the composer.
 - Good: resolve a Learning chip with small inline buttons rather than opening a memory dashboard.
+- Good: let data-control actions prefill the single composer instead of adding a separate data-management screen.
 - Base: small helper functions can create DOM nodes directly.
 - Bad: `element.innerHTML = modelOutput`.
 - Bad: adding a second operations dashboard for normal user workflows.
@@ -56,3 +61,4 @@
 - For decision actions, assert the asset calls `/api/inbox/resolve` and disables buttons while resolving.
 - For recall cards, assert the asset handles `recall.card` and does not require a separate dashboard route.
 - For learning actions, assert the asset calls `/api/learning/memory` and disables buttons while resolving.
+- For settings, assert the asset calls `/api/settings`, renders the drawer, and reuses composer prefill for user actions.

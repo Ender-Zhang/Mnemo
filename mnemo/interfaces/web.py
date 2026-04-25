@@ -5,6 +5,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 import json
+from pathlib import Path
 import socket
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -12,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
+from ..core.settings import load_user_settings, save_user_settings
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
 from ..runtime import stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
@@ -87,6 +89,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_artifact(parsed.query)
             elif parsed.path == "/api/inbox":
                 self._handle_inbox(parsed.query)
+            elif parsed.path == "/api/settings":
+                self._handle_settings()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -100,6 +104,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_inbox_resolve()
             elif parsed.path == "/api/learning/memory":
                 self._handle_learning_memory()
+            elif parsed.path == "/api/settings":
+                self._handle_settings_update()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -217,6 +223,18 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             self._send_json({"items": items})
+
+        def _handle_settings(self) -> None:
+            self._send_json(_settings_payload(config))
+
+        def _handle_settings_update(self) -> None:
+            try:
+                body = self._read_json_body()
+                save_user_settings(config.state_dir, body)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._send_json(_settings_payload(config))
 
         def _handle_inbox_resolve(self) -> None:
             try:
@@ -373,6 +391,110 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
         yield from stream_provider(request, provider)
         return
     raise ValueError(f"unsupported provider: {config.provider}")
+
+
+def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
+    store = StateStore(config.state_dir)
+    store.initialize()
+    open_decisions = store.list_inbox_items(status="open", category="decision", limit=100)
+    memory_pages = store.list_memory_pages(status="active", limit=1000)
+    memory_candidates = store.list_memory_candidates(status=None, limit=1000)
+    artifacts = store.list_artifacts(limit=1000)
+    scheduled = store.list_scheduled_items(status="active", limit=100)
+    preferences = _preference_cards(memory_pages)
+    settings = load_user_settings(config.state_dir)
+
+    return {
+        "settings": settings,
+        "connected_apps": _connected_app_cards(config),
+        "permissions": {
+            "open_decisions": len(open_decisions),
+            "risk_policy": [
+                {"risk": "read", "behavior": "run"},
+                {"risk": "write", "behavior": "run_in_trusted_workspace"},
+                {"risk": "external", "behavior": "decision_card"},
+                {"risk": "admin", "behavior": "explicit_confirmation"},
+            ],
+        },
+        "quiet_hours": settings["quiet_hours"],
+        "learned_preferences": {
+            "count": len(preferences),
+            "items": preferences[:8],
+            "review_prompt": "Review my learned preferences.",
+        },
+        "data_controls": {
+            "counts": {
+                "memory_pages": len(memory_pages),
+                "memory_candidates": len(memory_candidates),
+                "artifacts": len(artifacts),
+                "open_decisions": len(open_decisions),
+                "scheduled_items": len(scheduled),
+            },
+            "actions": [
+                {"id": "review_preferences", "label": "Review preferences", "prompt": "Review my learned preferences."},
+                {"id": "forget", "label": "Forget something", "prompt": "Forget: "},
+                {"id": "export", "label": "Export data", "prompt": "Export my Mnemo data."},
+            ],
+        },
+    }
+
+
+def _connected_app_cards(config: WebServerConfig) -> list[dict[str, Any]]:
+    provider_detail = config.provider
+    if config.model:
+        provider_detail = f"{config.provider} · {config.model}"
+    return [
+        {
+            "id": "runtime",
+            "label": "Runtime",
+            "status": "local" if config.provider == "local" else "connected",
+            "detail": provider_detail,
+        },
+        {
+            "id": "workspace",
+            "label": "Workspace",
+            "status": "connected" if config.workspace_root else "not_connected",
+            "detail": _path_label(config.workspace_root) if config.workspace_root else "none",
+        },
+        {
+            "id": "mcp",
+            "label": "MCP",
+            "status": "available",
+            "detail": "Content-Length stdio",
+        },
+    ]
+
+
+def _preference_cards(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    cards: list[dict[str, Any]] = []
+    for page in pages:
+        haystack = f"{page.get('title') or ''} {page.get('content') or ''}".casefold()
+        if "preference" not in haystack and "preferences" not in haystack:
+            continue
+        cards.append(
+            {
+                "id": page.get("id"),
+                "title": page.get("title") or "Preference",
+                "summary": _truncate(page.get("content"), limit=160),
+                "confidence": page.get("confidence"),
+                "updated_at": page.get("updated_at"),
+            }
+        )
+    return cards
+
+
+def _path_label(value: str | None) -> str:
+    if not value:
+        return "none"
+    name = Path(value).expanduser().name
+    return name or "workspace"
+
+
+def _truncate(value: Any, *, limit: int) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 1)]}..."
 
 
 def _required_string(payload: dict[str, Any], key: str) -> str:

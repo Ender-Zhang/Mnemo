@@ -9,6 +9,7 @@ const state = {
   assistantNode: null,
   actions: new Map(),
   artifacts: new Map(),
+  settings: null,
   cancelRequested: false,
 };
 
@@ -19,6 +20,11 @@ const send = document.querySelector("#send");
 const stop = document.querySelector("#stop");
 const reset = document.querySelector("#reset");
 const statusText = document.querySelector("#status");
+const settingsOpen = document.querySelector("#settingsOpen");
+const settingsOverlay = document.querySelector("#settingsOverlay");
+const settingsClose = document.querySelector("#settingsClose");
+const settingsContent = document.querySelector("#settingsContent");
+const settingsStatus = document.querySelector("#settingsStatus");
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -51,6 +57,18 @@ reset.addEventListener("click", () => {
   timeline.replaceChildren();
   updateComposerState();
   setStatus("Ready");
+});
+
+settingsOpen.addEventListener("click", () => {
+  openSettings();
+});
+
+settingsClose.addEventListener("click", () => {
+  closeSettings();
+});
+
+settingsOverlay.addEventListener("click", (event) => {
+  if (event.target === settingsOverlay) closeSettings();
 });
 
 window.addEventListener("online", () => {
@@ -607,6 +625,213 @@ async function resolveDecision(itemId, resolution, statusChip, actions) {
     }
     addCard("error", "Error", error.message || String(error));
   }
+}
+
+async function openSettings() {
+  settingsOverlay.hidden = false;
+  settingsContent.replaceChildren(settingsLoadingRow("Loading"));
+  settingsStatus.textContent = "Loading";
+  settingsClose.focus();
+  try {
+    const response = await fetch("/api/settings");
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    state.settings = payload;
+    renderSettings(payload);
+    settingsStatus.textContent = "Ready";
+  } catch (error) {
+    settingsStatus.textContent = "Error";
+    settingsContent.replaceChildren(settingsLoadingRow(error.message || String(error)));
+  }
+}
+
+function closeSettings() {
+  settingsOverlay.hidden = true;
+  settingsOpen.focus();
+}
+
+function renderSettings(payload) {
+  settingsContent.replaceChildren(
+    settingsConnectedSection(payload.connected_apps || []),
+    settingsPermissionSection(payload.permissions || {}),
+    settingsQuietHoursSection(payload.quiet_hours || payload.settings?.quiet_hours || {}),
+    settingsPreferenceSection(payload.learned_preferences || {}),
+    settingsDataControlSection(payload.data_controls || {}),
+  );
+}
+
+function settingsConnectedSection(items) {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  for (const item of items) {
+    body.appendChild(settingsRow(item.label || item.id || "Connection", item.status || "", item.detail || ""));
+  }
+  return settingsSection("Connected Apps", body);
+}
+
+function settingsPermissionSection(permissions) {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  for (const policy of permissions.risk_policy || []) {
+    body.appendChild(settingsRow(policy.risk || "risk", policy.behavior || "", ""));
+  }
+  const openDecisions = Number(permissions.open_decisions || 0);
+  const row = settingsRow("Open decisions", String(openDecisions), "");
+  const button = settingsActionButton("Review", () => {
+    closeSettings();
+    prefillMessage("Show my open decisions.");
+  });
+  row.appendChild(button);
+  body.appendChild(row);
+  return settingsSection("Permissions", body);
+}
+
+function settingsQuietHoursSection(quietHours) {
+  const body = document.createElement("form");
+  body.className = "settings-form";
+  const enabledLabel = document.createElement("label");
+  enabledLabel.className = "settings-check";
+  const enabled = document.createElement("input");
+  enabled.type = "checkbox";
+  enabled.checked = Boolean(quietHours.enabled);
+  enabledLabel.append(enabled, document.createTextNode("Quiet hours"));
+
+  const range = document.createElement("div");
+  range.className = "settings-time-grid";
+  const start = settingsTimeInput("Start", quietHours.start || "22:00");
+  const end = settingsTimeInput("End", quietHours.end || "07:00");
+  range.append(start.label, end.label);
+
+  const save = settingsActionButton("Save", async () => {
+    save.disabled = true;
+    settingsStatus.textContent = "Saving";
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quiet_hours: {
+            enabled: enabled.checked,
+            start: start.input.value,
+            end: end.input.value,
+            timezone: quietHours.timezone || "local",
+          },
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      state.settings = payload;
+      renderSettings(payload);
+      settingsStatus.textContent = "Saved";
+    } catch (error) {
+      settingsStatus.textContent = "Error";
+      addCard("error", "Error", error.message || String(error));
+      save.disabled = false;
+    }
+  });
+
+  body.append(enabledLabel, range, save);
+  return settingsSection("Quiet Hours", body);
+}
+
+function settingsPreferenceSection(preferences) {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  const items = Array.isArray(preferences.items) ? preferences.items : [];
+  if (items.length === 0) {
+    body.appendChild(settingsRow("Learned preferences", "0", ""));
+  } else {
+    for (const item of items) {
+      body.appendChild(settingsRow(item.title || "Preference", confidenceLabel(item.confidence), item.summary || ""));
+    }
+  }
+  body.appendChild(settingsActionButton("Review", () => {
+    closeSettings();
+    prefillMessage(preferences.review_prompt || "Review my learned preferences.");
+  }));
+  return settingsSection("Learned Preferences", body);
+}
+
+function settingsDataControlSection(dataControls) {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  const counts = dataControls.counts || {};
+  body.append(
+    settingsRow("Memory", String(counts.memory_pages || 0), `${counts.memory_candidates || 0} candidates`),
+    settingsRow("Artifacts", String(counts.artifacts || 0), ""),
+    settingsRow("Scheduled", String(counts.scheduled_items || 0), ""),
+  );
+  const actions = document.createElement("div");
+  actions.className = "settings-actions";
+  for (const item of dataControls.actions || []) {
+    actions.appendChild(settingsActionButton(item.label || item.id || "Action", () => {
+      closeSettings();
+      prefillMessage(item.prompt || "");
+    }));
+  }
+  body.appendChild(actions);
+  return settingsSection("Data Controls", body);
+}
+
+function settingsSection(title, body) {
+  const section = document.createElement("section");
+  section.className = "settings-section";
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  section.append(heading, body);
+  return section;
+}
+
+function settingsRow(label, value, detail) {
+  const row = document.createElement("div");
+  row.className = "settings-row";
+  const main = document.createElement("div");
+  const labelNode = document.createElement("span");
+  labelNode.className = "settings-label";
+  labelNode.textContent = label;
+  const detailNode = document.createElement("span");
+  detailNode.className = "settings-detail";
+  detailNode.textContent = detail || "";
+  main.append(labelNode, detailNode);
+  const valueNode = document.createElement("span");
+  valueNode.className = "settings-value";
+  valueNode.textContent = value || "";
+  row.append(main, valueNode);
+  return row;
+}
+
+function settingsTimeInput(label, value) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "settings-time";
+  const text = document.createElement("span");
+  text.textContent = label;
+  const inputNode = document.createElement("input");
+  inputNode.type = "time";
+  inputNode.value = value;
+  wrapper.append(text, inputNode);
+  return { label: wrapper, input: inputNode };
+}
+
+function settingsActionButton(label, onClick) {
+  const button = document.createElement("button");
+  button.className = "settings-action";
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function settingsLoadingRow(text) {
+  const node = document.createElement("div");
+  node.className = "settings-row";
+  node.textContent = text;
+  return node;
+}
+
+function confidenceLabel(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  return `${Math.round(number * 100)}%`;
 }
 
 function persistRun(event) {

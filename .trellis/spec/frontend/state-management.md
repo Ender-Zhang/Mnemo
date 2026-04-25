@@ -16,6 +16,7 @@
 - Runtime state: `state.activeRunId: string`
 - Runtime state: `state.renderedEventIds: Set<string>`
 - Runtime state: `state.artifacts: Map<string, object>`
+- Runtime state: `state.settings: object | null`
 - UI event: `recall.card` with `{ recall: { query: string, scope: string, count: number, items: RecallItem[] } }`
 - API: `GET /api/events?run_id=<run_id>&chat=1`
 - API: `GET /api/events?run_id=<run_id>&chat=1&sinceEventId=<event_id>`
@@ -25,6 +26,8 @@
 - API: `POST /api/inbox/resolve` with JSON `{ "item_id": string, "resolution": "accepted"|"rejected"|"ignored", "notes"?: string }`
 - API response: accepted tool approvals may include compact `{ "tool_result": { "tool": string, "ok": boolean, "summary": string } }`.
 - API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject" }`
+- API: `GET /api/settings`
+- API: `POST /api/settings` with JSON `{ "quiet_hours": { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string } }`
 
 ### 3. Contracts
 - The browser stores durable conversation, mission, last run, and last processed chat event ids in `localStorage`.
@@ -41,6 +44,9 @@
 - Decision cards resolve persisted Inbox items by id and keep status local to the card.
 - Tool approval cards use the same decision resolution path and render any returned compact `tool_result` as an inline action/error card without adding browser persistence keys.
 - Learning chips resolve persisted memory candidates by id and keep status local to the card.
+- Settings drawer state is fetched on open through `/api/settings`; it is not persisted in browser storage.
+- Settings drawer can update quiet hours through `/api/settings` and otherwise prefill the single composer for user-facing actions.
+- `/api/settings` payloads must summarize learned preferences and data counts without raw artifact bodies, raw memory dumps, or provider secrets.
 - While a run is streaming, the composer exposes one stop control that calls `/api/runs/cancel`.
 - `activeRunId` is a volatile current-stream id and must not be stored in `localStorage`.
 - Stop/cancel requests use `activeRunId`; `lastRunId` remains the durable replay/resume id.
@@ -61,6 +67,9 @@
 | Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Tool approval card | Uses the same decision resolution path, renders compact approval results, and adds no browser state keys | `tests/test_web.py`, `tests/test_runtime.py` |
 | Learning memory action | Promotes or rejects a persisted memory candidate and returns JSON errors for missing/invalid input | `tests/test_web.py` |
+| Settings summary | Returns compact connected app, permission, quiet-hours, preference, and data-control data without secrets | `tests/test_web.py` |
+| Settings update | Saves valid quiet-hours settings and rejects invalid time payloads with JSON errors | `tests/test_web.py` |
+| Settings asset | Opens a drawer from chat and preloads settings through `/api/settings` | `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
 | Busy reset | Reset is disabled/guarded while a stream is active | `tests/test_web.py` |
 
@@ -70,6 +79,7 @@
 - Good: keep recall result bodies compact and fetch/open only the selected artifact body.
 - Good: resolve decision cards by item id through `/api/inbox/resolve`, leaving conversation replay keys untouched.
 - Good: resolve learning chips by candidate id through `/api/learning/memory`, leaving conversation replay keys untouched.
+- Good: fetch settings only when the drawer opens and keep ordinary user actions in composer prefill.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
 - Good: clear `activeRunId` before each new turn so a stale replay id cannot be cancelled.
 - Good: keep reset as an idle-only operation; use Stop for active run interruption.
@@ -80,6 +90,7 @@
 - Bad: abort the active stream immediately after requesting cancellation and miss the final `run.completed`.
 - Bad: send cancellation with `lastRunId` while a new stream is still waiting for its first event.
 - Bad: clearing localStorage/timeline while a stream is still appending events.
+- Bad: storing provider secrets or raw memory/artifact bodies in settings payloads.
 
 ### 6. Tests Required
 - Web replay API supports full replay and `sinceEventId`.
@@ -92,6 +103,8 @@
 - Frontend asset includes inline decision resolution hooks.
 - Learning memory API covers accept, this-turn-only, reject, missing candidate, and invalid action errors.
 - Frontend asset includes inline learning resolution hooks.
+- Settings API covers summary, quiet-hours update, invalid time errors, and no secret leakage.
+- Frontend asset includes settings drawer hooks and composer-prefill actions.
 - Run cancel API covers success, missing id, unknown id, and frontend stop-control asset hooks.
 
 ### 7. Wrong vs Correct
