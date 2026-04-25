@@ -9,6 +9,7 @@
 ### 2. Signatures
 - `load_prompt_bootstrap(state_dir: str | Path, *, workspace_root: str | Path | None = None, per_file_char_limit=BOOTSTRAP_FILE_CHAR_LIMIT, total_char_limit=BOOTSTRAP_TOTAL_CHAR_LIMIT) -> PromptBootstrapContext`
 - `mnemo.core.injection.injection_warnings(value: str) -> list[str]`
+- `mnemo.runtime.learning.learning_reflection_messages(packet: dict[str, Any]) -> list[dict[str, str]]`
 - `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET, mode: PromptMode = "full") -> AssembledPrompt`
 - `AssembledPrompt.messages() -> list[dict[str, str]]`
 - `AssembledPrompt.metadata() -> dict[str, Any]`
@@ -33,6 +34,8 @@
 - `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
 - CLI inspection of the same compiled context is read-only: `mnemo memory snapshot`.
 - Tool schemas still travel through provider-native tool definitions; dropping `tools.cards` must not remove actual tool availability.
+- Learning reflection prompt is a separate compact after-turn request and must not mutate the stable user-facing prompt prefix.
+- Learning reflection prompt carries a bounded `<learning_packet>` with current run input/output and compact tool results only.
 - Prompt block budgeting only applies to prompt messages; provider-native tool schemas are tracked in `metadata().tool_schema` separately.
 - `metadata().tool_schema` contains `count`, ordered `names`, `token_estimate`, and `budget_scope="provider_native"`; it must not contain raw schema payloads.
 - Runtime `prompt.assembled` events include compact `tool_bundle` metadata with `bundle_id`, `epoch`, `profile`, `tool_count`, ordered `tool_names`, `schema_token_estimate`, and cache bust reason.
@@ -61,6 +64,7 @@
 | Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |
 | Prompt inspect ToolBundle metadata | Includes compact bundle id/profile/epoch/token estimate without raw schemas | `tests/test_cli.py` |
 | Minimal mode | Omits Soul, memory, and skills while preserving provider-native tool schema metadata | `tests/test_prompt.py`, `tests/test_runtime.py`, `tests/test_cli.py` |
+| Learning reflection prompt | Uses a bounded packet and provider-native tool schemas instead of embedding candidate schemas in text | `tests/test_runtime.py` |
 | Capsule mode | Omits personal and workspace context while keeping task, mission, and allowed tool cards | `tests/test_prompt.py` |
 | None mode | Assembles diagnostic shell and marks `execution_allowed=false`; runtime rejects execution | `tests/test_prompt.py` |
 | Invalid mode | Reject with validation error | `tests/test_prompt.py` |
@@ -82,6 +86,7 @@
 - Runtime/provider tests that assert prompt metadata is persisted in `prompt.assembled`.
 - Runtime/CLI/Web tests that assert Soul and workspace bootstrap are passed through request boundaries.
 - Runtime/provider tests that assert daily L1 memory snapshot content reaches provider messages when present.
+- Runtime/provider tests that assert learning reflection messages contain a compact packet and no raw tool schema payload.
 - Prompt mode tests that assert disclosure boundaries for `minimal`, `capsule`, and `none`.
 
 ### 7. Wrong vs Correct

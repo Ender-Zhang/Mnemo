@@ -23,6 +23,7 @@ from .common import (
     run_result_from_dict,
     tool_result_summary,
 )
+from .learning import build_learning_packet, build_learning_tool_bundle, learning_reflection_messages
 from .ledger import RunLedger
 from .local import _short_title
 from .state import resolve_conversation, resolve_mission
@@ -35,10 +36,12 @@ class ProviderAgentRuntime:
         *,
         registry: ToolRegistry | None = None,
         max_tool_rounds: int = 3,
+        enable_learning_reflection: bool = True,
     ) -> None:
         self.provider = provider
         self.registry = registry
         self.max_tool_rounds = max_tool_rounds
+        self.enable_learning_reflection = enable_learning_reflection
 
     def run(self, request: RunRequest) -> RunResult:
         final_result: RunResult | None = None
@@ -249,8 +252,22 @@ class ProviderAgentRuntime:
             store.update_mission_checkpoint(mission_id, checkpoint)
             yield emit("assistant.message", {"text": response, "final": True})
             ledger.append(run_id, "assistant.response", {"text": response})
-            ledger.append(run_id, "run.completed", {"status": "completed"})
             store.complete_run(run_id, response)
+            if not store.is_run_cancelled(run_id):
+                yield from self._stream_learning_reflection(
+                    request=request,
+                    store=store,
+                    ledger=ledger,
+                    registry=registry,
+                    run_id=run_id,
+                    mission_id=mission_id,
+                    response=response,
+                    tool_results=tool_results,
+                    capabilities=capabilities,
+                    base_epoch=active_tool_bundle.epoch,
+                    emit=emit,
+                )
+            ledger.append(run_id, "run.completed", {"status": "completed"})
             result = RunResult(
                 conversation_id=conversation_id,
                 mission_id=mission_id,
@@ -265,6 +282,127 @@ class ProviderAgentRuntime:
             ledger.append(run_id, "run.completed", {"status": "failed", "error": str(exc)})
             store.complete_run(run_id, response, status="failed")
             raise
+
+    def _stream_learning_reflection(
+        self,
+        *,
+        request: RunRequest,
+        store: StateStore,
+        ledger: RunLedger,
+        registry: ToolRegistry,
+        run_id: str,
+        mission_id: str,
+        response: str,
+        tool_results: list[ToolResult],
+        capabilities: Any,
+        base_epoch: int,
+        emit,
+    ) -> Iterator[ChatEvent]:
+        packet = build_learning_packet(store, run_id, response=response, tool_results=tool_results)
+        ledger.append(run_id, "learning.packet", {"packet": packet, "mode": "provider_reflection"})
+        if not self.enable_learning_reflection:
+            ledger.append(run_id, "learning.reflection.skipped", {"reason": "disabled"})
+            return
+        if request.prompt_mode != "full":
+            ledger.append(run_id, "learning.reflection.skipped", {"reason": "prompt_mode", "mode": request.prompt_mode})
+            return
+
+        bundle = build_learning_tool_bundle(
+            registry,
+            provider_adapter_version=capabilities.adapter_version,
+            epoch=base_epoch + 1,
+        )
+        cache_plan = capabilities.cache_plan(bundle.metadata())
+        ledger.append(
+            run_id,
+            "learning.reflection.started",
+            {"tool_bundle": bundle.metadata(), "cache_plan": cache_plan},
+        )
+        yield emit("status.updated", {"text": "正在整理可学习信号。", "tone": "learning"})
+
+        tool_calls = []
+        completed = []
+        assistant_parts: list[str] = []
+        try:
+            for provider_event in self.provider.stream(
+                ProviderRunInput(
+                    messages=learning_reflection_messages(packet),
+                    tools=bundle.specs,
+                    metadata={
+                        "run_id": run_id,
+                        "stage": "after_turn_learning",
+                        "tool_bundle": bundle.metadata(),
+                        "provider_capabilities": capabilities.metadata(),
+                        "cache_plan": cache_plan,
+                    },
+                )
+            ):
+                if provider_event.type == "text_delta" and provider_event.text:
+                    assistant_parts.append(provider_event.text)
+                elif provider_event.type == "tool_call" and provider_event.tool_call:
+                    tool_calls.append(provider_event.tool_call)
+                elif provider_event.type == "completed":
+                    completed.append(provider_event)
+        except Exception as exc:
+            ledger.append(run_id, "learning.reflection.failed", {"error": str(exc), "phase": "provider"})
+            yield emit("status.updated", {"text": "学习整理暂时跳过。", "tone": "warning"})
+            return
+
+        ledger.append(
+            run_id,
+            "learning.reflection.provider_completed",
+            {
+                "metadata": [event.metadata for event in completed],
+                "tool_call_count": len(tool_calls),
+                "assistant_text": "".join(assistant_parts).strip()[:500],
+            },
+        )
+        if not tool_calls:
+            ledger.append(run_id, "learning.reflection.completed", {"tool_call_count": 0, "tool_results": []})
+            return
+
+        reflection_harness = ToolHarness(
+            store=store,
+            ledger=ledger,
+            registry=registry,
+            policy=ToolExecutionPolicy(allowed_tools=bundle.tool_names),
+            workspace_root=request.workspace_root,
+        )
+        learning_results: list[dict[str, Any]] = []
+        for call in tool_calls:
+            if store.is_run_cancelled(run_id):
+                ledger.append(run_id, "learning.reflection.skipped", {"reason": "cancelled"})
+                return
+            try:
+                action = action_card(registry, call)
+            except Exception as exc:
+                ledger.append(
+                    run_id,
+                    "learning.reflection.tool_skipped",
+                    {"call_id": call.call_id, "tool_name": call.name, "error": str(exc)},
+                )
+                continue
+            yield emit("action.queued", {"action": action, "provider_call_id": call.call_id})
+            yield emit("action.started", {"action": action})
+            result = reflection_harness.execute(call, run_id=run_id, mission_id=mission_id)
+            tool_results.append(result)
+            learning_results.append({"name": result.name, "ok": result.ok, "summary": tool_result_summary(result)})
+            yield emit(
+                "action.completed",
+                {
+                    "action_id": call.call_id,
+                    "outcome": "success" if result.ok else "failed",
+                    "summary": tool_result_summary(result),
+                    "tool_name": result.name,
+                },
+            )
+            for projected in project_tool_result(result, emit):
+                yield projected
+        ledger.append(
+            run_id,
+            "learning.reflection.completed",
+            {"tool_call_count": len(tool_calls), "tool_results": learning_results},
+        )
 
 
 def run_provider(request: RunRequest, provider: ProviderAdapter) -> RunResult:

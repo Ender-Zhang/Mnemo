@@ -20,6 +20,7 @@
 - Runtime code uses `ProviderCapabilities.adapter_version` when building `ToolBundle` objects.
 - `prompt.assembled` events include compact `provider_capabilities` and `cache_plan` objects.
 - Provider request metadata includes compact `provider_capabilities` and `cache_plan` objects for harness inspection.
+- After-turn learning reflection provider requests include `stage="after_turn_learning"`, compact `provider_capabilities`, and compact `cache_plan`.
 - `cache_plan.tool_bundle` includes only ToolBundle metadata, not raw schemas.
 - Unknown providers get conservative capabilities and keep native tool calls enabled.
 - OpenAI-compatible providers use automatic prefix cache metadata and stable ToolBundle IDs.
@@ -35,6 +36,7 @@
 | Unknown provider lookup | Conservative metadata is returned without raising | `tests/test_providers.py` |
 | Runtime prompt assembly | Ledger stores compact capabilities and cache plan | `tests/test_runtime.py` |
 | ToolBundle expansion | Request metadata and expansion event move to the next cache epoch | `tests/test_runtime.py` |
+| After-turn learning reflection | Reflection request metadata includes stage, capabilities, and cache plan | `tests/test_runtime.py` |
 | Config capabilities | JSON output redacts API keys and reports capability metadata | `tests/test_cli.py` |
 | Provider usage cache tokens | Completion metadata includes normalized cache metrics | `tests/test_providers.py` |
 
@@ -48,5 +50,6 @@
 ### 6. Tests Required
 - Unit tests for provider capability resolution.
 - Runtime tests for prompt/request metadata.
+- Runtime tests for after-turn learning request metadata.
 - CLI tests for capability inspection and secret redaction.
 - Provider adapter tests for normalized cache token metadata.

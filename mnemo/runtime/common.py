@@ -162,6 +162,10 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
                 }
             },
         )
+    elif result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
+        item = _learning_candidate_item(result)
+        if item:
+            yield emit("learning.chip", {"item": item})
     elif result.name == "artifact_update":
         yield emit(
             "artifact.card",
@@ -187,6 +191,31 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
                 }
             },
         )
+
+
+def _learning_candidate_item(result: ToolResult) -> dict[str, Any] | None:
+    if result.name == "skill_propose_candidate":
+        return {
+            "item_id": result.result.get("skill_id"),
+            "kind": "skill",
+            "status": result.result.get("status") or "draft",
+            "summary": "可能学到一个可复用技能。",
+        }
+    if result.name == "tool_propose_candidate":
+        return {
+            "item_id": result.result.get("candidate_id"),
+            "kind": "tool",
+            "status": result.result.get("status") or "draft",
+            "summary": "可能沉淀一个可复用工具。",
+        }
+    if result.name == "eval_propose_case":
+        return {
+            "item_id": result.result.get("case_id"),
+            "kind": "eval_case",
+            "status": result.result.get("status") or "draft",
+            "summary": "可能沉淀一个回放评测用例。",
+        }
+    return None
 
 
 def result_as_dict(result: RunResult) -> dict[str, Any]:

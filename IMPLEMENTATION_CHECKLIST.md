@@ -79,7 +79,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Progressive skill index/summary/full load.
 - [x] Skill usage tracking and outcome scoring.
 - [~] Skill patch/proposal review lifecycle: proposal, exact patch candidate, eval, review, and promotion gates exist; import/export/update/enable/disable/rollback/doctor/why operations and external shadow-copy lifecycle are not complete.
-- [~] SOP crystallization from successful runs exists; automatic after-turn learning packets and model-selected 0..N mixed candidate generation are not a standard runtime phase yet.
+- [~] SOP crystallization from successful runs exists; provider runtime now builds after-turn learning packets and lets the model propose 0..N mixed memory/skill/tool/eval candidates through native tool calls; local runtime is record-only and background scheduling remains.
 - [~] Skill eval harness exists for built-in cases; full red-team, selection precision, rollback-rate, and cross-client compatibility suites are not complete.
 
 ## Prompt And Context
@@ -95,7 +95,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] Soul.md loading and bounded prompt injection are implemented; user-confirmed Soul evolution and explicit cache invalidation are not complete.
 - [~] Workspace bootstrap blocks for `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`, `BOOTSTRAP.md`, `MEMORY.md`, `CLAUDE.md`, and cursor rules load with caps, truncation markers, warning metadata, and prompt-mode filtering; provider cache controls are not complete.
 - [x] Prompt modes beyond recorded `full`: `minimal`, `capsule`, and `none` with enforced disclosure boundaries.
-- [~] Stable ToolBundle epochs and lazy schema expansion exist for built-in/provider-native tool surfaces; MCP/external large-surface discovery is not complete.
+- [~] Stable ToolBundle epochs, lazy schema expansion, and a compact `learning.v1` ToolBundle exist for built-in/provider-native tool surfaces; MCP/external large-surface discovery is not complete.
 
 ## Frontend Experience
 
@@ -160,12 +160,13 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
-- [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, and Inbox/Decision persistence foundations are implemented; unified after-turn learning packet, full high-risk approval execution, and frontend recall/learning actions remain.
+- [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, Inbox/Decision persistence, and provider after-turn learning packet foundations are implemented; full high-risk approval execution, local/background learning reflection, and richer frontend recall/learning actions remain.
 - [ ] Highest-priority integration alignment: SDK/MCP server and external RuntimeAdapter with context capsule boundaries.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-25-implement-after-turn-learning-packet`: Provider runtime now builds a compact after-turn learning packet and lets the model propose 0..N mixed memory/skill/tool/eval candidates through provider-native tool calls.
 - [x] `04-25-04-25-refresh-readme-current-capabilities`: README and public runtime wording now describe the current single-chat runtime, provider setup, web UI, daemon, cancellation, memory/skill/tool operations, backup, and validation workflows.
 - [x] `04-25-implement-memory-query-planner`: Memory search now produces compact query plans, multi-route fused retrieval, stale/tombstone annotations, tool query-plan metadata, and `mnemo memory search --debug-query`.
 - [x] `04-25-implement-memory-tombstone-health`: Memory now has durable tombstones for rejected candidates and explicit page/candidate curation, compact Memory Health reports/cards, provider-native `memory_health_report`/`memory_tombstone` tools, and CLI health/tombstone commands.

@@ -35,6 +35,7 @@
 
 ### 3. Contracts
 - `tool_propose_candidate` creates `draft` candidates only.
+- After-turn learning reflection can call `tool_propose_candidate` and `eval_propose_case` from the same compact packet used for memory/skill candidates.
 - The CLI lifecycle commands are thin wrappers around `ToolEvolutionService`; validation logic stays in the service.
 - `mnemo tools` and `mnemo tools list` both list currently available provider-facing tool specs.
 - `mnemo tools candidates` reads candidates without changing candidate state.
@@ -66,6 +67,7 @@
 | Valid spec, no passed eval | `blocked:missing_eval` | `tests/test_tool_evolution.py` |
 | Valid spec, passed linked eval | `ready` | `tests/test_tool_evolution.py` |
 | Eval result recorded | Eval case status/result persists | `tests/test_tools.py`, `tests/test_storage.py` |
+| After-turn tool/eval candidates | Mixed learning reflection can create draft tool and eval candidates from one packet | `tests/test_runtime.py` |
 | Ready alias candidate installed | Generated tool row becomes `active`, candidate becomes `installed` | `tests/test_tool_evolution.py`, `tests/test_tools.py` |
 | Install before ready | Candidate becomes `blocked:not_ready`, no generated tool row | `tests/test_tool_evolution.py` |
 | Unknown alias target | Candidate becomes `blocked:install_invalid` | `tests/test_tool_evolution.py` |

@@ -7,6 +7,7 @@ from mnemo.core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolSpec
 from mnemo.runtime.ledger import RunLedger
 from mnemo.storage import StateStore
 from mnemo.tools import ToolHarness, ToolRegistry, compact_tool_result
+from mnemo.tools.registry import LEARNING_REFLECTION_TOOL_NAMES, LEARNING_TOOL_PROFILE
 
 
 class ToolHarnessBoundaryTests(unittest.TestCase):
@@ -16,11 +17,15 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
         first = registry.tool_bundle(provider_adapter_version="openai.v1")
         second = registry.tool_bundle(provider_adapter_version="openai.v1")
         minimal = registry.tool_bundle(profile="minimal.v1", provider_adapter_version="openai.v1")
+        learning = registry.tool_bundle(profile=LEARNING_TOOL_PROFILE, provider_adapter_version="openai.v1")
 
         self.assertEqual(first.bundle_id, second.bundle_id)
         self.assertEqual(first.epoch, 1)
         self.assertIn("memory_write_candidate", first.tool_names)
         self.assertNotIn("memory_write_candidate", minimal.tool_names)
+        self.assertEqual(set(learning.tool_names), set(LEARNING_REFLECTION_TOOL_NAMES))
+        self.assertNotIn("tool_search", learning.tool_names)
+        self.assertNotIn("artifact_update", learning.tool_names)
         self.assertIn("tool_search", minimal.tool_names)
         self.assertIn("tool_expand_schema", minimal.tool_names)
         self.assertGreater(first.schema_token_estimate, minimal.schema_token_estimate)

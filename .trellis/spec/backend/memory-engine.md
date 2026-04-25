@@ -47,6 +47,7 @@
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
 - Normal tools and W0 ingestion write memory candidates through `MemoryEngine.write_candidate()`.
+- After-turn learning reflection writes memory candidates through the same `memory_write_candidate` tool and `MemoryEngine.write_candidate()` path.
 - Candidate writes append compact `memory_safety` evidence with taint, risk, review flag, warning labels, and source summaries.
 - Candidate evidence source taint is deterministic and recognizes trusted user/run/work-note sources, external web/file/tool/imported-skill/MCP/runtime sources, and unknown sources.
 - Candidate claim/evidence text is scanned for prompt override, secret request, and tool-call injection markers through the shared injection warning helper.
@@ -108,6 +109,7 @@
 | Empty candidate | `rejected:empty` | `tests/test_memory.py` |
 | Safe candidate write | Draft candidate with low-risk `memory_safety` evidence | `tests/test_memory.py` |
 | Injected candidate write | `needs_review:prompt_injection` with high-risk safety evidence | `tests/test_memory.py`, `tests/test_tools.py` |
+| After-turn memory candidate | Mixed learning reflection can create a memory candidate and chip through the normal write pipeline | `tests/test_runtime.py` |
 | Exact duplicate of active page | Reject candidate, raise page confidence, add `reinforces` link | `tests/test_memory.py` |
 | Obvious contradiction | Mark `needs_review:conflict`, add `conflicts_with` link, do not promote | `tests/test_memory.py` |
 | Low confidence non-conflict | Keep `draft`, return skipped entry | `tests/test_memory.py` |

@@ -26,7 +26,15 @@ TOOL_SCHEMA_SERIALIZER_VERSION = "mnemo.tool_schema.v1"
 DEFAULT_TOOL_PROFILE = "full.v1"
 MINIMAL_TOOL_PROFILE = "minimal.v1"
 CAPSULE_TOOL_PROFILE = "capsule.v1"
+LEARNING_TOOL_PROFILE = "learning.v1"
 DISCOVERY_TOOL_NAMES = ("tool_search", "tool_expand_schema")
+LEARNING_REFLECTION_TOOL_NAMES = (
+    "memory_write_candidate",
+    "skill_propose_candidate",
+    "tool_propose_candidate",
+    "eval_propose_case",
+    "learning_discard",
+)
 
 
 @dataclass(frozen=True)
@@ -1033,6 +1041,8 @@ def _select_tool_specs(
 def _profile_tool_names(specs_by_name: dict[str, ToolSpec], profile: str) -> tuple[str, ...]:
     if profile == DEFAULT_TOOL_PROFILE:
         return tuple(specs_by_name)
+    if profile == LEARNING_TOOL_PROFILE:
+        return tuple(name for name in LEARNING_REFLECTION_TOOL_NAMES if name in specs_by_name)
     if profile in {MINIMAL_TOOL_PROFILE, CAPSULE_TOOL_PROFILE}:
         names = [
             name
@@ -1175,6 +1185,18 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
         evidence["status"] = result.result.get("status")
         if result.result.get("safety"):
             evidence["safety"] = result.result["safety"]
+        return [evidence]
+    if result.name == "skill_propose_candidate":
+        evidence = _evidence("skill_candidate", result.result.get("skill_id"), "Skill candidate")
+        evidence["status"] = result.result.get("status")
+        return [evidence]
+    if result.name == "tool_propose_candidate":
+        evidence = _evidence("tool_candidate", result.result.get("candidate_id"), "Tool candidate")
+        evidence["status"] = result.result.get("status")
+        return [evidence]
+    if result.name == "eval_propose_case":
+        evidence = _evidence("eval_case", result.result.get("case_id"), "Eval case")
+        evidence["status"] = result.result.get("status")
         return [evidence]
     if result.name == "memory_search":
         matches = result.result.get("matches", [])

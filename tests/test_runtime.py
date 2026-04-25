@@ -24,11 +24,14 @@ class LocalRuntimeTests(unittest.TestCase):
             store = StateStore(tmp)
             matches = store.search_memory_candidates("concise")
             events = store.get_run_events(result.run_id)
+            event_types = [event["event_type"] for event in events]
 
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0]["claim"], "I prefer concise updates")
-            self.assertIn("tool.called", [event["event_type"] for event in events])
-            self.assertIn("run.completed", [event["event_type"] for event in events])
+            self.assertIn("tool.called", event_types)
+            self.assertIn("learning.packet", event_types)
+            self.assertIn("learning.reflection.skipped", event_types)
+            self.assertIn("run.completed", event_types)
 
     def test_followup_reuses_active_mission(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -145,8 +148,115 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("action.completed", event_types)
             self.assertIn("learning.chip", event_types)
             self.assertEqual(events[-1].data["result"]["response"], "Recorded.")
-            self.assertEqual(len(provider.requests), 2)
+            self.assertEqual(len(provider.requests), 3)
             self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")
+            self.assertEqual(provider.requests[2].metadata["stage"], "after_turn_learning")
+
+    def test_provider_runtime_after_turn_learning_proposes_mixed_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [ProviderEvent(type="text_delta", text="Done."), ProviderEvent(type="completed")],
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="memory_write_candidate",
+                                arguments={
+                                    "claim": "User prefers concise implementation summaries",
+                                    "dimension": "preferences",
+                                    "evidence": [{"kind": "learning_packet", "field": "turn.user_message"}],
+                                },
+                                call_id="call_learn_memory",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="skill_propose_candidate",
+                                arguments={
+                                    "name": "concise_summary",
+                                    "description": "Write concise implementation summaries.",
+                                    "body": "When closing an implementation task, summarize changed behavior, validation, and commits.",
+                                },
+                                call_id="call_learn_skill",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="tool_propose_candidate",
+                                arguments={
+                                    "name": "list_recent_runs",
+                                    "spec": {
+                                        "name": "list_recent_runs",
+                                        "description": "List recent completed runs.",
+                                        "risk": "read",
+                                        "input_schema": {
+                                            "type": "object",
+                                            "properties": {},
+                                            "additionalProperties": False,
+                                        },
+                                    },
+                                },
+                                call_id="call_learn_tool",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="eval_propose_case",
+                                arguments={
+                                    "name": "concise-summary-regression",
+                                    "case": {"skill_name": "concise_summary", "assertions": []},
+                                },
+                                call_id="call_learn_eval",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(type="completed", metadata={"stage": "learning"}),
+                    ],
+                ]
+            )
+
+            events = list(
+                ProviderAgentRuntime(provider).stream(
+                    RunRequest(message="以后实现总结要短一点", state_dir=tmp)
+                )
+            )
+
+            store = StateStore(tmp)
+            event_types = [event.type for event in events]
+            learning_items = [
+                event.data["item"]
+                for event in events
+                if event.type == "learning.chip" and event.data.get("item")
+            ]
+            learning_tool_names = [tool.name for tool in provider.requests[1].tools]
+            ledger_event_types = [event["event_type"] for event in store.get_run_events(events[-1].run_id)]
+
+            self.assertEqual(provider.requests[1].metadata["stage"], "after_turn_learning")
+            self.assertIn("<learning_packet>", provider.requests[1].messages[-1]["content"])
+            self.assertEqual(
+                set(learning_tool_names),
+                {"memory_write_candidate", "skill_propose_candidate", "tool_propose_candidate", "eval_propose_case", "learning_discard"},
+            )
+            self.assertIn("learning.chip", event_types)
+            self.assertEqual({item["kind"] for item in learning_items}, {"memory", "skill", "tool", "eval_case"})
+            self.assertEqual(len(store.search_memory_candidates("concise implementation", limit=5)), 1)
+            self.assertIsNotNone(store.get_skill("concise_summary"))
+            self.assertEqual(len(store.list_tool_candidates(status="draft")), 1)
+            self.assertEqual(len(store.list_eval_cases(status="draft", skill_name="concise_summary")), 1)
+            self.assertIn("learning.packet", ledger_event_types)
+            self.assertIn("learning.reflection.completed", ledger_event_types)
+            self.assertEqual(events[-1].data["result"]["response"], "Done.")
 
     def test_provider_runtime_adds_progressive_memory_and_skill_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -17,6 +17,8 @@
 - `ToolExecutionPolicy.check(spec: ToolSpec) -> ToolPermission`
 - `tool_specs_as_json_schema(specs: list[ToolSpec]) -> list[dict[str, Any]]`
 - `compact_tool_result(result: ToolResult) -> dict[str, Any]`
+- `mnemo.runtime.learning.build_learning_packet(store, run_id, *, response=None, tool_results=None) -> dict[str, Any]`
+- `mnemo.runtime.learning.learning_reflection_messages(packet: dict[str, Any]) -> list[dict[str, str]]`
 
 ### 3. Contracts
 - `ToolSpec.name`: unique provider-facing function name.
@@ -32,6 +34,8 @@
 - `ToolBundle.metadata()` must not contain raw `input_schema` payloads.
 - Default `full.v1` bundles preserve the existing complete tool surface.
 - `minimal.v1` and `capsule.v1` bundles expose only low-risk read/discovery tools by default; model-requested expansion can add more tool schemas in a later provider round.
+- `learning.v1` bundles expose only `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, and `learning_discard`.
+- After-turn learning reflection uses a `learning.v1` ToolBundle and the normal provider-native tool call + ToolHarness execution boundary.
 - `tool_search(query?, risk?, limit=20)` returns compact tool cards without raw schemas.
 - `tool_expand_schema(names)` returns matching tool names for the runtime to add to the next provider `ToolBundle` epoch; it does not return raw schemas to the model.
 - Provider runtime records `tool_bundle.expanded` with `cache_bust_reason="lazy_schema_expansion"` when a successful `tool_expand_schema` call changes the active bundle.
@@ -61,6 +65,7 @@
 - `memory_write_candidate` must call `MemoryEngine.write_candidate()` so taint scanning and prompt-injection review gates apply consistently.
 - `memory_write_candidate` returns `candidate_id`, candidate `status`, and compact `safety` metadata.
 - Compact `memory_write_candidate` evidence includes candidate id, status, and compact safety metadata, never raw external evidence text.
+- `skill_propose_candidate`, `tool_propose_candidate`, and `eval_propose_case` return compact candidate evidence and can project unified `learning.chip` events.
 - `ask_user` is `write` risk because it persists an Inbox decision item.
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
@@ -91,12 +96,14 @@
 | Prompt metadata | Records compact tool schema count/names/estimate without raw schema payloads | `tests/test_prompt.py`, `tests/test_cli.py` |
 | Stable ToolBundle | Recompiling the same profile/provider produces the same `bundle_id` and content-free metadata | `tests/test_tools.py` |
 | Minimal ToolBundle profile | Omits memory/skill write tools while preserving discovery/read tools | `tests/test_tools.py`, `tests/test_runtime.py` |
+| Learning ToolBundle profile | Exposes only mixed learning candidate tools and no discovery/core task tools | `tests/test_tools.py` |
 | Tool search | Returns compact tool cards without schemas | `tests/test_tools.py` |
 | Lazy schema expansion | Provider runtime creates a new bundle epoch after `tool_expand_schema` | `tests/test_runtime.py` |
 | Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
 | Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
 | Memory write safety scan | External prompt-injection evidence is stored as `needs_review:prompt_injection` with compact safety evidence | `tests/test_tools.py` |
+| After-turn mixed learning | Provider reflection can propose memory/skill/tool/eval candidates from one compact packet | `tests/test_runtime.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
 | Skill patch candidate | Return compact patch evidence without body and leave source skill unchanged | `tests/test_tools.py`, `tests/test_skills_filesystem.py` |
@@ -150,6 +157,7 @@
 - Ask-user decisions: assert persistent Inbox item id appears in compact evidence and `decision.card` payload.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - ToolBundle tests: assert stable ids, compact metadata, profile filtering, and lazy expansion epochs.
+- After-turn learning tests: assert compact packet reflection uses `learning.v1`, persists lifecycle events, and can produce mixed candidate chips.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
 
 ### 7. Wrong vs Correct

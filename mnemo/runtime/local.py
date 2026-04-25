@@ -24,6 +24,7 @@ from .common import (
     run_result_from_dict,
     tool_result_summary,
 )
+from .learning import build_learning_packet
 from .ledger import RunLedger
 from .state import resolve_conversation, resolve_mission
 
@@ -178,8 +179,15 @@ class LocalAgentRuntime:
                 yield emit("assistant.delta", {"text": response})
                 yield emit("assistant.message", {"text": response, "final": True})
             ledger.append(run_id, "assistant.response", {"text": response})
-            ledger.append(run_id, "run.completed", {"status": "completed"})
             store.complete_run(run_id, response)
+            packet = build_learning_packet(store, run_id, response=response, tool_results=tool_results)
+            ledger.append(run_id, "learning.packet", {"packet": packet, "mode": "record_only"})
+            ledger.append(
+                run_id,
+                "learning.reflection.skipped",
+                {"reason": "local_runtime_record_only", "candidate_tools": packet["available_candidate_tools"]},
+            )
+            ledger.append(run_id, "run.completed", {"status": "completed"})
             result = RunResult(
                 conversation_id=conversation_id,
                 mission_id=mission_id,

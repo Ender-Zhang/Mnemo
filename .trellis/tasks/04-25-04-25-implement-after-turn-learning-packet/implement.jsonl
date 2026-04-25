@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Learning reflection executes provider-native candidate tools through ToolHarness."}
+{"file": ".trellis/spec/backend/provider-capabilities.md", "reason": "Learning reflection must preserve provider tool/cache metadata."}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Learning packet prompt must stay compact and avoid stable-prefix churn."}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory candidate writes from learning reflection must use the write pipeline."}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "Skill candidate tools are part of mixed learning proposals."}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "Tool and eval candidate tools are part of mixed learning proposals."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation and package smoke gates."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Runtime/provider/tool/UI data flow spans layers."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "New helper should reuse existing tool compactors and runtime patterns."}

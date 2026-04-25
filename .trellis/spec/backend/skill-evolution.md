@@ -39,6 +39,7 @@
 - Evidence is stored as JSON and returned only through explicit usage inspection APIs, not prompt cards.
 - `mnemo skills usage` is read-only and returns usage events plus aggregate stats from `StateStore`.
 - `skill_crystallize_from_run` is model-directed: the model decides when to call it and supplies the name/description.
+- After-turn learning reflection can call `skill_propose_candidate` from the same compact packet used for memory/tool/eval candidates.
 - Crystallization reads completed run events and stores a `draft` skill with `source="run:<run_id>:crystallized"`.
 - Crystallized skill bodies may include compact tool names, summaries, evidence counts, and source run id.
 - Crystallized skill bodies must not include raw user messages, full tool results, or raw payload bodies.
@@ -74,6 +75,7 @@
 | Skill patch success | Create a draft patched candidate without mutating source skill | `tests/test_skills_filesystem.py` |
 | Skill patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_skills_filesystem.py` |
 | Skill patch tool | Return compact summary/evidence without body | `tests/test_tools.py` |
+| After-turn skill candidate | Mixed learning reflection can create a draft skill and project a learning chip | `tests/test_runtime.py` |
 | Skill eval pass | Persist eval case `passed` with assertion results | `tests/test_skills_filesystem.py` |
 | Skill eval failure | Persist eval case `failed` with errors | `tests/test_skills_filesystem.py` |
 | Linked eval missing pass | Review marks skill `blocked:missing_eval` | `tests/test_skills_filesystem.py` |
