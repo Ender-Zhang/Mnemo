@@ -18,6 +18,7 @@
 - Render functions must tolerate missing optional fields with concise fallbacks.
 - Dynamic text must use `textContent`, not `innerHTML`.
 - Cards should render compact metadata first and fetch large bodies only after user action.
+- Artifact cards should provide compact actions for continuing, exporting, comparing, sending, and diff apply/revert intent without leaving the chat surface.
 - Decision cards should stay inline in the timeline and resolve through `/api/inbox/resolve`.
 - Tool approval cards reuse the same inline Decision Card renderer and should show only compact tool metadata plus compact execution results returned by the resolve API.
 - Recall cards should stay inline in the timeline, show compact result items, and use existing artifact/decision/composer actions.
@@ -32,7 +33,7 @@
 | --- | --- | --- |
 | Assistant delta | Appends into one assistant message node | Asset behavior in `tests/test_web.py` |
 | Action event | Renders queued/started/completed card state | Asset behavior in `tests/test_web.py` |
-| Artifact card | Shows metadata and opens body on demand | `tests/test_web.py` |
+| Artifact card | Shows metadata, opens body on demand, exports, compares related artifacts, and pre-fills composer actions | `tests/test_web.py` |
 | Decision card | Shows compact decision text and approve/reject/ignore actions | `tests/test_web.py` |
 | Tool approval card | Denied external/admin tool calls project through the existing decision card path and accepted approvals show compact tool results | `tests/test_web.py`, `tests/test_runtime.py` |
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
@@ -45,6 +46,7 @@
 ### 5. Good/Base/Bad Cases
 - Good: `card.querySelector(".event-body").textContent = summary`.
 - Good: keep all user task interaction in the single composer.
+- Good: use artifact card buttons to prefill composer intent for model/tool-led follow-up work.
 - Good: use a busy-state composer button for run cancellation instead of a separate operations area.
 - Good: resolve a Decision card with small inline buttons rather than opening a separate Inbox dashboard.
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
@@ -57,7 +59,8 @@
 
 ### 6. Tests Required
 - For new card types, add asset assertions and API/projection tests where possible.
-- For artifact/body changes, assert streamed events remain compact.
+- For artifact/body changes, assert streamed events remain compact and related artifact lists omit bodies.
+- For artifact actions, assert the asset supports export, compare, continue/send, and patch apply/revert composer prefill.
 - For decision actions, assert the asset calls `/api/inbox/resolve` and disables buttons while resolving.
 - For recall cards, assert the asset handles `recall.card` and does not require a separate dashboard route.
 - For learning actions, assert the asset calls `/api/learning/memory` and disables buttons while resolving.

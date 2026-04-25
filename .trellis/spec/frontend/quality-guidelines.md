@@ -26,7 +26,7 @@
 | Static assets | Serve installed HTML/CSS/JS | `tests/package_install_smoke.py`, `tests/test_web.py` |
 | Stream transport | NDJSON events remain parseable | `tests/test_web.py`, `tests/test_cli.py` |
 | Replay | Event id de-duplication prevents duplicate cards | `tests/test_web.py` |
-| Artifact body | Fetched on demand through `/api/artifacts` | `tests/test_web.py` |
+| Artifact body/actions | Body and related metadata fetched on demand; actions stay compact and composer-led | `tests/test_web.py` |
 | Run cancellation | Stop control calls `/api/runs/cancel` with active run id and preserves stream/replay contracts | `tests/test_web.py` |
 | Busy reset | New/reset is disabled while a stream is active | `tests/test_web.py` |
 | Settings drawer | Fetches compact settings on open, saves quiet hours, and does not expose provider secrets | `tests/test_web.py` |

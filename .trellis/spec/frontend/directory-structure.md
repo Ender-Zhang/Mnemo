@@ -31,7 +31,7 @@ tests/test_web.py     API and static asset behavior tests
 | Static asset serving | HTML/CSS/JS served by stdlib server | `tests/test_web.py` |
 | Chat stream | `/api/chat` returns NDJSON ChatEvent records | `tests/test_web.py` |
 | Replay | `/api/events` supports full and incremental replay | `tests/test_web.py` |
-| Artifact viewer | `/api/artifacts` fetches body on demand | `tests/test_web.py` |
+| Artifact viewer | `/api/artifacts` fetches body and compact related metadata on demand | `tests/test_web.py` |
 | Settings drawer | `/api/settings` serves compact settings summaries and web assets render the drawer | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases

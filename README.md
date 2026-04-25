@@ -8,7 +8,7 @@ The repository contains both the design package in `design/` and the runnable im
 
 - Local deterministic runtime for offline development and tests.
 - OpenAI-compatible and Anthropic provider runtimes with provider-native tool calls.
-- Single-chat web UI with streaming output, action cards, artifact cards, decision cards, learning chips, settings drawer, replay, and stop/cancel.
+- Single-chat web UI with streaming output, actionable artifact cards, decision cards, learning chips, settings drawer, replay, and stop/cancel.
 - SQLite state store for conversations, missions, runs, events, memory, skills, artifacts, queue, and generated tools.
 - Lightweight tool harness with policy-gated memory, skill, artifact, file, shell, HTTP, browser, and app connector tools.
 - Memory candidate pipeline, associative memory pages, DreamCycle consolidation, and daily L1 memory snapshot.
@@ -66,7 +66,7 @@ Anthropic-compatible runs use the same shape with `--provider anthropic --model 
 mnemo web --state-dir .mnemo --port 8765
 ```
 
-Open `http://127.0.0.1:8765`. The UI is intentionally one chat box: it streams responses, shows tool actions and artifacts inline, preserves the active conversation/mission ids, can replay prior events, exposes low-frequency settings in a drawer, and can stop the current active run through cooperative cancellation.
+Open `http://127.0.0.1:8765`. The UI is intentionally one chat box: it streams responses, shows tool actions and actionable artifacts inline, preserves the active conversation/mission ids, can replay prior events, exposes low-frequency settings in a drawer, and can stop the current active run through cooperative cancellation.
 
 Provider-backed web runs accept the same provider flags as `mnemo run`.
 

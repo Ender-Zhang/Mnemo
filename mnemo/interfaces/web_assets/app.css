@@ -274,6 +274,31 @@ textarea {
   padding-top: 10px;
 }
 
+.artifact-related {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.artifact-related[hidden] {
+  display: none;
+}
+
+.artifact-related-row {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.artifact-related-title {
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
 .artifact-body {
   margin: 0;
   max-height: min(420px, 48vh);

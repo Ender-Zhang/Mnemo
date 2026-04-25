@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Web artifact actions touch no-build web assets"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Artifact cards gain user-facing actions"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Artifact body cache and composer prefill contract"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Web asset and compact payload quality gate"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Artifact API error contract remains JSON"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Artifact API payload spans backend and UI"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing artifact viewer helpers"}

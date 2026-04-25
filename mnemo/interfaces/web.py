@@ -202,7 +202,14 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
             if not artifact:
                 self._send_json({"error": "artifact not found"}, status=HTTPStatus.NOT_FOUND)
                 return
-            self._send_json({"artifact": artifact})
+            related = []
+            if artifact.get("mission_id"):
+                related = [
+                    item
+                    for item in store.list_artifacts(mission_id=artifact.get("mission_id"), limit=20)
+                    if item.get("id") != artifact_id
+                ]
+            self._send_json({"artifact": artifact, "related": related})
 
         def _handle_inbox(self, query: str) -> None:
             params = parse_qs(query)

@@ -9,6 +9,7 @@ const state = {
   assistantNode: null,
   actions: new Map(),
   artifacts: new Map(),
+  artifactRelated: new Map(),
   settings: null,
   cancelRequested: false,
 };
@@ -50,6 +51,7 @@ reset.addEventListener("click", () => {
   state.cancelRequested = false;
   state.renderedEventIds.clear();
   state.artifacts.clear();
+  state.artifactRelated.clear();
   localStorage.removeItem("mnemo.conversation_id");
   localStorage.removeItem("mnemo.mission_id");
   localStorage.removeItem("mnemo.last_run_id");
@@ -305,12 +307,37 @@ function renderArtifact(artifact) {
   const chip = document.createElement("span");
   chip.className = "chip";
   chip.textContent = artifact.kind || "updated";
-  const toggle = document.createElement("button");
-  toggle.className = "artifact-toggle";
-  toggle.type = "button";
-  toggle.textContent = "Open";
+  const toggle = artifactButton("Open", () => {
+    toggleArtifact(artifactId, viewer, body, toggle);
+  });
   toggle.disabled = !artifactId;
-  actions.append(chip, toggle);
+  const continueButton = artifactButton("Continue", () => {
+    prefillMessage(`Continue editing artifact ${artifactId}: `);
+  });
+  continueButton.disabled = !artifactId;
+  const exportButton = artifactButton("Export", () => {
+    exportArtifact(artifactId);
+  });
+  exportButton.disabled = !artifactId;
+  const compareButton = artifactButton("Compare", () => {
+    toggleArtifactRelated(artifactId, related, compareButton);
+  });
+  compareButton.disabled = !artifactId;
+  const sendButton = artifactButton("Send", () => {
+    prefillMessage(`Send artifact ${artifactId} to: `);
+  });
+  sendButton.disabled = !artifactId;
+  actions.append(chip, toggle, continueButton, exportButton, compareButton, sendButton);
+  if (artifactId && isPatchArtifact(artifact.kind)) {
+    actions.append(
+      artifactButton("Apply", () => {
+        prefillMessage(`Apply artifact ${artifactId} as a patch: `);
+      }),
+      artifactButton("Revert", () => {
+        prefillMessage(`Revert changes from artifact ${artifactId}: `);
+      }),
+    );
+  }
   titleRow.append(titleNode, actions);
 
   const summary = document.createElement("div");
@@ -324,15 +351,22 @@ function renderArtifact(artifact) {
   body.className = "artifact-body";
   viewer.appendChild(body);
 
-  if (artifactId) {
-    toggle.addEventListener("click", () => {
-      toggleArtifact(artifactId, viewer, body, toggle);
-    });
-  }
+  const related = document.createElement("div");
+  related.className = "artifact-related";
+  related.hidden = true;
 
-  node.append(titleRow, summary, viewer);
+  node.append(titleRow, summary, viewer, related);
   timeline.appendChild(node);
   scrollToEnd();
+}
+
+function artifactButton(label, onClick) {
+  const button = document.createElement("button");
+  button.className = "artifact-toggle";
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
 }
 
 async function toggleArtifact(artifactId, viewer, body, toggle) {
@@ -343,32 +377,134 @@ async function toggleArtifact(artifactId, viewer, body, toggle) {
     return;
   }
 
-  if (!state.artifacts.has(artifactId)) {
-    toggle.disabled = true;
-    toggle.textContent = "Loading";
-    try {
-      const response = await fetch(`/api/artifacts?artifact_id=${encodeURIComponent(artifactId)}`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload = await response.json();
-      if (payload.artifact) {
-        state.artifacts.set(artifactId, payload.artifact);
-      }
-    } catch (error) {
-      body.textContent = error.message || String(error);
-      viewer.hidden = false;
-      toggle.textContent = "Retry";
-      toggle.disabled = false;
-      scrollToEnd();
-      return;
-    }
+  toggle.disabled = true;
+  toggle.textContent = "Loading";
+  try {
+    await loadArtifact(artifactId);
+  } catch (error) {
+    body.textContent = error.message || String(error);
+    viewer.hidden = false;
+    toggle.textContent = "Retry";
     toggle.disabled = false;
+    scrollToEnd();
+    return;
   }
+  toggle.disabled = false;
 
   const artifact = state.artifacts.get(artifactId) || {};
   body.textContent = artifact.body || "";
   viewer.hidden = false;
   toggle.textContent = "Hide";
   scrollToEnd();
+}
+
+async function loadArtifact(artifactId) {
+  if (state.artifacts.has(artifactId)) return state.artifacts.get(artifactId);
+  const response = await fetch(`/api/artifacts?artifact_id=${encodeURIComponent(artifactId)}`);
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+  if (payload.artifact) {
+    state.artifacts.set(artifactId, payload.artifact);
+    state.artifactRelated.set(artifactId, Array.isArray(payload.related) ? payload.related : []);
+  }
+  return state.artifacts.get(artifactId) || {};
+}
+
+async function exportArtifact(artifactId) {
+  if (!artifactId) return;
+  try {
+    const artifact = await loadArtifact(artifactId);
+    const blob = new Blob([artifact.body || ""], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = artifactFilename(artifact);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    addCard("error", "Error", error.message || String(error));
+  }
+}
+
+async function toggleArtifactRelated(artifactId, related, button) {
+  if (!artifactId) return;
+  if (!related.hidden) {
+    related.hidden = true;
+    button.textContent = "Compare";
+    scrollToEnd();
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Loading";
+  try {
+    await loadArtifact(artifactId);
+  } catch (error) {
+    related.replaceChildren(artifactRelatedMessage(error.message || String(error)));
+    related.hidden = false;
+    button.textContent = "Retry";
+    button.disabled = false;
+    scrollToEnd();
+    return;
+  }
+  button.disabled = false;
+  button.textContent = "Hide";
+  const items = state.artifactRelated.get(artifactId) || [];
+  related.replaceChildren();
+  if (items.length === 0) {
+    related.appendChild(artifactRelatedMessage("No related artifacts in this mission."));
+  } else {
+    for (const item of items) {
+      related.appendChild(artifactRelatedRow(artifactId, item));
+    }
+  }
+  related.hidden = false;
+  scrollToEnd();
+}
+
+function artifactRelatedRow(artifactId, item) {
+  const row = document.createElement("div");
+  row.className = "artifact-related-row";
+  const title = document.createElement("div");
+  title.className = "artifact-related-title";
+  title.textContent = item.title || item.id || "Artifact";
+  const detail = document.createElement("div");
+  detail.className = "event-body";
+  detail.textContent = item.kind || "artifact";
+  const actions = document.createElement("div");
+  actions.className = "artifact-actions";
+  actions.append(
+    artifactButton("Compare", () => {
+      prefillMessage(`Compare artifact ${artifactId} with artifact ${item.id}: `);
+    }),
+    artifactButton("Revert to", () => {
+      prefillMessage(`Revert artifact ${artifactId} to artifact ${item.id}: `);
+    }),
+  );
+  row.append(title, detail, actions);
+  return row;
+}
+
+function artifactRelatedMessage(text) {
+  const node = document.createElement("div");
+  node.className = "event-body";
+  node.textContent = text;
+  return node;
+}
+
+function artifactFilename(artifact) {
+  const title = String(artifact.title || artifact.id || "artifact")
+    .trim()
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "");
+  const extension = artifact.kind === "markdown" ? "md" : "txt";
+  return `${title || "artifact"}.${extension}`;
+}
+
+function isPatchArtifact(kind) {
+  const value = String(kind || "").toLowerCase();
+  return value.includes("diff") || value.includes("patch");
 }
 
 function renderLearning(item) {

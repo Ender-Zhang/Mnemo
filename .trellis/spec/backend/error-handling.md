@@ -42,6 +42,7 @@
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
 - Runtime cancellation is cooperative state, not a provider/tool error; observed cancellation completes the run with `status="cancelled"`.
 - Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
+- Web artifact endpoint errors are JSON: missing `artifact_id` returns 400, unknown artifact id returns 404; related artifact metadata must omit bodies.
 - Web Inbox resolve endpoint errors are JSON: missing fields or invalid resolution return 400, unknown item id returns 404.
 - Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404.
 - Web settings endpoint errors are JSON: invalid quiet-hours payloads return 400 and settings summaries do not expose provider secrets.
@@ -84,6 +85,7 @@
 | Capability inspection | CLI reports provider capability metadata without leaking API keys | `tests/test_cli.py` |
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
+| Web artifact endpoint | Valid artifact returns body plus compact related metadata; missing/unknown ids return JSON errors | `tests/test_web.py` |
 | Web Inbox resolve endpoint | Valid resolve returns item payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web learning memory endpoint | Valid action returns compact candidate payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web settings endpoint | Valid quiet-hours update returns settings payload; invalid time payload returns JSON error; API keys are not exposed | `tests/test_web.py` |
@@ -125,6 +127,7 @@
 - Config resolver test for `retry_count` and `retry_backoff_s`.
 - Runtime cancellation test for cancelled completion status.
 - Web cancellation endpoint test for success and JSON error responses.
+- Web artifact endpoint test for success, compact related metadata, and JSON error responses.
 - Web Inbox resolve endpoint test for success and JSON error responses.
 - Web learning memory endpoint test for success and JSON error responses.
 - Web settings endpoint test for summary, quiet-hours update, invalid time errors, and secret redaction.

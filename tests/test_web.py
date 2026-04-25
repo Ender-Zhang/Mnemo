@@ -147,9 +147,19 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(artifact_card["kind"], "markdown")
                 self.assertNotIn("Launch secret body", json.dumps(artifact_event))
 
+                store = StateStore(tmp)
+                related_id = store.upsert_artifact(
+                    artifact_event["mission_id"],
+                    artifact_event["run_id"],
+                    "Related Draft",
+                    "Related body should stay out of related metadata",
+                    "markdown",
+                )
+
                 status, _, artifact_body = server.request("GET", f"/api/artifacts?artifact_id={artifact_id}")
                 self.assertEqual(status, 200)
-                artifact = json.loads(artifact_body)["artifact"]
+                artifact_payload = json.loads(artifact_body)
+                artifact = artifact_payload["artifact"]
                 self.assertEqual(artifact["id"], artifact_id)
                 self.assertEqual(artifact["mission_id"], artifact_event["mission_id"])
                 self.assertEqual(artifact["run_id"], artifact_event["run_id"])
@@ -158,6 +168,8 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(artifact["body"], "Launch secret body")
                 self.assertIn("created_at", artifact)
                 self.assertIn("updated_at", artifact)
+                self.assertEqual([item["id"] for item in artifact_payload["related"]], [related_id])
+                self.assertNotIn("Related body should stay out", json.dumps(artifact_payload["related"]))
 
                 status, _, missing_body = server.request("GET", "/api/artifacts")
                 self.assertEqual(status, 400)
@@ -519,11 +531,22 @@ class WebInterfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
                 status, _, body = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
 
                 self.assertEqual(status, 200)
+                self.assertEqual(css_status, 200)
                 self.assertIn("/api/artifacts?artifact_id=", body)
                 self.assertIn("toggleArtifact", body)
+                self.assertIn("loadArtifact", body)
+                self.assertIn("exportArtifact", body)
+                self.assertIn("toggleArtifactRelated", body)
+                self.assertIn("Continue editing artifact", body)
+                self.assertIn("Send artifact", body)
+                self.assertIn("Apply artifact", body)
+                self.assertIn("Revert changes from artifact", body)
                 self.assertIn("artifact-body", body)
+                self.assertIn("artifact-related", css)
+                self.assertIn("artifact-related-row", css)
 
     def test_web_client_asset_exposes_stop_control(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
