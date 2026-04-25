@@ -12,6 +12,7 @@ from pathlib import Path
 from socketserver import ThreadingTCPServer
 from typing import Any
 
+from mnemo.memory import MemoryEngine
 from mnemo.storage import StateStore
 
 
@@ -304,6 +305,47 @@ class CliTests(unittest.TestCase):
             self.assertEqual(json.loads(incoming.stdout)["outgoing"], [])
             self.assertIn(f"outgoing {outgoing_link_id} {seed_id} -> {outgoing_id} related weight=0.80", plain.stdout)
             self.assertIn(f"incoming {incoming_link_id} {incoming_id} -> {seed_id} supports weight=0.70", plain.stdout)
+
+    def test_memory_snapshot_command_reads_compiled_l1_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = _run_cli(["memory", "snapshot", "--state-dir", tmp, "--json"])
+            self.assertEqual(missing.returncode, 0, missing.stderr)
+            self.assertFalse(json.loads(missing.stdout)["exists"])
+
+            store = StateStore(tmp)
+            store.initialize()
+            snapshot_path = Path(tmp) / "wiki" / "l1-memory-snapshot.json"
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text("{", encoding="utf-8")
+            invalid = _run_cli(["memory", "snapshot", "--state-dir", tmp, "--json"])
+            self.assertEqual(invalid.returncode, 0, invalid.stderr)
+            self.assertFalse(json.loads(invalid.stdout)["exists"])
+
+            page_id = store.upsert_memory_page(
+                "preferences: update style",
+                "User prefers direct updates " + ("with compact status notes " * 20),
+                confidence=0.91,
+            )
+            store.upsert_memory_page(
+                "archived: stale",
+                "This full archived page body should not appear",
+                status="archived",
+            )
+            MemoryEngine(store).compile_l1_snapshot(limit=10)
+
+            snapshot = _run_cli(["memory", "snapshot", "--state-dir", tmp, "--json"])
+            plain = _run_cli(["memory", "snapshot", "--state-dir", tmp])
+
+            self.assertEqual(snapshot.returncode, 0, snapshot.stderr)
+            payload = json.loads(snapshot.stdout)
+            self.assertTrue(payload["exists"])
+            self.assertEqual(payload["snapshot"]["page_count"], 1)
+            self.assertEqual(payload["snapshot"]["items"][0]["id"], page_id)
+            self.assertNotIn("content", payload["snapshot"]["items"][0])
+            self.assertNotIn("This full archived page body should not appear", snapshot.stdout)
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn("L1 memory snapshot page_count=1", plain.stdout)
+            self.assertIn(page_id, plain.stdout)
 
     def test_memory_missing_candidate_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

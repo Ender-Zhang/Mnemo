@@ -27,6 +27,7 @@
 - CLI: `mnemo memory list [--kind candidate|page|all] [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
 
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
@@ -53,6 +54,8 @@
 - `mnemo memory read` must expose the same candidate/page read behavior for human and harness inspection without mutating memory state.
 - `mnemo memory links` must expose read-only outgoing and incoming memory graph edges without mutating memory state.
 - `mnemo memory links` should not require the id to resolve as a candidate/page; an empty graph result is valid.
+- `mnemo memory snapshot` must load the existing L1 snapshot without regenerating it.
+- `mnemo memory snapshot` must report `exists=false` for missing or invalid snapshot files without failing.
 - The `memory-safety` eval suite must remain deterministic and local.
 - The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
 
@@ -75,6 +78,7 @@
 | CLI memory list | Candidate/page listing uses status defaults and `all` filter | `tests/test_cli.py` |
 | CLI memory read | Candidate and page ids return typed memory payloads | `tests/test_cli.py` |
 | CLI memory links | Outgoing and incoming links can be inspected by id | `tests/test_cli.py` |
+| CLI memory snapshot | Existing L1 snapshot can be inspected without full page bodies | `tests/test_cli.py` |
 | Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -95,6 +99,7 @@
 - CLI `memory list` covers default draft candidates, active pages, unfiltered all inventory, and compact non-JSON rows.
 - CLI `memory read` covers candidates, pages, non-JSON output, and missing ids.
 - CLI `memory links` covers outgoing-only, incoming-only, both directions, and compact non-JSON rows.
+- CLI `memory snapshot` covers missing snapshots, loaded snapshots, and compact non-JSON rows.
 - L1 snapshot compile/load behavior is covered, including invalid files.
 - Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
 

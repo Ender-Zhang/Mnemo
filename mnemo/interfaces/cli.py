@@ -145,6 +145,9 @@ def build_parser() -> argparse.ArgumentParser:
     memory_links_parser.add_argument("memory_id")
     memory_links_parser.add_argument("--direction", choices=["outgoing", "incoming", "both"], default="both")
     memory_links_parser.add_argument("--json", action="store_true")
+    memory_snapshot_parser = memory_subparsers.add_parser("snapshot", help="Inspect the compiled L1 memory snapshot")
+    _add_state_dir(memory_snapshot_parser)
+    memory_snapshot_parser.add_argument("--json", action="store_true")
     memory_promote_parser = memory_subparsers.add_parser("promote", help="Promote a memory candidate")
     _add_state_dir(memory_promote_parser)
     memory_promote_parser.add_argument("candidate_id")
@@ -497,6 +500,9 @@ def _cmd_memory(args: argparse.Namespace) -> int:
             result = {"memory": _read_memory_item(store, args.memory_id)}
         elif args.memory_command == "links":
             result = _memory_links(store, args.memory_id, args.direction)
+        elif args.memory_command == "snapshot":
+            snapshot = engine.load_l1_snapshot()
+            result = {"exists": snapshot is not None, "snapshot": snapshot}
         elif args.memory_command == "promote":
             result = engine.promote_candidate(args.candidate_id)
         elif args.memory_command == "reject":
@@ -532,6 +538,23 @@ def _cmd_dream(args: argparse.Namespace) -> int:
 
 
 def _print_memory_result(result: dict) -> None:
+    if "snapshot" in result and "exists" in result:
+        snapshot = result.get("snapshot")
+        if not snapshot:
+            print("L1 memory snapshot missing")
+            return
+        print(
+            f"L1 memory snapshot page_count={snapshot.get('page_count', 0)} "
+            f"generated_at={snapshot.get('generated_at')}"
+        )
+        for item in snapshot.get("items", []):
+            confidence = float(item.get("confidence", 0.0))
+            print(
+                f"- {item.get('id')} confidence={confidence:.2f} "
+                f"scope={item.get('scope', '')}: {_short_text(item.get('title', ''))} :: "
+                f"{_short_text(item.get('summary', ''))}"
+            )
+        return
     if "memory_id" in result and ("outgoing" in result or "incoming" in result):
         for link in result.get("outgoing", []):
             print(_format_memory_link("outgoing", link))

@@ -17,6 +17,7 @@
 - Droppable blocks: optional tool cards, L1 memory snapshot, memory index, and skill index.
 - `memory.l1_snapshot` is daily-cache context and must appear before turn-scoped `memory.index`.
 - `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
+- CLI inspection of the same compiled context is read-only: `mnemo memory snapshot`.
 - Tool schemas still travel through provider-native tool definitions; dropping `tools.cards` must not remove actual tool availability.
 - Prompt block budgeting only applies to prompt messages; provider-native tool schemas are tracked in `metadata().tool_schema` separately.
 - `metadata().tool_schema` contains `count`, ordered `names`, `token_estimate`, and `budget_scope="provider_native"`; it must not contain raw schema payloads.
@@ -34,6 +35,7 @@
 | Metadata inspection | No prompt content or secrets in metadata | `tests/test_prompt.py` |
 | L1 snapshot present | Add `memory.l1_snapshot` with `daily_context` cache segment before `memory.index` | `tests/test_prompt.py` |
 | Empty L1 snapshot | Do not inject `memory.l1_snapshot` | `tests/test_prompt.py` |
+| CLI snapshot inspection | Existing compiled snapshot is inspectable without full page bodies | `tests/test_cli.py` |
 | Tight prompt budget with tools | May drop `tools.cards`; tool schema metadata remains present | `tests/test_prompt.py` |
 | Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |
 

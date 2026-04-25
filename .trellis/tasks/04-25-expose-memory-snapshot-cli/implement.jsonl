@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI parser and memory command handler"}
+{"file": "mnemo/memory/engine.py", "reason": "existing L1 snapshot load contract"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "L1 memory snapshot contract"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "cache-friendly prompt context contract"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "CLI placement convention"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "CLI and package validation gate"}
+{"file": "README.md", "reason": "document memory snapshot command"}
