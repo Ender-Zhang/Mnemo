@@ -30,6 +30,9 @@
 - `memory_read` reads either a memory candidate or a stable memory page by id.
 - `file_patch(path, replacements, replace_all=False)` applies exact UTF-8 text replacements under `ToolContext.workspace_root` and is `admin` risk.
 - `file_patch` rejects missing text, ambiguous text when `replace_all` is false, binary files, and paths outside the workspace.
+- `browser_open(url, new=2, dry_run=False)` validates HTTP/HTTPS URLs and opens them with the default browser; it is `external` risk.
+- `app_open(path, dry_run=False)` resolves `path` under `ToolContext.workspace_root` and opens it with the OS default app; it is `admin` risk.
+- Connector tools support `dry_run=True` so tests and model planning can validate the handoff without launching local UI.
 - OpenAI-compatible adapters convert `tool_calls[].function` into `ToolCallEnvelope`.
 - Anthropic adapters convert `tool_use` content blocks into `ToolCallEnvelope` and return tool results as `tool_result` content blocks.
 - `working_note.retention`: optional model decision, either `ephemeral` or `memory_candidate`.
@@ -53,6 +56,8 @@
 | File patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_standard_tools.py` |
 | Binary file read | Return failed tool result, no decoded payload | Standard tool test when added |
 | Shell command timeout | Return failed tool result with timeout error | Standard tool test when added |
+| Browser connector | External policy gates URL open; dry-run validates HTTP/HTTPS URL without launching browser | `tests/test_standard_tools.py` |
+| App connector | Admin policy gates OS app open; path traversal is rejected before opener execution | `tests/test_standard_tools.py` |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
 | Prompt metadata | Records compact tool schema count/names/estimate without raw schema payloads | `tests/test_prompt.py`, `tests/test_cli.py` |
 | Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
@@ -74,8 +79,10 @@
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.
 - Good: use `file_patch` for bounded edits instead of full-file overwrite when the old text is known.
+- Good: use connector tools as side-effect handoffs from model decisions, not as workflow branches.
 - Bad: adding a handler that performs side effects while declaring `risk="read"`.
 - Bad: returning large raw payloads to the model instead of compact summaries and evidence cards.
+- Bad: using `app_open` with an unscoped absolute path outside the workspace.
 
 ### 6. Tests Required
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
@@ -90,6 +97,7 @@
 - Artifact update: assert card payload has id/title/kind and omits body content.
 - Local path tools: assert workspace scoping and traversal rejection.
 - File patch: assert admin gating, exact edit success, path traversal rejection, and ambiguous replacement handling.
+- Connector tools: assert default policy denial, dry-run success, compact evidence, URL validation, and workspace path traversal rejection.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
 

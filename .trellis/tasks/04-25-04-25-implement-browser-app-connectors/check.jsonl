@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "tests/test_standard_tools.py", "reason": "Add policy, dry-run, and workspace traversal coverage."}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Update executable tool harness contracts for connector tools."}

@@ -43,7 +43,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Core tool specs: `memory_search`, `memory_read`, `working_note`, `skills_list`, `skill_view`, `artifact_update`, `ask_user`.
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
-- [~] External tools: workspace file search/read/write/patch, HTTP fetch, and shell execution exist; browser/app connectors remain.
+- [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
 - [x] Lightweight permission gate for read/write/external/admin.
 - [x] Tool result compression and evidence cards.
 - [x] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, and safe alias installation exist.
@@ -129,12 +129,13 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Remaining Trellis Focus
 
-- [~] Browser/app connectors: local workspace, HTTP, and shell tools exist; browser/app connector tools remain.
+- [x] No known checklist gaps after the browser/app connector task.
 
 ## Recently Landed Trellis Tasks
 
 - [x] `04-25-04-25-implement-provider-retry-policy`: provider config supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
 - [x] `04-25-04-25-implement-run-cancellation-foundation`: runs and queued daemon jobs can be cancelled durably, and provider/local runtimes complete observed cancellations with `status="cancelled"`.
+- [x] `04-25-04-25-implement-browser-app-connectors`: lightweight `browser_open` and `app_open` connector tools are provider-native, policy-gated, dry-run testable, and compact in results.
 - [x] `04-25-04-25-implement-skill-patch-candidates`: model-directed `skill_patch_candidate` creates draft skill revisions with exact replacement checks, compact evidence, and unchanged source skills.
 - [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
 - [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.

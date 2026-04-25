@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import os
 from pathlib import Path
 import subprocess
+import sys
 from typing import TYPE_CHECKING, Any
 from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+import webbrowser
 
 from ..core.errors import NotFoundError, ToolError
 from ..core.models import ToolResult, ToolSpec
@@ -119,6 +122,31 @@ STANDARD_TOOL_SPECS = [
             },
         ),
     ),
+    ToolSpec(
+        name="browser_open",
+        description="Open an HTTP or HTTPS URL in the user's default browser. Requires external policy.",
+        risk="external",
+        input_schema=_schema(
+            ["url"],
+            {
+                "url": {"type": "string"},
+                "new": {"type": "integer", "enum": [0, 1, 2], "default": 2},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="app_open",
+        description="Open a workspace-scoped file or folder with the OS default app. Requires admin policy.",
+        risk="admin",
+        input_schema=_schema(
+            ["path"],
+            {
+                "path": {"type": "string"},
+                "dry_run": {"type": "boolean", "default": False},
+            },
+        ),
+    ),
 ]
 
 
@@ -130,6 +158,8 @@ def standard_tool_handlers() -> dict[str, ToolHandler]:
         "file_patch": file_patch,
         "web_fetch": web_fetch,
         "shell_exec": shell_exec,
+        "browser_open": browser_open,
+        "app_open": app_open,
     }
 
 
@@ -281,6 +311,40 @@ def shell_exec(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
     }
 
 
+def browser_open(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
+    url = _require_http_url(args, "url")
+    new = _bounded_int(args.get("new", 2), minimum=0, maximum=2)
+    dry_run = optional_bool(args.get("dry_run"), default=False)
+    opened = False
+    if not dry_run:
+        opened = webbrowser.open(url, new=new)
+        if not opened:
+            raise ToolError("browser_open could not open the URL")
+    return {
+        "url": url,
+        "new": new,
+        "dry_run": dry_run,
+        "opened": opened,
+    }
+
+
+def app_open(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
+    path = _resolve_workspace_path(context.workspace_root, _require_str(args, "path"))
+    if not path.exists():
+        raise NotFoundError(f"path not found: {_relative_path(path, context.workspace_root)}")
+    dry_run = optional_bool(args.get("dry_run"), default=False)
+    opened = False
+    if not dry_run:
+        _open_path_with_default_app(path)
+        opened = True
+    return {
+        "path": _relative_path(path, context.workspace_root),
+        "is_directory": path.is_dir(),
+        "dry_run": dry_run,
+        "opened": opened,
+    }
+
+
 def standard_tool_summary(result: ToolResult) -> str | None:
     if result.name == "file_search":
         return f"Found {len(result.result.get('matches', []))} file matches."
@@ -295,6 +359,12 @@ def standard_tool_summary(result: ToolResult) -> str | None:
         return f"Fetched URL with status {result.result.get('status', 'unknown')}."
     if result.name == "shell_exec":
         return f"Command exited with code {result.result.get('exit_code', 'unknown')}."
+    if result.name == "browser_open":
+        state = "prepared" if result.result.get("dry_run") else "opened"
+        return f"Browser {state}: {result.result.get('url', 'unknown')}."
+    if result.name == "app_open":
+        state = "prepared" if result.result.get("dry_run") else "opened"
+        return f"App {state}: {result.result.get('path', 'unknown')}."
     return None
 
 
@@ -348,6 +418,27 @@ def standard_tool_evidence(result: ToolResult) -> list[dict[str, Any]] | None:
                 "exit_code": result.result.get("exit_code"),
             }
         ]
+    if result.name == "browser_open":
+        return [
+            {
+                "kind": "browser",
+                "id": str(result.result.get("url") or ""),
+                "title": str(result.result.get("url") or "Browser"),
+                "opened": bool(result.result.get("opened")),
+                "dry_run": bool(result.result.get("dry_run")),
+            }
+        ]
+    if result.name == "app_open":
+        return [
+            {
+                "kind": "app",
+                "id": str(result.result.get("path") or ""),
+                "title": str(result.result.get("path") or "App"),
+                "opened": bool(result.result.get("opened")),
+                "dry_run": bool(result.result.get("dry_run")),
+                "is_directory": bool(result.result.get("is_directory")),
+            }
+        ]
     return None
 
 
@@ -364,6 +455,14 @@ def _require_str(args: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ToolError(f"missing string argument: {key}")
     return value.strip()
+
+
+def _require_http_url(args: dict[str, Any], key: str) -> str:
+    url = _require_str(args, key)
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ToolError(f"{key} must be an http or https URL")
+    return url
 
 
 def _require_raw_str(args: dict[str, Any], key: str) -> str:
@@ -468,3 +567,13 @@ def _truncate_text(text: str, max_bytes: int) -> tuple[str, bool]:
         return text, False
     truncated = raw[:max_bytes].decode("utf-8", errors="replace")
     return truncated, True
+
+
+def _open_path_with_default_app(path: Path) -> None:
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
+    if os.name == "nt":
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    subprocess.Popen(["xdg-open", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

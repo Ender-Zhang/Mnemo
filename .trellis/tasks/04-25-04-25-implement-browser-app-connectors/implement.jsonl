@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/tools/standard.py", "reason": "Add built-in connector ToolSpec entries, handlers, summaries, and evidence."}
+{"file": "mnemo/tools/registry.py", "reason": "Confirm connectors are loaded through standard_tool_handlers and compact_tool_result."}

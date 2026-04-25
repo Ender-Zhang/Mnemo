@@ -7,10 +7,16 @@ import unittest
 from mnemo.core.models import ToolCallEnvelope, ToolExecutionPolicy
 from mnemo.runtime.ledger import RunLedger
 from mnemo.storage import StateStore
-from mnemo.tools import ToolHarness
+from mnemo.tools import ToolHarness, ToolRegistry
 
 
 class StandardToolTests(unittest.TestCase):
+    def test_browser_and_app_connectors_are_available_by_default(self) -> None:
+        names = {spec.name for spec in ToolRegistry().specs()}
+
+        self.assertIn("browser_open", names)
+        self.assertIn("app_open", names)
+
     def test_file_search_and_read_are_available_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -81,6 +87,8 @@ class StandardToolTests(unittest.TestCase):
                 ("file_patch", {"path": "out.txt", "replacements": [{"old": "hello", "new": "hi"}]}),
                 ("web_fetch", {"url": "https://example.com"}),
                 ("shell_exec", {"command": ["echo", "hello"]}),
+                ("browser_open", {"url": "https://example.com", "dry_run": True}),
+                ("app_open", {"path": ".", "dry_run": True}),
             ]:
                 with self.subTest(tool_name=tool_name):
                     result = harness.execute(
@@ -240,6 +248,89 @@ class StandardToolTests(unittest.TestCase):
             self.assertTrue(accepted.ok)
             self.assertEqual(accepted.result["replacements"][0]["count"], 2)
             self.assertEqual(target.read_text(encoding="utf-8"), "patched\npatched\n")
+
+    def test_browser_open_dry_run_validates_url_and_returns_compact_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "external")),
+            )
+
+            opened = harness.execute(
+                ToolCallEnvelope(
+                    name="browser_open",
+                    arguments={"url": "https://example.com/docs", "dry_run": True},
+                    call_id="call_browser",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            rejected = harness.execute(
+                ToolCallEnvelope(
+                    name="browser_open",
+                    arguments={"url": "file:///tmp/secret", "dry_run": True},
+                    call_id="call_browser_bad",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(opened.ok)
+            self.assertFalse(opened.result["opened"])
+            self.assertTrue(opened.result["dry_run"])
+            self.assertEqual(opened.evidence[0]["kind"], "browser")
+            self.assertFalse(rejected.ok)
+            self.assertIn("http or https URL", rejected.error or "")
+
+    def test_app_open_dry_run_is_workspace_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            docs = workspace / "docs"
+            docs.mkdir()
+            outside = root / "outside.txt"
+            outside.write_text("secret", encoding="utf-8")
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "admin")),
+            )
+
+            opened = harness.execute(
+                ToolCallEnvelope(
+                    name="app_open",
+                    arguments={"path": "docs", "dry_run": True},
+                    call_id="call_app",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            rejected = harness.execute(
+                ToolCallEnvelope(
+                    name="app_open",
+                    arguments={"path": "../outside.txt", "dry_run": True},
+                    call_id="call_app_bad",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(opened.ok)
+            self.assertEqual(opened.result["path"], "docs")
+            self.assertTrue(opened.result["is_directory"])
+            self.assertFalse(opened.result["opened"])
+            self.assertEqual(opened.evidence[0]["kind"], "app")
+            self.assertFalse(rejected.ok)
+            self.assertIn("outside the workspace root", rejected.error or "")
 
 
 def _store_with_run(path: Path) -> tuple[StateStore, str, str]:
