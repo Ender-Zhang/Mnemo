@@ -5,8 +5,8 @@
 ## Scenario: Provider Boundary And Smoke Errors
 
 ### 1. Scope / Trigger
-- Trigger: changes to provider adapters, CLI provider commands, or external endpoint smoke checks.
-- Goal: normalize provider failures without leaking credentials or raw secret-bearing request payloads.
+- Trigger: changes to provider adapters, CLI provider commands, CLI service-boundary errors, or external endpoint smoke checks.
+- Goal: normalize expected runtime failures without leaking credentials, raw secret-bearing request payloads, or Python tracebacks.
 
 ### 2. Signatures
 - `ProviderStatusError(status_code: int, body: str | None = None)`
@@ -27,6 +27,8 @@
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
 - Runtime cancellation is cooperative state, not a provider/tool error; observed cancellation completes the run with `status="cancelled"`.
 - Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
+- Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.
+- `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
 - Anthropic smoke probes `/messages`; model listing is reported as skipped.
@@ -48,6 +50,7 @@
 | Retry config resolution | Runtime config resolves retry fields and redacts secrets | `tests/test_config.py` |
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
+| Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
@@ -57,6 +60,7 @@
 - Base: streaming calls rely on timeout and normalized errors, not retries.
 - Base: blocking provider calls may only observe cancellation after the provider call returns or times out.
 - Base: the web stop control requests cancellation and then waits for the stream to finish.
+- Base: service-layer `ValueError` is acceptable inside domain code when the CLI boundary converts it before user output.
 - Bad: print Authorization headers, API keys, or full provider error bodies to stdout.
 - Bad: retry streaming calls after text/tool deltas have already been emitted.
 - Bad: reporting an observed user cancellation as `run.error`.
@@ -71,6 +75,7 @@
 - Config resolver test for `retry_count` and `retry_backoff_s`.
 - Runtime cancellation test for cancelled completion status.
 - Web cancellation endpoint test for success and JSON error responses.
+- CLI memory curation tests for missing candidate errors without tracebacks.
 
 ### 7. Wrong vs Correct
 #### Wrong

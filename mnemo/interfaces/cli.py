@@ -422,14 +422,17 @@ def _cmd_memory(args: argparse.Namespace) -> int:
     store.initialize()
     engine = MemoryEngine(store)
 
-    if args.memory_command == "search":
-        result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
-    elif args.memory_command == "promote":
-        result = engine.promote_candidate(args.candidate_id)
-    elif args.memory_command == "reject":
-        result = engine.reject_candidate(args.candidate_id, args.reason)
-    else:
-        raise MnemoError("memory command requires a subcommand")
+    try:
+        if args.memory_command == "search":
+            result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
+        elif args.memory_command == "promote":
+            result = engine.promote_candidate(args.candidate_id)
+        elif args.memory_command == "reject":
+            result = engine.reject_candidate(args.candidate_id, args.reason)
+        else:
+            raise MnemoError("memory command requires a subcommand")
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
 
     if args.json:
         print(dumps(result))

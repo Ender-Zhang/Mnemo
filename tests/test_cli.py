@@ -176,6 +176,18 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_memory_missing_candidate_errors_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            promote = _run_cli(["memory", "promote", "mem_missing", "--state-dir", tmp])
+            reject = _run_cli(["memory", "reject", "mem_missing", "--state-dir", tmp])
+
+            self.assertEqual(promote.returncode, 1)
+            self.assertIn("mnemo: Memory candidate not found: mem_missing", promote.stderr)
+            self.assertNotIn("Traceback", promote.stderr)
+            self.assertEqual(reject.returncode, 1)
+            self.assertIn("mnemo: Memory candidate not found: mem_missing", reject.stderr)
+            self.assertNotIn("Traceback", reject.stderr)
+
     def test_memory_search_command_includes_associated_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

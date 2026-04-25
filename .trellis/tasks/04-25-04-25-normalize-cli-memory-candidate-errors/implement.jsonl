@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "Normalize expected memory command ValueError paths through MnemoError."}
+{"file": "tests/test_cli.py", "reason": "Add CLI regression coverage for missing memory candidate errors without traceback."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Document expected local CLI service errors as normalized MnemoError output."}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Track the landed CLI memory error normalization task."}

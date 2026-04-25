@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Run targeted CLI and full unit checks."}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Confirm change stays in CLI/test layout."}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Verify memory candidate error behavior remains service-local and CLI-normalized."}
