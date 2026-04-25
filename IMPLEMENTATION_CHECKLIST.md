@@ -127,45 +127,17 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Daemon status command.
 - [x] Backup/export/import.
 
-## Current Trellis Focus
+## Remaining Trellis Focus
 
-- [x] `04-24-implement-provider-backed-runtime`: OpenAI-compatible provider config, adapter, runtime bridge, CLI selection, timeout errors, and fake-server tests implemented.
-- [~] `04-24-implement-prompt-assembly-foundation`: PromptBlock, PromptAssembler, provider runtime integration, and prompt inspect CLI are in progress.
-- [~] `04-24-implement-memory-engine-foundation`: memory pages, promotion/rejection, stable search, and deterministic DreamCycle are in progress.
-- [~] `04-24-implement-skills-filesystem-lifecycle`: Agent Skills scanner, skill service, and generated `SKILL.md` promotion are in progress.
-- [x] `04-24-implement-event-replay-foundation`: JSONL trace mirror, event replay CLI, and trace summary are implemented.
-- [~] `04-24-implement-tool-boundary-cards`: Tool permission policy, compact model tool results, and evidence cards are in progress.
-- [~] `04-24-implement-prompt-progressive-context`: Memory/skill compact indexes and runtime prompt injection are in progress.
-- [~] `04-25-implement-openai-streaming-provider`: OpenAI-compatible SSE parser, streamed deltas, and streamed tool-call chunks are in progress.
-- [~] `04-25-implement-skills-metadata-compatibility`: common Agent Skills metadata parsing and compact card projection are in progress.
-- [~] `04-25-implement-single-chat-web-frontend`: stdlib web server, single chat UI, NDJSON stream transport, and replay endpoint are in progress.
-- [~] `04-25-implement-eval-harness-foundation`: built-in personalization golden cases, smoke suite, and replay harness CLI are in progress.
-- [~] `04-25-implement-config-resolver`: shared runtime config resolver, redacted inspect CLI, and provider config refactor are in progress.
-- [x] `04-25-implement-standard-local-tools-foundation`: workspace-scoped file tools, policy-gated web fetch, and policy-gated shell execution are implemented.
-- [x] `04-25-implement-prompt-context-compression`: prompt token budget, optional block dropping, checkpoint compaction, and dropped-block metadata are implemented.
-- [x] `04-25-implement-memory-conflict-reinforcement`: duplicate reinforcement, conflict review routing, and memory link provenance are implemented.
-- [x] `04-25-implement-skill-usage-scoring`: skill usage events, outcome scoring, compact card stats, and deterministic skill ranking are implemented.
-- [x] `04-25-implement-tool-candidate-eval-gate`: tool candidate status lifecycle, eval result recording, readiness review gate, and safe alias installation are implemented.
-- [x] `04-25-implement-daily-l1-memory-snapshot`: daily compact active-memory snapshot compilation, prompt injection, and runtime loading are implemented.
-- [x] `04-25-implement-w0-working-memory-pipeline`: model-marked working notes can enter DreamCycle as candidate-first memory updates.
-- [~] `04-25-implement-skill-review-lifecycle`: generated skill candidates can be reviewed to `ready` or `blocked:*` before explicit promotion.
-- [x] `04-25-implement-skill-eval-harness`: linked skill eval cases can run, persist pass/fail results, and gate skill review.
-- [x] `04-25-implement-sop-crystallization-from-runs`: completed runs with successful compact tool traces can become draft skill candidates without raw payload leakage.
-- [x] `04-25-implement-memory-safety-evals`: deterministic memory safety harness suite covers candidate-first writes, conflict guardrails, compact payloads, and duplicate reinforcement.
-- [x] `04-25-implement-sqlite-schema-migrations`: SQLite migration ledger, schema version API, idempotent initialization, and legacy column upgrades are implemented.
-- [x] `04-25-implement-event-outbox`: SQLite outbox migration, run-event mirroring, enqueue/list/mark APIs, and storage tests are implemented.
-- [x] `04-25-implement-backup-export-import`: zip state backup, validated import/replace, CLI commands, and round-trip safety tests are implemented.
-- [x] `04-25-implement-daemon-queue-recovery`: persisted run queue, single-instance daemon lock, drain/status/recover CLI, and crash recovery tests are implemented.
-- [x] `04-25-implement-anthropic-provider-adapter`: Anthropic Messages API adapter, streaming/tool-use normalization, CLI/web provider wiring, and fake-server tests are implemented.
-- [x] `04-25-implement-skill-evolution-eval-suite`: harness-level skill evolution suite covers crystallization, eval review gates, compact cards, and CLI eval/list coverage.
-- [x] `04-25-04-25-implement-ci-package-install-tests`: GitHub Actions CI runs source tests, builds distributions, installs the wheel, and smoke-tests CLI entrypoints plus packaged web assets.
-- [x] `04-25-implement-generated-tool-installation`: ready generated tool candidates can install as safe aliases to existing tools, load into runtime registries, execute through the harness, and uninstall cleanly.
-- [x] `04-25-implement-web-event-resume-since-event-id`: web replay supports `sinceEventId`, the client stores `last_event_id`, de-duplicates events, and rehydrates the last run.
-- [x] `04-25-implement-provider-smoke-command`: `mnemo config smoke` checks OpenAI-compatible `/models` plus chat, Anthropic chat, redacted output, and provider error exits.
-- [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.
-- [x] `04-25-implement-cross-client-skill-roots`: default skill roots now include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.
-- [x] `04-25-implement-associative-memory-recall`: memory search now surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.
-- [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata now separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.
-- [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
+- [~] Explicit cancellation: provider timeout and non-streaming retry policy exist; cancellation signals and persisted cancellation state remain.
+- [~] Browser/app connectors: local workspace, HTTP, and shell tools exist; browser/app connector tools remain.
+
+## Recently Landed Trellis Tasks
+
+- [x] `04-25-04-25-implement-provider-retry-policy`: provider config supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
 - [x] `04-25-04-25-implement-skill-patch-candidates`: model-directed `skill_patch_candidate` creates draft skill revisions with exact replacement checks, compact evidence, and unchanged source skills.
-- [x] `04-25-04-25-implement-provider-retry-policy`: provider config now supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
+- [x] `04-25-implement-file-patch-tool`: admin-gated `file_patch` applies exact workspace-scoped UTF-8 replacements with ambiguity and traversal protection.
+- [x] `04-25-implement-tool-schema-budget-separation`: prompt metadata separates prompt token estimates from provider-native tool schema estimates without storing raw schemas.
+- [x] `04-25-implement-associative-memory-recall`: memory search surfaces one-hop linked active pages through direct and reverse wiki links, and `memory_read` loads stable pages.
+- [x] `04-25-implement-cross-client-skill-roots`: default skill roots include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.
+- [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.

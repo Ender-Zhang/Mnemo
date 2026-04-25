@@ -15,12 +15,12 @@ Build the first runnable Mnemo backend slice from the design package. The MVP sh
 - Add focused tests for schema creation, run ledger append, memory candidate write, and CLI smoke.
 
 ## Acceptance Criteria
-- [ ] `mnemo --help` works.
-- [ ] `mnemo init --state-dir <dir>` creates SQLite schema and directories.
-- [ ] `mnemo run "..." --state-dir <dir>` creates or continues a Mission and writes RunLedger events.
-- [ ] A run can call local core tools through the same internal tool-call envelope used by future provider adapters.
-- [ ] Learning candidate writes are recorded with evidence/provenance and do not immediately mutate L1 stable context.
-- [ ] Tests pass locally.
+- [x] `mnemo --help` works.
+- [x] `mnemo init --state-dir <dir>` creates SQLite schema and directories.
+- [x] `mnemo run "..." --state-dir <dir>` creates or continues a Mission and writes RunLedger events.
+- [x] A run can call local core tools through the same internal tool-call envelope used by future provider adapters.
+- [x] Learning candidate writes are recorded with evidence/provenance and do not immediately mutate L1 stable context.
+- [x] Tests pass locally.
 
 ## Technical Notes
 - Use the design package as the source of truth, especially `design/00`, `design/01`, `design/02`, `design/07`, `design/10`, and `design/11`.
