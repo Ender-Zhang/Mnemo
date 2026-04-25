@@ -17,6 +17,7 @@
 - CLI: `mnemo config smoke --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --provider anthropic --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --stream --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
+- CLI: `mnemo artifacts read <artifact_id> [--json]`
 
 ### 3. Contracts
 - Provider adapters raise `ProviderStatusError` for non-2xx HTTP responses.
@@ -31,6 +32,7 @@
 - Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
 - `mnemo memory read` normalizes missing candidate/page ids this way.
+- `mnemo artifacts read` normalizes missing artifact ids this way.
 - `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
 - `mnemo tools review`, `install`, and `uninstall` normalize missing candidate/generated-tool errors this way.
 - `mnemo evals create` and `record` normalize missing runs/eval cases and invalid JSON payloads this way.
@@ -59,6 +61,7 @@
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing tool candidate/generated tool in CLI lifecycle commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run/eval case or invalid JSON in CLI eval commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -89,6 +92,7 @@
 - Web cancellation endpoint test for success and JSON error responses.
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI memory read tests for missing ids without tracebacks.
+- CLI artifact read tests for missing ids without tracebacks.
 - CLI skill command tests for missing skill, eval case, and crystallization run errors without tracebacks.
 - CLI tool lifecycle tests for missing candidate and generated tool errors without tracebacks.
 - CLI eval tests for missing runs/eval cases and invalid JSON without tracebacks.

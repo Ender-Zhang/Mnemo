@@ -1493,6 +1493,33 @@ class StateStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def list_artifacts(
+        self,
+        *,
+        mission_id: str | None = None,
+        run_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, mission_id, run_id, kind, title, created_at, updated_at
+            FROM artifacts
+        """
+        filters: list[str] = []
+        params: list[Any] = []
+        if mission_id:
+            filters.append("mission_id = ?")
+            params.append(mission_id)
+        if run_id:
+            filters.append("run_id = ?")
+            params.append(run_id)
+        if filters:
+            sql += " WHERE " + " AND ".join(filters)
+        sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
+
     def get_run_events(self, run_id: str) -> list[dict[str, Any]]:
         with self.connect() as conn:
             rows = conn.execute(

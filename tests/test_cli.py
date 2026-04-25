@@ -384,6 +384,65 @@ class CliTests(unittest.TestCase):
             self.assertIn("L1 memory snapshot page_count=1", plain.stdout)
             self.assertIn(page_id, plain.stdout)
 
+    def test_artifacts_commands_list_and_read_stored_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("artifacts")
+            mission_id = store.create_mission(conversation_id, "artifact mission")
+            run_id = store.create_run(conversation_id, mission_id, "artifact command")
+            other_mission_id = store.create_mission(conversation_id, "other artifact mission")
+            other_run_id = store.create_run(conversation_id, other_mission_id, "other artifact command")
+            artifact_id = store.upsert_artifact(
+                mission_id,
+                run_id,
+                "Launch Brief",
+                "Launch secret body",
+                "markdown",
+            )
+            other_artifact_id = store.upsert_artifact(
+                other_mission_id,
+                other_run_id,
+                "Other Brief",
+                "Other secret body",
+                "markdown",
+            )
+
+            listed = _run_cli(["artifacts", "list", "--state-dir", tmp, "--json"])
+            mission_filtered = _run_cli(
+                ["artifacts", "list", "--mission-id", mission_id, "--state-dir", tmp, "--json"]
+            )
+            run_filtered = _run_cli(
+                ["artifacts", "list", "--run-id", run_id, "--state-dir", tmp, "--json"]
+            )
+            read = _run_cli(["artifacts", "read", artifact_id, "--state-dir", tmp, "--json"])
+            plain_list = _run_cli(["artifacts", "list", "--state-dir", tmp])
+            plain_read = _run_cli(["artifacts", "read", artifact_id, "--state-dir", tmp])
+            missing = _run_cli(["artifacts", "read", "art_missing", "--state-dir", tmp])
+            no_subcommand = _run_cli(["artifacts"])
+
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            listed_payload = json.loads(listed.stdout)
+            self.assertEqual({item["id"] for item in listed_payload["artifacts"]}, {artifact_id, other_artifact_id})
+            self.assertNotIn("body", listed.stdout)
+            self.assertNotIn("Launch secret body", listed.stdout)
+            self.assertEqual(mission_filtered.returncode, 0, mission_filtered.stderr)
+            self.assertEqual(json.loads(mission_filtered.stdout)["artifacts"][0]["id"], artifact_id)
+            self.assertEqual(run_filtered.returncode, 0, run_filtered.stderr)
+            self.assertEqual(json.loads(run_filtered.stdout)["artifacts"][0]["id"], artifact_id)
+            self.assertEqual(read.returncode, 0, read.stderr)
+            self.assertEqual(json.loads(read.stdout)["artifact"]["body"], "Launch secret body")
+            self.assertIn(f"artifact {artifact_id} [markdown]", plain_list.stdout)
+            self.assertNotIn("Launch secret body", plain_list.stdout)
+            self.assertIn("# Launch Brief", plain_read.stdout)
+            self.assertIn("Launch secret body", plain_read.stdout)
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: artifact not found: art_missing", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+            self.assertEqual(no_subcommand.returncode, 1)
+            self.assertIn("mnemo: artifacts command requires a subcommand", no_subcommand.stderr)
+            self.assertNotIn("Traceback", no_subcommand.stderr)
+
     def test_memory_missing_candidate_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             promote = _run_cli(["memory", "promote", "mem_missing", "--state-dir", tmp])

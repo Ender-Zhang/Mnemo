@@ -82,6 +82,8 @@ mnemo daemon cancel <queue_id> --state-dir .mnemo
 mnemo events <run_id> --state-dir .mnemo --chat
 mnemo replay <run_id> --state-dir .mnemo
 mnemo prompt inspect <run_id> --state-dir .mnemo
+mnemo artifacts list --state-dir .mnemo
+mnemo artifacts read <artifact_id> --state-dir .mnemo
 ```
 
 ## Memory, Skills, And Tools

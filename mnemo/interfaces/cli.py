@@ -39,6 +39,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_runs(args)
         if args.command == "events":
             return _cmd_events(args)
+        if args.command == "artifacts":
+            return _cmd_artifacts(args)
         if args.command == "memory":
             return _cmd_memory(args)
         if args.command == "dream":
@@ -117,6 +119,19 @@ def build_parser() -> argparse.ArgumentParser:
     events_parser.add_argument("--since", type=int, default=0)
     events_parser.add_argument("--chat", action="store_true", help="Print ChatEvent payloads only")
     events_parser.add_argument("--json", action="store_true")
+
+    artifacts_parser = subparsers.add_parser("artifacts", help="List and read stored artifacts")
+    artifacts_subparsers = artifacts_parser.add_subparsers(dest="artifacts_command")
+    artifacts_list_parser = artifacts_subparsers.add_parser("list", help="List stored artifact metadata")
+    _add_state_dir(artifacts_list_parser)
+    artifacts_list_parser.add_argument("--mission-id")
+    artifacts_list_parser.add_argument("--run-id")
+    artifacts_list_parser.add_argument("--limit", type=int, default=50)
+    artifacts_list_parser.add_argument("--json", action="store_true")
+    artifacts_read_parser = artifacts_subparsers.add_parser("read", help="Read a stored artifact body")
+    _add_state_dir(artifacts_read_parser)
+    artifacts_read_parser.add_argument("artifact_id")
+    artifacts_read_parser.add_argument("--json", action="store_true")
 
     replay_parser = subparsers.add_parser("replay", help="Summarize a run trace")
     _add_state_dir(replay_parser)
@@ -460,6 +475,54 @@ def _cmd_events(args: argparse.Namespace) -> int:
         else:
             print(f"{event['seq']:03d} {event['event_type']} {dumps(event['payload'])}")
     return 0
+
+
+def _cmd_artifacts(args: argparse.Namespace) -> int:
+    if args.artifacts_command not in {"list", "read"}:
+        raise MnemoError("artifacts command requires a subcommand")
+    store = StateStore(args.state_dir)
+    store.initialize()
+    if args.artifacts_command == "list":
+        result = {
+            "artifacts": store.list_artifacts(
+                mission_id=args.mission_id,
+                run_id=args.run_id,
+                limit=max(0, args.limit),
+            )
+        }
+    elif args.artifacts_command == "read":
+        artifact = store.get_artifact(args.artifact_id)
+        if not artifact:
+            raise MnemoError(f"artifact not found: {args.artifact_id}")
+        result = {"artifact": artifact}
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_artifacts_result(result)
+    return 0
+
+
+def _print_artifacts_result(result: dict[str, Any]) -> None:
+    if "artifacts" in result:
+        for artifact in result["artifacts"]:
+            print(
+                f"artifact {artifact['id']} [{artifact['kind']}] "
+                f"mission={artifact['mission_id']} run={artifact['run_id']}: "
+                f"{_short_text(artifact.get('title', ''))}"
+            )
+        return
+    if "artifact" in result:
+        artifact = result["artifact"]
+        print(f"# {artifact['title']}")
+        print(
+            f"id={artifact['id']} kind={artifact['kind']} "
+            f"mission={artifact['mission_id']} run={artifact['run_id']}"
+        )
+        print()
+        print(artifact.get("body", ""))
+        return
+    print(dumps(result))
 
 
 def _cmd_replay(args: argparse.Namespace) -> int:

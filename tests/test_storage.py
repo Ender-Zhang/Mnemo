@@ -145,8 +145,17 @@ class StateStoreTests(unittest.TestCase):
             conversation_id = store.create_conversation("test")
             mission_id = store.create_mission(conversation_id, "test mission")
             run_id = store.create_run(conversation_id, mission_id, "artifact")
+            second_mission_id = store.create_mission(conversation_id, "other mission")
+            second_run_id = store.create_run(conversation_id, second_mission_id, "other artifact")
 
             artifact_id = store.upsert_artifact(mission_id, run_id, "Draft", "Artifact body", "markdown")
+            second_artifact_id = store.upsert_artifact(
+                second_mission_id,
+                second_run_id,
+                "Other Draft",
+                "Other body",
+                "markdown",
+            )
 
             artifact = store.get_artifact(artifact_id)
             self.assertIsNotNone(artifact)
@@ -157,6 +166,12 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(artifact["body"], "Artifact body")
             self.assertEqual(artifact["kind"], "markdown")
             self.assertIsNone(store.get_artifact("art_missing"))
+            listed = store.list_artifacts()
+            self.assertEqual({item["id"] for item in listed}, {artifact_id, second_artifact_id})
+            self.assertNotIn("body", listed[0])
+            self.assertEqual([item["id"] for item in store.list_artifacts(mission_id=mission_id)], [artifact_id])
+            self.assertEqual([item["id"] for item in store.list_artifacts(run_id=run_id)], [artifact_id])
+            self.assertEqual(store.list_artifacts(limit=0), [])
 
     def test_cancel_run_marks_running_run_and_is_terminal_idempotent(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
