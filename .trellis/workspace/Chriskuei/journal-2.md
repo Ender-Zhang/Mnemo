@@ -1161,3 +1161,37 @@ Added artifact card actions for continue/export/compare/send and patch apply/rev
 ### Next Steps
 
 - None - task complete
+
+
+## Session 91: Dream maintenance interface
+
+**Date**: 2026-04-25
+**Task**: Dream maintenance interface
+**Branch**: `main`
+
+### Summary
+
+Added compact Dream delta collection, model-facing maintenance plans, persisted Dream reports, dream status/report/--now CLI paths, delta-limited local fallback consolidation, and aligned memory specs/checklist/docs with full unit and package smoke validation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c3311af` | (see git log) |
+| `5488495` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
