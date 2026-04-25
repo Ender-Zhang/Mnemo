@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 78
+- **Total Sessions**: 79
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~755 | Active |
+| `journal-2.md` | ~789 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 79 | 2026-04-25 | Memory QueryPlanner foundation | `f319718`, `501d406` | `main` |
 | 78 | 2026-04-25 | Provider capability registry | `657f80d`, `5a24a28` | `main` |
 | 77 | 2026-04-25 | ToolBundle epochs | `c53b536`, `f708dd8` | `main` |
 | 76 | 2026-04-25 | Prompt modes | `ac604b3`, `ff4ef10` | `main` |

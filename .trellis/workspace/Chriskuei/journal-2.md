@@ -753,3 +753,37 @@ Added provider capability metadata for cache strategy, ToolBundle adapter epochs
 ### Next Steps
 
 - None - task complete
+
+
+## Session 79: Memory QueryPlanner foundation
+
+**Date**: 2026-04-25
+**Task**: Memory QueryPlanner foundation
+**Branch**: `main`
+
+### Summary
+
+Added deterministic Memory QueryPlanner foundations: compact query plans, lexical/semantic-style/dimension/temporal routes, fused multi-route memory/session retrieval, stale/tombstone annotations, memory_search query_plan metadata, and CLI --debug-query. Updated memory/tool/error specs and checklist. Validated targeted memory/tool/CLI/harness tests, full unit suite, compileall, CLI smoke, task context validation, and repo-external wheel install smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f319718` | (see git log) |
+| `501d406` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
