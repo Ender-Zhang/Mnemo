@@ -47,3 +47,37 @@ Added config smoke --stream for streaming-only OpenAI-compatible chat models, va
 ### Next Steps
 
 - None - task complete
+
+
+## Session 61: Expose memory read CLI
+
+**Date**: 2026-04-25
+**Task**: Expose memory read CLI
+**Branch**: `main`
+
+### Summary
+
+Added mnemo memory read for inspecting memory candidates and stable pages by id, normalized missing-id errors, updated memory/error contracts and README, and covered candidate/page/plain/missing cases with CLI regression tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f72dd3d` | (see git log) |
+| `8652b04` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
