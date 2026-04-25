@@ -9,8 +9,8 @@ _SCHEMA: dict[str, Any] = {
     "title": "MnemoCore",
     "description": "Compact personal AI OS API for SDK, MCP, CLI, and external runtime integrations.",
     "transport": {
-        "current": ["python:in_process", "cli:schema"],
-        "planned": ["mcp", "http", "runtime_adapter"],
+        "current": ["python:in_process", "cli:schema", "mcp:json_rpc_jsonl"],
+        "planned": ["mcp:content_length", "http", "runtime_adapter"],
     },
     "methods": {
         "context": {

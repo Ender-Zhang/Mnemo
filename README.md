@@ -13,6 +13,7 @@ The repository contains both the design package in `design/` and the runnable im
 - Lightweight tool harness with policy-gated memory, skill, artifact, file, shell, HTTP, browser, and app connector tools.
 - Memory candidate pipeline, associative memory pages, DreamCycle consolidation, and daily L1 memory snapshot.
 - Skill scanning, draft/review/promote flow, skill patch candidates, SOP crystallization, and generated tool lifecycle gates.
+- Reference SDK and MCP-style tool server for compact external integrations.
 - Daemon queue, run cancellation, backup/export/import, replay, and eval harness commands.
 
 ## Quick Start
@@ -117,6 +118,17 @@ mnemo tools uninstall <name> --state-dir .mnemo
 ```
 
 Normal turns do not mutate stable memory directly. They write candidates and working notes; DreamCycle consolidates them into durable memory pages and cache-friendly snapshots. Skills and tools follow the same model-directed pattern: propose, evaluate, review, then promote.
+
+## External Integration
+
+```bash
+mnemo api schema --json
+mnemo mcp tools --state-dir .mnemo --json
+mnemo mcp call mnemo_context --state-dir .mnemo --arguments-json '{"intent":"status update"}' --json
+mnemo mcp serve --state-dir .mnemo
+```
+
+The MCP-style server exposes compact context, update, recall, search, skills, tools, run, replay, eval, and status surfaces. Watch and cron tools are listed as deferred surfaces until durable scheduling lands.
 
 ## Backup And Validation
 

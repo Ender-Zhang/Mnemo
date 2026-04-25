@@ -51,3 +51,56 @@
 - SDK context, recall, run/replay/evaluate, and schema shape tests.
 - CLI schema command tests for JSON and readable output.
 - Package install smoke import coverage for `mnemo.sdk`.
+
+## Scenario: MCP-Style Tool Server
+
+### 1. Scope / Trigger
+- Trigger: changes to `mnemo/mcp/`, `mnemo mcp ...` CLI commands, or external tool-surface contracts.
+- Goal: expose Mnemo capabilities as compact model-callable tools without introducing a second agent workflow.
+
+### 2. Signatures
+- `mnemo.mcp.MnemoMcpServer(state_dir=DEFAULT_STATE_DIR, workspace_root=None)`
+- `MnemoMcpServer.tools() -> list[dict[str, Any]]`
+- `MnemoMcpServer.call_tool(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]`
+- `MnemoMcpServer.call_tool_result(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]`
+- `MnemoMcpServer.handle_json_rpc(message: dict[str, Any]) -> dict[str, Any] | None`
+- `MnemoMcpServer.serve_jsonl(input_stream=None, output_stream=None) -> None`
+- CLI: `mnemo mcp tools [--state-dir DIR] [--json]`
+- CLI: `mnemo mcp call TOOL --arguments-json JSON [--state-dir DIR] [--json]`
+- CLI: `mnemo mcp serve [--state-dir DIR]`
+
+### 3. Contracts
+- MCP is a transport/tool facade; it must reuse SDK and domain services rather than defining workflow steps.
+- Tool descriptors use MCP-style `inputSchema` and annotations, plus a compact `mnemo.risk` field.
+- `mnemo_context`, `mnemo_recall`, `mnemo_run`, `mnemo_replay`, and `mnemo_eval` route through `MnemoClient`.
+- `mnemo_update` writes memory candidates and W0 working notes only; it must not mutate stable memory pages directly.
+- `mnemo_search` returns compact memory cards and query-plan metadata without raw evidence blobs.
+- `mnemo_skills` returns compact skill cards; full skill bodies remain behind existing skill-specific surfaces.
+- `mnemo_tools` returns compact tool cards and ToolBundle metadata; it must not return raw provider input schemas by default.
+- `mnemo_watch` and `mnemo_cron` are explicit deferred surfaces until durable watch/cron persistence exists.
+- JSON-RPC support covers `initialize`, `tools/list`, and `tools/call` with structured error responses.
+- JSONL stdio is the current lightweight serving mode; full MCP Content-Length framing can be added as a transport layer later.
+
+### 4. Validation & Error Matrix
+| Case | Expected Behavior | Test Point |
+| --- | --- | --- |
+| Tool descriptors | Core tool names, `inputSchema`, and read/write annotations are present | `tests/test_mcp.py` |
+| Compact reads | Context/search/recall/skills/tools do not expose raw evidence or raw input schemas | `tests/test_mcp.py` |
+| Update writes | External facts become memory candidates and observations become W0 notes | `tests/test_mcp.py` |
+| Runtime calls | Run/replay/eval/status reuse existing services and compact results | `tests/test_mcp.py` |
+| JSON-RPC | Initialize, list, call, unknown-method, and JSONL serving behave predictably | `tests/test_mcp.py` |
+| CLI | `mnemo mcp tools` and `mnemo mcp call` support JSON and normalized errors | `tests/test_cli.py` |
+| Package install | Installed wheel exposes `mnemo.mcp.MnemoMcpServer` | `tests/package_install_smoke.py` |
+
+### 5. Good/Base/Bad Cases
+- Good: add new MCP tools as thin wrappers over SDK/domain services with compact outputs.
+- Good: keep tool outputs model-actionable and small enough for external context capsules.
+- Base: watch/cron descriptors can return deferred status until persistence is implemented.
+- Bad: adding provider-specific workflow routing inside the MCP server.
+- Bad: returning full traces, full artifacts, raw provider schemas, or stable-memory mutations from generic update calls.
+
+### 6. Tests Required
+- Direct MCP server tests for descriptors, calls, compactness, and deferred surfaces.
+- JSON-RPC tests for success and structured errors.
+- CLI tests for JSON output and error normalization.
+- Package install smoke import coverage for `mnemo.mcp`.

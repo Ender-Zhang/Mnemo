@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "MCP foundation touches integration boundaries and compact agent surfaces"}

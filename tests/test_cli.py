@@ -1468,6 +1468,41 @@ class CliTests(unittest.TestCase):
         self.assertIn("MnemoCore mnemo.core_api.v1", text_result.stdout)
         self.assertIn("- context:", text_result.stdout)
 
+    def test_mcp_tools_and_call_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = _run_cli(["mcp", "tools", "--state-dir", tmp, "--json"])
+            call = _run_cli(
+                [
+                    "mcp",
+                    "call",
+                    "mnemo_context",
+                    "--state-dir",
+                    tmp,
+                    "--arguments-json",
+                    '{"intent":"CLI MCP"}',
+                    "--json",
+                ]
+            )
+            invalid = _run_cli(
+                [
+                    "mcp",
+                    "call",
+                    "mnemo_context",
+                    "--state-dir",
+                    tmp,
+                    "--arguments-json",
+                    "{",
+                ]
+            )
+
+            self.assertEqual(tools.returncode, 0, tools.stderr)
+            self.assertIn("mnemo_context", {tool["name"] for tool in json.loads(tools.stdout)["tools"]})
+            self.assertEqual(call.returncode, 0, call.stderr)
+            self.assertEqual(json.loads(call.stdout)["result"]["kind"], "context_block")
+            self.assertEqual(invalid.returncode, 1)
+            self.assertIn("mnemo: invalid --arguments-json", invalid.stderr)
+            self.assertNotIn("Traceback", invalid.stderr)
+
     def test_backup_export_and_import_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

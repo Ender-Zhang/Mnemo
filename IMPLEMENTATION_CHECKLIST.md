@@ -12,7 +12,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] Runnable core: CLI/Web/local/provider runtime, RunLedger, basic memory/skill/tool loops, streaming events, package smoke, and core eval suites work.
 - [~] Product completeness: several systems exist as foundations but do not yet satisfy the full design package contracts.
-- [ ] Extensions: Watch/Sense/Sub-Agent/RuntimeAdapter/MCP/SDK and richer external integrations remain future Trellis work unless explicitly prioritized.
+- [ ] Extensions: Watch/Sense/Sub-Agent/RuntimeAdapter, full MCP transport framing, and richer external integrations remain future Trellis work unless explicitly prioritized.
 
 ## Foundation
 
@@ -151,7 +151,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Daemon status command.
 - [x] Backup/export/import.
 - [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient` and `mnemo.core_api.v1` schema exist; HTTP/OpenAPI server bindings and non-Python generated clients are not complete.
-- [ ] MCP server exposing context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status tools.
+- [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC JSONL stdio, and CLI list/call/serve exist for context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status; full MCP transport framing, durable watch/cron persistence, and external packaging remain incomplete.
 - [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
 - [ ] Watch/Cron persistence and scheduled event processing.
 - [x] Sessions/messages/L4 search tables and FTS5 indexes for persisted run messages.
@@ -161,11 +161,12 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
 - [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, Inbox/Decision persistence, provider after-turn learning packets, and one-shot high-risk approval execution are implemented; local/background learning reflection and richer frontend recall/learning actions remain.
-- [~] Highest-priority integration alignment: SDK/API schema foundation exists; MCP server and external RuntimeAdapter with context capsule boundaries remain.
+- [~] Highest-priority integration alignment: SDK/API schema and MCP-style tool server foundations exist; full MCP transport framing and external RuntimeAdapter with context capsule boundaries remain.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-25-mcp-server-foundation`: Mnemo now exposes dependency-free MCP-style tool descriptors, direct tool calls, JSON-RPC JSONL stdio, and CLI list/call/serve for compact context/update/recall/search/skills/tools/run/replay/eval/status surfaces.
 - [x] `04-25-high-risk-tool-decision-cards`: Denied external/admin tool calls now persist compact `tool_approval` Inbox decisions and stream through the existing inline decision-card path without executing the denied handler.
 - [x] `04-25-04-25-approved-tool-approval-execution`: Accepted `tool_approval` Inbox decisions now execute once through ToolHarness and return compact Web/CLI execution metadata.
 - [x] `04-25-core-sdk-api-schema-foundation`: Mnemo now exposes a dependency-free Python reference SDK plus `mnemo api schema` for the core context/recall/run/replay/evaluate contract.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 from typing import Any, Sequence
 
 from .. import __version__
@@ -13,6 +14,7 @@ from ..core.jsonutil import dumps, loads
 from ..core.models import PROMPT_MODES, RunRequest
 from ..evals import EvalHarness, list_suites, replay_summary
 from ..memory import MemoryEngine
+from ..mcp import MnemoMcpServer
 from ..providers import (
     AnthropicProviderAdapter,
     OpenAIProviderAdapter,
@@ -82,6 +84,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_config(args)
         if args.command == "api":
             return _cmd_api(args)
+        if args.command == "mcp":
+            return _cmd_mcp(args)
         parser.print_help()
         return 0
     except MnemoError as exc:
@@ -518,6 +522,19 @@ def build_parser() -> argparse.ArgumentParser:
     api_subparsers = api_parser.add_subparsers(dest="api_command")
     api_schema_parser = api_subparsers.add_parser("schema", help="Print the MnemoCore API schema")
     api_schema_parser.add_argument("--json", action="store_true")
+
+    mcp_parser = subparsers.add_parser("mcp", help="Expose Mnemo MCP-style tools")
+    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
+    mcp_tools_parser = mcp_subparsers.add_parser("tools", help="List MCP-style Mnemo tools")
+    _add_state_dir(mcp_tools_parser)
+    mcp_tools_parser.add_argument("--json", action="store_true")
+    mcp_call_parser = mcp_subparsers.add_parser("call", help="Call one MCP-style Mnemo tool")
+    _add_state_dir(mcp_call_parser)
+    mcp_call_parser.add_argument("tool_name")
+    mcp_call_parser.add_argument("--arguments-json", default="{}", help="Tool arguments as a JSON object")
+    mcp_call_parser.add_argument("--json", action="store_true")
+    mcp_serve_parser = mcp_subparsers.add_parser("serve", help="Serve MCP-style JSON-RPC over JSON lines")
+    _add_state_dir(mcp_serve_parser)
     return parser
 
 
@@ -548,6 +565,42 @@ def _cmd_api(args: argparse.Namespace) -> int:
     print(schema["description"])
     for name, method in schema["methods"].items():
         print(f"- {name}: {method['description']} ({method['side_effects']})")
+    return 0
+
+
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    if args.mcp_command not in {"tools", "call", "serve"}:
+        raise MnemoError("mcp command requires a subcommand")
+    server = MnemoMcpServer(state_dir=args.state_dir, workspace_root=Path.cwd())
+
+    if args.mcp_command == "tools":
+        tools = server.tools()
+        if args.json:
+            print(dumps({"tools": tools}))
+            return 0
+        for tool in tools:
+            risk = tool.get("mnemo", {}).get("risk", "read")
+            print(f"{tool['name']} [{risk}]: {tool['description']}")
+        return 0
+
+    if args.mcp_command == "call":
+        try:
+            arguments = loads(args.arguments_json, {})
+        except ValueError as exc:
+            raise MnemoError(f"invalid --arguments-json: {exc}") from exc
+        if not isinstance(arguments, dict):
+            raise MnemoError("--arguments-json must decode to an object")
+        try:
+            result = server.call_tool(args.tool_name, arguments)
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
+        if args.json:
+            print(dumps({"tool": args.tool_name, "result": result}))
+            return 0
+        print(dumps(result))
+        return 0
+
+    server.serve_jsonl()
     return 0
 
 

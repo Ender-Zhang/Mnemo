@@ -18,6 +18,8 @@ mnemo/
   skills/      skill scanning, service lifecycle, generated SKILL.md writes
   prompt/      PromptBlock and PromptAssembler
   evals/       deterministic harness suites
+  sdk/         reference in-process integration API
+  mcp/         MCP-style tool descriptors, calls, and JSON-RPC bridge
   interfaces/  CLI and stdlib web server/static assets
 tests/         unittest test suite mirrored by behavior area
 design/        design package, not runtime code
@@ -30,6 +32,7 @@ design/        design package, not runtime code
 - Provider protocol normalization belongs in `mnemo/providers/base.py`; runtime orchestration stays in `mnemo/runtime/provider.py`.
 - Tool specs and handlers belong in `mnemo/tools/registry.py` or `mnemo/tools/standard.py`.
 - Domain services should stay close to their domain: memory in `mnemo/memory/`, skills in `mnemo/skills/`, prompt in `mnemo/prompt/`.
+- External integration facades belong in `mnemo/sdk/` or `mnemo/mcp/`; they should route into existing services instead of duplicating domain logic.
 - Tests use stdlib `unittest` and live in `tests/test_<area>.py`.
 
 ### 4. Validation & Error Matrix
