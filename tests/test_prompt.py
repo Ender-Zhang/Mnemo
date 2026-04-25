@@ -223,6 +223,50 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertIn("skills.index", dropped_ids)
         self.assertIn("memory.index", dropped_ids)
 
+    def test_budget_exceeded_when_required_blocks_alone_overflow(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "Current turn must stay even when the budget is impossible.",
+            mission={"brief": "Required blocks must remain"},
+            tool_specs=[_tool("file_read")],
+            memory_cards=[
+                {
+                    "id": "mempg_1",
+                    "type": "page",
+                    "title": "optional memory",
+                    "summary": "memory detail " * 20,
+                    "confidence": 0.9,
+                    "status": "active",
+                }
+            ],
+            skill_cards=[
+                {
+                    "name": "optional_skill",
+                    "description": "skill detail " * 20,
+                    "status": "active",
+                }
+            ],
+            token_budget=1,
+        )
+
+        metadata = prompt.metadata()
+        block_ids = [block.id for block in prompt.blocks]
+        dropped_ids = [block["id"] for block in metadata["dropped_blocks"]]
+
+        self.assertEqual(
+            block_ids,
+            [
+                "system.identity",
+                "developer.operating_principles",
+                "mission.continuation",
+                "turn.current_user_message",
+            ],
+        )
+        self.assertIn("tools.cards", dropped_ids)
+        self.assertIn("memory.index", dropped_ids)
+        self.assertIn("skills.index", dropped_ids)
+        self.assertTrue(metadata["budget_exceeded"])
+        self.assertGreater(metadata["prompt_token_estimate"], metadata["token_budget"])
+
     def test_unbudgeted_prompt_keeps_optional_blocks(self) -> None:
         prompt = PromptAssembler().assemble(
             "Keep all context",

@@ -29,7 +29,7 @@
 | --- | --- | --- |
 | No budget (`token_budget=None`) | Keep all blocks | `tests/test_prompt.py` |
 | Budget exceeded with optional context | Drop optional blocks by lowest value/highest priority | `tests/test_prompt.py` |
-| Budget exceeded after all optional drops | Keep required blocks and set `budget_exceeded=true` | Prompt test when added |
+| Budget exceeded after all optional drops | Keep required blocks and set `budget_exceeded=true` | `tests/test_prompt.py` |
 | Large checkpoint value | Compact inside mission continuation | `tests/test_prompt.py` |
 | Metadata inspection | No prompt content or secrets in metadata | `tests/test_prompt.py` |
 | L1 snapshot present | Add `memory.l1_snapshot` with `daily_context` cache segment before `memory.index` | `tests/test_prompt.py` |
