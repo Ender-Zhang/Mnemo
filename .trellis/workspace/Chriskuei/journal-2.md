@@ -855,3 +855,37 @@ Added shared injection warnings, memory candidate taint scanning, write_candidat
 ### Next Steps
 
 - None - task complete
+
+
+## Session 82: After-turn learning packet
+
+**Date**: 2026-04-25
+**Task**: After-turn learning packet
+**Branch**: `main`
+
+### Summary
+
+Added compact after-turn learning packets, provider-native learning reflection with a learning.v1 ToolBundle, mixed memory/skill/tool/eval candidate projection, local record-only packet events, and runtime regression coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a842819` | (see git log) |
+| `2dd61ab` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

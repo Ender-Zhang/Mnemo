@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 81
+- **Total Sessions**: 82
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~857 | Active |
+| `journal-2.md` | ~891 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 82 | 2026-04-25 | After-turn learning packet | `a842819`, `2dd61ab` | `main` |
 | 81 | 2026-04-25 | Memory write taint scanner | `88f352e`, `3959ce9` | `main` |
 | 80 | 2026-04-25 | Memory tombstone health foundation | `e2c10b8`, `6708c1d` | `main` |
 | 79 | 2026-04-25 | Memory QueryPlanner foundation | `f319718`, `501d406` | `main` |
