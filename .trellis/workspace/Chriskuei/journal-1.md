@@ -1864,3 +1864,36 @@ Converted expected SkillService ValueError paths to MnemoError at the CLI bounda
 ### Next Steps
 
 - None - task complete
+
+
+## Session 56: Expose tool evolution CLI
+
+**Date**: 2026-04-25
+**Task**: Expose tool evolution CLI
+**Branch**: `main`
+
+### Summary
+
+Added CLI lifecycle commands for generated tool candidates, including candidate listing, review, install, and generated-tool uninstall; kept existing mnemo tools list behavior; covered lifecycle and normalized missing-id errors in CLI tests; updated README, backend contracts, and implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `84023e7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
