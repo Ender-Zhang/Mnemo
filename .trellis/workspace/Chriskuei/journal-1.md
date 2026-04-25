@@ -1565,3 +1565,37 @@ Added deterministic ToolHarness edge regression coverage for binary file reads a
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: Web stop active run target
+
+**Date**: 2026-04-25
+**Task**: Web stop active run target
+**Branch**: `main`
+
+### Summary
+
+Fixed the web Stop control to cancel only the current active streaming run by separating volatile activeRunId from durable lastRunId replay state. Added asset regression checks, updated frontend state specs, and kept web/full tests passing.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1ff4aa5` | (see git log) |
+| `b2bf3a2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
