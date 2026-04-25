@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "fullstack quality gates"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "artifact storage read contract"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "artifact card compact payload contract"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "single-chat resume and browser persistence contract"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "storage to web to UI data flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "reuse existing card and JSON patterns"}
