@@ -81,6 +81,7 @@
 - `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
 - `get_artifact()` returns `None` for unknown ids and a plain JSON-serializable dict for known ids.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
+- CLI graph inspection must use these read APIs and remain read-only: `mnemo memory links <memory_id>`.
 - Chat replay by `event_id` is derived from persisted `chat.event` payloads in run order.
 - Unknown chat `event_id` returns all chat events for the run so clients can safely rehydrate.
 
@@ -108,6 +109,7 @@
 | Eval case storage | Add, list by target/status, and update result payloads | `tests/test_storage.py`, `tests/test_cli.py` |
 | Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
+| CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
 | Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases

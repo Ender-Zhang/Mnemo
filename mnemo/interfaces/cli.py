@@ -140,6 +140,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(memory_read_parser)
     memory_read_parser.add_argument("memory_id")
     memory_read_parser.add_argument("--json", action="store_true")
+    memory_links_parser = memory_subparsers.add_parser("links", help="List memory graph links for an id")
+    _add_state_dir(memory_links_parser)
+    memory_links_parser.add_argument("memory_id")
+    memory_links_parser.add_argument("--direction", choices=["outgoing", "incoming", "both"], default="both")
+    memory_links_parser.add_argument("--json", action="store_true")
     memory_promote_parser = memory_subparsers.add_parser("promote", help="Promote a memory candidate")
     _add_state_dir(memory_promote_parser)
     memory_promote_parser.add_argument("candidate_id")
@@ -490,6 +495,8 @@ def _cmd_memory(args: argparse.Namespace) -> int:
             result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
         elif args.memory_command == "read":
             result = {"memory": _read_memory_item(store, args.memory_id)}
+        elif args.memory_command == "links":
+            result = _memory_links(store, args.memory_id, args.direction)
         elif args.memory_command == "promote":
             result = engine.promote_candidate(args.candidate_id)
         elif args.memory_command == "reject":
@@ -525,6 +532,12 @@ def _cmd_dream(args: argparse.Namespace) -> int:
 
 
 def _print_memory_result(result: dict) -> None:
+    if "memory_id" in result and ("outgoing" in result or "incoming" in result):
+        for link in result.get("outgoing", []):
+            print(_format_memory_link("outgoing", link))
+        for link in result.get("incoming", []):
+            print(_format_memory_link("incoming", link))
+        return
     if "candidates" in result or "pages" in result:
         for candidate in result.get("candidates", []):
             confidence = float(candidate.get("confidence", 0.0))
@@ -582,6 +595,25 @@ def _list_memory_items(store: StateStore, kind: str, status: str | None, limit: 
         "candidates": candidates,
         "pages": pages,
     }
+
+
+def _memory_links(store: StateStore, memory_id: str, direction: str) -> dict[str, Any]:
+    outgoing = store.list_memory_links(memory_id) if direction in {"outgoing", "both"} else []
+    incoming = store.list_memory_backlinks(memory_id) if direction in {"incoming", "both"} else []
+    return {
+        "memory_id": memory_id,
+        "direction": direction,
+        "outgoing": outgoing,
+        "incoming": incoming,
+    }
+
+
+def _format_memory_link(direction: str, link: dict[str, Any]) -> str:
+    weight = float(link.get("weight", 0.0))
+    return (
+        f"{direction} {link['id']} {link['source_id']} -> {link['target_id']} "
+        f"{link['relation']} weight={weight:.2f}"
+    )
 
 
 def _memory_status_filter(status: str | None, *, default: str) -> str | None:

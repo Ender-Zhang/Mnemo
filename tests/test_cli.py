@@ -263,6 +263,48 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: memory not found: mem_missing", missing.stderr)
             self.assertNotIn("Traceback", missing.stderr)
 
+    def test_memory_links_command_reads_outgoing_and_incoming_edges(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            seed_id = store.upsert_memory_page(
+                "preferences: python",
+                "User prefers pytest for Python tests",
+                confidence=0.9,
+            )
+            outgoing_id = store.upsert_memory_page(
+                "preferences: reporting",
+                "User expects concise failure summaries",
+                confidence=0.82,
+            )
+            incoming_id = store.upsert_memory_page(
+                "preferences: ci",
+                "User expects CI examples",
+                confidence=0.78,
+            )
+            outgoing_link_id = store.add_memory_link(seed_id, outgoing_id, "related", weight=0.8)
+            incoming_link_id = store.add_memory_link(incoming_id, seed_id, "supports", weight=0.7)
+
+            both = _run_cli(["memory", "links", seed_id, "--state-dir", tmp, "--json"])
+            outgoing = _run_cli(
+                ["memory", "links", seed_id, "--direction", "outgoing", "--state-dir", tmp, "--json"]
+            )
+            incoming = _run_cli(
+                ["memory", "links", seed_id, "--direction", "incoming", "--state-dir", tmp, "--json"]
+            )
+            plain = _run_cli(["memory", "links", seed_id, "--state-dir", tmp])
+
+            self.assertEqual(both.returncode, 0, both.stderr)
+            both_payload = json.loads(both.stdout)
+            self.assertEqual([link["id"] for link in both_payload["outgoing"]], [outgoing_link_id])
+            self.assertEqual([link["id"] for link in both_payload["incoming"]], [incoming_link_id])
+            self.assertEqual(outgoing.returncode, 0, outgoing.stderr)
+            self.assertEqual(json.loads(outgoing.stdout)["incoming"], [])
+            self.assertEqual(incoming.returncode, 0, incoming.stderr)
+            self.assertEqual(json.loads(incoming.stdout)["outgoing"], [])
+            self.assertIn(f"outgoing {outgoing_link_id} {seed_id} -> {outgoing_id} related weight=0.80", plain.stdout)
+            self.assertIn(f"incoming {incoming_link_id} {incoming_id} -> {seed_id} supports weight=0.70", plain.stdout)
+
     def test_memory_missing_candidate_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             promote = _run_cli(["memory", "promote", "mem_missing", "--state-dir", tmp])

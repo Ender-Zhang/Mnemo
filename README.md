@@ -90,6 +90,7 @@ mnemo prompt inspect <run_id> --state-dir .mnemo
 mnemo memory list --state-dir .mnemo
 mnemo memory search "implementation preferences" --state-dir .mnemo
 mnemo memory read <memory_id> --state-dir .mnemo
+mnemo memory links <memory_id> --state-dir .mnemo
 mnemo dream run --state-dir .mnemo
 
 mnemo skills scan --state-dir .mnemo
