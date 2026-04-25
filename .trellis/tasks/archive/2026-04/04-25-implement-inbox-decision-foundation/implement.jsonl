@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/04-proactive-sense-inbox.md", "reason": "design-inbox"}
+{"file": "design/08-frontend-chat.md", "reason": "design-frontend"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "backend-database"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "backend-tool-harness"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "frontend-components"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "frontend-state"}
