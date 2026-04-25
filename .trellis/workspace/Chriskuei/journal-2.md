@@ -257,3 +257,41 @@ Added read-only mnemo memory notes for inspecting W0 working notes that feed Dre
 ### Next Steps
 
 - None - task complete
+
+
+## Session 66: Expose artifacts CLI
+
+**Date**: 2026-04-25
+**Task**: Expose artifacts CLI
+**Branch**: `main`
+
+### Summary
+
+Added read-only artifact listing and reading commands, with compact list output and normalized missing-id errors.
+
+### Main Changes
+
+- Added `StateStore.list_artifacts()` for recency-ordered artifact metadata with optional mission/run filters and no body text.
+- Added `mnemo artifacts list` and `mnemo artifacts read <artifact_id>` with JSON/plain output and normalized `MnemoError` boundaries.
+- Updated README, implementation checklist, and backend storage/error specs for the new CLI contract.
+- Added storage and CLI regression coverage for list filtering, explicit body reads, and no-subcommand/missing-id errors.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `629974d` | (see git log) |
+| `4447bb9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
