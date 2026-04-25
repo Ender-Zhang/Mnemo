@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 51
+- **Total Sessions**: 52
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1734 | Active |
+| `journal-1.md` | ~1767 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 52 | 2026-04-25 | Cover tool evolution missing candidates | `999322c` | `main` |
 | 51 | 2026-04-25 | Cover prompt required budget overflow | `83d6744` | `main` |
 | 50 | 2026-04-25 | Tighten web_fetch URL validation | `2424140` | `main` |
 | 49 | 2026-04-25 | Refresh README current capabilities | `7f0a03a` | `main` |

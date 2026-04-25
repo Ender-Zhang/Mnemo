@@ -1732,3 +1732,36 @@ Added prompt assembly regression coverage for impossible token budgets, verified
 ### Next Steps
 
 - None - task complete
+
+
+## Session 52: Cover tool evolution missing candidates
+
+**Date**: 2026-04-25
+**Task**: Cover tool evolution missing candidates
+**Branch**: `main`
+
+### Summary
+
+Added service-level NotFoundError tests for missing tool candidates, added model-facing tool_review_candidate compact failure coverage, updated tool-evolution spec, and recorded the task in the implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `999322c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
