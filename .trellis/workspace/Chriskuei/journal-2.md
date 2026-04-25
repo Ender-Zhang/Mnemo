@@ -215,3 +215,37 @@ Added read-only mnemo memory snapshot for inspecting the compact L1 snapshot use
 ### Next Steps
 
 - None - task complete
+
+
+## Session 65: Expose memory notes CLI
+
+**Date**: 2026-04-25
+**Task**: Expose memory notes CLI
+**Branch**: `main`
+
+### Summary
+
+Added read-only mnemo memory notes for inspecting W0 working notes that feed DreamCycle, including default open-note listing, unfiltered processed note inspection, compact text output, README/spec/checklist updates, and CLI regression coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `40ed2cc` | (see git log) |
+| `284e793` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
