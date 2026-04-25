@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 85
+- **Total Sessions**: 86
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~993 | Active |
+| `journal-2.md` | ~1027 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 86 | 2026-04-25 | MCP server foundation | `c8ab7ca`, `6390495` | `main` |
 | 85 | 2026-04-25 | Core SDK and API schema foundation | `4d0d177`, `1fcf71d` | `main` |
 | 84 | 2026-04-25 | Approved tool approval execution | `9fef809`, `06d26a1` | `main` |
 | 83 | 2026-04-25 | High-risk tool decision cards | `6cd783c`, `19a87f0` | `main` |

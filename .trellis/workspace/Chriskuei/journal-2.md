@@ -991,3 +991,37 @@ Added dependency-free mnemo.sdk.MnemoClient and mnemo.core_api.v1 schema for con
 ### Next Steps
 
 - None - task complete
+
+
+## Session 86: MCP server foundation
+
+**Date**: 2026-04-25
+**Task**: MCP server foundation
+**Branch**: `main`
+
+### Summary
+
+Added dependency-free MCP-style tool descriptors, direct tool calls, JSON-RPC JSONL stdio, and CLI list/call/serve for compact Mnemo context/update/recall/search/skills/tools/run/replay/eval/status surfaces.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c8ab7ca` | (see git log) |
+| `6390495` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
