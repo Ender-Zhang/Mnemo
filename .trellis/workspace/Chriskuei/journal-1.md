@@ -1897,3 +1897,36 @@ Added CLI lifecycle commands for generated tool candidates, including candidate 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 57: Expose eval case CLI
+
+**Date**: 2026-04-25
+**Task**: Expose eval case CLI
+**Branch**: `main`
+
+### Summary
+
+Added a shared mnemo evals CLI for listing stored eval cases and recording pass/fail JSON results, covered tool and skill target filters plus normalized missing-case and invalid-result errors, and updated README, backend contracts, and implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `286947b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
