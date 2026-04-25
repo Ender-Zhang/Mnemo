@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 88
+- **Total Sessions**: 89
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1095 | Active |
+| `journal-2.md` | ~1129 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 89 | 2026-04-25 | Web settings drawer | `cdb15e6`, `f078561` | `main` |
 | 88 | 2026-04-25 | MCP content length transport | `5fabaa6`, `50cd0c7` | `main` |
 | 87 | 2026-04-25 | Scheduled watch cron foundation | `5afd8fd`, `bc95af8` | `main` |
 | 86 | 2026-04-25 | MCP server foundation | `c8ab7ca`, `6390495` | `main` |

@@ -1093,3 +1093,37 @@ Added standard MCP Content-Length stdio framing, CLI transport selection, JSONL 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 89: Web settings drawer
+
+**Date**: 2026-04-25
+**Task**: Web settings drawer
+**Branch**: `main`
+
+### Summary
+
+Added a low-frequency single-chat settings drawer, compact /api/settings summary/update endpoints, quiet-hours persistence, asset rendering hooks, specs/checklist updates, and web/package smoke coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cdb15e6` | (see git log) |
+| `f078561` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
