@@ -131,3 +131,37 @@ Added read-only mnemo memory list for draft candidates, active pages, and unfilt
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: Expose memory links CLI
+
+**Date**: 2026-04-25
+**Task**: Expose memory links CLI
+**Branch**: `main`
+
+### Summary
+
+Added read-only mnemo memory links for outgoing, incoming, and bidirectional associative memory graph inspection; documented memory/database contracts and README; covered JSON direction filters and compact non-JSON rows with CLI regression tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d198a70` | (see git log) |
+| `a1c2b54` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
