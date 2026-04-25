@@ -1059,3 +1059,37 @@ Added durable scheduled watch/cron items, simple schedule parsing, CLI/MCP regis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 88: MCP content length transport
+
+**Date**: 2026-04-25
+**Task**: MCP content length transport
+**Branch**: `main`
+
+### Summary
+
+Added standard MCP Content-Length stdio framing, CLI transport selection, JSONL debug mode preservation, SDK/checklist/spec docs, and server/CLI/package smoke coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5fabaa6` | (see git log) |
+| `50cd0c7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
