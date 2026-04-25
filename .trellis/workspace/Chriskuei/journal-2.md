@@ -187,18 +187,26 @@ Added read-only mnemo memory snapshot for inspecting the compact L1 snapshot use
 
 ### Main Changes
 
-(Add details)
+- Added `mnemo memory snapshot [--json]` to inspect the existing compact L1 memory snapshot used by prompt assembly.
+- Kept the command read-only: it calls `MemoryEngine.load_l1_snapshot()` and does not regenerate the snapshot.
+- Missing or invalid snapshot files return `exists=false` with exit code 0.
+- Updated README, implementation checklist, and backend memory/prompt contracts.
 
 ### Git Commits
 
 | Hash | Message |
 |------|---------|
-| `6218052` | (see git log) |
-| `90ea2ba` | (see git log) |
+| `6218052` | feat: expose memory snapshot cli |
+| `90ea2ba` | chore(task): archive 04-25-expose-memory-snapshot-cli |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_memory_snapshot_command_reads_compiled_l1_snapshot`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `task.py validate 04-25-expose-memory-snapshot-cli`
+- [OK] Temporary venv `pip wheel` install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
