@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "design/08-frontend-chat.md", "reason": "frontend learning chip contract"}
+{"file": "design/10-evolution-loops.md", "reason": "learning candidate actions"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "memory candidate lifecycle"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "web JSON errors"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "inline chip rendering"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "web API and replay state"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "cross-layer API flow"}

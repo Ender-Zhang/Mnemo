@@ -210,6 +210,77 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(invalid_status, 400)
                 self.assertIn("invalid inbox resolution", json.loads(invalid_body)["error"])
 
+    def test_web_learning_memory_actions_resolve_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("web learning")
+            mission_id = store.create_mission(conversation_id, "web learning")
+            run_id = store.create_run(conversation_id, mission_id, "learn from chip")
+            accept_id = store.add_memory_candidate(
+                run_id,
+                "User prefers inline learning chip actions",
+                dimension="preferences",
+                confidence=0.84,
+            )
+            this_time_id = store.add_memory_candidate(run_id, "Temporary web-only learning")
+            reject_id = store.add_memory_candidate(run_id, "Wrong web learning")
+
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request(
+                    "POST",
+                    "/api/learning/memory",
+                    {"candidate_id": accept_id, "action": "accept"},
+                )
+                this_time_status, _, this_time_body = server.request(
+                    "POST",
+                    "/api/learning/memory",
+                    {"candidate_id": this_time_id, "action": "this_time"},
+                )
+                reject_status, _, reject_body = server.request(
+                    "POST",
+                    "/api/learning/memory",
+                    {"candidate_id": reject_id, "action": "reject"},
+                )
+                missing_status, _, missing_body = server.request(
+                    "POST",
+                    "/api/learning/memory",
+                    {"candidate_id": "mem_missing", "action": "accept"},
+                )
+                invalid_status, _, invalid_body = server.request(
+                    "POST",
+                    "/api/learning/memory",
+                    {"candidate_id": reject_id, "action": "maybe"},
+                )
+
+            payload = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["action"], "accept")
+            self.assertEqual(payload["candidate"]["id"], accept_id)
+            self.assertEqual(payload["candidate"]["status"], "promoted")
+            self.assertTrue(payload["page_id"].startswith("mempg_"))
+            page = store.get_memory_page(payload["page_id"])
+            self.assertEqual(page["content"], "User prefers inline learning chip actions")
+
+            this_time_payload = json.loads(this_time_body)
+            reject_payload = json.loads(reject_body)
+            self.assertEqual(this_time_status, 200)
+            self.assertEqual(this_time_payload["candidate"]["status"], "rejected:this_time_only")
+            self.assertIsNone(this_time_payload["page_id"])
+            self.assertEqual(reject_status, 200)
+            self.assertEqual(reject_payload["candidate"]["status"], "rejected:user_rejected")
+            self.assertIsNone(reject_payload["page_id"])
+
+            self.assertEqual(missing_status, 404)
+            self.assertIn("memory candidate not found", json.loads(missing_body)["error"])
+            self.assertEqual(invalid_status, 400)
+            self.assertIn("invalid learning action", json.loads(invalid_body)["error"])
+
+            event = store.get_run_events(run_id)[-1]
+            self.assertEqual(event["event_type"], "learning.memory_action")
+            self.assertEqual(event["payload"]["candidate_id"], reject_id)
+            self.assertEqual(event["payload"]["action"], "reject")
+
     def test_web_cancel_run_endpoint_marks_run_and_records_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -293,6 +364,23 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("item_id: itemId", script)
                 self.assertIn("decision-button", css)
                 self.assertIn("event-card.decision", css)
+
+    def test_web_client_asset_resolves_learning_chips_inline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn("learning-actions", script)
+                self.assertIn("/api/learning/memory", script)
+                self.assertIn("resolveLearningMemory", script)
+                self.assertIn("candidate_id: itemId", script)
+                self.assertIn("以后这样", script)
+                self.assertIn("这次而已", script)
+                self.assertIn("learning-button", css)
+                self.assertIn("event-card.learning", css)
 
 
 class RunningServer:

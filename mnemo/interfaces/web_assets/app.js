@@ -352,17 +352,73 @@ async function toggleArtifact(artifactId, viewer, body, toggle) {
 
 function renderLearning(item) {
   if (!item) return;
-  const wrapper = document.createElement("div");
-  wrapper.className = "event-card";
-  const chips = document.createElement("div");
-  chips.className = "chips";
+  const node = document.createElement("div");
+  node.className = "event-card learning";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "event-title";
+  const title = document.createElement("span");
+  title.textContent = item.kind === "memory" ? "Learning memory" : "Learning";
   const chip = document.createElement("span");
   chip.className = "chip";
-  chip.textContent = `${item.kind || "learning"}: ${item.summary || item.status || "draft"}`;
-  chips.appendChild(chip);
-  wrapper.appendChild(chips);
-  timeline.appendChild(wrapper);
+  chip.textContent = item.status || "draft";
+  titleRow.append(title, chip);
+
+  const body = document.createElement("div");
+  body.className = "event-body";
+  body.textContent = item.summary || "可能学到一个偏好或事实。";
+
+  const actions = document.createElement("div");
+  actions.className = "learning-actions";
+  const itemId = item.item_id;
+  if (item.kind === "memory") {
+    actions.append(
+      learningButton("以后这样", "accept", itemId, chip),
+      learningButton("这次而已", "this_time", itemId, chip),
+      learningButton("忽略", "reject", itemId, chip),
+    );
+  }
+
+  node.append(titleRow, body, actions);
+  timeline.appendChild(node);
   scrollToEnd();
+}
+
+function learningButton(label, action, itemId, statusChip) {
+  const button = document.createElement("button");
+  button.className = "learning-button";
+  button.type = "button";
+  button.textContent = label;
+  button.disabled = !itemId;
+  button.title = itemId ? label : "Learning item is not persisted";
+  button.addEventListener("click", () => {
+    resolveLearningMemory(itemId, action, statusChip, button.parentElement);
+  });
+  return button;
+}
+
+async function resolveLearningMemory(itemId, action, statusChip, actions) {
+  if (!itemId || !actions) return;
+  for (const button of actions.querySelectorAll("button")) {
+    button.disabled = true;
+  }
+  statusChip.textContent = "resolving";
+  try {
+    const response = await fetch("/api/learning/memory", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidate_id: itemId, action }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    statusChip.textContent = payload.candidate?.status || action;
+  } catch (error) {
+    statusChip.textContent = "draft";
+    for (const button of actions.querySelectorAll("button")) {
+      button.disabled = false;
+    }
+    addCard("error", "Error", error.message || String(error));
+  }
 }
 
 function renderDecision(decision) {

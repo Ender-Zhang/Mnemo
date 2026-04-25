@@ -15,6 +15,7 @@ from ..core.models import RunRequest
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
 from ..runtime import stream_local, stream_provider
 from ..runtime.ledger import RunLedger
+from ..memory import MemoryEngine
 from ..storage import StateStore
 
 
@@ -96,6 +97,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_run_cancel()
             elif parsed.path == "/api/inbox/resolve":
                 self._handle_inbox_resolve()
+            elif parsed.path == "/api/learning/memory":
+                self._handle_learning_memory()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -246,6 +249,51 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 )
             self._send_json({"item": item})
 
+        def _handle_learning_memory(self) -> None:
+            try:
+                body = self._read_json_body()
+                candidate_id = _required_string(body, "candidate_id")
+                action = _learning_action(_required_string(body, "action"))
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+
+            store = StateStore(config.state_dir)
+            store.initialize()
+            candidate = store.get_memory_candidate(candidate_id)
+            if not candidate:
+                self._send_json({"error": f"memory candidate not found: {candidate_id}"}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            try:
+                result = _apply_learning_memory_action(MemoryEngine(store), candidate_id, action)
+            except ValueError as exc:
+                message = str(exc)
+                status = HTTPStatus.NOT_FOUND if "not found" in message else HTTPStatus.BAD_REQUEST
+                self._send_json({"error": message}, status=status)
+                return
+
+            updated = store.get_memory_candidate(candidate_id) or candidate
+            if candidate.get("run_id"):
+                store.append_event(
+                    candidate["run_id"],
+                    "learning.memory_action",
+                    {
+                        "candidate_id": candidate_id,
+                        "action": action,
+                        "status": updated.get("status"),
+                        "page_id": result.get("page_id"),
+                        "source": "web",
+                    },
+                )
+            self._send_json(
+                {
+                    "action": action,
+                    "candidate": _learning_candidate_payload(updated),
+                    "page_id": result.get("page_id"),
+                }
+            )
+
         def _send_asset(self, name: str, content_type: str) -> None:
             try:
                 content = resources.files("mnemo.interfaces").joinpath("web_assets", name).read_bytes()
@@ -378,6 +426,35 @@ def _priority_lte(priority: str | None) -> int | None:
     if value is None:
         raise ValueError(f"invalid priority: {priority}")
     return value
+
+
+def _learning_action(action: str) -> str:
+    normalized = action.strip().casefold()
+    if normalized not in {"accept", "this_time", "reject"}:
+        raise ValueError(f"invalid learning action: {action}")
+    return normalized
+
+
+def _apply_learning_memory_action(engine: MemoryEngine, candidate_id: str, action: str) -> dict[str, Any]:
+    if action == "accept":
+        return engine.promote_candidate(candidate_id)
+    if action == "this_time":
+        return engine.reject_candidate(candidate_id, "this time only")
+    if action == "reject":
+        return engine.reject_candidate(candidate_id, "user rejected")
+    raise ValueError(f"invalid learning action: {action}")
+
+
+def _learning_candidate_payload(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": candidate["id"],
+        "run_id": candidate.get("run_id"),
+        "dimension": candidate.get("dimension"),
+        "scope": candidate.get("scope"),
+        "confidence": candidate.get("confidence"),
+        "status": candidate.get("status"),
+        "created_at": candidate.get("created_at"),
+    }
 
 
 def _last_chat_event_id(events: list[dict[str, Any]]) -> str | None:
