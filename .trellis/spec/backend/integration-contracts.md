@@ -77,7 +77,8 @@
 - `mnemo_search` returns compact memory cards and query-plan metadata without raw evidence blobs.
 - `mnemo_skills` returns compact skill cards; full skill bodies remain behind existing skill-specific surfaces.
 - `mnemo_tools` returns compact tool cards and ToolBundle metadata; it must not return raw provider input schemas by default.
-- `mnemo_watch` and `mnemo_cron` are explicit deferred surfaces until durable watch/cron persistence exists.
+- `mnemo_watch` and `mnemo_cron` create durable scheduled items through `ScheduleService`; due processing still runs through the normal daemon queue.
+- `mnemo_runtime_status` includes compact scheduled-item status.
 - JSON-RPC support covers `initialize`, `tools/list`, and `tools/call` with structured error responses.
 - JSONL stdio is the current lightweight serving mode; full MCP Content-Length framing can be added as a transport layer later.
 
@@ -87,6 +88,7 @@
 | Tool descriptors | Core tool names, `inputSchema`, and read/write annotations are present | `tests/test_mcp.py` |
 | Compact reads | Context/search/recall/skills/tools do not expose raw evidence or raw input schemas | `tests/test_mcp.py` |
 | Update writes | External facts become memory candidates and observations become W0 notes | `tests/test_mcp.py` |
+| Watch/Cron calls | MCP calls create scheduled watch/cron items and runtime status reports due count | `tests/test_mcp.py` |
 | Runtime calls | Run/replay/eval/status reuse existing services and compact results | `tests/test_mcp.py` |
 | JSON-RPC | Initialize, list, call, unknown-method, and JSONL serving behave predictably | `tests/test_mcp.py` |
 | CLI | `mnemo mcp tools` and `mnemo mcp call` support JSON and normalized errors | `tests/test_cli.py` |
@@ -95,12 +97,12 @@
 ### 5. Good/Base/Bad Cases
 - Good: add new MCP tools as thin wrappers over SDK/domain services with compact outputs.
 - Good: keep tool outputs model-actionable and small enough for external context capsules.
-- Base: watch/cron descriptors can return deferred status until persistence is implemented.
+- Base: watch/cron tools register scheduled work; model-led execution happens when the daemon queue drains the due item.
 - Bad: adding provider-specific workflow routing inside the MCP server.
 - Bad: returning full traces, full artifacts, raw provider schemas, or stable-memory mutations from generic update calls.
 
 ### 6. Tests Required
-- Direct MCP server tests for descriptors, calls, compactness, and deferred surfaces.
+- Direct MCP server tests for descriptors, calls, compactness, and scheduled watch/cron surfaces.
 - JSON-RPC tests for success and structured errors.
 - CLI tests for JSON output and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.

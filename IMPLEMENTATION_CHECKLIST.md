@@ -39,7 +39,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider-native tool calls bridged into ToolHarness.
 - [x] True streaming provider delta support.
 - [x] Timeout/retry/cancellation policy: provider timeout, non-streaming retry, and cooperative persisted cancellation exist.
-- [~] Daemon, queue, single-instance lock, and stale queue recovery exist; full Supervisor priority classes, Inbox recovery, Watch recovery, child runtime cleanup, and W0 pending recovery are not implemented.
+- [~] Daemon, queue, single-instance lock, stale queue recovery, and scheduled watch/cron enqueue foundation exist; full Supervisor priority classes, Inbox recovery, Watch recovery, child runtime cleanup, and W0 pending recovery are not implemented.
 - [~] Replay harness exists as trace summary and smoke/eval support; full deterministic/live-tools/dry-run replay diff modes are not implemented.
 
 ## Tools
@@ -151,9 +151,9 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Daemon status command.
 - [x] Backup/export/import.
 - [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient` and `mnemo.core_api.v1` schema exist; HTTP/OpenAPI server bindings and non-Python generated clients are not complete.
-- [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC JSONL stdio, and CLI list/call/serve exist for context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status; full MCP transport framing, durable watch/cron persistence, and external packaging remain incomplete.
+- [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC JSONL stdio, and CLI list/call/serve exist for context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status; full MCP transport framing and external packaging remain incomplete.
 - [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
-- [ ] Watch/Cron persistence and scheduled event processing.
+- [~] Watch/Cron persistence and scheduled event processing: durable scheduled items, simple schedule grammar, CLI/MCP registration, runtime status, and queue enqueue tick exist; full cron expressions, quiet hours, delivery channels, Sense triggers, and Watch self-learning remain.
 - [x] Sessions/messages/L4 search tables and FTS5 indexes for persisted run messages.
 
 ## Remaining Trellis Focus
@@ -166,6 +166,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-25-scheduled-watch-cron-foundation`: Watch/Cron now persist as lightweight scheduled items, expose CLI/MCP registration, enqueue due runs through the existing daemon queue, and report compact scheduled status.
 - [x] `04-25-mcp-server-foundation`: Mnemo now exposes dependency-free MCP-style tool descriptors, direct tool calls, JSON-RPC JSONL stdio, and CLI list/call/serve for compact context/update/recall/search/skills/tools/run/replay/eval/status surfaces.
 - [x] `04-25-high-risk-tool-decision-cards`: Denied external/admin tool calls now persist compact `tool_approval` Inbox decisions and stream through the existing inline decision-card path without executing the denied handler.
 - [x] `04-25-04-25-approved-tool-approval-execution`: Accepted `tool_approval` Inbox decisions now execute once through ToolHarness and return compact Web/CLI execution metadata.

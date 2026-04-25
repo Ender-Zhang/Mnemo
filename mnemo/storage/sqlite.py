@@ -15,7 +15,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
@@ -24,6 +24,8 @@ QUEUE_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
 SESSION_MESSAGE_ROLES = ("user", "assistant", "tool", "system")
 INBOX_STATUSES = ("open", "resolved")
 INBOX_RESOLUTIONS = ("accepted", "rejected", "ignored")
+SCHEDULED_ITEM_KINDS = ("watch", "cron")
+SCHEDULED_ITEM_STATUSES = ("active", "paused", "completed", "disabled")
 _DEFAULT_TOMBSTONE_RULE = (
     "Do not recreate this memory from historical context unless the user explicitly restates it."
 )
@@ -281,6 +283,23 @@ class StateStore:
                     updated_at REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS scheduled_items (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    instruction TEXT NOT NULL,
+                    schedule TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    next_run_at REAL,
+                    last_run_at REAL,
+                    last_queue_id TEXT,
+                    last_error TEXT,
+                    metadata_json TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_run_events_run ON run_events(run_id, seq);
                 CREATE INDEX IF NOT EXISTS idx_session_messages_conversation
                     ON session_messages(conversation_id, created_at);
@@ -305,6 +324,10 @@ class StateStore:
                     ON inbox_items(status, priority, created_at);
                 CREATE INDEX IF NOT EXISTS idx_inbox_items_category_created
                     ON inbox_items(category, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_scheduled_items_due
+                    ON scheduled_items(status, next_run_at, created_at);
+                CREATE INDEX IF NOT EXISTS idx_scheduled_items_kind_status
+                    ON scheduled_items(kind, status, updated_at DESC);
                 """
             )
             _apply_schema_migrations(conn)
@@ -995,6 +1018,187 @@ class StateStore:
             "total": sum(counts.values()),
             "oldest_pending_at": oldest["oldest_pending_at"] if oldest else None,
         }
+
+    def add_scheduled_item(
+        self,
+        *,
+        kind: str,
+        title: str,
+        instruction: str,
+        schedule: str,
+        source: str = "cli",
+        status: str = "active",
+        next_run_at: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        normalized_kind = _normalize_scheduled_item_kind(kind)
+        normalized_status = _normalize_scheduled_item_status(status)
+        clean_title = _require_text(title, "scheduled item title")
+        clean_instruction = _require_text(instruction, "scheduled item instruction")
+        clean_schedule = _require_text(schedule, "scheduled item schedule")
+        clean_source = _require_text(source, "scheduled item source")
+        item_id = new_id("sched")
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO scheduled_items(
+                    id, kind, title, instruction, schedule, source, status,
+                    next_run_at, last_run_at, last_queue_id, last_error,
+                    metadata_json, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item_id,
+                    normalized_kind,
+                    clean_title,
+                    clean_instruction,
+                    clean_schedule,
+                    clean_source,
+                    normalized_status,
+                    _optional_float(next_run_at),
+                    None,
+                    None,
+                    None,
+                    dumps(metadata or {}),
+                    now,
+                    now,
+                ),
+            )
+        return item_id
+
+    def get_scheduled_item(self, item_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, kind, title, instruction, schedule, source, status,
+                       next_run_at, last_run_at, last_queue_id, last_error,
+                       metadata_json, created_at, updated_at
+                FROM scheduled_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+        return _scheduled_item_from_row(row) if row else None
+
+    def list_scheduled_items(
+        self,
+        *,
+        kind: str | None = None,
+        status: str | None = "active",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, kind, title, instruction, schedule, source, status,
+                   next_run_at, last_run_at, last_queue_id, last_error,
+                   metadata_json, created_at, updated_at
+            FROM scheduled_items
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if kind:
+            clauses.append("kind = ?")
+            params.append(_normalize_scheduled_item_kind(kind))
+        if status:
+            clauses.append("status = ?")
+            params.append(_normalize_scheduled_item_status(status))
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY COALESCE(next_run_at, updated_at) ASC, created_at ASC, id ASC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_scheduled_item_from_row(row) for row in rows]
+
+    def due_scheduled_items(self, *, now: float | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        due_at = time.time() if now is None else float(now)
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, kind, title, instruction, schedule, source, status,
+                       next_run_at, last_run_at, last_queue_id, last_error,
+                       metadata_json, created_at, updated_at
+                FROM scheduled_items
+                WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ?
+                ORDER BY next_run_at ASC, created_at ASC, id ASC
+                LIMIT ?
+                """,
+                (due_at, max(0, int(limit))),
+            ).fetchall()
+        return [_scheduled_item_from_row(row) for row in rows]
+
+    def update_scheduled_item_status(self, item_id: str, status: str) -> dict[str, Any]:
+        normalized_status = _normalize_scheduled_item_status(status)
+        now = time.time()
+        with self.connect() as conn:
+            existing = conn.execute("SELECT id, status FROM scheduled_items WHERE id = ?", (item_id,)).fetchone()
+            if not existing:
+                raise ValueError(f"scheduled item not found: {item_id}")
+            changed = str(existing["status"]) != normalized_status
+            if changed:
+                conn.execute(
+                    "UPDATE scheduled_items SET status = ?, updated_at = ? WHERE id = ?",
+                    (normalized_status, now, item_id),
+                )
+            row = conn.execute(
+                """
+                SELECT id, kind, title, instruction, schedule, source, status,
+                       next_run_at, last_run_at, last_queue_id, last_error,
+                       metadata_json, created_at, updated_at
+                FROM scheduled_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+        result = _scheduled_item_from_row(row)
+        result["changed"] = changed
+        return result
+
+    def record_scheduled_item_tick(
+        self,
+        item_id: str,
+        *,
+        next_run_at: float | None,
+        queue_id: str | None = None,
+        status: str | None = None,
+        error: str | None = None,
+        now: float | None = None,
+    ) -> dict[str, Any]:
+        completed_at = time.time() if now is None else float(now)
+        normalized_status = _normalize_scheduled_item_status(status) if status else None
+        with self.connect() as conn:
+            existing = conn.execute("SELECT id FROM scheduled_items WHERE id = ?", (item_id,)).fetchone()
+            if not existing:
+                raise ValueError(f"scheduled item not found: {item_id}")
+            conn.execute(
+                """
+                UPDATE scheduled_items
+                SET next_run_at = ?, last_run_at = ?, last_queue_id = ?, last_error = ?,
+                    status = COALESCE(?, status), updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    _optional_float(next_run_at),
+                    completed_at,
+                    queue_id,
+                    error,
+                    normalized_status,
+                    completed_at,
+                    item_id,
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT id, kind, title, instruction, schedule, source, status,
+                       next_run_at, last_run_at, last_queue_id, last_error,
+                       metadata_json, created_at, updated_at
+                FROM scheduled_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+        return _scheduled_item_from_row(row)
 
     def record_tool_call(
         self,
@@ -2094,6 +2298,12 @@ def _inbox_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return result
 
 
+def _scheduled_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json"), {})
+    return result
+
+
 def _outbox_event_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["payload"] = loads(result.pop("payload_json"), {})
@@ -2104,6 +2314,33 @@ def _queue_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["metadata"] = loads(result.pop("metadata_json"), {})
     return result
+
+
+def _normalize_scheduled_item_kind(value: str) -> str:
+    normalized = str(value or "").strip().casefold()
+    if normalized not in SCHEDULED_ITEM_KINDS:
+        raise ValueError(f"invalid scheduled item kind: {value}")
+    return normalized
+
+
+def _normalize_scheduled_item_status(value: str) -> str:
+    normalized = str(value or "").strip().casefold()
+    if normalized not in SCHEDULED_ITEM_STATUSES:
+        raise ValueError(f"invalid scheduled item status: {value}")
+    return normalized
+
+
+def _require_text(value: Any, name: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{name} is required")
+    return text
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _iter_export_files(state_dir: Path, archive_path: Path) -> Iterable[Path]:
@@ -2447,6 +2684,34 @@ def _migration_memory_tombstones(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_scheduled_items(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS scheduled_items (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            title TEXT NOT NULL,
+            instruction TEXT NOT NULL,
+            schedule TEXT NOT NULL,
+            source TEXT NOT NULL,
+            status TEXT NOT NULL,
+            next_run_at REAL,
+            last_run_at REAL,
+            last_queue_id TEXT,
+            last_error TEXT,
+            metadata_json TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_scheduled_items_due
+            ON scheduled_items(status, next_run_at, created_at);
+        CREATE INDEX IF NOT EXISTS idx_scheduled_items_kind_status
+            ON scheduled_items(kind, status, updated_at DESC);
+        """
+    )
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
@@ -2456,6 +2721,7 @@ MIGRATIONS = (
     SchemaMigration(6, "session_messages_fts", _migration_session_messages_fts),
     SchemaMigration(7, "inbox_items", _migration_inbox_items),
     SchemaMigration(8, "memory_tombstones", _migration_memory_tombstones),
+    SchemaMigration(9, "scheduled_items", _migration_scheduled_items),
 )
 
 

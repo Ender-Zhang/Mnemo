@@ -10,6 +10,7 @@ from .. import __version__
 from ..core.config import DEFAULT_STATE_DIR
 from ..core.jsonutil import dumps
 from ..memory import MemoryEngine
+from ..runtime import ScheduleService, scheduled_item_stats
 from ..sdk import MnemoClient
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
@@ -243,18 +244,26 @@ class MnemoMcpServer:
         }
 
     def _watch(self, args: dict[str, Any]) -> dict[str, Any]:
-        return _deferred_surface(
-            "watch",
-            args,
-            "Watch persistence and scheduled sensing are not implemented yet.",
+        item = ScheduleService(self.state_dir).add_watch(
+            target=_required_string(args.get("target"), "target"),
+            instruction=_string(args.get("instruction"), default=_string(args.get("target"), default="")),
+            schedule=_string(args.get("schedule"), default="daily"),
+            source=_string(args.get("source"), default="mcp"),
+            next_run_at=args.get("next_run_at"),
+            metadata={"source": "mcp"},
         )
+        return {"kind": "scheduled_item", "version": "mnemo.watch.v1", "item": item}
 
     def _cron(self, args: dict[str, Any]) -> dict[str, Any]:
-        return _deferred_surface(
-            "cron",
-            args,
-            "Cron persistence and scheduled execution are not implemented yet.",
+        item = ScheduleService(self.state_dir).add_cron(
+            title=_optional_string(args.get("title")),
+            message=_required_string(args.get("message"), "message"),
+            schedule=_required_string(args.get("schedule"), "schedule"),
+            source=_string(args.get("source"), default="mcp"),
+            next_run_at=args.get("next_run_at"),
+            metadata={"source": "mcp"},
         )
+        return {"kind": "scheduled_item", "version": "mnemo.cron.v1", "item": item}
 
     def _run(self, args: dict[str, Any]) -> dict[str, Any]:
         return self.client.run(
@@ -288,6 +297,7 @@ class MnemoMcpServer:
                 "items": [_inbox_card(item) for item in inbox_items],
             },
             "generated_tools": _status_counts(generated_tools),
+            "scheduled": scheduled_item_stats(store),
         }
 
     def _store(self) -> StateStore:
@@ -426,18 +436,30 @@ _TOOL_DESCRIPTORS = [
     ),
     _descriptor(
         "mnemo_watch",
-        "Placeholder for future watch registration and sensing status.",
-        _schema({"target": {"type": "string"}, "instruction": {"type": "string"}}, required=["target"]),
+        "Register a durable watch that enqueues model-led checks when due.",
+        _schema(
+            {
+                "target": {"type": "string"},
+                "instruction": {"type": "string"},
+                "schedule": {"type": "string", "default": "daily"},
+                "next_run_at": {"type": ["string", "number", "null"]},
+                "source": {"type": "string", "default": "mcp"},
+            },
+            required=["target"],
+        ),
         risk="write",
         read_only=False,
     ),
     _descriptor(
         "mnemo_cron",
-        "Placeholder for future scheduled Mnemo task registration.",
+        "Register a durable scheduled Mnemo task that enqueues normal runs when due.",
         _schema(
             {
                 "schedule": {"type": "string"},
                 "message": {"type": "string"},
+                "title": {"type": "string"},
+                "next_run_at": {"type": ["string", "number", "null"]},
+                "source": {"type": "string", "default": "mcp"},
             },
             required=["schedule", "message"],
         ),

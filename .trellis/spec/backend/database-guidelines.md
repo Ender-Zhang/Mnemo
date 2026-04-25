@@ -49,6 +49,12 @@
 - `StateStore.get_inbox_item(item_id: str) -> dict[str, Any] | None`
 - `StateStore.list_inbox_items(*, status: str | None = "open", category: str | None = None, priority_lte: int | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.resolve_inbox_item(item_id: str, resolution: str, *, notes: str | None = None) -> dict[str, Any]`
+- `StateStore.add_scheduled_item(*, kind: str, title: str, instruction: str, schedule: str, source: str = "cli", status: str = "active", next_run_at: float | None = None, metadata: dict[str, Any] | None = None) -> str`
+- `StateStore.get_scheduled_item(item_id: str) -> dict[str, Any] | None`
+- `StateStore.list_scheduled_items(*, kind: str | None = None, status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.due_scheduled_items(*, now: float | None = None, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.update_scheduled_item_status(item_id: str, status: str) -> dict[str, Any]`
+- `StateStore.record_scheduled_item_tick(item_id: str, *, next_run_at: float | None, queue_id: str | None = None, status: str | None = None, error: str | None = None, now: float | None = None) -> dict[str, Any]`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
@@ -120,6 +126,12 @@
 - `list_inbox_items()` returns parsed `action_data`, supports status/category/priority filters, and orders by priority then creation time.
 - `resolve_inbox_item()` resolves only open items; repeated resolution returns `changed=false` with the existing item.
 - CLI/Web Inbox inspection must use storage APIs and not read raw SQLite rows directly.
+- `scheduled_items` stores durable watch/cron registrations with kind, title, instruction, schedule string, source, status, next due time, last queue id/error, metadata, and timestamps.
+- Scheduled item kinds are `watch` and `cron`; statuses are `active`, `paused`, `completed`, and `disabled`.
+- `due_scheduled_items()` returns only active rows with `next_run_at <= now`, ordered by due time then creation time.
+- Scheduled items do not execute work directly; due processing must enqueue existing `run_queue` requests with `metadata.source="scheduler"`.
+- One-shot schedules become `completed` after a successful tick; recurring schedules stay `active` with an advanced `next_run_at`.
+- CLI scheduled-item commands must use storage/service APIs and not read raw SQLite rows directly.
 - `working_notes` stores W0 notes with mission/run provenance, metadata, processing status, and result payloads.
 - CLI W0 inspection must use the read API and remain read-only: `mnemo memory notes`.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
@@ -163,6 +175,8 @@
 | Tool approval Inbox item | Denied high-risk tools create compact `tool_approval` action data | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Accepted tool approval resolve | Returns compact `tool_result` once and records approval execution events | `tests/test_cli.py`, `tests/test_web.py` |
 | Inbox repeated resolve | Resolved item returns unchanged instead of mutating resolution again | `tests/test_storage.py` |
+| Scheduled item storage | Add/list/read/status/tick metadata round-trip and invalid input normalization | `tests/test_storage.py` |
+| Scheduled processing | Due watch/cron items enqueue normal daemon queue work and advance/complete schedule | `tests/test_scheduler.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
@@ -179,6 +193,7 @@
 - Good: install generated tools by persisting a manifest row and loading it through `ToolRegistry.from_store()`.
 - Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
 - Good: store user decisions as Inbox items and return item ids in chat events.
+- Good: process proactive work by enqueueing `run_queue` items so scheduled runs reuse the same runtime harness as user turns.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Good: expose L4 session recall as bounded snippets with provenance ids, not full transcripts.
 - Good: keep tombstones compact and structured so deleted/rejected memory is not reintroduced through raw historical content.
@@ -188,6 +203,7 @@
 - Bad: poll `run_events` directly from daemon code when outbox delivery state is needed.
 - Bad: extract zip members directly with `extractall()`.
 - Bad: create a second daemon worker for the same state directory without acquiring the local lock.
+- Bad: execute watch/cron semantics directly in scheduler code instead of asking the model through the normal run queue.
 - Bad: treating cancellation as provider failure after the cancellation signal has been observed.
 
 ### 6. Tests Required
@@ -209,6 +225,8 @@
 - Artifact storage round-trip by id is covered.
 - Artifact metadata list/filter behavior is covered without duplicating body text.
 - Inbox storage round-trip, filters, and resolution lifecycle are covered.
+- Scheduled item storage, due lookup, status changes, and tick metadata are covered.
+- Scheduler enqueue behavior and CLI schedule commands are covered.
 - Memory tombstone schema and read/write/filter APIs are covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.

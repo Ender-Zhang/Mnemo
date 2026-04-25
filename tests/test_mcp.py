@@ -95,25 +95,33 @@ class MnemoMcpTests(unittest.TestCase):
             self.assertEqual(len(notes), 1)
             self.assertEqual(notes[0]["metadata"]["source"], "unit-test")
 
-    def test_run_replay_eval_status_and_deferred_surfaces(self) -> None:
+    def test_run_replay_eval_status_and_scheduled_surfaces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             server = MnemoMcpServer(state_dir=tmp)
 
             run = server.call_tool("mnemo_run", {"message": "remember: MCP should reuse runtime harnesses"})
             replay = server.call_tool("mnemo_replay", {"run_id": run["run_id"]})
             report = server.call_tool("mnemo_eval", {"suite": "smoke"})
+            watch = server.call_tool(
+                "mnemo_watch",
+                {"target": "calendar", "instruction": "Check calendar risk", "schedule": "once", "next_run_at": 0},
+            )
+            cron = server.call_tool(
+                "mnemo_cron",
+                {"schedule": "once", "message": "remember: MCP cron", "next_run_at": 0},
+            )
             status = server.call_tool("mnemo_runtime_status", {"limit": 5})
-            watch = server.call_tool("mnemo_watch", {"target": "calendar"})
-            cron = server.call_tool("mnemo_cron", {"schedule": "daily", "message": "dream"})
 
             self.assertTrue(run["run_id"].startswith("run_"))
             self.assertNotIn("tool_results", run)
             self.assertTrue(replay["completed"])
             self.assertTrue(report["passed"])
+            self.assertEqual(watch["kind"], "scheduled_item")
+            self.assertEqual(watch["item"]["kind"], "watch")
+            self.assertEqual(cron["item"]["kind"], "cron")
             self.assertEqual(status["kind"], "runtime_status")
             self.assertGreaterEqual(len(status["recent_runs"]), 1)
-            self.assertEqual(watch["status"], "not_implemented")
-            self.assertEqual(cron["status"], "not_implemented")
+            self.assertEqual(status["scheduled"]["due"], 2)
 
     def test_json_rpc_initialize_list_call_errors_and_jsonl_serve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

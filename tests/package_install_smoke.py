@@ -39,11 +39,13 @@ def _assert_not_source_import(package_file: Path) -> None:
 def main() -> int:
     import mnemo
     from mnemo.mcp import MnemoMcpServer
+    from mnemo.runtime import ScheduleService
     from mnemo.sdk import MnemoClient, mnemo_core_api_schema
 
     _assert_not_source_import(Path(mnemo.__file__ or ""))
     _assert_not_source_import(Path(sys.modules[MnemoClient.__module__].__file__ or ""))
     _assert_not_source_import(Path(sys.modules[MnemoMcpServer.__module__].__file__ or ""))
+    _assert_not_source_import(Path(sys.modules[ScheduleService.__module__].__file__ or ""))
 
     version = importlib.metadata.version("mnemo")
     if version != mnemo.__version__:

@@ -77,6 +77,11 @@ mnemo daemon enqueue "Draft a project status update" --state-dir .mnemo
 mnemo daemon run --state-dir .mnemo --limit 1
 mnemo daemon status --state-dir .mnemo
 
+mnemo schedule add --kind cron --message "Run memory maintenance" --schedule daily --state-dir .mnemo
+mnemo schedule add --kind watch --target "Rust progress" --instruction "Check blockers and decide whether to notify me" --schedule weekly --state-dir .mnemo
+mnemo schedule list --state-dir .mnemo
+mnemo schedule tick --state-dir .mnemo
+
 mnemo runs cancel <run_id> --state-dir .mnemo
 mnemo daemon cancel <queue_id> --state-dir .mnemo
 
@@ -128,7 +133,7 @@ mnemo mcp call mnemo_context --state-dir .mnemo --arguments-json '{"intent":"sta
 mnemo mcp serve --state-dir .mnemo
 ```
 
-The MCP-style server exposes compact context, update, recall, search, skills, tools, run, replay, eval, and status surfaces. Watch and cron tools are listed as deferred surfaces until durable scheduling lands.
+The MCP-style server exposes compact context, update, recall, search, skills, tools, watch, cron, run, replay, eval, and status surfaces. Watch and cron register durable scheduled items; due items enqueue normal daemon runs so the existing runtime/model decides what to do.
 
 ## Backup And Validation
 

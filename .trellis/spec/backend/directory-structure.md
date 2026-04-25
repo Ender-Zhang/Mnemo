@@ -11,7 +11,7 @@
 mnemo/
   core/        shared dataclasses, config, errors, ids, JSON helpers
   storage/     SQLite StateStore and migrations
-  runtime/     local/provider runtimes, daemon, ledger, stream projection
+  runtime/     local/provider runtimes, daemon, scheduler, ledger, stream projection
   providers/   OpenAI-compatible and Anthropic adapter boundary
   tools/       ToolRegistry, ToolHarness, standard tools, tool evolution
   memory/      memory pages, candidates, DreamCycle, associative recall

@@ -29,6 +29,7 @@ class StateStoreTests(unittest.TestCase):
             self.assertIn("session_messages", _tables(Path(tmp) / "state.db"))
             self.assertIn("inbox_items", _tables(Path(tmp) / "state.db"))
             self.assertIn("memory_tombstones", _tables(Path(tmp) / "state.db"))
+            self.assertIn("scheduled_items", _tables(Path(tmp) / "state.db"))
 
     def test_initialize_is_idempotent_for_schema_migrations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -115,12 +116,79 @@ class StateStoreTests(unittest.TestCase):
             self.assertIn("session_messages", _tables(db_path))
             self.assertIn("inbox_items", _tables(db_path))
             self.assertIn("memory_tombstones", _tables(db_path))
+            self.assertIn("scheduled_items", _tables(db_path))
             self.assertIsNone(store.get_skill("legacy")["path"])
             self.assertEqual(store.get_eval_case("eval_legacy")["result"], {})
             legacy_note = store.list_working_notes(status=None)[0]
             self.assertEqual(legacy_note["metadata"], {})
             self.assertEqual(legacy_note["result"], {})
             self.assertEqual(legacy_note["status"], "open")
+
+    def test_scheduled_items_round_trip_due_and_status_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+
+            watch_id = store.add_scheduled_item(
+                kind="watch",
+                title="Rust progress",
+                instruction="Check whether Rust learning is on track",
+                schedule="daily",
+                source="test",
+                next_run_at=10.0,
+                metadata={"linked_page": "goals/rust"},
+            )
+            cron_id = store.add_scheduled_item(
+                kind="cron",
+                title="Dream",
+                instruction="Run memory maintenance",
+                schedule="once",
+                source="test",
+                next_run_at=0.0,
+            )
+
+            self.assertEqual(store.get_scheduled_item(watch_id)["metadata"]["linked_page"], "goals/rust")
+            self.assertEqual([item["id"] for item in store.due_scheduled_items(now=5.0)], [cron_id])
+            self.assertEqual([item["id"] for item in store.due_scheduled_items(now=10.0)], [cron_id, watch_id])
+            paused = store.update_scheduled_item_status(watch_id, "paused")
+            repeated = store.update_scheduled_item_status(watch_id, "paused")
+            completed = store.record_scheduled_item_tick(
+                cron_id,
+                next_run_at=None,
+                queue_id="queue_test",
+                status="completed",
+                now=12.0,
+            )
+
+            self.assertTrue(paused["changed"])
+            self.assertFalse(repeated["changed"])
+            self.assertEqual(store.list_scheduled_items(kind="watch", status="paused")[0]["id"], watch_id)
+            self.assertEqual(completed["last_queue_id"], "queue_test")
+            self.assertEqual(completed["last_run_at"], 12.0)
+            self.assertEqual(completed["status"], "completed")
+            self.assertEqual(store.list_scheduled_items(status="completed")[0]["id"], cron_id)
+
+    def test_scheduled_items_reject_invalid_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            item_id = store.add_scheduled_item(
+                kind="cron",
+                title="Valid",
+                instruction="Run valid task",
+                schedule="once",
+            )
+
+            with self.assertRaisesRegex(ValueError, "invalid scheduled item kind"):
+                store.add_scheduled_item(kind="bad", title="x", instruction="y", schedule="once")
+            with self.assertRaisesRegex(ValueError, "scheduled item title is required"):
+                store.add_scheduled_item(kind="cron", title=" ", instruction="y", schedule="once")
+            with self.assertRaisesRegex(ValueError, "invalid scheduled item status"):
+                store.list_scheduled_items(status="bad")
+            with self.assertRaisesRegex(ValueError, "scheduled item not found"):
+                store.update_scheduled_item_status("sched_missing", "paused")
+            with self.assertRaisesRegex(ValueError, "invalid scheduled item status"):
+                store.record_scheduled_item_tick(item_id, next_run_at=None, status="bad")
 
     def test_run_ledger_events_are_sequenced(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

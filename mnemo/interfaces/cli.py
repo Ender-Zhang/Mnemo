@@ -23,7 +23,7 @@ from ..providers import (
     ProviderRunInput,
     provider_capabilities,
 )
-from ..runtime import DaemonRunner, result_as_dict, run_local, run_provider, stream_local
+from ..runtime import DaemonRunner, ScheduleService, result_as_dict, run_local, run_provider, stream_local
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
@@ -78,6 +78,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_evals(args)
         if args.command == "daemon":
             return _cmd_daemon(args)
+        if args.command == "schedule":
+            return _cmd_schedule(args)
         if args.command == "backup":
             return _cmd_backup(args)
         if args.command == "config":
@@ -457,6 +459,39 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_cancel_parser.add_argument("queue_id")
     daemon_cancel_parser.add_argument("--reason", default="cancelled")
     daemon_cancel_parser.add_argument("--json", action="store_true")
+
+    schedule_parser = subparsers.add_parser("schedule", help="Manage lightweight watch/cron schedules")
+    schedule_subparsers = schedule_parser.add_subparsers(dest="schedule_command")
+    schedule_add_parser = schedule_subparsers.add_parser("add", help="Add a watch or cron scheduled item")
+    _add_state_dir(schedule_add_parser)
+    schedule_add_parser.add_argument("--kind", choices=["watch", "cron"], required=True)
+    schedule_add_parser.add_argument("--title")
+    schedule_add_parser.add_argument("--instruction", help="Watch instruction or cron message")
+    schedule_add_parser.add_argument("--target", help="Watch target title")
+    schedule_add_parser.add_argument("--message", help="Cron message")
+    schedule_add_parser.add_argument("--schedule", default="once")
+    schedule_add_parser.add_argument("--next-run-at", help="Optional due time: now, unix timestamp, or ISO timestamp")
+    schedule_add_parser.add_argument("--json", action="store_true")
+    schedule_list_parser = schedule_subparsers.add_parser("list", help="List scheduled items")
+    _add_state_dir(schedule_list_parser)
+    schedule_list_parser.add_argument("--kind", choices=["watch", "cron", "all"], default="all")
+    schedule_list_parser.add_argument("--status", choices=["active", "paused", "completed", "disabled", "all"], default="active")
+    schedule_list_parser.add_argument("--limit", type=int, default=50)
+    schedule_list_parser.add_argument("--json", action="store_true")
+    schedule_tick_parser = schedule_subparsers.add_parser("tick", help="Enqueue due scheduled items")
+    _add_state_dir(schedule_tick_parser)
+    schedule_tick_parser.add_argument("--now", help="Override current time for deterministic checks")
+    schedule_tick_parser.add_argument("--limit", type=int, default=50)
+    schedule_tick_parser.add_argument("--json", action="store_true")
+    for command, help_text in {
+        "pause": "Pause a scheduled item",
+        "resume": "Resume a scheduled item",
+        "disable": "Disable a scheduled item",
+    }.items():
+        schedule_status_parser = schedule_subparsers.add_parser(command, help=help_text)
+        _add_state_dir(schedule_status_parser)
+        schedule_status_parser.add_argument("item_id")
+        schedule_status_parser.add_argument("--json", action="store_true")
 
     backup_parser = subparsers.add_parser("backup", help="Export or import Mnemo state")
     backup_subparsers = backup_parser.add_subparsers(dest="backup_command")
@@ -1707,6 +1742,56 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_schedule(args: argparse.Namespace) -> int:
+    service = ScheduleService(args.state_dir)
+    try:
+        if args.schedule_command == "add":
+            if args.kind == "watch":
+                target = args.target or args.title
+                instruction = args.instruction or args.message or target
+                result = {
+                    "item": service.add_watch(
+                        target=target,
+                        instruction=instruction,
+                        schedule=args.schedule,
+                        next_run_at=args.next_run_at,
+                        metadata={"source": "cli", "workspace_root": os.getcwd()},
+                    )
+                }
+            else:
+                message = args.message or args.instruction
+                result = {
+                    "item": service.add_cron(
+                        title=args.title,
+                        message=message,
+                        schedule=args.schedule,
+                        next_run_at=args.next_run_at,
+                        metadata={"source": "cli", "workspace_root": os.getcwd()},
+                    )
+                }
+        elif args.schedule_command == "list":
+            kind = None if args.kind == "all" else args.kind
+            status = None if args.status == "all" else args.status
+            result = {"items": service.list_items(kind=kind, status=status, limit=args.limit)}
+        elif args.schedule_command == "tick":
+            result = service.tick(now=args.now, limit=args.limit)
+        elif args.schedule_command in {"pause", "resume", "disable"}:
+            status = "active" if args.schedule_command == "resume" else args.schedule_command + "d"
+            if args.schedule_command == "pause":
+                status = "paused"
+            result = {"item": service.update_status(args.item_id, status)}
+        else:
+            raise MnemoError("schedule command requires a subcommand")
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_schedule_result(args.schedule_command, result)
+    return 0
+
+
 def _queued_executor(args: argparse.Namespace):
     config = _runtime_config_from_args(args)
     if config.provider == "local":
@@ -1717,6 +1802,32 @@ def _queued_executor(args: argparse.Namespace):
         return run_provider(request, adapter)
 
     return execute
+
+
+def _print_schedule_result(command: str, result: dict[str, Any]) -> None:
+    if command == "add":
+        item = result["item"]
+        print(f"Scheduled {item['kind']} {item['id']} next_run_at={item['next_run_at']}")
+        return
+    if command == "list":
+        for item in result["items"]:
+            print(
+                f"{item['id']} [{item['kind']}:{item['status']}] "
+                f"{item['title']} schedule={item['schedule']} next={item['next_run_at']}"
+            )
+        return
+    if command == "tick":
+        print(
+            f"Scheduled processed={len(result['processed'])} "
+            f"pending={result['queue']['counts']['pending']} due={result['scheduled']['due']}"
+        )
+        return
+    if command in {"pause", "resume", "disable"}:
+        item = result["item"]
+        changed = "changed" if item.get("changed") else "unchanged"
+        print(f"Scheduled item {item['id']} {changed} status={item['status']}")
+        return
+    print(dumps(result))
 
 
 def _print_daemon_result(command: str, result: dict[str, Any]) -> None:
@@ -1734,7 +1845,8 @@ def _print_daemon_result(command: str, result: dict[str, Any]) -> None:
         lock = "locked" if result["lock"].get("locked") else "unlocked"
         print(
             f"Queue pending={counts['pending']} running={counts['running']} "
-            f"completed={counts['completed']} failed={counts['failed']} lock={lock}"
+            f"completed={counts['completed']} failed={counts['failed']} "
+            f"scheduled_due={result.get('scheduled', {}).get('due', 0)} lock={lock}"
         )
         return
     if command == "recover":

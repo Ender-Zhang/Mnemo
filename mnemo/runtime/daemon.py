@@ -11,6 +11,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 from ..core.models import RunRequest, RunResult
 from ..storage import StateStore
+from .scheduler import scheduled_item_stats
 
 
 RunExecutor = Callable[[RunRequest], RunResult]
@@ -120,6 +121,7 @@ class DaemonRunner:
         self.store.initialize()
         return {
             "queue": self.store.queue_stats(),
+            "scheduled": scheduled_item_stats(self.store),
             "lock": DaemonLock(self.store.state_dir).status(),
         }
 

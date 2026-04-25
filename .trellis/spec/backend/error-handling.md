@@ -24,6 +24,7 @@
 - CLI: `mnemo artifacts read <artifact_id> [--json]`
 - CLI: `mnemo inbox show <item_id> [--json]`
 - CLI: `mnemo inbox resolve <item_id> --accept|--reject|--ignore [--json]`
+- CLI: `mnemo schedule pause|resume|disable <item_id> [--json]`
 - CLI: `mnemo conversations show <conversation_id> [--json]`
 - CLI: `mnemo missions show <mission_id> [--json]`
 - CLI: `mnemo runs show <run_id> [--json]`
@@ -53,6 +54,7 @@
 - `mnemo memory health` and `mnemo memory tombstones` are read-only inspection commands and do not require raw SQLite access.
 - `mnemo artifacts read` normalizes missing artifact ids this way.
 - `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
+- `mnemo schedule pause`, `resume`, and `disable` normalize missing scheduled item ids this way.
 - `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
 - `mnemo tools review`, `install`, and `uninstall` normalize missing candidate/generated-tool errors this way.
 - `mnemo evals create` and `record` normalize missing runs/eval cases and invalid JSON payloads this way.
@@ -92,6 +94,7 @@
 | Memory health/tombstone listing | CLI exits zero with compact JSON or row output | `tests/test_cli.py` |
 | Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing Inbox item in CLI show/resolve | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing scheduled item in CLI status commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing tool candidate/generated tool in CLI lifecycle commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run/eval case or invalid JSON in CLI eval commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -129,6 +132,7 @@
 - CLI memory health/tombstone tests for compact output and missing ids without tracebacks.
 - CLI artifact read tests for missing ids without tracebacks.
 - CLI Inbox show/resolve tests for missing item ids without tracebacks.
+- CLI schedule pause/resume/disable tests for missing item ids without tracebacks.
 - CLI skill command tests for missing skill, eval case, and crystallization run errors without tracebacks.
 - CLI tool lifecycle tests for missing candidate and generated tool errors without tracebacks.
 - CLI eval tests for missing runs/eval cases and invalid JSON without tracebacks.

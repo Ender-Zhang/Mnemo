@@ -1560,6 +1560,50 @@ class CliTests(unittest.TestCase):
             self.assertEqual(recover.returncode, 0, recover.stderr)
             self.assertEqual(json.loads(recover.stdout)["recovered"][0]["id"], stale_id)
 
+    def test_schedule_add_list_tick_and_status_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            add = _run_cli(
+                [
+                    "schedule",
+                    "add",
+                    "--kind",
+                    "cron",
+                    "--title",
+                    "Scheduled CLI",
+                    "--message",
+                    "remember: ScheduledCLI preference",
+                    "--schedule",
+                    "once",
+                    "--next-run-at",
+                    "0",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            self.assertEqual(add.returncode, 0, add.stderr)
+            item_id = json.loads(add.stdout)["item"]["id"]
+
+            listed = _run_cli(["schedule", "list", "--state-dir", tmp, "--status", "all", "--json"])
+            tick = _run_cli(["schedule", "tick", "--state-dir", tmp, "--now", "1", "--json"])
+            status = _run_cli(["daemon", "status", "--state-dir", tmp, "--json"])
+            pause = _run_cli(["schedule", "pause", item_id, "--state-dir", tmp, "--json"])
+            missing = _run_cli(["schedule", "pause", "sched_missing", "--state-dir", tmp])
+
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            self.assertEqual(json.loads(listed.stdout)["items"][0]["id"], item_id)
+            self.assertEqual(tick.returncode, 0, tick.stderr)
+            tick_payload = json.loads(tick.stdout)
+            self.assertEqual(tick_payload["processed"][0]["scheduled_item_id"], item_id)
+            self.assertEqual(tick_payload["queue"]["counts"]["pending"], 1)
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertEqual(json.loads(status.stdout)["scheduled"]["counts"]["cron"]["completed"], 1)
+            self.assertEqual(pause.returncode, 0, pause.stderr)
+            self.assertEqual(json.loads(pause.stdout)["item"]["status"], "paused")
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: scheduled item not found", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+
     def test_runs_cancel_and_daemon_cancel_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
