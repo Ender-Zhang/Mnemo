@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 41
+- **Total Sessions**: 42
 - **Last Active**: 2026-04-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1387 | Active |
+| `journal-1.md` | ~1421 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 42 | 2026-04-25 | Provider retry policy | `0e0f49c`, `e7a232b` | `main` |
 | 41 | 2026-04-25 | Skill patch candidates | `b605177`, `fc2026d` | `main` |
 | 40 | 2026-04-25 | File patch tool | `363f91f`, `8c9f0de` | `main` |
 | 39 | 2026-04-25 | Tool schema budget separation | `35ebe1e`, `b8df508` | `main` |

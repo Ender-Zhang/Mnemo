@@ -1385,3 +1385,37 @@ Added model-directed skill_patch_candidate for exact in-memory revisions of exis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: Provider retry policy
+
+**Date**: 2026-04-25
+**Task**: Provider retry policy
+**Branch**: `main`
+
+### Summary
+
+Added opt-in provider retry_count and retry_backoff_s through runtime config, CLI/web provider construction, and non-streaming provider JSON requests; streaming remains single-attempt. Covered OpenAI chat/model retries, Anthropic retries, non-retryable status, config resolution, and docs/checklist updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0e0f49c` | (see git log) |
+| `e7a232b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
