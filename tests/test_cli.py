@@ -1455,6 +1455,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual(smoke.returncode, 1)
         self.assertIn("provider returned HTTP 503", smoke.stderr)
 
+    def test_api_schema_command_exposes_core_contract(self) -> None:
+        json_result = _run_cli(["api", "schema", "--json"])
+        text_result = _run_cli(["api", "schema"])
+
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        payload = json.loads(json_result.stdout)["api_schema"]
+        self.assertEqual(payload["schema_version"], "mnemo.core_api.v1")
+        self.assertEqual(set(payload["methods"]), {"context", "recall", "run", "replay", "evaluate"})
+        self.assertNotIn("input_schema", str(payload["methods"]["run"]["output_schema"]))
+        self.assertEqual(text_result.returncode, 0, text_result.stderr)
+        self.assertIn("MnemoCore mnemo.core_api.v1", text_result.stdout)
+        self.assertIn("- context:", text_result.stdout)
+
     def test_backup_export_and_import_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

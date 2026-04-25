@@ -19,6 +19,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Error Handling](./error-handling.md) | Error types, provider boundary failures, and CLI smoke behavior | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, CI gates, and package smoke contracts | Active |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Active |
+| [Integration Contracts](./integration-contracts.md) | SDK/API schema and external integration boundaries | Active |
 | [Tool Harness Contracts](./tool-harness.md) | Provider-native tool specs, policy gates, and compact results | Active |
 | [Provider Capability Contracts](./provider-capabilities.md) | Provider cache, ToolBundle epoch, context-window, and fallback metadata | Active |
 | [Prompt Assembly Contracts](./prompt-assembly.md) | Cache-friendly prompt ordering, context budgeting, and metadata | Active |

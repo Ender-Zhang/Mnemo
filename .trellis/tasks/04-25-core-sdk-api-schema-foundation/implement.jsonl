@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "New SDK modules and CLI schema command must follow root package layout."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI schema and SDK boundary should normalize expected service errors."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Public imports and CLI entrypoints require full tests and package smoke."}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "SDK context must reuse compact prompt assembly and metadata boundaries."}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "SDK recall must reuse compact memory/recall surfaces."}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "SDK run summaries must stay compact and tool-result safe."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "SDK/API schema spans service, CLI, tests, and package boundaries."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse runtime/eval/prompt services instead of duplicating behavior."}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "New SDK/API schema contract created by this task."}

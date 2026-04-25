@@ -150,7 +150,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Config file and env override model.
 - [x] Daemon status command.
 - [x] Backup/export/import.
-- [ ] Core SDK / OpenAPI or IDL contract for language-neutral integrations.
+- [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient` and `mnemo.core_api.v1` schema exist; HTTP/OpenAPI server bindings and non-Python generated clients are not complete.
 - [ ] MCP server exposing context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status tools.
 - [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
 - [ ] Watch/Cron persistence and scheduled event processing.
@@ -161,13 +161,14 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
 - [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, Inbox/Decision persistence, provider after-turn learning packets, and one-shot high-risk approval execution are implemented; local/background learning reflection and richer frontend recall/learning actions remain.
-- [ ] Highest-priority integration alignment: SDK/MCP server and external RuntimeAdapter with context capsule boundaries.
+- [~] Highest-priority integration alignment: SDK/API schema foundation exists; MCP server and external RuntimeAdapter with context capsule boundaries remain.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
 ## Recently Landed Trellis Tasks
 
 - [x] `04-25-high-risk-tool-decision-cards`: Denied external/admin tool calls now persist compact `tool_approval` Inbox decisions and stream through the existing inline decision-card path without executing the denied handler.
 - [x] `04-25-04-25-approved-tool-approval-execution`: Accepted `tool_approval` Inbox decisions now execute once through ToolHarness and return compact Web/CLI execution metadata.
+- [x] `04-25-core-sdk-api-schema-foundation`: Mnemo now exposes a dependency-free Python reference SDK plus `mnemo api schema` for the core context/recall/run/replay/evaluate contract.
 - [x] `04-25-implement-after-turn-learning-packet`: Provider runtime now builds a compact after-turn learning packet and lets the model propose 0..N mixed memory/skill/tool/eval candidates through provider-native tool calls.
 - [x] `04-25-04-25-refresh-readme-current-capabilities`: README and public runtime wording now describe the current single-chat runtime, provider setup, web UI, daemon, cancellation, memory/skill/tool operations, backup, and validation workflows.
 - [x] `04-25-implement-memory-query-planner`: Memory search now produces compact query plans, multi-route fused retrieval, stale/tombstone annotations, tool query-plan metadata, and `mnemo memory search --debug-query`.

@@ -38,8 +38,10 @@ def _assert_not_source_import(package_file: Path) -> None:
 
 def main() -> int:
     import mnemo
+    from mnemo.sdk import MnemoClient, mnemo_core_api_schema
 
     _assert_not_source_import(Path(mnemo.__file__ or ""))
+    _assert_not_source_import(Path(sys.modules[MnemoClient.__module__].__file__ or ""))
 
     version = importlib.metadata.version("mnemo")
     if version != mnemo.__version__:
@@ -58,6 +60,10 @@ def main() -> int:
     missing_assets = [name for name in required_assets if not assets.joinpath(name).is_file()]
     if missing_assets:
         raise AssertionError(f"missing packaged web assets: {', '.join(missing_assets)}")
+
+    schema = mnemo_core_api_schema()
+    if "context" not in schema.get("methods", {}):
+        raise AssertionError("packaged SDK schema is missing context method")
 
     print(f"installed mnemo {version} smoke passed")
     return 0

@@ -25,6 +25,7 @@ from ..runtime import DaemonRunner, result_as_dict, run_local, run_provider, str
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
+from ..sdk import mnemo_core_api_schema
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolEvolutionService, ToolRegistry, tool_specs_as_json_schema
@@ -79,6 +80,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_backup(args)
         if args.command == "config":
             return _cmd_config(args)
+        if args.command == "api":
+            return _cmd_api(args)
         parser.print_help()
         return 0
     except MnemoError as exc:
@@ -510,6 +513,11 @@ def build_parser() -> argparse.ArgumentParser:
     config_smoke_parser.add_argument("--message", default="Hello, introduce yourself in one sentence.")
     config_smoke_parser.add_argument("--stream", action="store_true", help="Probe chat through provider streaming")
     config_smoke_parser.add_argument("--json", action="store_true")
+
+    api_parser = subparsers.add_parser("api", help="Inspect MnemoCore integration contracts")
+    api_subparsers = api_parser.add_subparsers(dest="api_command")
+    api_schema_parser = api_subparsers.add_parser("schema", help="Print the MnemoCore API schema")
+    api_schema_parser.add_argument("--json", action="store_true")
     return parser
 
 
@@ -525,6 +533,21 @@ def _cmd_init(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     store.initialize()
     print(f"Initialized Mnemo state at {store.state_dir}")
+    return 0
+
+
+def _cmd_api(args: argparse.Namespace) -> int:
+    if args.api_command != "schema":
+        raise MnemoError("api command requires a subcommand")
+    schema = mnemo_core_api_schema()
+    if args.json:
+        print(dumps({"api_schema": schema}))
+        return 0
+
+    print(f"{schema['title']} {schema['schema_version']}")
+    print(schema["description"])
+    for name, method in schema["methods"].items():
+        print(f"- {name}: {method['description']} ({method['side_effects']})")
     return 0
 
 
