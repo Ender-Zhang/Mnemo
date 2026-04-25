@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "verify prompt metadata"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "verify native tool availability"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test gate"}
