@@ -25,9 +25,16 @@
 - Tool: `tool_review_candidate(candidate_id: str)`
 - Tool: `tool_install_candidate(candidate_id: str)`
 - Tool: `tool_uninstall_generated(name: str)`
+- CLI: `mnemo tools candidates [--status STATUS] [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo tools review <candidate_id> [--state-dir DIR] [--json]`
+- CLI: `mnemo tools install <candidate_id> [--state-dir DIR] [--json]`
+- CLI: `mnemo tools uninstall <name> [--state-dir DIR] [--json]`
 
 ### 3. Contracts
 - `tool_propose_candidate` creates `draft` candidates only.
+- The CLI lifecycle commands are thin wrappers around `ToolEvolutionService`; validation logic stays in the service.
+- `mnemo tools` and `mnemo tools list` both list currently available provider-facing tool specs.
+- `mnemo tools candidates` reads candidates without changing candidate state.
 - Candidate review never activates executable generated code.
 - Valid candidate specs require matching `name`, non-empty `description`, valid `risk`, and object `input_schema`.
 - Linked eval cases target a candidate through `case.tool_candidate`, `case.tool_name`, or `case.name`.
@@ -59,6 +66,7 @@
 | Risk downgrade | Candidate becomes `blocked:install_invalid` | `tests/test_tool_evolution.py` |
 | Existing tool name collision | Candidate becomes `blocked:install_invalid` | `tests/test_tool_evolution.py` |
 | Uninstall generated tool | Tool row becomes `disabled`, registry drops spec | `tests/test_tools.py` |
+| CLI candidate lifecycle | Review/install/uninstall commands update service state and keep `mnemo tools` list behavior | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: model proposes candidate, proposes eval case, records eval result, then reviews candidate.
@@ -72,6 +80,7 @@
 - Storage round-trip for tool candidates and eval cases.
 - Service tests for invalid, missing-eval, and ready outcomes.
 - Tool harness test for model-facing lifecycle tools.
+- CLI lifecycle test for candidate listing, review, install, uninstall, and missing-id errors.
 - Storage round-trip for installed generated tools.
 - Runtime test that active generated tools appear in provider tool specs.
 - Tool harness tests for install, execution, compact evidence, and uninstall.

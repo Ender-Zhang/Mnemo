@@ -431,6 +431,53 @@ class CliTests(unittest.TestCase):
             tool_names = {tool["name"] for tool in json.loads(listed.stdout)["tools"]}
             self.assertIn("lookup_memory", tool_names)
 
+    def test_tool_evolution_lifecycle_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("tool cli")
+            mission_id = store.create_mission(conversation_id, "tool cli")
+            run_id = store.create_run(conversation_id, mission_id, "tool cli")
+            candidate_id = store.add_tool_candidate(run_id, "lookup_memory", _tool_alias_spec("lookup_memory"))
+            case_id = store.add_eval_case(run_id, "lookup_memory smoke", {"tool_candidate": "lookup_memory"})
+            store.update_eval_case_status(case_id, "passed", result={"ok": True})
+
+            candidates = _run_cli(["tools", "candidates", "--state-dir", tmp, "--json"])
+            review = _run_cli(["tools", "review", candidate_id, "--state-dir", tmp, "--json"])
+            install = _run_cli(["tools", "install", candidate_id, "--state-dir", tmp, "--json"])
+            listed = _run_cli(["tools", "list", "--state-dir", tmp, "--json"])
+            uninstall = _run_cli(["tools", "uninstall", "lookup_memory", "--state-dir", tmp, "--json"])
+            listed_after = _run_cli(["tools", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(candidates.returncode, 0, candidates.stderr)
+            self.assertIn(candidate_id, {item["id"] for item in json.loads(candidates.stdout)["candidates"]})
+            self.assertEqual(review.returncode, 0, review.stderr)
+            self.assertEqual(json.loads(review.stdout)["status"], "ready")
+            self.assertEqual(install.returncode, 0, install.stderr)
+            self.assertTrue(json.loads(install.stdout)["installed"])
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            self.assertIn("lookup_memory", {tool["name"] for tool in json.loads(listed.stdout)["tools"]})
+            self.assertEqual(uninstall.returncode, 0, uninstall.stderr)
+            self.assertEqual(json.loads(uninstall.stdout)["status"], "disabled")
+            self.assertEqual(listed_after.returncode, 0, listed_after.stderr)
+            self.assertNotIn("lookup_memory", {tool["name"] for tool in json.loads(listed_after.stdout)["tools"]})
+
+    def test_tool_evolution_cli_errors_are_normalized(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            review = _run_cli(["tools", "review", "tc_missing", "--state-dir", tmp])
+            install = _run_cli(["tools", "install", "tc_missing", "--state-dir", tmp])
+            uninstall = _run_cli(["tools", "uninstall", "missing_tool", "--state-dir", tmp])
+
+            self.assertEqual(review.returncode, 1)
+            self.assertIn("mnemo: tool candidate not found: tc_missing", review.stderr)
+            self.assertNotIn("Traceback", review.stderr)
+            self.assertEqual(install.returncode, 1)
+            self.assertIn("mnemo: tool candidate not found: tc_missing", install.stderr)
+            self.assertNotIn("Traceback", install.stderr)
+            self.assertEqual(uninstall.returncode, 1)
+            self.assertIn("mnemo: generated tool not found: missing_tool", uninstall.stderr)
+            self.assertNotIn("Traceback", uninstall.stderr)
+
     def test_config_inspect_redacts_api_key(self) -> None:
         config = _run_cli(["config", "inspect", "--api-key", "secret-value", "--json"])
 
@@ -625,6 +672,25 @@ def _run_cli(
         capture_output=True,
         check=False,
     )
+
+
+def _tool_alias_spec(name: str) -> dict[str, Any]:
+    return {
+        "name": name,
+        "description": "Lookup memory with a focused argument name",
+        "risk": "read",
+        "input_schema": {
+            "type": "object",
+            "properties": {"term": {"type": "string"}},
+            "required": ["term"],
+            "additionalProperties": False,
+        },
+        "implementation": {
+            "type": "alias",
+            "target_tool": "memory_search",
+            "argument_map": {"query": {"from": "term"}, "limit": {"const": 5}},
+        },
+    }
 
 
 class FakeChatServer:

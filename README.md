@@ -87,6 +87,10 @@ mnemo dream run --state-dir .mnemo
 mnemo skills scan --state-dir .mnemo
 mnemo skills list --state-dir .mnemo
 mnemo tools --state-dir .mnemo
+mnemo tools candidates --state-dir .mnemo
+mnemo tools review <candidate_id> --state-dir .mnemo
+mnemo tools install <candidate_id> --state-dir .mnemo
+mnemo tools uninstall <name> --state-dir .mnemo
 ```
 
 Normal turns do not mutate stable memory directly. They write candidates and working notes; DreamCycle consolidates them into durable memory pages and cache-friendly snapshots. Skills and tools follow the same model-directed pattern: propose, evaluate, review, then promote.

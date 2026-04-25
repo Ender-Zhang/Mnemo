@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI parser and command handler change"}
+{"file": "mnemo/tools/evolution.py", "reason": "Existing lifecycle service to expose"}
+{"file": "tests/test_cli.py", "reason": "CLI regression tests"}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "Generated tool lifecycle contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI service error normalization"}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Track landed implementation"}

@@ -19,7 +19,7 @@ from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
-from ..tools import ToolRegistry, tool_specs_as_json_schema
+from ..tools import ToolEvolutionService, ToolRegistry, tool_specs_as_json_schema
 from .web import WebServerConfig, serve_web
 
 
@@ -186,9 +186,30 @@ def build_parser() -> argparse.ArgumentParser:
     skills_promote_parser.add_argument("name")
     skills_promote_parser.add_argument("--json", action="store_true")
 
-    tools_parser = subparsers.add_parser("tools", help="Print available tool specs")
+    tools_parser = subparsers.add_parser("tools", help="List tools and manage generated tool candidates")
     tools_parser.add_argument("--state-dir", help="Optional state directory for installed generated tools")
     tools_parser.add_argument("--json", action="store_true")
+    tools_subparsers = tools_parser.add_subparsers(dest="tools_command")
+    tools_list_parser = tools_subparsers.add_parser("list", help="Print available tool specs")
+    tools_list_parser.add_argument("--state-dir", help="Optional state directory for installed generated tools")
+    tools_list_parser.add_argument("--json", action="store_true")
+    tools_candidates_parser = tools_subparsers.add_parser("candidates", help="List generated tool candidates")
+    _add_state_dir(tools_candidates_parser)
+    tools_candidates_parser.add_argument("--status")
+    tools_candidates_parser.add_argument("--limit", type=int, default=50)
+    tools_candidates_parser.add_argument("--json", action="store_true")
+    tools_review_parser = tools_subparsers.add_parser("review", help="Review a generated tool candidate")
+    _add_state_dir(tools_review_parser)
+    tools_review_parser.add_argument("candidate_id")
+    tools_review_parser.add_argument("--json", action="store_true")
+    tools_install_parser = tools_subparsers.add_parser("install", help="Install a ready generated tool candidate")
+    _add_state_dir(tools_install_parser)
+    tools_install_parser.add_argument("candidate_id")
+    tools_install_parser.add_argument("--json", action="store_true")
+    tools_uninstall_parser = tools_subparsers.add_parser("uninstall", help="Disable an installed generated tool")
+    _add_state_dir(tools_uninstall_parser)
+    tools_uninstall_parser.add_argument("name")
+    tools_uninstall_parser.add_argument("--json", action="store_true")
 
     web_parser = subparsers.add_parser("web", help="Run the Mnemo single-chat web UI")
     _add_state_dir(web_parser)
@@ -555,19 +576,69 @@ def _print_skills_result(result: dict) -> None:
 
 
 def _cmd_tools(args: argparse.Namespace) -> int:
-    if args.state_dir:
-        store = StateStore(args.state_dir)
-        store.initialize()
-        registry = ToolRegistry.from_store(store)
-    else:
-        registry = ToolRegistry()
-    tools = tool_specs_as_json_schema(registry.specs())
-    if args.json:
-        print(dumps({"tools": tools}))
+    if args.tools_command in (None, "list"):
+        if args.state_dir:
+            store = StateStore(args.state_dir)
+            store.initialize()
+            registry = ToolRegistry.from_store(store)
+        else:
+            registry = ToolRegistry()
+        tools = tool_specs_as_json_schema(registry.specs())
+        if args.json:
+            print(dumps({"tools": tools}))
+            return 0
+        for tool in tools:
+            print(f"{tool['name']} [{tool['risk']}]: {tool['description']}")
         return 0
-    for tool in tools:
-        print(f"{tool['name']} [{tool['risk']}]: {tool['description']}")
+
+    store = StateStore(args.state_dir)
+    store.initialize()
+    service = ToolEvolutionService(store)
+
+    if args.tools_command == "candidates":
+        result = {"candidates": store.list_tool_candidates(status=args.status, limit=args.limit)}
+    elif args.tools_command == "review":
+        result = service.review_candidate(args.candidate_id)
+    elif args.tools_command == "install":
+        registry = ToolRegistry.from_store(store)
+        result = service.install_candidate(
+            args.candidate_id,
+            available_tools={spec.name: spec for spec in registry.specs()},
+        )
+    elif args.tools_command == "uninstall":
+        result = service.uninstall_generated_tool(args.name)
+    else:
+        raise MnemoError("tools command requires a valid subcommand")
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_tools_result(args.tools_command, result)
     return 0
+
+
+def _print_tools_result(command: str, result: dict[str, Any]) -> None:
+    if command == "candidates":
+        for candidate in result["candidates"]:
+            print(f"{candidate['id']} {candidate['name']} [{candidate['status']}]")
+        return
+    if command == "review":
+        print(f"Tool candidate {result['candidate_id']} {result['status']}")
+        for error in result.get("errors", []):
+            print(f"- {error}")
+        return
+    if command == "install":
+        if result.get("installed"):
+            print(f"Installed generated tool {result['name']} -> {result['target_tool']}")
+        else:
+            print(f"Tool candidate {result['candidate_id']} {result['status']}")
+            for error in result.get("errors", []):
+                print(f"- {error}")
+        return
+    if command == "uninstall":
+        print(f"Disabled generated tool {result['name']}")
+        return
+    print(dumps(result))
 
 
 def _cmd_web(args: argparse.Namespace) -> int:
