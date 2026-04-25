@@ -1699,3 +1699,36 @@ Reused the standard HTTP URL validator in web_fetch, added malformed URL regress
 ### Next Steps
 
 - None - task complete
+
+
+## Session 51: Cover prompt required budget overflow
+
+**Date**: 2026-04-25
+**Task**: Cover prompt required budget overflow
+**Branch**: `main`
+
+### Summary
+
+Added prompt assembly regression coverage for impossible token budgets, verified required blocks remain after optional blocks drop, updated the prompt assembly spec test point, and recorded the task in the implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `83d6744` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
