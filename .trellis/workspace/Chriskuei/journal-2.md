@@ -923,3 +923,37 @@ Denied external/admin tool calls now persist compact tool_approval Inbox decisio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 84: Approved tool approval execution
+
+**Date**: 2026-04-25
+**Task**: Approved tool approval execution
+**Branch**: `main`
+
+### Summary
+
+Accepted tool_approval Inbox decisions now execute once through ToolHarness and return compact results through CLI/Web while rejected, invalid, or repeated resolutions do not execute.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9fef809` | (see git log) |
+| `06d26a1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
