@@ -173,3 +173,37 @@ Added read-only mnemo memory links for outgoing, incoming, and bidirectional ass
 ### Next Steps
 
 - None - task complete
+
+
+## Session 64: Expose memory snapshot CLI
+
+**Date**: 2026-04-25
+**Task**: Expose memory snapshot CLI
+**Branch**: `main`
+
+### Summary
+
+Added read-only mnemo memory snapshot for inspecting the compact L1 snapshot used by prompt assembly, including missing/invalid snapshot handling, compact text output, README/spec/checklist updates, and CLI regression coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6218052` | (see git log) |
+| `90ea2ba` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
