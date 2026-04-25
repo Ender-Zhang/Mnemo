@@ -719,3 +719,37 @@ Implemented deterministic ToolBundle metadata, reduced prompt-mode tool profiles
 ### Next Steps
 
 - None - task complete
+
+
+## Session 78: Provider capability registry
+
+**Date**: 2026-04-25
+**Task**: Provider capability registry
+**Branch**: `main`
+
+### Summary
+
+Added provider capability metadata for cache strategy, ToolBundle adapter epochs, context-window sources, fallback modes, CLI inspection, runtime prompt/request metadata, and normalized provider cache-token metrics. Validated targeted provider/runtime/CLI tests, full unit suite, compileall, CLI capability smoke, task context validation, and repo-external wheel install smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `657f80d` | (see git log) |
+| `5a24a28` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
