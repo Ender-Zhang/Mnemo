@@ -328,12 +328,21 @@ Added compact run-history listing and full run record inspection before users op
 
 | Hash | Message |
 |------|---------|
-| `622c7fe` | (see git log) |
-| `60ddea2` | (see git log) |
+| `622c7fe` | feat: expose runs inspection cli |
+| `60ddea2` | chore(task): archive 04-25-expose-runs-inspection-cli |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_storage.StateStoreTests.test_list_runs_returns_compact_filterable_summaries`
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_runs_list_and_show_commands_inspect_run_history`
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_runs_cancel_and_daemon_cancel_commands`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest tests.test_storage`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `task.py validate 04-25-expose-runs-inspection-cli`
+- [OK] `git diff --check`
+- [OK] Temporary venv wheel build/install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
