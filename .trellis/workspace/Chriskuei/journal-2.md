@@ -483,3 +483,36 @@ Recalibrated the implementation checklist so runnable foundations, partial produ
 ### Next Steps
 
 - None - task complete
+
+
+## Session 71: Implement L4 session search
+
+**Date**: 2026-04-25
+**Task**: Implement L4 session search
+**Branch**: `main`
+
+### Summary
+
+Added SQLite-backed L4 session message persistence/search, memory_search scope support, CLI coverage, tests, specs, and checklist alignment.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c147a2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
