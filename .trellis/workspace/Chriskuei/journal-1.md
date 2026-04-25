@@ -1419,3 +1419,47 @@ Added opt-in provider retry_count and retry_backoff_s through runtime config, CL
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: Trellis cleanup and run cancellation
+
+**Date**: 2026-04-25
+**Task**: Trellis cleanup and run cancellation
+**Branch**: `main`
+
+### Summary
+
+Cleaned stale Trellis tracking, completed project guideline specs, archived old umbrella tasks, and added persisted run/queue cancellation with CLI commands and cooperative local/provider runtime checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e9b0162` | (see git log) |
+| `ed51756` | (see git log) |
+| `8d5a232` | (see git log) |
+| `aa8fafe` | (see git log) |
+| `5b03bb9` | (see git log) |
+| `efdd111` | (see git log) |
+| `660641f` | (see git log) |
+| `8cdc3c5` | (see git log) |
+| `25a7b47` | (see git log) |
+| `326bf21` | (see git log) |
+| `15f8c02` | (see git log) |
+| `9c62975` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
