@@ -1,51 +1,41 @@
 # Quality Guidelines
 
-> Code quality standards for frontend development.
+## Scenario: Lightweight Web UI Quality Gate
 
----
+### 1. Scope / Trigger
+- Trigger: changes to web routes, static assets, chat rendering, event replay, or artifact viewing.
+- Goal: keep the no-build frontend reliable, accessible, and package-safe.
 
-## Overview
+### 2. Required Patterns
+- Preserve one user-facing chat composer as the primary interaction.
+- Keep stream events compact; fetch large bodies through explicit APIs.
+- Use `textContent` for model/tool/user-controlled content.
+- Keep layout responsive with stable widths, wrapping, and no overlapping text.
+- Keep stdout clean for CLI stream/JSON tests; web asset tests should not require a browser.
 
-<!--
-Document your project's quality standards here.
+### 3. Forbidden Patterns
+- No `innerHTML` for dynamic content.
+- No frontend build step unless there is a concrete product need.
+- No hidden dashboard-first flow for normal user tasks.
+- No raw API keys, provider headers, or full provider request payloads in browser-visible data.
+- No large artifact bodies in `artifact.card` stream payloads.
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+### 4. Validation & Error Matrix
+| Case | Expected Behavior | Test Point |
+| --- | --- | --- |
+| Static assets | Serve installed HTML/CSS/JS | `tests/package_install_smoke.py`, `tests/test_web.py` |
+| Stream transport | NDJSON events remain parseable | `tests/test_web.py`, `tests/test_cli.py` |
+| Replay | Event id de-duplication prevents duplicate cards | `tests/test_web.py` |
+| Artifact body | Fetched on demand through `/api/artifacts` | `tests/test_web.py` |
+| Long text | Uses wrapping styles and stable dimensions | CSS/asset review |
 
-(To be filled by the team)
+### 5. Good/Base/Bad Cases
+- Good: add a test that reads `app.js` and checks for a new event route when adding a new card type.
+- Good: update package data tests when adding a new static asset.
+- Base: manual browser smoke is useful for layout changes but unit tests should cover contracts.
+- Bad: relying only on manual visual inspection for replay or stream behavior.
 
----
-
-## Forbidden Patterns
-
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+### 6. Tests Required
+- Run `python -m unittest tests.test_web tests.test_cli` for web/CLI transport changes.
+- Run full source tests before committing cross-layer UI/runtime changes.
+- Run package smoke when adding, moving, or renaming web assets.

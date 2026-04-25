@@ -14,11 +14,11 @@ This directory contains guidelines for backend development. Fill in each file wi
 
 | Guide | Description | Status |
 |-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
+| [Directory Structure](./directory-structure.md) | Module organization and file layout | Active |
+| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | Active |
 | [Error Handling](./error-handling.md) | Error types, provider boundary failures, and CLI smoke behavior | Active |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, CI gates, and package smoke contracts | Active |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Active |
 | [Tool Harness Contracts](./tool-harness.md) | Provider-native tool specs, policy gates, and compact results | Active |
 | [Prompt Assembly Contracts](./prompt-assembly.md) | Cache-friendly prompt ordering, context budgeting, and metadata | Active |
 | [Memory Engine Contracts](./memory-engine.md) | Candidate consolidation, reinforcement, conflict signals, and provenance links | Active |
