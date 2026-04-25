@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": "tests/test_memory.py", "reason": "Memory QueryPlanner tests"}
+{"file": "tests/test_tools.py", "reason": "memory_search tool tests"}
+{"file": "tests/test_cli.py", "reason": "CLI debug query tests"}

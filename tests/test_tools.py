@@ -220,6 +220,7 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
 
             self.assertTrue(result.ok)
             self.assertEqual({match["type"] for match in result.result["matches"]}, {"session_message"})
+            self.assertEqual(result.result["query_plan"]["original"], "architecture summaries")
             self.assertNotIn("content", str(result.result["matches"]))
             self.assertEqual(compact["evidence"][0]["kind"], "memory_search")
             self.assertEqual(compact["evidence"][0]["items"][0]["type"], "session_message")

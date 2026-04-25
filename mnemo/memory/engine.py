@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
+from .query import MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
 
 L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
 W0_MEMORY_RETENTION = "memory_candidate"
@@ -18,65 +19,76 @@ class MemoryEngine:
     def __init__(self, store: Any):
         self.store = store
 
+    def plan_query(self, query: str) -> MemoryQueryPlan:
+        return build_memory_query_plan(query, l1_snapshot=self.load_l1_snapshot())
+
+    def search_with_plan(self, query: str, limit: int = 5, *, search_scope: str = "memory") -> dict[str, Any]:
+        plan = self.plan_query(query)
+        if not plan.original:
+            return {"query_plan": plan.metadata(), "matches": []}
+        return {
+            "query_plan": plan.metadata(),
+            "matches": self._search_from_plan(plan, limit=limit, search_scope=search_scope),
+        }
+
     def search(self, query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]:
-        normalized_query = query.strip()
-        if not normalized_query:
-            return []
+        return self.search_with_plan(query, limit=limit, search_scope=search_scope)["matches"]
+
+    def _search_from_plan(
+        self,
+        plan: MemoryQueryPlan,
+        *,
+        limit: int,
+        search_scope: str,
+    ) -> list[dict[str, Any]]:
         normalized_scope = _normalize_search_scope(search_scope)
+        bounded_limit = max(1, int(limit))
 
         results: list[dict[str, Any]] = []
         if normalized_scope in {"memory", "all"}:
-            page_limit = max(limit, 1)
-            candidate_limit = max(limit, 1)
-            pages = self.store.search_memory_pages(normalized_query, limit=page_limit)
-            candidates = self.store.search_memory_candidates(normalized_query, limit=candidate_limit)
-
-            for page in pages:
-                results.append(
-                    {
-                        "type": "page",
-                        "id": page["id"],
-                        "title": page["title"],
-                        "content": page["content"],
-                        "scope": page["scope"],
-                        "confidence": page["confidence"],
-                        "status": page["status"],
-                        "source_candidate_id": page.get("source_candidate_id"),
-                    }
+            memory_results = self._search_memory_routes(plan, limit=bounded_limit)
+            results.extend(memory_results)
+            page_seeds = [item for item in memory_results if item["type"] == "page"]
+            results.extend(
+                self._associated_pages(
+                    page_seeds,
+                    seen_ids={item["id"] for item in results},
+                    limit=bounded_limit,
+                    plan=plan,
                 )
-            for candidate in candidates:
-                results.append(
-                    {
-                        "type": "candidate",
-                        "id": candidate["id"],
-                        "claim": candidate["claim"],
-                        "dimension": candidate.get("dimension"),
-                        "scope": candidate["scope"],
-                        "confidence": candidate["confidence"],
-                        "status": candidate["status"],
-                        "evidence": candidate.get("evidence", []),
-                    }
-                )
-            results.extend(self._associated_pages(pages, seen_ids={item["id"] for item in results}, limit=limit))
+            )
 
         if normalized_scope in {"sessions", "all"}:
-            search_session_messages = getattr(self.store, "search_session_messages", None)
-            if search_session_messages:
-                for message in search_session_messages(normalized_query, limit=max(limit, 1)):
-                    results.append(
-                        {
-                            "type": "session_message",
-                            "id": message["id"],
-                            "message_id": message.get("message_id") or message["id"],
-                            "conversation_id": message["conversation_id"],
-                            "mission_id": message["mission_id"],
-                            "run_id": message["run_id"],
-                            "role": message["role"],
-                            "snippet": message["snippet"],
-                            "created_at": message["created_at"],
-                        }
-                    )
+            results.extend(self._search_session_routes(plan, limit=bounded_limit))
         return results
+
+    def _search_memory_routes(self, plan: MemoryQueryPlan, *, limit: int) -> list[dict[str, Any]]:
+        batches: list[tuple[str, str, list[dict[str, Any]]]] = []
+        for route in plan.routes():
+            query = route["query"]
+            pages = [
+                _page_result(page)
+                for page in self.store.search_memory_pages(query, limit=max(limit, 1))
+            ]
+            candidates = [
+                _candidate_result(candidate)
+                for candidate in self.store.search_memory_candidates(query, limit=max(limit, 1))
+            ]
+            batches.append((route["route"], query, [*pages, *candidates]))
+        return fuse_ranked_batches(batches, plan=plan, limit=max(limit * 2, 1))
+
+    def _search_session_routes(self, plan: MemoryQueryPlan, *, limit: int) -> list[dict[str, Any]]:
+        search_session_messages = getattr(self.store, "search_session_messages", None)
+        if not search_session_messages:
+            return []
+        batches: list[tuple[str, str, list[dict[str, Any]]]] = []
+        for route in plan.routes():
+            messages = [
+                _session_result(message)
+                for message in search_session_messages(route["query"], limit=max(limit, 1))
+            ]
+            batches.append((route["route"], route["query"], messages))
+        return fuse_ranked_batches(batches, plan=plan, limit=max(limit, 1))
 
     def context_cards(self, query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]:
         return [_context_card(item) for item in self.search(query, limit=limit, search_scope=search_scope)]
@@ -275,6 +287,7 @@ class MemoryEngine:
         *,
         seen_ids: set[str],
         limit: int,
+        plan: MemoryQueryPlan,
     ) -> list[dict[str, Any]]:
         associated: list[dict[str, Any]] = []
         max_associations = max(0, int(limit))
@@ -290,20 +303,27 @@ class MemoryEngine:
                 if not linked_page or linked_page.get("status") != "active":
                     continue
                 associated.append(
-                    {
-                        "type": "linked_page",
-                        "id": linked_page["id"],
-                        "title": linked_page["title"],
-                        "content": linked_page["content"],
-                        "scope": linked_page["scope"],
-                        "confidence": linked_page["confidence"],
-                        "status": linked_page["status"],
-                        "source_candidate_id": linked_page.get("source_candidate_id"),
-                        "relation": link["relation"],
-                        "linked_from": page_id,
-                        "link_id": link["id"],
-                        "link_weight": link["weight"],
-                    }
+                    annotate_memory_match(
+                        {
+                            "type": "linked_page",
+                            "id": linked_page["id"],
+                            "title": linked_page["title"],
+                            "content": linked_page["content"],
+                            "scope": linked_page["scope"],
+                            "confidence": linked_page["confidence"],
+                            "status": linked_page["status"],
+                            "source_candidate_id": linked_page.get("source_candidate_id"),
+                            "relation": link["relation"],
+                            "linked_from": page_id,
+                            "link_id": link["id"],
+                            "link_weight": link["weight"],
+                            "match_signals": [
+                                {"route": "wiki", "query": page.get("title") or page_id, "rank": len(associated) + 1}
+                            ],
+                        },
+                        plan,
+                        score=float(link.get("weight", 0.0)),
+                    )
                 )
                 seen_ids.add(linked_page_id)
                 if len(associated) >= max_associations:
@@ -376,13 +396,61 @@ class MemoryEngine:
     def _mark_conflict(self, candidate: dict[str, Any], page: dict[str, Any]) -> dict[str, Any]:
         status = "needs_review:conflict"
         self.store.update_memory_candidate_status(candidate["id"], status)
-        self.store.add_memory_link(candidate["id"], page["id"], "conflicts_with", weight=float(candidate.get("confidence", 0.5)))
+        self.store.add_memory_link(
+            candidate["id"],
+            page["id"],
+            "conflicts_with",
+            weight=float(candidate.get("confidence", 0.5)),
+        )
         return {
             "candidate_id": candidate["id"],
             "status": status,
             "conflict_page_id": page["id"],
             "reason": "conflicts_with_active_memory",
         }
+
+
+def _page_result(page: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "page",
+        "id": page["id"],
+        "title": page["title"],
+        "content": page["content"],
+        "scope": page["scope"],
+        "confidence": page["confidence"],
+        "status": page["status"],
+        "source_candidate_id": page.get("source_candidate_id"),
+        "created_at": page.get("created_at"),
+        "updated_at": page.get("updated_at"),
+    }
+
+
+def _candidate_result(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "candidate",
+        "id": candidate["id"],
+        "claim": candidate["claim"],
+        "dimension": candidate.get("dimension"),
+        "scope": candidate["scope"],
+        "confidence": candidate["confidence"],
+        "status": candidate["status"],
+        "evidence": candidate.get("evidence", []),
+        "created_at": candidate.get("created_at"),
+    }
+
+
+def _session_result(message: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "session_message",
+        "id": message["id"],
+        "message_id": message.get("message_id") or message["id"],
+        "conversation_id": message["conversation_id"],
+        "mission_id": message["mission_id"],
+        "run_id": message["run_id"],
+        "role": message["role"],
+        "snippet": message["snippet"],
+        "created_at": message["created_at"],
+    }
 
 
 def _candidate_title(candidate: dict[str, Any]) -> str:

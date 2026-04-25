@@ -67,7 +67,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
 - [~] Memory eval cases and regression gates cover smoke/safety cases plus L4 session-search regressions; full wrong-memory, over-personalization, Memory Health, and injection-scan gates are not complete.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
-- [ ] Memory QueryPlanner with lexical/semantic/temporal/dimension planning, RRF/MMR fusion, and tombstone/stale annotations.
+- [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, and CLI debug output exist; vector semantic retrieval, true MMR, durable tombstones, and stale decay passes remain.
 - [ ] Memory tombstones, decay passes, selective forgetting, memory health reports, and low-friction memory cultivation cards.
 - [ ] Memory write taint tracking and prompt-injection scanner across user, web, file, tool result, imported skill, MCP, and external runtime sources.
 
@@ -167,6 +167,7 @@ This file tracks implementation status against the design package. Keep it updat
 ## Recently Landed Trellis Tasks
 
 - [x] `04-25-04-25-refresh-readme-current-capabilities`: README and public runtime wording now describe the current single-chat runtime, provider setup, web UI, daemon, cancellation, memory/skill/tool operations, backup, and validation workflows.
+- [x] `04-25-implement-memory-query-planner`: Memory search now produces compact query plans, multi-route fused retrieval, stale/tombstone annotations, tool query-plan metadata, and `mnemo memory search --debug-query`.
 - [x] `04-25-implement-provider-capability-registry`: Provider capability metadata now centralizes prompt cache strategy, ToolBundle adapter epochs, context-window source, fallback modes, CLI inspection, and provider cache-token normalization.
 - [x] `04-25-04-25-tighten-web-fetch-url-validation`: `web_fetch` now rejects malformed HTTP/HTTPS URLs before network I/O and has standard tool regression coverage.
 - [x] `04-25-04-25-cover-prompt-required-budget-overflow`: prompt budgeting now has regression coverage for impossible budgets that drop optional blocks while preserving required blocks and reporting `budget_exceeded=true`.

@@ -592,6 +592,51 @@ class CliTests(unittest.TestCase):
             self.assertEqual(linked[0]["id"], linked_id)
             self.assertEqual(linked[0]["relation"], "related")
 
+    def test_memory_search_debug_query_includes_query_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            store.upsert_memory_page(
+                "preferences: python",
+                "User likes pytest assertions",
+                confidence=0.91,
+            )
+
+            search = _run_cli(
+                [
+                    "memory",
+                    "search",
+                    "testing",
+                    "preference",
+                    "--debug-query",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            plain = _run_cli(
+                [
+                    "memory",
+                    "search",
+                    "testing",
+                    "preference",
+                    "--debug-query",
+                    "--state-dir",
+                    tmp,
+                ]
+            )
+            default_search = _run_cli(
+                ["memory", "search", "testing", "preference", "--state-dir", tmp, "--json"]
+            )
+
+            self.assertEqual(search.returncode, 0, search.stderr)
+            payload = json.loads(search.stdout)
+            self.assertEqual(payload["query_plan"]["dimensions"], ["preferences"])
+            self.assertIn("dimension", payload["matches"][0]["annotations"]["matched_routes"])
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn("query_plan routes=", plain.stdout)
+            self.assertNotIn("query_plan", json.loads(default_search.stdout))
+
     def test_memory_search_command_can_search_session_snippets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

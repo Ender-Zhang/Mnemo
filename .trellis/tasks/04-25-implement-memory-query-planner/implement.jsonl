@@ -1,0 +1,16 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "design/01-memory-engine.md", "reason": "Memory QueryPlanner and associative recall design"}
+{"file": "design/11-prompt-system.md", "reason": "Memory helper prompt and recall boundaries"}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Checklist target for Memory QueryPlanner"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory engine contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "memory_search tool result contract"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI boundary error handling"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation gates"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Memory tool CLI data flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse memory search helpers"}
+{"file": "mnemo/memory/engine.py", "reason": "Memory search implementation"}
+{"file": "mnemo/tools/registry.py", "reason": "memory_search tool result"}
+{"file": "mnemo/interfaces/cli.py", "reason": "memory search CLI debug output"}
+{"file": "mnemo/storage/sqlite.py", "reason": "Memory candidate search payload fields"}
+{"file": "mnemo/memory/query.py", "reason": "QueryPlanner implementation"}

@@ -547,7 +547,7 @@ class ToolRegistry:
         query = _require_str(args, "query")
         limit = int(args.get("limit", 5))
         search_scope = _memory_search_scope(args)
-        return {"matches": MemoryEngine(context.store).search(query, limit=limit, search_scope=search_scope)}
+        return MemoryEngine(context.store).search_with_plan(query, limit=limit, search_scope=search_scope)
 
     def _memory_read(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         memory_id = _require_str(args, "id")

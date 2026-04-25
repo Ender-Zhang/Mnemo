@@ -60,6 +60,54 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertIn(("page", page_id), typed_ids)
             self.assertIn(("candidate", candidate_id), typed_ids)
 
+    def test_query_plan_detects_dimension_temporal_and_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+
+            plan = MemoryEngine(store).plan_query("recent testing preference")
+            metadata = plan.metadata()
+
+            self.assertEqual(metadata["original"], "recent testing preference")
+            self.assertEqual(metadata["temporal"], "recent")
+            self.assertIn("preferences", metadata["dimensions"])
+            self.assertIn({"route": "dimension", "query": "preferences"}, metadata["routes"])
+            self.assertIn({"route": "lexical", "query": "recent testing preference"}, metadata["routes"])
+
+    def test_search_uses_query_plan_dimension_route_and_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: python",
+                "User likes pytest assertions",
+                confidence=0.92,
+            )
+
+            search = MemoryEngine(store).search_with_plan("testing preference", limit=5)
+
+            page = next(item for item in search["matches"] if item["id"] == page_id)
+            self.assertEqual(search["query_plan"]["dimensions"], ["preferences"])
+            self.assertIn("dimension", page["annotations"]["matched_routes"])
+            self.assertGreater(page["annotations"]["retrieval_score"], 0)
+            self.assertFalse(page["annotations"]["stale"])
+            self.assertFalse(page["annotations"]["tombstone"])
+
+    def test_search_marks_tombstone_candidate_annotations(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers dark mode",
+                dimension="preferences",
+                confidence=0.75,
+            )
+            store.update_memory_candidate_status(candidate_id, "rejected:duplicate")
+
+            results = MemoryEngine(store).search("dark mode", limit=5)
+
+            candidate = next(item for item in results if item["id"] == candidate_id)
+            self.assertTrue(candidate["annotations"]["tombstone"])
+            self.assertFalse(candidate["annotations"]["stale"])
+
     def test_search_returns_directly_linked_active_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, _run_id = _store_with_run(tmp)

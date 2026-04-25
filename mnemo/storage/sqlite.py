@@ -1107,7 +1107,7 @@ class StateStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, claim, dimension, scope, confidence, status, evidence_json
+                SELECT id, run_id, claim, dimension, scope, confidence, status, evidence_json, created_at
                 FROM memory_candidates
                 WHERE claim LIKE ?
                 ORDER BY created_at DESC

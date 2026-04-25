@@ -8,6 +8,8 @@
 
 ### 2. Signatures
 - `MemoryEngine.search(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
+- `MemoryEngine.plan_query(query: str) -> MemoryQueryPlan`
+- `MemoryEngine.search_with_plan(query: str, limit: int = 5, *, search_scope: str = "memory") -> dict[str, Any]`
 - `MemoryEngine.context_cards(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
 - `MemoryEngine.ingest_working_notes(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
@@ -27,7 +29,7 @@
 - `StateStore.update_working_note_status(note_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
 - CLI: `mnemo memory notes [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory list [--kind candidate|page|all] [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
-- CLI: `mnemo memory search <query...> [--scope memory|stable|sessions|all] [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory search <query...> [--scope memory|stable|sessions|all] [--limit N] [--debug-query] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
@@ -56,6 +58,14 @@
 - `MemoryEngine.search(search_scope="stable")` is accepted as an alias of `memory`.
 - `MemoryEngine.search(search_scope="sessions")` returns L4 `session_message` snippets from prior run messages without page/candidate results.
 - `MemoryEngine.search(search_scope="all")` includes stable memory results and session snippets.
+- `MemoryEngine.plan_query()` returns a compact deterministic plan with original, lexical, semantic, alias, temporal, dimension, clarification, and route fields.
+- Query planning preserves the original user language and exact proper nouns as lexical routes.
+- The first QueryPlanner implementation is deterministic and dependency-free; vector embedding, reranking, and model-led spreading activation remain extensions.
+- `MemoryEngine.search_with_plan()` returns `query_plan` plus `matches`; `MemoryEngine.search()` preserves the list-only compatibility wrapper.
+- Multi-route page, candidate, and session retrieval is fused by reciprocal-rank-style scoring and compact de-duplication.
+- Memory match annotations include retrieval score, matched routes, detected dimensions, temporal hint, stale flag, and tombstone flag.
+- Stale/tombstone annotations are advisory until durable tombstone and decay storage lands.
+- `mnemo memory search --debug-query` includes the compact query plan; default search output remains matches-only.
 - `session_message` results contain `id`, `message_id`, `conversation_id`, `mission_id`, `run_id`, `role`, `snippet`, and `created_at`; they must omit raw `content`.
 - Prompt-facing context cards for `session_message` include compact `summary` and provenance ids, not full transcripts.
 - `memory_read` must read stable memory pages as well as memory candidates.
@@ -93,14 +103,21 @@
 | CLI memory links | Outgoing and incoming links can be inspected by id | `tests/test_cli.py` |
 | CLI memory snapshot | Existing L1 snapshot can be inspected without full page bodies | `tests/test_cli.py` |
 | Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
+| Query planning | Plan reports routes, dimensions, and temporal hints without external dependencies | `tests/test_memory.py` |
+| Fused retrieval | Dimension routes can recover relevant pages and annotate matched routes | `tests/test_memory.py` |
+| Tombstone annotation | Rejected/tombstoned candidates are marked advisory tombstones | `tests/test_memory.py` |
+| CLI query debug | `--debug-query` includes query plan metadata while default JSON omits it | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: use links to preserve why memory changed.
 - Good: use one-hop page links to surface adjacent wiki knowledge while keeping tool schemas unchanged.
 - Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
+- Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
 - Base: deterministic dream logic may emit signals that later model decisions consume.
+- Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
 - Bad: hide reinforcement or conflict decisions without a memory link.
+- Bad: treat advisory tombstone annotations as durable deletion records.
 
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
@@ -111,6 +128,7 @@
 - Search/context cards remain compact and omit raw evidence.
 - Associative recall covers direct links, backlinks, archived-page filtering, and compact context cards.
 - L4 session search covers explicit session scope, compact context cards, and omission of raw message content.
+- QueryPlanner covers lexical/dimension/temporal route generation, fused retrieval annotations, and CLI debug output.
 - `memory_read` covers both candidates and stable pages.
 - CLI `memory list` covers default draft candidates, active pages, unfiltered all inventory, and compact non-JSON rows.
 - CLI `memory read` covers candidates, pages, non-JSON output, and missing ids.
