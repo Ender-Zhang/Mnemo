@@ -125,6 +125,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     memory_parser = subparsers.add_parser("memory", help="Search and curate memory")
     memory_subparsers = memory_parser.add_subparsers(dest="memory_command")
+    memory_list_parser = memory_subparsers.add_parser("list", help="List memory candidates or pages")
+    _add_state_dir(memory_list_parser)
+    memory_list_parser.add_argument("--kind", choices=["candidate", "page", "all"], default="candidate")
+    memory_list_parser.add_argument("--status", help="Status filter, or 'all' for no status filter")
+    memory_list_parser.add_argument("--limit", type=int, default=50)
+    memory_list_parser.add_argument("--json", action="store_true")
     memory_search_parser = memory_subparsers.add_parser("search", help="Search memory pages and candidates")
     _add_state_dir(memory_search_parser)
     memory_search_parser.add_argument("query", nargs="+")
@@ -478,7 +484,9 @@ def _cmd_memory(args: argparse.Namespace) -> int:
     engine = MemoryEngine(store)
 
     try:
-        if args.memory_command == "search":
+        if args.memory_command == "list":
+            result = _list_memory_items(store, args.kind, args.status, args.limit)
+        elif args.memory_command == "search":
             result = {"matches": engine.search(" ".join(args.query), limit=args.limit)}
         elif args.memory_command == "read":
             result = {"memory": _read_memory_item(store, args.memory_id)}
@@ -517,6 +525,22 @@ def _cmd_dream(args: argparse.Namespace) -> int:
 
 
 def _print_memory_result(result: dict) -> None:
+    if "candidates" in result or "pages" in result:
+        for candidate in result.get("candidates", []):
+            confidence = float(candidate.get("confidence", 0.0))
+            print(
+                f"candidate {candidate['id']} [{candidate['status']}] "
+                f"confidence={confidence:.2f} scope={candidate.get('scope', '')}: "
+                f"{_short_text(candidate.get('claim', ''))}"
+            )
+        for page in result.get("pages", []):
+            confidence = float(page.get("confidence", 0.0))
+            print(
+                f"page {page['id']} [{page['status']}] "
+                f"confidence={confidence:.2f} scope={page.get('scope', '')}: "
+                f"{_short_text(page.get('title', ''))}"
+            )
+        return
     if "matches" in result:
         for item in result["matches"]:
             if item["type"] == "page":
@@ -537,6 +561,37 @@ def _print_memory_result(result: dict) -> None:
     print(dumps(result))
 
 
+def _list_memory_items(store: StateStore, kind: str, status: str | None, limit: int) -> dict[str, Any]:
+    limit_value = max(0, int(limit))
+    include_candidates = kind in {"candidate", "all"}
+    include_pages = kind in {"page", "all"}
+    candidates = (
+        store.list_memory_candidates(status=_memory_status_filter(status, default="draft"), limit=limit_value)
+        if include_candidates
+        else []
+    )
+    pages = (
+        store.list_memory_pages(status=_memory_status_filter(status, default="active"), limit=limit_value)
+        if include_pages
+        else []
+    )
+    return {
+        "kind": kind,
+        "status": status or "default",
+        "limit": limit_value,
+        "candidates": candidates,
+        "pages": pages,
+    }
+
+
+def _memory_status_filter(status: str | None, *, default: str) -> str | None:
+    if status is None:
+        return default
+    if status == "all":
+        return None
+    return status
+
+
 def _read_memory_item(store: StateStore, memory_id: str) -> dict[str, Any]:
     candidate = store.get_memory_candidate(memory_id)
     if candidate:
@@ -545,6 +600,13 @@ def _read_memory_item(store: StateStore, memory_id: str) -> dict[str, Any]:
     if page:
         return {"type": "page", **page}
     raise MnemoError(f"memory not found: {memory_id}")
+
+
+def _short_text(value: str, limit: int = 120) -> str:
+    text = " ".join(str(value).split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 1)]}..."
 
 
 def _cmd_prompt(args: argparse.Namespace) -> int:

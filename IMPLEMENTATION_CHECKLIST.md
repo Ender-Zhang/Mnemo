@@ -151,6 +151,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-04-25-expose-skill-usage-cli`: CLI now exposes stored skill usage/outcome events and aggregate stats without mutating skill state.
 - [x] `04-25-04-25-validate-openai-compatible-provider-chain`: OpenAI-compatible `config smoke --stream` now validates streaming-only chat models, and the supplied `gpt-5.4` endpoint was exercised through streaming smoke, run, prompt inspect, events, and replay.
 - [x] `04-25-expose-memory-read-cli`: CLI now reads memory candidates and stable pages by id with normalized missing-id errors.
+- [x] `04-25-expose-memory-list-cli`: CLI now lists draft candidates, active pages, or unfiltered memory inventory without mutating memory state.
 - [x] `04-25-04-25-implement-provider-retry-policy`: provider config supports opt-in non-streaming retries for transient timeout/connection/retryable-status failures while keeping streaming single-attempt.
 - [x] `04-25-04-25-implement-run-cancellation-foundation`: runs and queued daemon jobs can be cancelled durably, and provider/local runtimes complete observed cancellations with `status="cancelled"`.
 - [x] `04-25-04-25-implement-browser-app-connectors`: lightweight `browser_open` and `app_open` connector tools are provider-native, policy-gated, dry-run testable, and compact in results.

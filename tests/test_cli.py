@@ -176,6 +176,57 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_memory_list_command_filters_candidates_and_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("memory list")
+            mission_id = store.create_mission(conversation_id, "list memory items")
+            run_id = store.create_run(conversation_id, mission_id, "remember list command")
+            draft_id = store.add_memory_candidate(
+                run_id,
+                "Draft memory candidate for listing",
+                confidence=0.74,
+            )
+            promoted_id = store.add_memory_candidate(
+                run_id,
+                "Promoted memory candidate for listing",
+                confidence=0.91,
+            )
+            store.update_memory_candidate_status(promoted_id, "promoted")
+            active_page_id = store.upsert_memory_page(
+                "preferences: active memory listing",
+                "Active memory page for listing",
+                confidence=0.88,
+            )
+            archived_page_id = store.upsert_memory_page(
+                "preferences: archived memory listing",
+                "Archived memory page for listing",
+                confidence=0.52,
+                status="archived",
+            )
+
+            default_list = _run_cli(["memory", "list", "--state-dir", tmp, "--json"])
+            pages = _run_cli(["memory", "list", "--kind", "page", "--state-dir", tmp, "--json"])
+            all_items = _run_cli(
+                ["memory", "list", "--kind", "all", "--status", "all", "--state-dir", tmp, "--json"]
+            )
+            plain = _run_cli(["memory", "list", "--kind", "page", "--state-dir", tmp])
+
+            self.assertEqual(default_list.returncode, 0, default_list.stderr)
+            default_payload = json.loads(default_list.stdout)
+            self.assertEqual([item["id"] for item in default_payload["candidates"]], [draft_id])
+            self.assertEqual(default_payload["pages"], [])
+            self.assertEqual(pages.returncode, 0, pages.stderr)
+            page_ids = {item["id"] for item in json.loads(pages.stdout)["pages"]}
+            self.assertEqual(page_ids, {active_page_id})
+            self.assertEqual(all_items.returncode, 0, all_items.stderr)
+            all_payload = json.loads(all_items.stdout)
+            self.assertEqual({item["id"] for item in all_payload["candidates"]}, {draft_id, promoted_id})
+            self.assertEqual({item["id"] for item in all_payload["pages"]}, {active_page_id, archived_page_id})
+            self.assertIn(f"page {active_page_id} [active] confidence=0.88", plain.stdout)
+            self.assertNotIn(archived_page_id, plain.stdout)
+
     def test_memory_read_command_reads_candidates_and_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

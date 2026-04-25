@@ -19,10 +19,12 @@
 - CLI: `mnemo harness eval memory-safety --json`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.list_memory_candidates(status: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
 - `StateStore.add_working_note(mission_id: str, run_id: str, content: str, *, metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_working_note_status(note_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
+- CLI: `mnemo memory list [--kind candidate|page|all] [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 
 ### 3. Contracts
@@ -44,6 +46,9 @@
 - `linked_page` results must be active pages, bounded by the search limit, deterministic, and de-duplicated from seed page/candidate ids.
 - Prompt-facing context cards for `linked_page` include compact `summary`, `relation`, and `linked_from`, not raw evidence.
 - `memory_read` must read stable memory pages as well as memory candidates.
+- `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.
+- `mnemo memory list` defaults to draft candidates; page listing defaults to active pages.
+- `mnemo memory list --status all` means no status filter.
 - `mnemo memory read` must expose the same candidate/page read behavior for human and harness inspection without mutating memory state.
 - The `memory-safety` eval suite must remain deterministic and local.
 - The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
@@ -64,6 +69,7 @@
 | Reverse association | Search returns active pages linked back to the query match | `tests/test_memory.py` |
 | Association cards | Context cards include relation metadata without full raw payloads | `tests/test_memory.py` |
 | Memory page read | `memory_read` can load stable pages by id | `tests/test_tools.py` |
+| CLI memory list | Candidate/page listing uses status defaults and `all` filter | `tests/test_cli.py` |
 | CLI memory read | Candidate and page ids return typed memory payloads | `tests/test_cli.py` |
 | Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
 
@@ -82,6 +88,7 @@
 - Search/context cards remain compact and omit raw evidence.
 - Associative recall covers direct links, backlinks, archived-page filtering, and compact context cards.
 - `memory_read` covers both candidates and stable pages.
+- CLI `memory list` covers default draft candidates, active pages, unfiltered all inventory, and compact non-JSON rows.
 - CLI `memory read` covers candidates, pages, non-JSON output, and missing ids.
 - L1 snapshot compile/load behavior is covered, including invalid files.
 - Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, and duplicate reinforcement.
