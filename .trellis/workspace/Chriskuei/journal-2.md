@@ -1127,3 +1127,37 @@ Added a low-frequency single-chat settings drawer, compact /api/settings summary
 ### Next Steps
 
 - None - task complete
+
+
+## Session 90: Web artifact card actions
+
+**Date**: 2026-04-25
+**Task**: Web artifact card actions
+**Branch**: `main`
+
+### Summary
+
+Added artifact card actions for continue/export/compare/send and patch apply/revert composer intents, extended the artifact API with compact same-mission related metadata, and updated tests/specs/checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `93e57c9` | (see git log) |
+| `e57a8cd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
