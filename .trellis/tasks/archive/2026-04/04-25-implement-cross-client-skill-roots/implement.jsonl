@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/skill-evolution.md", "reason": "skill root compatibility contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test and package quality"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "root discovery helper reuse"}
