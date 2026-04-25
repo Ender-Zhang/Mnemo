@@ -29,6 +29,7 @@
 - Incremental resume uses `sinceEventId` and appends only later events.
 - The client must de-duplicate events by `event_id` before mutating the timeline.
 - Reset clears all persisted chat continuity keys and the rendered-event set.
+- Reset is disabled and guarded while `state.busy` is true; active turns should use Stop instead.
 - Artifact cards render from streamed metadata and fetch artifact body content only when opened.
 - Loaded artifacts are cached in `state.artifacts` for the current browser session.
 - While a run is streaming, the composer exposes one stop control that calls `/api/runs/cancel`.
@@ -48,18 +49,21 @@
 | Artifact fetch | Returns stored artifact body by id and rejects missing/unknown ids | `tests/test_web.py` |
 | Artifact viewer asset | Contains on-demand artifact fetch and body rendering hooks | `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
+| Busy reset | Reset is disabled/guarded while a stream is active | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: persist `event.event_id` after each processed chat event and use `sinceEventId` for incremental resume.
 - Good: fetch artifact body via `/api/artifacts` after the user opens an artifact card.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
 - Good: clear `activeRunId` before each new turn so a stale replay id cannot be cancelled.
+- Good: keep reset as an idle-only operation; use Stop for active run interruption.
 - Base: sequence-based `since` remains available for CLI/debug callers.
 - Bad: store ledger seq as frontend resume state.
 - Bad: append replayed events without event-id de-duplication.
 - Bad: put full artifact bodies in every `artifact.card` event.
 - Bad: abort the active stream immediately after requesting cancellation and miss the final `run.completed`.
 - Bad: send cancellation with `lastRunId` while a new stream is still waiting for its first event.
+- Bad: clearing localStorage/timeline while a stream is still appending events.
 
 ### 6. Tests Required
 - Web replay API supports full replay and `sinceEventId`.

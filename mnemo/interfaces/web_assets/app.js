@@ -35,6 +35,7 @@ stop.addEventListener("click", () => {
 });
 
 reset.addEventListener("click", () => {
+  if (state.busy) return;
   state.conversationId = "";
   state.missionId = "";
   state.lastRunId = "";
@@ -382,6 +383,7 @@ function persistRun(event) {
 
 function updateComposerState() {
   send.disabled = state.busy;
+  reset.disabled = state.busy;
   stop.hidden = !state.busy;
   stop.disabled = !state.activeRunId || state.cancelRequested;
   stop.textContent = state.cancelRequested ? "Stopping" : "Stop";

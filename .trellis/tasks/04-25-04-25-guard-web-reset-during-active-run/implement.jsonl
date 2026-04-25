@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "mnemo/interfaces/web_assets/app.js", "reason": "Disable/reset guard while state.busy is true."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Document reset busy-state contract."}

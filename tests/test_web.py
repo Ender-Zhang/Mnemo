@@ -193,6 +193,8 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertIn("run_id: state.activeRunId", script)
                 self.assertIn("stop.disabled = !state.activeRunId || state.cancelRequested", script)
                 self.assertIn("updateComposerState", script)
+                self.assertIn("if (state.busy) return;", script)
+                self.assertIn("reset.disabled = state.busy", script)
 
 
 class RunningServer:

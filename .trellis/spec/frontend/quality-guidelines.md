@@ -28,6 +28,7 @@
 | Replay | Event id de-duplication prevents duplicate cards | `tests/test_web.py` |
 | Artifact body | Fetched on demand through `/api/artifacts` | `tests/test_web.py` |
 | Run cancellation | Stop control calls `/api/runs/cancel` with active run id and preserves stream/replay contracts | `tests/test_web.py` |
+| Busy reset | New/reset is disabled while a stream is active | `tests/test_web.py` |
 | Long text | Uses wrapping styles and stable dimensions | CSS/asset review |
 
 ### 5. Good/Base/Bad Cases
