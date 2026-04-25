@@ -281,12 +281,20 @@ Added read-only artifact listing and reading commands, with compact list output 
 
 | Hash | Message |
 |------|---------|
-| `629974d` | (see git log) |
-| `4447bb9` | (see git log) |
+| `629974d` | feat: expose artifacts cli |
+| `4447bb9` | chore(task): archive 04-25-expose-artifacts-cli |
 
 ### Testing
 
-- [OK] (Add test results)
+- [OK] `python3.13 -m unittest tests.test_storage.StateStoreTests.test_artifact_round_trip_by_id`
+- [OK] `python3.13 -m unittest tests.test_cli.CliTests.test_artifacts_commands_list_and_read_stored_artifacts`
+- [OK] `python3.13 -m unittest tests.test_cli`
+- [OK] `python3.13 -m unittest tests.test_storage`
+- [OK] `python3.13 -m unittest discover -s tests`
+- [OK] `python3.13 -m mnemo harness smoke`
+- [OK] `task.py validate 04-25-expose-artifacts-cli`
+- [OK] `git diff --check`
+- [OK] Temporary venv wheel build/install smoke with `tests/package_install_smoke.py`
 
 ### Status
 
