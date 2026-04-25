@@ -1531,3 +1531,37 @@ Exposed persisted run cancellation in the single-chat web UI with threaded reque
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: Standard tool edge coverage
+
+**Date**: 2026-04-25
+**Task**: Standard tool edge coverage
+**Branch**: `main`
+
+### Summary
+
+Added deterministic ToolHarness edge regression coverage for binary file reads and shell command timeouts, updated tool-harness spec matrix, and kept full unit tests passing.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `32cdc84` | (see git log) |
+| `8fb96bb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
