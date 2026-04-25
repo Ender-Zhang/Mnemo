@@ -1666,3 +1666,36 @@ Updated README, package metadata, CLI help wording, CLI test assertion, and impl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 50: Tighten web_fetch URL validation
+
+**Date**: 2026-04-25
+**Task**: Tighten web_fetch URL validation
+**Branch**: `main`
+
+### Summary
+
+Reused the standard HTTP URL validator in web_fetch, added malformed URL regression coverage that asserts urlopen is not called, updated tool-harness contract, and recorded the task in the implementation checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2424140` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
