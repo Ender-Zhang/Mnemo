@@ -1351,3 +1351,37 @@ Added admin-gated file_patch for exact workspace-scoped UTF-8 replacements, ambi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: Skill patch candidates
+
+**Date**: 2026-04-25
+**Task**: Skill patch candidates
+**Branch**: `main`
+
+### Summary
+
+Added model-directed skill_patch_candidate for exact in-memory revisions of existing skills, shared text patch validation, compact evidence, service/tool tests, and updated skill/tool harness specs plus checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b605177` | (see git log) |
+| `fc2026d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
