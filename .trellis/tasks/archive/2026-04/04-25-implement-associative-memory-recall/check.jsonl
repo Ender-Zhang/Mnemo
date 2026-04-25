@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "verify recall behavior"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "verify compact tool payloads"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "full suite gate"}
