@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mnemo.skills import SkillService, load_skill_file, scan_skill_files
+from mnemo.skills import SkillService, default_skill_roots, load_skill_file, scan_skill_files
 from mnemo.storage import StateStore
 
 
@@ -105,6 +105,26 @@ class SkillFilesystemTests(unittest.TestCase):
 
             self.assertEqual([skill.name for skill in skills], ["alpha", "beta"])
             self.assertEqual([skill.source_root for skill in skills], [root, root])
+
+    def test_default_skill_roots_include_mainstream_clients_and_dedupe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            state_dir = root / "state"
+
+            roots = default_skill_roots(state_dir, workspace=workspace, home=workspace)
+
+            self.assertEqual(
+                roots,
+                [
+                    state_dir / "skills",
+                    workspace / ".mnemo" / "skills",
+                    workspace / ".agents" / "skills",
+                    workspace / ".claude" / "skills",
+                    workspace / ".hermes" / "skills",
+                    workspace / ".openclaw" / "skills",
+                ],
+            )
 
     def test_skill_context_cards_omit_body(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

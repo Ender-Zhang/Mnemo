@@ -8,6 +8,20 @@ from ..storage import StateStore
 from .filesystem import SkillFile, load_skill_metadata, scan_skill_files
 
 
+_WORKSPACE_SKILL_ROOTS = (
+    (".mnemo", "skills"),
+    (".agents", "skills"),
+    (".claude", "skills"),
+    (".hermes", "skills"),
+    (".openclaw", "skills"),
+)
+_HOME_SKILL_ROOTS = (
+    (".claude", "skills"),
+    (".hermes", "skills"),
+    (".openclaw", "skills"),
+)
+
+
 class SkillService:
     def __init__(self, store: StateStore, roots: list[str | Path] | None = None):
         self.store = store
@@ -167,14 +181,37 @@ class SkillService:
         }
 
 
-def default_skill_roots(state_dir: str | Path, workspace: str | Path | None = None) -> list[Path]:
+def default_skill_roots(
+    state_dir: str | Path,
+    workspace: str | Path | None = None,
+    home: str | Path | None = None,
+) -> list[Path]:
     workspace_path = Path(workspace or Path.cwd()).expanduser()
     state_path = Path(state_dir).expanduser()
-    return [
-        state_path / "skills",
-        workspace_path / ".mnemo" / "skills",
-        workspace_path / ".agents" / "skills",
-    ]
+    home_path = Path.home().expanduser() if home is None else Path(home).expanduser()
+    roots = [state_path / "skills"]
+    roots.extend(workspace_path.joinpath(*parts) for parts in _WORKSPACE_SKILL_ROOTS)
+    roots.extend(home_path.joinpath(*parts) for parts in _HOME_SKILL_ROOTS)
+    return _dedupe_paths(roots)
+
+
+def _dedupe_paths(paths: list[Path]) -> list[Path]:
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = _path_key(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(path)
+    return deduped
+
+
+def _path_key(path: Path) -> str:
+    try:
+        return str(path.expanduser().resolve(strict=False))
+    except OSError:
+        return str(path.expanduser())
 
 
 def _skill_file_as_dict(skill: SkillFile) -> dict[str, Any]:

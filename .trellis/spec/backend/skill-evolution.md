@@ -15,6 +15,7 @@
 - `SkillService.crystallize_from_run(run_id: str, name: str, *, description: str | None = None, notes: str | None = None) -> dict[str, Any]`
 - `SkillService.run_eval_case(case_id: str) -> dict[str, Any]`
 - `SkillService.review(name: str) -> dict[str, Any]`
+- `default_skill_roots(state_dir: str | Path, workspace: str | Path | None = None, home: str | Path | None = None) -> list[Path]`
 - Tool: `skill_record_outcome(name: str, outcome: success|failure|neutral, score?: -1..1, evidence?: object[])`
 - Tool: `skill_crystallize_from_run(run_id: str, name: str, description?: str, notes?: str)`
 - Tool: `skill_run_eval_case(case_id: str)`
@@ -26,6 +27,9 @@
 - Scores must remain in `[-1, 1]`.
 - Context cards may include compact `usage` stats, never full skill bodies.
 - Ranking may use usage stats, but ordering must remain deterministic.
+- Default skill roots include Mnemo state skills, workspace `.mnemo/skills`, workspace `.agents/skills`, workspace `.claude/skills`, workspace `.hermes/skills`, workspace `.openclaw/skills`, and home `.claude/.hermes/.openclaw` skills.
+- Default skill roots must be de-duplicated while preserving first-seen order.
+- Explicit `skills scan --root` paths are additive to default roots.
 - Evidence is stored as JSON and returned only through explicit usage inspection APIs, not prompt cards.
 - `skill_crystallize_from_run` is model-directed: the model decides when to call it and supplies the name/description.
 - Crystallization reads completed run events and stores a `draft` skill with `source="run:<run_id>:crystallized"`.
@@ -63,6 +67,8 @@
 | Crystallization tool | Return compact summary/evidence without body or raw payloads | `tests/test_tools.py` |
 | Eval tool | Return compact summary/evidence without body | `tests/test_tools.py` |
 | Skill cards | Include compact usage stats and omit body | `tests/test_skills_filesystem.py` |
+| Default roots | Include mainstream client roots and de-duplicate | `tests/test_skills_filesystem.py` |
+| CLI scan defaults | Import workspace mainstream roots without explicit `--root` | `tests/test_cli.py` |
 | Storage stats | Count uses/views/outcomes and average scored events | `tests/test_storage.py` |
 | Harness regression | Built-in `skill-evolution` suite covers crystallization, eval gates, and compact cards | `tests/test_harness.py`, `tests/test_cli.py` |
 
@@ -71,6 +77,7 @@
 - Good: model calls `skill_crystallize_from_run` after a repeated or high-value successful run, then proposes evals before promotion.
 - Good: model proposes an eval case, calls `skill_run_eval_case`, then reviews the candidate.
 - Good: model calls `skill_review_candidate` before requesting explicit promotion.
+- Good: reuse `default_skill_roots()` for runtime and CLI scanning so prompt cards and `skills scan` see the same client roots.
 - Base: skill ranking uses `avg_score`, success count, use count, then name.
 - Bad: automatically rewriting a skill body from one successful run.
 - Bad: promoting a generated skill without review when review evidence is available.
@@ -83,6 +90,8 @@
 - Tool harness test for `skill_run_eval_case`.
 - Tool harness test for `skill_review_candidate`.
 - Skill service test for usage stats and deterministic ranking.
+- Skill service test for default root ordering and de-duplication.
+- CLI test for scanning a workspace mainstream root without `--root`.
 - Skill service tests for crystallized draft body shape and rejection paths.
 - Skill service tests for running linked eval cases and review gating.
 - Skill service tests for ready and blocked review states.

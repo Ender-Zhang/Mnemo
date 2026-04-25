@@ -65,7 +65,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 - [x] Skill draft storage and list/view tools.
 - [x] Skill proposal tool exists with generated `SKILL.md` promotion.
-- [~] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
+- [x] Cross-client skill scanner for `.agents/skills`, `.mnemo/skills`, Claude/Hermes/OpenClaw paths.
 - [x] Progressive skill index/summary/full load.
 - [x] Skill usage tracking and outcome scoring.
 - [~] Skill patch/proposal review lifecycle: proposal review gate exists; patch-specific diff/apply remains pending.
@@ -163,3 +163,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-implement-web-event-resume-since-event-id`: web replay supports `sinceEventId`, the client stores `last_event_id`, de-duplicates events, and rehydrates the last run.
 - [x] `04-25-implement-provider-smoke-command`: `mnemo config smoke` checks OpenAI-compatible `/models` plus chat, Anthropic chat, redacted output, and provider error exits.
 - [x] `04-25-implement-artifact-viewer`: web artifact cards fetch stored artifact bodies on demand through `/api/artifacts` while stream events stay compact.
+- [x] `04-25-implement-cross-client-skill-roots`: default skill roots now include workspace/home Claude, Hermes, and OpenClaw skill directories with deterministic de-duplication.

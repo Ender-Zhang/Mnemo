@@ -201,7 +201,10 @@ class CliTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            scan = _run_cli(["skills", "scan", "--state-dir", tmp, "--root", str(root), "--json"])
+            scan = _run_cli(
+                ["skills", "scan", "--state-dir", tmp, "--root", str(root), "--json"],
+                env_overrides={"HOME": str(Path(tmp) / "home")},
+            )
             self.assertEqual(scan.returncode, 0, scan.stderr)
             self.assertIn("writer", {skill["name"] for skill in json.loads(scan.stdout)["skills"]})
 
@@ -231,6 +234,33 @@ class CliTests(unittest.TestCase):
             path = Path(json.loads(promote.stdout)["path"])
             self.assertTrue(path.exists())
             self.assertEqual(path.name, "SKILL.md")
+
+    def test_skills_scan_uses_workspace_mainstream_default_roots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            state_dir = root / "state"
+            skill_dir = workspace / ".claude" / "skills" / "writer"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                "---\nname: claude-writer\ndescription: Write from Claude root\n---\nUse imported skills.",
+                encoding="utf-8",
+            )
+
+            scan = _run_cli(
+                ["skills", "scan", "--state-dir", str(state_dir), "--json"],
+                cwd=workspace,
+                env_overrides={"HOME": str(root / "home")},
+            )
+
+            self.assertEqual(scan.returncode, 0, scan.stderr)
+            skills = json.loads(scan.stdout)["skills"]
+            scanned = {skill["name"]: skill for skill in skills}
+            self.assertIn("claude-writer", scanned)
+            self.assertEqual(
+                Path(scanned["claude-writer"]["source_root"]).resolve(),
+                (workspace / ".claude" / "skills").resolve(),
+            )
 
     def test_skills_crystallize_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -498,12 +528,19 @@ class CliTests(unittest.TestCase):
             self.assertEqual(json.loads(recover.stdout)["recovered"][0]["id"], stale_id)
 
 
-def _run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    args: list[str],
+    *,
+    cwd: Path | None = None,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    if env_overrides:
+        env.update(env_overrides)
     return subprocess.run(
         [sys.executable, "-m", "mnemo", *args],
-        cwd=ROOT,
+        cwd=cwd or ROOT,
         env=env,
         text=True,
         capture_output=True,
