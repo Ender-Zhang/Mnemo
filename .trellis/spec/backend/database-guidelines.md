@@ -16,6 +16,10 @@
 - `StateStore.mark_outbox_event(event_id: str, status: str, *, error: str | None = None) -> None`
 - `StateStore.export_state(archive_path: str | Path) -> dict[str, Any]`
 - `StateStore.import_state(archive_path: str | Path, *, replace: bool = False) -> dict[str, Any]`
+- `StateStore.get_conversation(conversation_id: str) -> dict[str, Any] | None`
+- `StateStore.list_conversations(*, limit: int = 50) -> list[dict[str, Any]]`
+- `StateStore.get_mission(mission_id: str) -> dict[str, Any] | None`
+- `StateStore.list_missions(*, conversation_id: str | None = None, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.get_run(run_id: str) -> dict[str, Any] | None`
 - `StateStore.list_runs(*, status: str | None = None, conversation_id: str | None = None, mission_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.cancel_run(run_id: str, *, reason: str = "cancelled") -> dict[str, Any]`
@@ -66,6 +70,10 @@
 - `import_state()` validates the manifest, rejects archives from newer schema versions, rejects unsafe paths, and migrates the restored database through `initialize()`.
 - Import into non-empty managed state requires `replace=True`.
 - Replace mode removes only managed Mnemo paths, not unrelated files in the state directory.
+- `list_conversations()` returns compact conversation metadata ordered by recency.
+- `list_missions()` returns compact mission metadata ordered by recency, supports conversation/status filters, and omits checkpoint data.
+- `get_mission()` returns full mission data with parsed `checkpoint`.
+- CLI continuity inspection must use read APIs and remain read-only: `mnemo conversations list/show` and `mnemo missions list/show`.
 - Runs may be `running`, `completed`, `failed`, or `cancelled`.
 - `list_runs()` returns compact run metadata ordered by recency, supports status/conversation/mission filters, and includes `input_preview` instead of full input/output bodies.
 - CLI run inspection must use read APIs and remain read-only: `mnemo runs list` and `mnemo runs show <run_id>`.
@@ -100,6 +108,7 @@
 | Repeated initialize | No duplicate migration rows and no failure | `tests/test_storage.py` |
 | Legacy v1 DB missing generated lifecycle columns | Add missing columns and preserve existing rows | `tests/test_storage.py` |
 | Pre-initialized version read | Return `0` or empty migration list instead of crashing | Storage API behavior |
+| Continuity listing | List conversations/missions without mission checkpoint bodies | `tests/test_storage.py`, `tests/test_cli.py` |
 | Run event append | Persist run event and matching pending outbox row in one call | `tests/test_storage.py` |
 | Run listing | List/filter compact run metadata without full bodies | `tests/test_storage.py`, `tests/test_cli.py` |
 | Run cancellation | Running run becomes `cancelled`; terminal repeat is unchanged | `tests/test_storage.py`, `tests/test_cli.py` |
@@ -146,6 +155,7 @@
 - Initialization is idempotent.
 - Legacy schemas are upgraded in place.
 - Outbox table exists on fresh and upgraded state dirs.
+- Conversation and mission continuity list/show behavior is covered.
 - Appending a run event creates a matching outbox event.
 - Run list/show CLI and compact storage summaries are covered.
 - Outbox list and mark lifecycle is covered.

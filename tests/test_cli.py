@@ -548,6 +548,63 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: runs command requires a subcommand", no_subcommand.stderr)
             self.assertNotIn("Traceback", no_subcommand.stderr)
 
+    def test_conversations_and_missions_commands_inspect_continuity_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("Primary continuity")
+            other_conversation_id = store.create_conversation("Archived continuity")
+            mission_id = store.create_mission(conversation_id, "Continue launch planning")
+            other_mission_id = store.create_mission(other_conversation_id, "Old planning")
+            store.update_mission_checkpoint(mission_id, {"recent_summary": "private checkpoint"})
+            with store.connect() as conn:
+                conn.execute("UPDATE missions SET status = ? WHERE id = ?", ("completed", other_mission_id))
+
+            conversations = _run_cli(["conversations", "list", "--state-dir", tmp, "--json"])
+            conversation = _run_cli(["conversations", "show", conversation_id, "--state-dir", tmp, "--json"])
+            plain_conversations = _run_cli(["conversations", "list", "--state-dir", tmp])
+            missing_conversation = _run_cli(["conversations", "show", "conv_missing", "--state-dir", tmp])
+            no_conversation_subcommand = _run_cli(["conversations"])
+            missions = _run_cli(["missions", "list", "--state-dir", tmp, "--json"])
+            mission_by_conversation = _run_cli(
+                ["missions", "list", "--conversation-id", conversation_id, "--state-dir", tmp, "--json"]
+            )
+            mission_by_status = _run_cli(["missions", "list", "--status", "completed", "--state-dir", tmp, "--json"])
+            mission = _run_cli(["missions", "show", mission_id, "--state-dir", tmp, "--json"])
+            plain_missions = _run_cli(["missions", "list", "--state-dir", tmp])
+            plain_mission = _run_cli(["missions", "show", mission_id, "--state-dir", tmp])
+            missing_mission = _run_cli(["missions", "show", "mis_missing", "--state-dir", tmp])
+            no_mission_subcommand = _run_cli(["missions"])
+
+            self.assertEqual(conversations.returncode, 0, conversations.stderr)
+            self.assertEqual(
+                {item["id"] for item in json.loads(conversations.stdout)["conversations"]},
+                {conversation_id, other_conversation_id},
+            )
+            self.assertEqual(conversation.returncode, 0, conversation.stderr)
+            self.assertEqual(json.loads(conversation.stdout)["conversation"]["title"], "Primary continuity")
+            self.assertIn(f"conversation {conversation_id}", plain_conversations.stdout)
+            self.assertEqual(missing_conversation.returncode, 1)
+            self.assertIn("mnemo: conversation not found: conv_missing", missing_conversation.stderr)
+            self.assertNotIn("Traceback", missing_conversation.stderr)
+            self.assertEqual(no_conversation_subcommand.returncode, 1)
+            self.assertIn("mnemo: conversations command requires a subcommand", no_conversation_subcommand.stderr)
+            self.assertEqual(missions.returncode, 0, missions.stderr)
+            self.assertEqual({item["id"] for item in json.loads(missions.stdout)["missions"]}, {mission_id, other_mission_id})
+            self.assertNotIn("private checkpoint", missions.stdout)
+            self.assertEqual(json.loads(mission_by_conversation.stdout)["missions"][0]["id"], mission_id)
+            self.assertEqual(json.loads(mission_by_status.stdout)["missions"][0]["id"], other_mission_id)
+            self.assertEqual(mission.returncode, 0, mission.stderr)
+            self.assertEqual(json.loads(mission.stdout)["mission"]["checkpoint"], {"recent_summary": "private checkpoint"})
+            self.assertIn(f"mission {mission_id} [active]", plain_missions.stdout)
+            self.assertNotIn("private checkpoint", plain_missions.stdout)
+            self.assertIn("private checkpoint", plain_mission.stdout)
+            self.assertEqual(missing_mission.returncode, 1)
+            self.assertIn("mnemo: mission not found: mis_missing", missing_mission.stderr)
+            self.assertNotIn("Traceback", missing_mission.stderr)
+            self.assertEqual(no_mission_subcommand.returncode, 1)
+            self.assertIn("mnemo: missions command requires a subcommand", no_mission_subcommand.stderr)
+
     def test_skills_scan_view_and_promote_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "skill-root"

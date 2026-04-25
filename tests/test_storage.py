@@ -224,6 +224,35 @@ class StateStoreTests(unittest.TestCase):
             )
             self.assertEqual(store.list_runs(limit=0), [])
 
+    def test_list_conversations_and_missions_for_continuity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("Primary continuity")
+            other_conversation_id = store.create_conversation("Archived continuity")
+            mission_id = store.create_mission(conversation_id, "Continue launch planning")
+            other_mission_id = store.create_mission(other_conversation_id, "Old planning")
+            store.update_mission_checkpoint(mission_id, {"recent_summary": "private checkpoint"})
+            with store.connect() as conn:
+                conn.execute("UPDATE missions SET status = ? WHERE id = ?", ("completed", other_mission_id))
+
+            conversations = store.list_conversations()
+            missions = store.list_missions()
+            mission = store.get_mission(mission_id)
+
+            self.assertEqual({item["id"] for item in conversations}, {conversation_id, other_conversation_id})
+            self.assertEqual(store.list_conversations(limit=0), [])
+            self.assertEqual(store.get_conversation(conversation_id)["title"], "Primary continuity")
+            self.assertIsNone(store.get_conversation("conv_missing"))
+            self.assertEqual({item["id"] for item in missions}, {mission_id, other_mission_id})
+            self.assertNotIn("checkpoint", missions[0])
+            self.assertNotIn("checkpoint_json", missions[0])
+            self.assertEqual([item["id"] for item in store.list_missions(conversation_id=conversation_id)], [mission_id])
+            self.assertEqual([item["id"] for item in store.list_missions(status="completed")], [other_mission_id])
+            self.assertEqual(store.list_missions(limit=0), [])
+            self.assertEqual(mission["checkpoint"], {"recent_summary": "private checkpoint"})
+            self.assertIsNone(store.get_mission("mis_missing"))
+
     def test_outbox_enqueue_list_and_mark_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

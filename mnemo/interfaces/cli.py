@@ -35,6 +35,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_init(args)
         if args.command == "run":
             return _cmd_run(args)
+        if args.command == "conversations":
+            return _cmd_conversations(args)
+        if args.command == "missions":
+            return _cmd_missions(args)
         if args.command == "runs":
             return _cmd_runs(args)
         if args.command == "events":
@@ -104,6 +108,30 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
     run_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
     run_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+
+    conversations_parser = subparsers.add_parser("conversations", help="List and read conversations")
+    conversations_subparsers = conversations_parser.add_subparsers(dest="conversations_command")
+    conversations_list_parser = conversations_subparsers.add_parser("list", help="List stored conversations")
+    _add_state_dir(conversations_list_parser)
+    conversations_list_parser.add_argument("--limit", type=int, default=50)
+    conversations_list_parser.add_argument("--json", action="store_true")
+    conversations_show_parser = conversations_subparsers.add_parser("show", help="Show one conversation")
+    _add_state_dir(conversations_show_parser)
+    conversations_show_parser.add_argument("conversation_id")
+    conversations_show_parser.add_argument("--json", action="store_true")
+
+    missions_parser = subparsers.add_parser("missions", help="List and read missions")
+    missions_subparsers = missions_parser.add_subparsers(dest="missions_command")
+    missions_list_parser = missions_subparsers.add_parser("list", help="List stored missions")
+    _add_state_dir(missions_list_parser)
+    missions_list_parser.add_argument("--conversation-id")
+    missions_list_parser.add_argument("--status", help="Status filter, or 'all' for no status filter")
+    missions_list_parser.add_argument("--limit", type=int, default=50)
+    missions_list_parser.add_argument("--json", action="store_true")
+    missions_show_parser = missions_subparsers.add_parser("show", help="Show one mission")
+    _add_state_dir(missions_show_parser)
+    missions_show_parser.add_argument("mission_id")
+    missions_show_parser.add_argument("--json", action="store_true")
 
     runs_parser = subparsers.add_parser("runs", help="Inspect and control runs")
     runs_subparsers = runs_parser.add_subparsers(dest="runs_command")
@@ -448,6 +476,90 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_conversations(args: argparse.Namespace) -> int:
+    if args.conversations_command not in {"list", "show"}:
+        raise MnemoError("conversations command requires a subcommand")
+    store = StateStore(args.state_dir)
+    store.initialize()
+    if args.conversations_command == "list":
+        result = {"conversations": store.list_conversations(limit=max(0, args.limit))}
+    else:
+        conversation = store.get_conversation(args.conversation_id)
+        if not conversation:
+            raise MnemoError(f"conversation not found: {args.conversation_id}")
+        result = {"conversation": conversation}
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_conversations_result(result)
+    return 0
+
+
+def _print_conversations_result(result: dict[str, Any]) -> None:
+    if "conversations" in result:
+        for conversation in result["conversations"]:
+            title = conversation.get("title") or "Untitled Conversation"
+            print(f"conversation {conversation['id']}: {_short_text(title)}")
+        return
+    if "conversation" in result:
+        conversation = result["conversation"]
+        print(f"conversation {conversation['id']}")
+        print(f"title={conversation.get('title') or ''}")
+        print(f"created_at={conversation['created_at']} updated_at={conversation['updated_at']}")
+        return
+    print(dumps(result))
+
+
+def _cmd_missions(args: argparse.Namespace) -> int:
+    if args.missions_command not in {"list", "show"}:
+        raise MnemoError("missions command requires a subcommand")
+    store = StateStore(args.state_dir)
+    store.initialize()
+    if args.missions_command == "list":
+        result = {
+            "missions": store.list_missions(
+                conversation_id=args.conversation_id,
+                status=_status_filter(args.status),
+                limit=max(0, args.limit),
+            )
+        }
+    else:
+        mission = store.get_mission(args.mission_id)
+        if not mission:
+            raise MnemoError(f"mission not found: {args.mission_id}")
+        result = {"mission": mission}
+
+    if args.json:
+        print(dumps(result))
+        return 0
+    _print_missions_result(result)
+    return 0
+
+
+def _print_missions_result(result: dict[str, Any]) -> None:
+    if "missions" in result:
+        for mission in result["missions"]:
+            print(
+                f"mission {mission['id']} [{mission['status']}] "
+                f"conversation={mission['conversation_id']}: {_short_text(mission.get('brief', ''))}"
+            )
+        return
+    if "mission" in result:
+        mission = result["mission"]
+        print(f"mission {mission['id']} [{mission['status']}]")
+        print(f"conversation={mission['conversation_id']}")
+        print(f"created_at={mission['created_at']} updated_at={mission['updated_at']}")
+        print()
+        print(mission.get("brief", ""))
+        checkpoint = mission.get("checkpoint") or {}
+        if checkpoint:
+            print()
+            print(dumps({"checkpoint": checkpoint}))
+        return
+    print(dumps(result))
+
+
 def _cmd_runs(args: argparse.Namespace) -> int:
     if args.runs_command not in {"list", "show", "cancel"}:
         raise MnemoError("runs command requires a subcommand")
@@ -456,7 +568,7 @@ def _cmd_runs(args: argparse.Namespace) -> int:
     if args.runs_command == "list":
         result = {
             "runs": store.list_runs(
-                status=_run_status_filter(args.status),
+                status=_status_filter(args.status),
                 conversation_id=args.conversation_id,
                 mission_id=args.mission_id,
                 limit=max(0, args.limit),
@@ -495,7 +607,7 @@ def _cmd_runs(args: argparse.Namespace) -> int:
     return 0
 
 
-def _run_status_filter(status: str | None) -> str | None:
+def _status_filter(status: str | None) -> str | None:
     if status == "all":
         return None
     return status

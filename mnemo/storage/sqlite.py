@@ -332,6 +332,19 @@ class StateStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def list_conversations(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, title, created_at, updated_at
+                FROM conversations
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT ?
+                """,
+                (max(0, int(limit)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def create_mission(self, conversation_id: str, brief: str) -> str:
         now = time.time()
         mission_id = new_id("mis")
@@ -353,6 +366,33 @@ class StateStore:
         result = dict(row)
         result["checkpoint"] = loads(result.pop("checkpoint_json"), {})
         return result
+
+    def list_missions(
+        self,
+        *,
+        conversation_id: str | None = None,
+        status: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, conversation_id, status, brief, created_at, updated_at
+            FROM missions
+        """
+        filters: list[str] = []
+        params: list[Any] = []
+        if conversation_id:
+            filters.append("conversation_id = ?")
+            params.append(conversation_id)
+        if status:
+            filters.append("status = ?")
+            params.append(status)
+        if filters:
+            sql += " WHERE " + " AND ".join(filters)
+        sql += " ORDER BY updated_at DESC, created_at DESC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [dict(row) for row in rows]
 
     def latest_active_mission(self, conversation_id: str) -> sqlite3.Row | None:
         with self.connect() as conn:

@@ -79,6 +79,10 @@ mnemo daemon status --state-dir .mnemo
 mnemo runs cancel <run_id> --state-dir .mnemo
 mnemo daemon cancel <queue_id> --state-dir .mnemo
 
+mnemo conversations list --state-dir .mnemo
+mnemo conversations show <conversation_id> --state-dir .mnemo
+mnemo missions list --state-dir .mnemo
+mnemo missions show <mission_id> --state-dir .mnemo
 mnemo runs list --state-dir .mnemo
 mnemo runs show <run_id> --state-dir .mnemo
 mnemo events <run_id> --state-dir .mnemo --chat
