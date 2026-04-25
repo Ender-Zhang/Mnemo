@@ -130,8 +130,16 @@ class MnemoClient:
     def replay(self, run_id: str) -> dict[str, Any]:
         return replay_summary(self.state_dir, run_id)
 
-    def evaluate(self, suite: str = "smoke") -> dict[str, Any]:
-        return EvalHarness(state_dir=self.state_dir).run_suite(suite).as_dict()
+    def evaluate(
+        self,
+        suite: str = "smoke",
+        *,
+        variants: list[str] | tuple[str, ...] | None = None,
+    ) -> dict[str, Any]:
+        harness = EvalHarness(state_dir=self.state_dir)
+        if variants:
+            return harness.run_variant_report(suite, variants=variants).as_dict()
+        return harness.run_suite(suite).as_dict()
 
     def _store(self) -> StateStore:
         store = StateStore(self.state_dir)

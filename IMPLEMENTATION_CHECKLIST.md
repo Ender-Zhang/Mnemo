@@ -138,7 +138,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider fake server tests.
 - [x] Standard tool edge regression tests for binary file reads and shell timeouts.
 - [x] CLI and package install tests in CI.
-- [~] Harness gates exist as built-in smoke suites; variant comparison (`no_memory`, `skills_only`, `full_mnemo`), quantitative thresholds, external-harness suite, proactive-watch suite, and release gate reports are not complete.
+- [~] Harness gates exist as built-in smoke suites with core variant comparison (`no_memory`, `skills_only`, `full_mnemo`) and quantitative thresholds; external-harness suite, proactive-watch suite, and full release gate reports are not complete.
 
 ## Persistence And Operations
 
@@ -219,3 +219,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-web-artifact-actions`: Web artifact cards now expose continue/export/compare/send/apply/revert actions, use compact related artifact metadata, and route side-effectful work back through the single composer.
 - [x] `04-25-implement-tool-bundle-epochs`: runtime now compiles deterministic ToolBundles, records compact bundle metadata, filters reduced prompt-mode tool profiles, and supports provider-loop schema expansion epochs through `tool_expand_schema`.
 - [x] `04-25-dream-maintenance-interface`: DreamCycle now exposes compact delta collection, model-facing maintenance plans, persisted reports, `dream status/report`, and delta-limited local fallback consolidation.
+- [x] `04-25-harness-variant-report`: Harness now compares `no_memory`/`skills_only`/`full_mnemo` variants with compact metrics and gates, exposed through CLI, SDK, and MCP eval surfaces.

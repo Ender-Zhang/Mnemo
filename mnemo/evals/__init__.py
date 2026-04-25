@@ -1,3 +1,3 @@
-from .harness import EvalHarness, list_suites, replay_summary
+from .harness import EvalHarness, list_suites, list_variants, replay_summary
 
-__all__ = ["EvalHarness", "list_suites", "replay_summary"]
+__all__ = ["EvalHarness", "list_suites", "list_variants", "replay_summary"]

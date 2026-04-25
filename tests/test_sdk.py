@@ -64,6 +64,7 @@ class MnemoSdkTests(unittest.TestCase):
             result = client.run("remember: SDK should reuse Mnemo runtime services")
             replay = client.replay(result["run_id"])
             report = client.evaluate("smoke")
+            variant_report = client.evaluate("personalization-core", variants=["no_memory", "full_mnemo"])
 
             self.assertTrue(result["run_id"].startswith("run_"))
             self.assertEqual(result["tool_summary"][0]["tool"], "memory_write_candidate")
@@ -72,6 +73,9 @@ class MnemoSdkTests(unittest.TestCase):
             self.assertTrue(replay["completed"])
             self.assertEqual(report["suite"], "smoke")
             self.assertTrue(report["passed"])
+            self.assertEqual(variant_report["kind"], "harness_variant_report")
+            self.assertEqual(variant_report["variants"], ["no_memory", "full_mnemo"])
+            self.assertTrue(variant_report["passed"])
 
     def test_api_schema_exposes_core_methods(self) -> None:
         schema = mnemo_core_api_schema()
@@ -80,6 +84,7 @@ class MnemoSdkTests(unittest.TestCase):
         self.assertEqual(set(schema["methods"]), {"context", "recall", "run", "replay", "evaluate"})
         self.assertEqual(schema["methods"]["context"]["side_effects"], "read_only")
         self.assertIn("prompt_mode", schema["methods"]["context"]["input_schema"]["properties"])
+        self.assertIn("variants", schema["methods"]["evaluate"]["input_schema"]["properties"])
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from mnemo.core.models import RunRequest
-from mnemo.evals import EvalHarness, list_suites, replay_summary
+from mnemo.evals import EvalHarness, list_suites, list_variants, replay_summary
 from mnemo.runtime import stream_local
 
 
@@ -53,6 +53,33 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertIn("skill_review_uses_passed_eval", assertion_names)
         self.assertIn("skill_review_blocks_failed_eval", assertion_names)
         self.assertIn("skill_cards_omit_full_body_secret", assertion_names)
+
+    def test_variant_report_compares_core_variants(self) -> None:
+        report = EvalHarness().run_variant_report("personalization-core")
+        payload = report.as_dict()
+
+        self.assertTrue(report.passed)
+        self.assertEqual(payload["kind"], "harness_variant_report")
+        self.assertEqual(payload["variants"], ["no_memory", "skills_only", "full_mnemo"])
+        self.assertEqual(payload["baseline_variant"], "no_memory")
+        self.assertEqual(payload["target_variant"], "full_mnemo")
+        self.assertIn("no_memory", list_variants())
+        metrics = {item["variant"]: item["metrics"] for item in payload["reports"]}
+        self.assertEqual(metrics["full_mnemo"]["task_success"], 1.0)
+        self.assertLess(metrics["no_memory"]["task_success"], metrics["full_mnemo"]["task_success"])
+        self.assertTrue(payload["gates"]["passed"])
+        compact_suite = payload["reports"][0]["suite"]
+        self.assertIn("failed_assertions", compact_suite["cases"][0])
+        self.assertEqual(
+            set(compact_suite["cases"][0]),
+            {"case_id", "name", "passed", "failed_assertions"},
+        )
+        self.assertNotIn("detail", str(compact_suite))
+        self.assertNotIn("steps", str(compact_suite))
+
+    def test_variant_report_rejects_unknown_variant(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown harness variant"):
+            EvalHarness().run_variant_report("personalization-core", variants=["missing"])
 
     def test_replay_summary_reads_jsonl_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

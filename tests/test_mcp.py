@@ -129,6 +129,10 @@ class MnemoMcpTests(unittest.TestCase):
             run = server.call_tool("mnemo_run", {"message": "remember: MCP should reuse runtime harnesses"})
             replay = server.call_tool("mnemo_replay", {"run_id": run["run_id"]})
             report = server.call_tool("mnemo_eval", {"suite": "smoke"})
+            variants = server.call_tool(
+                "mnemo_eval",
+                {"suite": "personalization-core", "variants": ["no_memory", "full_mnemo"]},
+            )
             watch = server.call_tool(
                 "mnemo_watch",
                 {"target": "calendar", "instruction": "Check calendar risk", "schedule": "once", "next_run_at": 0},
@@ -143,6 +147,9 @@ class MnemoMcpTests(unittest.TestCase):
             self.assertNotIn("tool_results", run)
             self.assertTrue(replay["completed"])
             self.assertTrue(report["passed"])
+            self.assertEqual(variants["kind"], "harness_variant_report")
+            self.assertEqual(variants["variants"], ["no_memory", "full_mnemo"])
+            self.assertTrue(variants["passed"])
             self.assertEqual(watch["kind"], "scheduled_item")
             self.assertEqual(watch["item"]["kind"], "watch")
             self.assertEqual(cron["item"]["kind"], "cron")

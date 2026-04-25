@@ -5,12 +5,49 @@ from pathlib import Path
 import tempfile
 from typing import Any
 
-from ..core.models import RunRequest
+from ..core.models import PromptMode, RunRequest
 from ..memory import MemoryEngine
 from ..runtime import stream_local
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService
 from ..storage import StateStore
+
+HARNESS_VARIANTS = ("no_memory", "skills_only", "full_mnemo")
+VARIANT_PROFILES: dict[str, dict[str, Any]] = {
+    "no_memory": {
+        "prompt_mode": "capsule",
+        "injected_context": {
+            "memory": "none",
+            "skills": "none",
+            "soul": False,
+            "workspace": False,
+        },
+    },
+    "skills_only": {
+        "prompt_mode": "minimal",
+        "injected_context": {
+            "memory": "none",
+            "skills": "tool_access_only",
+            "soul": False,
+            "workspace": "agents_and_tools_only",
+        },
+    },
+    "full_mnemo": {
+        "prompt_mode": "full",
+        "injected_context": {
+            "memory": "l1_plus_recall_tools",
+            "skills": "progressive_cards_and_view_tools",
+            "soul": True,
+            "workspace": True,
+        },
+    },
+}
+DEFAULT_VARIANT_THRESHOLDS = {
+    "min_task_success": 1.0,
+    "min_preference_adherence": 0.85,
+    "max_wrong_memory_rate": 0.02,
+    "max_over_personalization_rate": 0.1,
+}
 
 
 @dataclass(frozen=True)
@@ -74,18 +111,43 @@ class SuiteReport:
         return asdict(self)
 
 
+@dataclass
+class VariantSuiteReport:
+    variant: str
+    prompt_mode: str
+    injected_context: dict[str, Any]
+    suite: dict[str, Any]
+    metrics: dict[str, float]
+    delta_vs_baseline: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class HarnessVariantReport:
+    kind: str
+    suite: str
+    variants: list[str]
+    baseline_variant: str
+    target_variant: str
+    passed: bool
+    gates: dict[str, Any]
+    reports: list[VariantSuiteReport]
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 class EvalHarness:
     def __init__(self, *, state_dir: str | Path | None = None):
         self.state_dir = Path(state_dir).expanduser().resolve() if state_dir else None
 
-    def run_suite(self, suite: str) -> SuiteReport:
+    def run_suite(self, suite: str, *, prompt_mode: PromptMode = "full") -> SuiteReport:
         if suite == "memory-safety":
             return self._run_memory_safety_suite()
         if suite == "skill-evolution":
             return self._run_skill_evolution_suite()
 
         cases = _suite_cases(suite)
-        case_reports = [self.run_case(case) for case in cases]
+        case_reports = [self.run_case(case, prompt_mode=prompt_mode) for case in cases]
         passed_count = sum(1 for report in case_reports if report.passed)
         return SuiteReport(
             suite=suite,
@@ -96,7 +158,47 @@ class EvalHarness:
             cases=case_reports,
         )
 
-    def run_case(self, case: EvalCase) -> CaseReport:
+    def run_variant_report(
+        self,
+        suite: str = "personalization-core",
+        *,
+        variants: list[str] | tuple[str, ...] | None = None,
+    ) -> HarnessVariantReport:
+        selected_variants = _normalize_variants(variants)
+        reports: list[VariantSuiteReport] = []
+        baseline_metrics: dict[str, float] | None = None
+        for variant in selected_variants:
+            profile = _variant_profile(variant)
+            suite_report = self.run_suite(suite, prompt_mode=profile["prompt_mode"])
+            metrics = _suite_metrics(suite_report)
+            if baseline_metrics is None:
+                baseline_metrics = metrics
+            reports.append(
+                VariantSuiteReport(
+                    variant=variant,
+                    prompt_mode=profile["prompt_mode"],
+                    injected_context=profile["injected_context"],
+                    suite=_compact_suite_report(suite_report),
+                    metrics=metrics,
+                    delta_vs_baseline=_metric_delta(metrics, baseline_metrics),
+                )
+            )
+
+        target_variant = "full_mnemo" if "full_mnemo" in selected_variants else selected_variants[-1]
+        target_metrics = next(report.metrics for report in reports if report.variant == target_variant)
+        gates = _variant_gates(suite, target_variant=target_variant, metrics=target_metrics)
+        return HarnessVariantReport(
+            kind="harness_variant_report",
+            suite=suite,
+            variants=list(selected_variants),
+            baseline_variant=selected_variants[0],
+            target_variant=target_variant,
+            passed=bool(gates["passed"]),
+            gates=gates,
+            reports=reports,
+        )
+
+    def run_case(self, case: EvalCase, *, prompt_mode: PromptMode = "full") -> CaseReport:
         with self._case_state_dir(case.case_id) as state_dir:
             step_reports: list[StepReport] = []
             conversation_id: str | None = None
@@ -109,6 +211,7 @@ class EvalHarness:
                             message=step.message,
                             state_dir=state_dir,
                             conversation_id=conversation_id,
+                            prompt_mode=prompt_mode,
                         )
                     )
                 )
@@ -607,6 +710,10 @@ def list_suites() -> list[str]:
     return sorted([*_BUILTIN_SUITES, "memory-safety", "skill-evolution"])
 
 
+def list_variants() -> list[str]:
+    return list(HARNESS_VARIANTS)
+
+
 def replay_summary(state_dir: str | Path, run_id: str) -> dict[str, Any]:
     store = StateStore(state_dir)
     store.initialize()
@@ -626,6 +733,162 @@ def replay_summary(state_dir: str | Path, run_id: str) -> dict[str, Any]:
         ),
         "trace_path": str(ledger.trace_path(run_id)),
     }
+
+
+def _normalize_variants(values: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if not values:
+        return HARNESS_VARIANTS
+    variants: list[str] = []
+    for value in values:
+        for part in str(value).split(","):
+            variant = part.strip()
+            if variant:
+                variants.append(variant)
+    if not variants:
+        return HARNESS_VARIANTS
+    unknown = [variant for variant in variants if variant not in VARIANT_PROFILES]
+    if unknown:
+        known = ", ".join(HARNESS_VARIANTS)
+        raise ValueError(f"unknown harness variant: {', '.join(unknown)}. Known variants: {known}")
+    return tuple(dict.fromkeys(variants))
+
+
+def _variant_profile(variant: str) -> dict[str, Any]:
+    profile = VARIANT_PROFILES[variant]
+    return {
+        "prompt_mode": profile["prompt_mode"],
+        "injected_context": dict(profile["injected_context"]),
+    }
+
+
+def _suite_metrics(report: SuiteReport) -> dict[str, float]:
+    assertions = [
+        assertion
+        for case in report.cases
+        for step in case.steps
+        for assertion in step.assertions
+    ]
+    total_assertions = max(1, len(assertions))
+    passed_assertions = sum(1 for assertion in assertions if assertion.passed)
+    preference_assertions = [
+        assertion
+        for assertion in assertions
+        if assertion.name.startswith("response_contains:")
+        or assertion.name == "same_mission_as_previous"
+        or assertion.name.startswith("tool_called:")
+    ]
+    if preference_assertions:
+        preference_adherence = (
+            sum(1 for assertion in preference_assertions if assertion.passed)
+            / len(preference_assertions)
+        )
+    else:
+        preference_adherence = passed_assertions / total_assertions
+    wrong_memory_assertions = [
+        assertion
+        for assertion in assertions
+        if "memory" in assertion.name or "candidate" in assertion.name
+    ]
+    wrong_memory_failures = sum(1 for assertion in wrong_memory_assertions if not assertion.passed)
+    over_personalization_assertions = [
+        assertion
+        for assertion in assertions
+        if "over_personalization" in assertion.name
+    ]
+    over_personalization_failures = sum(1 for assertion in over_personalization_assertions if not assertion.passed)
+    return {
+        "task_success": _rounded_ratio(report.passed_count, report.case_count),
+        "preference_adherence": round(preference_adherence, 3),
+        "wrong_memory_rate": _rounded_ratio(wrong_memory_failures, max(1, len(wrong_memory_assertions))),
+        "over_personalization_rate": _rounded_ratio(
+            over_personalization_failures,
+            max(1, len(over_personalization_assertions)),
+        ),
+        "assertion_pass_rate": _rounded_ratio(passed_assertions, total_assertions),
+    }
+
+
+def _metric_delta(metrics: dict[str, float], baseline: dict[str, float]) -> dict[str, float]:
+    return {
+        key: round(float(metrics.get(key, 0.0)) - float(baseline.get(key, 0.0)), 3)
+        for key in sorted(set(metrics) | set(baseline))
+    }
+
+
+def _variant_gates(suite: str, *, target_variant: str, metrics: dict[str, float]) -> dict[str, Any]:
+    thresholds = dict(DEFAULT_VARIANT_THRESHOLDS)
+    checks = [
+        _gate_check("task_success", metrics.get("task_success", 0.0), ">=", thresholds["min_task_success"]),
+        _gate_check(
+            "preference_adherence",
+            metrics.get("preference_adherence", 0.0),
+            ">=",
+            thresholds["min_preference_adherence"],
+        ),
+        _gate_check(
+            "wrong_memory_rate",
+            metrics.get("wrong_memory_rate", 1.0),
+            "<=",
+            thresholds["max_wrong_memory_rate"],
+        ),
+        _gate_check(
+            "over_personalization_rate",
+            metrics.get("over_personalization_rate", 1.0),
+            "<=",
+            thresholds["max_over_personalization_rate"],
+        ),
+    ]
+    return {
+        "suite": suite,
+        "target_variant": target_variant,
+        "thresholds": thresholds,
+        "checks": checks,
+        "passed": all(check["passed"] for check in checks),
+    }
+
+
+def _gate_check(metric: str, value: float, operator: str, threshold: float) -> dict[str, Any]:
+    if operator == ">=":
+        passed = value >= threshold
+    elif operator == "<=":
+        passed = value <= threshold
+    else:
+        raise ValueError(f"unsupported gate operator: {operator}")
+    return {
+        "metric": metric,
+        "value": round(float(value), 3),
+        "operator": operator,
+        "threshold": round(float(threshold), 3),
+        "passed": passed,
+    }
+
+
+def _compact_suite_report(report: SuiteReport) -> dict[str, Any]:
+    return {
+        "suite": report.suite,
+        "passed": report.passed,
+        "case_count": report.case_count,
+        "passed_count": report.passed_count,
+        "failed_count": report.failed_count,
+        "cases": [
+            {
+                "case_id": case.case_id,
+                "name": case.name,
+                "passed": case.passed,
+                "failed_assertions": [
+                    assertion.name
+                    for step in case.steps
+                    for assertion in step.assertions
+                    if not assertion.passed
+                ],
+            }
+            for case in report.cases
+        ],
+    }
+
+
+def _rounded_ratio(numerator: int, denominator: int) -> float:
+    return round(float(numerator) / max(1, int(denominator)), 3)
 
 
 def _assert_step(

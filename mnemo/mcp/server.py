@@ -300,7 +300,11 @@ class MnemoMcpServer:
         return self.client.replay(_required_string(args.get("run_id"), "run_id"))
 
     def _eval(self, args: dict[str, Any]) -> dict[str, Any]:
-        return self.client.evaluate(_string(args.get("suite"), default="smoke"))
+        variants = _string_list(args.get("variants"))
+        return self.client.evaluate(
+            _string(args.get("suite"), default="smoke"),
+            variants=variants or None,
+        )
 
     def _runtime_status(self, args: dict[str, Any]) -> dict[str, Any]:
         limit = _bounded_int(args.get("limit"), default=10, minimum=1, maximum=50)
@@ -579,8 +583,16 @@ _TOOL_DESCRIPTORS = [
     ),
     _descriptor(
         "mnemo_eval",
-        "Run a deterministic Mnemo eval suite and return a compact report.",
-        _schema({"suite": {"type": "string", "default": "smoke"}}),
+        "Run a deterministic Mnemo eval suite or variant comparison and return a compact report.",
+        _schema(
+            {
+                "suite": {"type": "string", "default": "smoke"},
+                "variants": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["no_memory", "skills_only", "full_mnemo"]},
+                },
+            }
+        ),
         risk="read",
         read_only=True,
     ),
@@ -808,6 +820,16 @@ def _list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
     return [value]
+
+
+def _string_list(value: Any) -> list[str]:
+    result: list[str] = []
+    for item in _list(value):
+        for part in str(item).split(","):
+            text = part.strip()
+            if text:
+                result.append(text)
+    return result
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:

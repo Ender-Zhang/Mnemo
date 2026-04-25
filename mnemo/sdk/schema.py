@@ -104,11 +104,17 @@ _SCHEMA: dict[str, Any] = {
             "output_schema": {"type": "object"},
         },
         "evaluate": {
-            "description": "Run a deterministic Mnemo eval suite and return a compact report.",
+            "description": "Run a deterministic Mnemo eval suite or variant comparison and return a compact report.",
             "side_effects": "eval_state_only",
             "input_schema": {
                 "type": "object",
-                "properties": {"suite": {"type": "string", "default": "smoke"}},
+                "properties": {
+                    "suite": {"type": "string", "default": "smoke"},
+                    "variants": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["no_memory", "skills_only", "full_mnemo"]},
+                    },
+                },
                 "additionalProperties": False,
             },
             "output_schema": {"type": "object"},

@@ -146,6 +146,7 @@ mnemo backup import --state-dir .mnemo-restored backup.zip
 
 python -m unittest discover -s tests
 mnemo harness smoke
+mnemo harness variants personalization-core --json
 mnemo harness list
 ```
 

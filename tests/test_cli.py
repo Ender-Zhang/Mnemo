@@ -1082,10 +1082,31 @@ class CliTests(unittest.TestCase):
         self.assertTrue(skill_evolution_payload["passed"])
         self.assertEqual(skill_evolution_payload["case_count"], 4)
 
+        variants = _run_cli(["harness", "variants", "personalization-core", "--json"])
+        self.assertEqual(variants.returncode, 0, variants.stderr)
+        variant_payload = json.loads(variants.stdout)
+        self.assertEqual(variant_payload["kind"], "harness_variant_report")
+        self.assertTrue(variant_payload["passed"])
+        self.assertEqual(variant_payload["target_variant"], "full_mnemo")
+        self.assertEqual(variant_payload["reports"][-1]["variant"], "full_mnemo")
+
+        selected_variants = _run_cli(
+            ["harness", "variants", "personalization-core", "--variant", "no_memory,full_mnemo", "--json"]
+        )
+        self.assertEqual(selected_variants.returncode, 0, selected_variants.stderr)
+        self.assertEqual(json.loads(selected_variants.stdout)["variants"], ["no_memory", "full_mnemo"])
+
+        bad_variant = _run_cli(["harness", "variants", "personalization-core", "--variant", "missing", "--json"])
+        self.assertEqual(bad_variant.returncode, 1)
+        self.assertIn("mnemo: unknown harness variant", bad_variant.stderr)
+        self.assertNotIn("Traceback", bad_variant.stderr)
+
         suite_list = _run_cli(["harness", "list", "--json"])
         self.assertEqual(suite_list.returncode, 0, suite_list.stderr)
-        self.assertIn("memory-safety", json.loads(suite_list.stdout)["suites"])
-        self.assertIn("skill-evolution", json.loads(suite_list.stdout)["suites"])
+        suite_payload = json.loads(suite_list.stdout)
+        self.assertIn("memory-safety", suite_payload["suites"])
+        self.assertIn("skill-evolution", suite_payload["suites"])
+        self.assertIn("full_mnemo", suite_payload["variants"])
 
         with tempfile.TemporaryDirectory() as tmp:
             run = _run_cli(["run", "remember: harness cli replay", "--state-dir", tmp, "--json"])

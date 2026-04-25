@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Harness test and package gates"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "Harness evaluation API shape is integration-facing"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI harness errors should normalize"}
+{"file": ".trellis/spec/backend/prompt-assembly.md", "reason": "Variants describe context disclosure modes"}

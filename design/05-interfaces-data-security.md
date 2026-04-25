@@ -114,7 +114,7 @@ class MnemoClient:
     ) -> EvalReport:
         """
         运行 harness eval。
-        默认 variants: no_memory, generic_memory, skills_only, full_mnemo。
+        默认 variants: no_memory, skills_only, full_mnemo。
         """
 ```
 
@@ -155,8 +155,8 @@ mnemo_run(request, runtime)
 mnemo_replay(run_id, mode)
   → 返回: {original, replayed, diff, determinism_score}
 
-mnemo_eval(suite, variants)
-  → 返回: {report_id, scores, failures, regression_gate}
+mnemo_eval(suite, variants?)
+  → 返回: 紧凑 SuiteReport 或 HarnessVariantReport（cases/metrics/gates）
 
 mnemo_runtime_status()
   → 返回: {daemon, queues, active_runs, pending_inbox, watch_lag_seconds}
@@ -623,7 +623,7 @@ CREATE TABLE IF NOT EXISTS harness_eval_results (
     id TEXT PRIMARY KEY,
     case_id TEXT NOT NULL REFERENCES harness_eval_cases(id),
     run_id TEXT REFERENCES runs(id),
-    variant TEXT NOT NULL,        -- no_memory|generic_memory|skills_only|full_mnemo
+    variant TEXT NOT NULL,        -- no_memory|skills_only|full_mnemo
     score REAL NOT NULL,
     pass INTEGER NOT NULL,
     metrics_json TEXT NOT NULL,
