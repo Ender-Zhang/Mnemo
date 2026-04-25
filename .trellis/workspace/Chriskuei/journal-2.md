@@ -550,3 +550,37 @@ Implemented bounded SOUL.md and workspace bootstrap prompt loading, wired runtim
 ### Next Steps
 
 - None - task complete
+
+
+## Session 73: Inbox decision foundation
+
+**Date**: 2026-04-25
+**Task**: Inbox decision foundation
+**Branch**: `main`
+
+### Summary
+
+Implemented persisted Inbox decision items, ask_user decision projection, CLI/Web inspection and resolution APIs, inline frontend decision actions, and matching storage/tool/web tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0cf8529` | (see git log) |
+| `ceb12ef` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
