@@ -17,6 +17,7 @@
 - `StateStore.export_state(archive_path: str | Path) -> dict[str, Any]`
 - `StateStore.import_state(archive_path: str | Path, *, replace: bool = False) -> dict[str, Any]`
 - `StateStore.get_run(run_id: str) -> dict[str, Any] | None`
+- `StateStore.list_runs(*, status: str | None = None, conversation_id: str | None = None, mission_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.cancel_run(run_id: str, *, reason: str = "cancelled") -> dict[str, Any]`
 - `StateStore.is_run_cancelled(run_id: str) -> bool`
 - `StateStore.enqueue_run_request(message: str, *, conversation_id: str | None = None, mission_id: str | None = None, metadata: dict[str, Any] | None = None, available_at: float | None = None) -> str`
@@ -66,6 +67,8 @@
 - Import into non-empty managed state requires `replace=True`.
 - Replace mode removes only managed Mnemo paths, not unrelated files in the state directory.
 - Runs may be `running`, `completed`, `failed`, or `cancelled`.
+- `list_runs()` returns compact run metadata ordered by recency, supports status/conversation/mission filters, and includes `input_preview` instead of full input/output bodies.
+- CLI run inspection must use read APIs and remain read-only: `mnemo runs list` and `mnemo runs show <run_id>`.
 - `cancel_run()` marks only non-terminal runs as `cancelled`; terminal runs return unchanged.
 - Runtime code should check `is_run_cancelled()` between provider/tool steps and complete with `status="cancelled"`.
 - Web and CLI cancellation entry points append `run.cancel.requested` with reason, changed flag, and observed status.
@@ -98,6 +101,7 @@
 | Legacy v1 DB missing generated lifecycle columns | Add missing columns and preserve existing rows | `tests/test_storage.py` |
 | Pre-initialized version read | Return `0` or empty migration list instead of crashing | Storage API behavior |
 | Run event append | Persist run event and matching pending outbox row in one call | `tests/test_storage.py` |
+| Run listing | List/filter compact run metadata without full bodies | `tests/test_storage.py`, `tests/test_cli.py` |
 | Run cancellation | Running run becomes `cancelled`; terminal repeat is unchanged | `tests/test_storage.py`, `tests/test_cli.py` |
 | Web run cancellation | `POST /api/runs/cancel` marks run cancelled and records `run.cancel.requested` | `tests/test_web.py` |
 | Future outbox availability | Exclude future pending rows from due pending list | `tests/test_storage.py` |
@@ -143,6 +147,7 @@
 - Legacy schemas are upgraded in place.
 - Outbox table exists on fresh and upgraded state dirs.
 - Appending a run event creates a matching outbox event.
+- Run list/show CLI and compact storage summaries are covered.
 - Outbox list and mark lifecycle is covered.
 - Backup export/import round-trip is covered.
 - Import target and archive safety failures are covered.

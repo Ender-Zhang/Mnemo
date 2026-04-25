@@ -1,0 +1,14 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "mnemo/interfaces/cli.py", "reason": "CLI runs command parser and handlers"}
+{"file": "mnemo/storage/sqlite.py", "reason": "StateStore run read APIs"}
+{"file": "tests/test_cli.py", "reason": "CLI behavior coverage"}
+{"file": "tests/test_storage.py", "reason": "Storage run list coverage"}
+{"file": "README.md", "reason": "User-facing CLI docs"}
+{"file": "IMPLEMENTATION_CHECKLIST.md", "reason": "Implementation tracking"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Storage API contract update"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI missing run error contract"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "CLI placement contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Validation gate"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Storage to CLI data-flow check"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing CLI/storage patterns"}

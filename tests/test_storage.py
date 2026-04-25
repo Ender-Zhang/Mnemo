@@ -194,6 +194,36 @@ class StateStoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "run not found"):
                 store.cancel_run(missing_id)
 
+    def test_list_runs_returns_compact_filterable_summaries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("runs")
+            mission_id = store.create_mission(conversation_id, "runs mission")
+            other_mission_id = store.create_mission(conversation_id, "other mission")
+            long_input = "Summarize " + ("important launch context " * 12)
+            long_output = "Done " + ("detailed private output " * 12)
+            completed_id = store.create_run(conversation_id, mission_id, long_input)
+            running_id = store.create_run(conversation_id, other_mission_id, "still running")
+            store.complete_run(completed_id, long_output)
+
+            listed = store.list_runs()
+            completed = [item for item in listed if item["id"] == completed_id][0]
+
+            self.assertEqual({item["id"] for item in listed}, {completed_id, running_id})
+            self.assertEqual(completed["status"], "completed")
+            self.assertNotIn("input_text", completed)
+            self.assertNotIn("output_text", completed)
+            self.assertNotIn("output_preview", completed)
+            self.assertTrue(completed["input_preview"].endswith("..."))
+            self.assertEqual([item["id"] for item in store.list_runs(status="running")], [running_id])
+            self.assertEqual([item["id"] for item in store.list_runs(mission_id=mission_id)], [completed_id])
+            self.assertEqual(
+                {item["id"] for item in store.list_runs(conversation_id=conversation_id)},
+                {completed_id, running_id},
+            )
+            self.assertEqual(store.list_runs(limit=0), [])
+
     def test_outbox_enqueue_list_and_mark_lifecycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

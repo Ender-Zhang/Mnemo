@@ -107,6 +107,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     runs_parser = subparsers.add_parser("runs", help="Inspect and control runs")
     runs_subparsers = runs_parser.add_subparsers(dest="runs_command")
+    runs_list_parser = runs_subparsers.add_parser("list", help="List recent runs")
+    _add_state_dir(runs_list_parser)
+    runs_list_parser.add_argument("--status", help="Status filter, or 'all' for no status filter")
+    runs_list_parser.add_argument("--conversation-id")
+    runs_list_parser.add_argument("--mission-id")
+    runs_list_parser.add_argument("--limit", type=int, default=50)
+    runs_list_parser.add_argument("--json", action="store_true")
+    runs_show_parser = runs_subparsers.add_parser("show", help="Show one run record")
+    _add_state_dir(runs_show_parser)
+    runs_show_parser.add_argument("run_id")
+    runs_show_parser.add_argument("--json", action="store_true")
     runs_cancel_parser = runs_subparsers.add_parser("cancel", help="Request cancellation for a running run")
     _add_state_dir(runs_cancel_parser)
     runs_cancel_parser.add_argument("run_id")
@@ -438,10 +449,34 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_runs(args: argparse.Namespace) -> int:
-    if args.runs_command != "cancel":
+    if args.runs_command not in {"list", "show", "cancel"}:
         raise MnemoError("runs command requires a subcommand")
     store = StateStore(args.state_dir)
     store.initialize()
+    if args.runs_command == "list":
+        result = {
+            "runs": store.list_runs(
+                status=_run_status_filter(args.status),
+                conversation_id=args.conversation_id,
+                mission_id=args.mission_id,
+                limit=max(0, args.limit),
+            )
+        }
+        if args.json:
+            print(dumps(result))
+        else:
+            _print_runs_result(result)
+        return 0
+    if args.runs_command == "show":
+        run = store.get_run(args.run_id)
+        if not run:
+            raise MnemoError(f"run not found: {args.run_id}")
+        result = {"run": run}
+        if args.json:
+            print(dumps(result))
+        else:
+            _print_runs_result(result)
+        return 0
     try:
         result = store.cancel_run(args.run_id, reason=args.reason)
     except ValueError as exc:
@@ -458,6 +493,37 @@ def _cmd_runs(args: argparse.Namespace) -> int:
         changed = "cancelled" if result["changed"] else "unchanged"
         print(f"Run {args.run_id} {changed} status={result['status']}")
     return 0
+
+
+def _run_status_filter(status: str | None) -> str | None:
+    if status == "all":
+        return None
+    return status
+
+
+def _print_runs_result(result: dict[str, Any]) -> None:
+    if "runs" in result:
+        for run in result["runs"]:
+            print(
+                f"run {run['id']} [{run['status']}] "
+                f"conversation={run['conversation_id']} mission={run['mission_id']}: "
+                f"{_short_text(run.get('input_preview', ''))}"
+            )
+        return
+    if "run" in result:
+        run = result["run"]
+        print(f"run {run['id']} [{run['status']}]")
+        print(f"conversation={run['conversation_id']}")
+        print(f"mission={run['mission_id']}")
+        print(f"created_at={run['created_at']} completed_at={run.get('completed_at')}")
+        print()
+        print(run.get("input_text", ""))
+        output = run.get("output_text")
+        if output:
+            print()
+            print(output)
+        return
+    print(dumps(result))
 
 
 def _cmd_events(args: argparse.Namespace) -> int:

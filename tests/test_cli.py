@@ -497,6 +497,57 @@ class CliTests(unittest.TestCase):
             self.assertTrue(replay_payload["completed"])
             self.assertGreater(replay_payload["event_count"], 0)
 
+    def test_runs_list_and_show_commands_inspect_run_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("runs cli")
+            mission_id = store.create_mission(conversation_id, "runs cli mission")
+            other_mission_id = store.create_mission(conversation_id, "other runs cli mission")
+            long_input = "Summarize " + ("important launch context " * 12)
+            long_output = "Done " + ("detailed private output " * 12)
+            completed_id = store.create_run(conversation_id, mission_id, long_input)
+            running_id = store.create_run(conversation_id, other_mission_id, "still running")
+            store.complete_run(completed_id, long_output)
+
+            listed = _run_cli(["runs", "list", "--state-dir", tmp, "--json"])
+            status_filtered = _run_cli(["runs", "list", "--status", "running", "--state-dir", tmp, "--json"])
+            mission_filtered = _run_cli(["runs", "list", "--mission-id", mission_id, "--state-dir", tmp, "--json"])
+            conversation_filtered = _run_cli(
+                ["runs", "list", "--conversation-id", conversation_id, "--state-dir", tmp, "--json"]
+            )
+            shown = _run_cli(["runs", "show", completed_id, "--state-dir", tmp, "--json"])
+            plain_list = _run_cli(["runs", "list", "--state-dir", tmp])
+            plain_show = _run_cli(["runs", "show", completed_id, "--state-dir", tmp])
+            missing = _run_cli(["runs", "show", "run_missing", "--state-dir", tmp])
+            no_subcommand = _run_cli(["runs"])
+
+            self.assertEqual(listed.returncode, 0, listed.stderr)
+            listed_payload = json.loads(listed.stdout)
+            self.assertEqual({item["id"] for item in listed_payload["runs"]}, {completed_id, running_id})
+            self.assertNotIn("input_text", listed.stdout)
+            self.assertNotIn("output_text", listed.stdout)
+            self.assertNotIn("detailed private output", listed.stdout)
+            self.assertEqual(status_filtered.returncode, 0, status_filtered.stderr)
+            self.assertEqual(json.loads(status_filtered.stdout)["runs"][0]["id"], running_id)
+            self.assertEqual(mission_filtered.returncode, 0, mission_filtered.stderr)
+            self.assertEqual(json.loads(mission_filtered.stdout)["runs"][0]["id"], completed_id)
+            self.assertEqual(conversation_filtered.returncode, 0, conversation_filtered.stderr)
+            self.assertEqual({item["id"] for item in json.loads(conversation_filtered.stdout)["runs"]}, {completed_id, running_id})
+            self.assertEqual(shown.returncode, 0, shown.stderr)
+            self.assertEqual(json.loads(shown.stdout)["run"]["input_text"], long_input)
+            self.assertEqual(json.loads(shown.stdout)["run"]["output_text"], long_output)
+            self.assertIn(f"run {completed_id} [completed]", plain_list.stdout)
+            self.assertNotIn("detailed private output", plain_list.stdout)
+            self.assertIn(long_input, plain_show.stdout)
+            self.assertIn(long_output, plain_show.stdout)
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: run not found: run_missing", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+            self.assertEqual(no_subcommand.returncode, 1)
+            self.assertIn("mnemo: runs command requires a subcommand", no_subcommand.stderr)
+            self.assertNotIn("Traceback", no_subcommand.stderr)
+
     def test_skills_scan_view_and_promote_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "skill-root"
@@ -1098,6 +1149,7 @@ class CliTests(unittest.TestCase):
 
             run_cancel = _run_cli(["runs", "cancel", run_id, "--state-dir", tmp, "--reason", "user stop", "--json"])
             queue_cancel = _run_cli(["daemon", "cancel", queue_id, "--state-dir", tmp, "--json"])
+            missing_run = _run_cli(["runs", "cancel", "run_missing", "--state-dir", tmp])
 
             self.assertEqual(run_cancel.returncode, 0, run_cancel.stderr)
             self.assertEqual(queue_cancel.returncode, 0, queue_cancel.stderr)
@@ -1110,6 +1162,9 @@ class CliTests(unittest.TestCase):
             self.assertEqual(store.get_run(run_id)["status"], "cancelled")
             self.assertEqual(store.list_queue_items(status="cancelled")[0]["id"], queue_id)
             self.assertIn("run.cancel.requested", [event["event_type"] for event in store.get_run_events(run_id)])
+            self.assertEqual(missing_run.returncode, 1)
+            self.assertIn("mnemo: run not found: run_missing", missing_run.stderr)
+            self.assertNotIn("Traceback", missing_run.stderr)
 
 
 def _run_cli(

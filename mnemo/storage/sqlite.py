@@ -399,6 +399,37 @@ class StateStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def list_runs(
+        self,
+        *,
+        status: str | None = None,
+        conversation_id: str | None = None,
+        mission_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, conversation_id, mission_id, status, input_text, output_text, created_at, completed_at
+            FROM runs
+        """
+        filters: list[str] = []
+        params: list[Any] = []
+        if status:
+            filters.append("status = ?")
+            params.append(status)
+        if conversation_id:
+            filters.append("conversation_id = ?")
+            params.append(conversation_id)
+        if mission_id:
+            filters.append("mission_id = ?")
+            params.append(mission_id)
+        if filters:
+            sql += " WHERE " + " AND ".join(filters)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_run_summary_from_row(row) for row in rows]
+
     def cancel_run(self, run_id: str, *, reason: str = "cancelled") -> dict[str, Any]:
         now = time.time()
         with self.connect() as conn:
@@ -1541,6 +1572,21 @@ def _memory_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["evidence"] = loads(result.pop("evidence_json"), [])
     return result
+
+
+def _run_summary_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    input_text = str(result.pop("input_text", "") or "")
+    result.pop("output_text", None)
+    result["input_preview"] = _preview_text(input_text)
+    return result
+
+
+def _preview_text(value: str, limit: int = 120) -> str:
+    text = " ".join(value.split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 1)]}..."
 
 
 def _working_note_from_row(row: sqlite3.Row) -> dict[str, Any]:
