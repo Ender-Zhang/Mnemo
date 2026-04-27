@@ -1331,3 +1331,36 @@ Added model-supplied Watch feedback policy: ScheduleService records compact outc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 96: External command RuntimeAdapter foundation
+
+**Date**: 2026-04-27
+**Task**: External command RuntimeAdapter foundation
+**Branch**: `main`
+
+### Summary
+
+Added proposal-only external command RuntimeAdapter with SDK/CLI/MCP entrypoints, RunLedger boundary events, external-harness coverage, and updated integration specs/checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8599257` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

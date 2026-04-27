@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 95
+- **Total Sessions**: 96
 - **Last Active**: 2026-04-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1333 | Active |
+| `journal-2.md` | ~1366 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 96 | 2026-04-27 | External command RuntimeAdapter foundation | `8599257` | `main` |
 | 95 | 2026-04-27 | Proactive watch feedback gates | `791deb2`, `3a7fb09` | `main` |
 | 94 | 2026-04-27 | Harness release gate report | `574c627`, `bcd6251` | `main` |
 | 93 | 2026-04-25 | External runtime context capsule | `90587f9`, `115d284` | `main` |
