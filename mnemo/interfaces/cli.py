@@ -14,7 +14,7 @@ from ..core.jsonutil import dumps, loads
 from ..core.models import PROMPT_MODES, RunRequest
 from ..evals import EvalHarness, list_suites, list_variants, replay_summary
 from ..memory import MemoryEngine
-from ..mcp import MnemoMcpServer
+from ..mcp import MnemoMcpServer, mcp_server_config
 from ..providers import (
     AnthropicProviderAdapter,
     OpenAIProviderAdapter,
@@ -647,6 +647,17 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_tools_parser = mcp_subparsers.add_parser("tools", help="List MCP-style Mnemo tools")
     _add_state_dir(mcp_tools_parser)
     mcp_tools_parser.add_argument("--json", action="store_true")
+    mcp_config_parser = mcp_subparsers.add_parser("config", help="Print MCP client configuration")
+    _add_state_dir(mcp_config_parser)
+    mcp_config_parser.add_argument("--client", choices=["generic", "claude"], default="generic")
+    mcp_config_parser.add_argument(
+        "--command",
+        "--server-command",
+        dest="server_command",
+        default="mnemo",
+        help="Command clients should execute",
+    )
+    mcp_config_parser.add_argument("--json", action="store_true")
     mcp_call_parser = mcp_subparsers.add_parser("call", help="Call one MCP-style Mnemo tool")
     _add_state_dir(mcp_call_parser)
     mcp_call_parser.add_argument("tool_name")
@@ -759,8 +770,20 @@ def _command_json(value: str) -> list[str]:
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:
-    if args.mcp_command not in {"tools", "call", "serve"}:
+    if args.mcp_command not in {"tools", "config", "call", "serve"}:
         raise MnemoError("mcp command requires a subcommand")
+
+    if args.mcp_command == "config":
+        try:
+            config = mcp_server_config(client=args.client, command=args.server_command, state_dir=args.state_dir)
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
+        if args.json:
+            print(dumps({"mcp_config": config}))
+            return 0
+        print(dumps(config["client_config"]))
+        return 0
+
     server = MnemoMcpServer(state_dir=args.state_dir, workspace_root=Path.cwd())
 
     if args.mcp_command == "tools":

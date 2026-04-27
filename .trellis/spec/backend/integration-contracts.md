@@ -154,7 +154,9 @@
 - `MnemoMcpServer.handle_json_rpc(message: dict[str, Any]) -> dict[str, Any] | None`
 - `MnemoMcpServer.serve_content_length(input_stream=None, output_stream=None) -> None`
 - `MnemoMcpServer.serve_jsonl(input_stream=None, output_stream=None) -> None`
+- `mnemo.mcp.mcp_server_config(client="generic", command="mnemo", state_dir=DEFAULT_STATE_DIR) -> dict[str, Any]`
 - CLI: `mnemo mcp tools [--state-dir DIR] [--json]`
+- CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
 - CLI: `mnemo mcp call TOOL --arguments-json JSON [--state-dir DIR] [--json]`
 - CLI: `mnemo mcp serve [--state-dir DIR] [--transport content-length|jsonl]`
 
@@ -175,6 +177,9 @@
 - `mnemo_runtime_status` includes compact scheduled-item status.
 - JSON-RPC support covers `initialize`, `tools/list`, and `tools/call` with structured error responses.
 - `mnemo mcp serve` defaults to MCP stdio `Content-Length` framing; JSONL stdio remains an explicit debug transport.
+- `mcp_server_config()` is packaging metadata only; it must not start a server, mutate state, or execute external clients.
+- MCP config output points to `mnemo mcp serve --state-dir <DIR>`, includes compact tool names/counts, and omits raw input schemas.
+- `client="generic"` returns a portable stdio object; `client="claude"` returns a `mcpServers.mnemo` snippet.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -186,8 +191,9 @@
 | Watch/Cron calls | MCP calls create scheduled watch/cron items, record Watch feedback policy, and runtime status reports due count | `tests/test_mcp.py` |
 | Runtime calls | Run/replay/eval/variant-eval/release-gate/status reuse existing services and compact results | `tests/test_mcp.py` |
 | JSON-RPC | Initialize, list, call, unknown-method, JSONL serving, and Content-Length framing behave predictably | `tests/test_mcp.py` |
-| CLI | `mnemo mcp tools`, `mnemo mcp call`, and both serve transports support JSON and normalized errors | `tests/test_cli.py` |
-| Package install | Installed wheel exposes `mnemo.mcp.MnemoMcpServer` | `tests/package_install_smoke.py` |
+| Config packaging | Helper and CLI return compact client config snippets without raw tool schemas | `tests/test_mcp.py`, `tests/test_cli.py` |
+| CLI | `mnemo mcp tools`, `mnemo mcp config`, `mnemo mcp call`, and both serve transports support JSON and normalized errors | `tests/test_cli.py` |
+| Package install | Installed wheel exposes `mnemo.mcp.MnemoMcpServer` and `mcp_server_config` | `tests/package_install_smoke.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add new MCP tools as thin wrappers over SDK/domain services with compact outputs.
@@ -206,5 +212,5 @@
 #### Correct
 - Keep `mnemo_external_run` as a thin MCP wrapper over `MnemoClient.external_run()` with an explicit command array and compact proposal-only result.
 - JSON-RPC tests for success, Content-Length framing, JSONL debug serving, and structured errors.
-- CLI tests for JSON output, serve transport selection, and error normalization.
+- CLI tests for JSON output, config packaging, serve transport selection, and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.

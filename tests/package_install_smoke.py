@@ -40,7 +40,7 @@ def main() -> int:
     import mnemo
     from mnemo.core.settings import load_user_settings
     from mnemo.interfaces.web import WebServerConfig, build_http_server
-    from mnemo.mcp import MnemoMcpServer
+    from mnemo.mcp import MnemoMcpServer, mcp_server_config
     from mnemo.runtime import ScheduleService
     from mnemo.sdk import MnemoClient, mnemo_core_api_schema
 
@@ -77,6 +77,11 @@ def main() -> int:
     tool_names = {tool["name"] for tool in MnemoMcpServer().tools()}
     if "mnemo_context" not in tool_names or "mnemo_capsule" not in tool_names or "mnemo_external_run" not in tool_names:
         raise AssertionError("packaged MCP server is missing external runtime tools")
+    packaged_mcp_config = mcp_server_config(state_dir=".mnemo")
+    if packaged_mcp_config["server"]["args"] != ["mcp", "serve", "--state-dir", ".mnemo"]:
+        raise AssertionError("packaged MCP config is not wired to mnemo mcp serve")
+    if "mnemo_context" not in packaged_mcp_config["tool_names"] or "inputSchema" in str(packaged_mcp_config):
+        raise AssertionError("packaged MCP config should expose compact tool names without raw schemas")
     if not hasattr(MnemoMcpServer(), "serve_content_length"):
         raise AssertionError("packaged MCP server is missing content-length serve transport")
     if "quiet_hours" not in load_user_settings(Path.cwd()):

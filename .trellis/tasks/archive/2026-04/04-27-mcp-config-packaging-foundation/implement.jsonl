@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "MCP helper and CLI files must stay in existing root package layout"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "MCP config is an external integration contract"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI config validation and user-facing errors"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Package smoke and public import coverage"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "CLI to MCP config contract crosses layers"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing MCP serve/descriptors instead of duplicating schema"}

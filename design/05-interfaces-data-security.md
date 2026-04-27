@@ -172,6 +172,13 @@ POST /api/core/evaluate
 
 Mnemo 内置 MCP Server，任何支持 MCP 的 Agent（包括 Claude Code、Cursor、自定义 Agent）无需任何 SDK 即可接入：
 
+```bash
+mnemo mcp config --client claude --state-dir .mnemo --json
+mnemo mcp serve --state-dir .mnemo
+```
+
+`mcp config` 只生成 stdio 客户端配置片段，指向本地 `mnemo mcp serve`，并附带紧凑工具名/数量；不会启动服务、写状态或暴露原始 tool schema。
+
 ```python
 # 暴露的 MCP Tools
 

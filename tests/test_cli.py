@@ -1600,6 +1600,10 @@ print(json.dumps({
     def test_mcp_tools_and_call_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tools = _run_cli(["mcp", "tools", "--state-dir", tmp, "--json"])
+            config = _run_cli(
+                ["mcp", "config", "--state-dir", tmp, "--client", "claude", "--command", "mnemo", "--json"]
+            )
+            text_config = _run_cli(["mcp", "config", "--state-dir", tmp])
             call = _run_cli(
                 [
                     "mcp",
@@ -1626,6 +1630,18 @@ print(json.dumps({
 
             self.assertEqual(tools.returncode, 0, tools.stderr)
             self.assertIn("mnemo_context", {tool["name"] for tool in json.loads(tools.stdout)["tools"]})
+            self.assertEqual(config.returncode, 0, config.stderr)
+            config_payload = json.loads(config.stdout)["mcp_config"]
+            self.assertEqual(config_payload["kind"], "mcp_server_config")
+            self.assertEqual(config_payload["client_config"]["mcpServers"]["mnemo"]["command"], "mnemo")
+            self.assertEqual(
+                config_payload["client_config"]["mcpServers"]["mnemo"]["args"],
+                ["mcp", "serve", "--state-dir", tmp],
+            )
+            self.assertIn("mnemo_context", config_payload["tool_names"])
+            self.assertNotIn("inputSchema", config.stdout)
+            self.assertEqual(text_config.returncode, 0, text_config.stderr)
+            self.assertEqual(json.loads(text_config.stdout)["transport"], "stdio")
             self.assertEqual(call.returncode, 0, call.stderr)
             self.assertEqual(json.loads(call.stdout)["result"]["kind"], "context_block")
             self.assertEqual(invalid.returncode, 1)

@@ -21,6 +21,7 @@
 - CLI: `mnemo api capsule TASK... [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo api external-run TASK... --command-json '[...]' [--runtime RUNTIME] [--agent-type TYPE] [--timeout-s S] [--state-dir DIR] [--json]`
 - HTTP: `GET /api/core/schema`, `GET /api/core/openapi.json`, `POST /api/core/<method>`
+- CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
@@ -58,6 +59,7 @@
 - Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.
 - `mnemo api capsule` normalizes service validation errors this way; argparse handles missing required `TASK`.
 - `mnemo api external-run` normalizes invalid command JSON, invalid command arrays, timeout, process start, and non-zero external command failures this way; external stdout/stderr bodies are compacted and not printed by default.
+- `mnemo mcp config` is read-only, validates a non-empty server command, and emits compact client config without credentials or raw tool schemas.
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
 - `mnemo harness eval` and `mnemo harness variants` normalize unknown suites or variants this way.
@@ -106,6 +108,7 @@
 | Web learning memory endpoint | Valid action returns compact candidate payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web settings endpoint | Valid quiet-hours update returns settings payload; invalid time payload returns JSON error; API keys are not exposed | `tests/test_web.py` |
 | HTTP core API errors | Invalid JSON, missing required fields, and unknown methods return compact JSON errors | `tests/test_web.py` |
+| MCP config output | CLI returns compact generic/Claude stdio config without raw tool schemas | `tests/test_cli.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -156,6 +159,7 @@
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI memory read tests for missing ids without tracebacks.
 - CLI memory health/tombstone tests for compact output and missing ids without tracebacks.
+- CLI MCP config tests for compact JSON and readable client config output.
 - CLI Dream report tests for missing ids without tracebacks.
 - CLI artifact read tests for missing ids without tracebacks.
 - CLI Inbox show/resolve tests for missing item ids without tracebacks.

@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from mnemo.mcp import MnemoMcpServer, mcp_tool_descriptors
+from mnemo.mcp import MnemoMcpServer, mcp_server_config, mcp_tool_descriptors
 from mnemo.storage import StateStore
 
 
@@ -39,6 +39,28 @@ def _read_mcp_frames(data: bytes) -> list[dict[str, object]]:
 
 
 class MnemoMcpTests(unittest.TestCase):
+    def test_mcp_server_config_is_compact_and_client_specific(self) -> None:
+        config = mcp_server_config(client="claude", command="/usr/local/bin/mnemo", state_dir="/tmp/mnemo-state")
+
+        self.assertEqual(config["kind"], "mcp_server_config")
+        self.assertEqual(config["server"]["transport"], "stdio")
+        self.assertEqual(config["server"]["stdio_framing"], "content-length")
+        self.assertEqual(config["client_config"]["mcpServers"]["mnemo"]["command"], "/usr/local/bin/mnemo")
+        self.assertEqual(
+            config["client_config"]["mcpServers"]["mnemo"]["args"],
+            ["mcp", "serve", "--state-dir", "/tmp/mnemo-state"],
+        )
+        self.assertEqual(config["tool_count"], len(mcp_tool_descriptors()))
+        self.assertIn("mnemo_context", config["tool_names"])
+        self.assertNotIn("inputSchema", str(config))
+
+        generic = mcp_server_config(state_dir="/tmp/mnemo-state")
+        self.assertEqual(generic["client_config"]["name"], "mnemo")
+        self.assertEqual(generic["client_config"]["transport"], "stdio")
+
+        with self.assertRaises(ValueError):
+            mcp_server_config(client="unknown")
+
     def test_tool_list_exposes_core_surfaces_without_snake_case_schemas(self) -> None:
         tools = mcp_tool_descriptors()
         names = {tool["name"] for tool in tools}

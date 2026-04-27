@@ -18,6 +18,8 @@ from ..tools import ToolRegistry
 
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
+MCP_CONFIG_VERSION = "mnemo.mcp_config.v1"
+MCP_CONFIG_CLIENTS = ("generic", "claude")
 
 
 class MnemoMcpServer:
@@ -376,6 +378,53 @@ class MnemoMcpServer:
 
 def mcp_tool_descriptors() -> list[dict[str, Any]]:
     return deepcopy(_TOOL_DESCRIPTORS)
+
+
+def mcp_server_config(
+    *,
+    client: str = "generic",
+    command: str = "mnemo",
+    state_dir: str | Path = DEFAULT_STATE_DIR,
+) -> dict[str, Any]:
+    client_name = str(client or "generic").strip().casefold()
+    if client_name not in MCP_CONFIG_CLIENTS:
+        raise ValueError(f"unsupported MCP config client: {client}")
+    command_name = str(command or "").strip()
+    if not command_name:
+        raise ValueError("MCP config command must be non-empty")
+
+    args = ["mcp", "serve", "--state-dir", str(state_dir)]
+    server = {
+        "name": "mnemo",
+        "transport": "stdio",
+        "stdio_framing": "content-length",
+        "command": command_name,
+        "args": args,
+    }
+    tool_names = [tool["name"] for tool in _TOOL_DESCRIPTORS]
+    return {
+        "kind": "mcp_server_config",
+        "version": MCP_CONFIG_VERSION,
+        "client": client_name,
+        "server": server,
+        "client_config": _mcp_client_config(client_name, server),
+        "tool_count": len(tool_names),
+        "tool_names": tool_names,
+    }
+
+
+def _mcp_client_config(client: str, server: dict[str, Any]) -> dict[str, Any]:
+    server_config = {
+        "command": server["command"],
+        "args": list(server["args"]),
+    }
+    if client == "claude":
+        return {"mcpServers": {"mnemo": server_config}}
+    return {
+        "name": server["name"],
+        "transport": server["transport"],
+        **server_config,
+    }
 
 
 class _McpFrameError(ValueError):
