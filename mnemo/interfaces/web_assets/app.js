@@ -8,10 +8,12 @@ const state = {
   busy: false,
   assistantNode: null,
   actions: new Map(),
+  activityRows: new Map(),
   artifacts: new Map(),
   artifactRelated: new Map(),
   settings: null,
   cancelRequested: false,
+  lastUserIntent: localStorage.getItem("mnemo.last_user_intent") || "",
 };
 
 const timeline = document.querySelector("#timeline");
@@ -31,6 +33,10 @@ const settingsStatus = document.querySelector("#settingsStatus");
 const activityToggle = document.querySelector("#activityToggle");
 const activityList = document.querySelector("#activityList");
 const activityCount = document.querySelector("#activityCount");
+const contextUserPrompt = document.querySelector("#contextUserPrompt");
+const contextConversation = document.querySelector("#contextConversation");
+const contextMission = document.querySelector("#contextMission");
+const contextRun = document.querySelector("#contextRun");
 const attachButton = document.querySelector("#attachButton");
 const voiceButton = document.querySelector("#voiceButton");
 const mentionButton = document.querySelector("#mentionButton");
@@ -60,12 +66,16 @@ reset.addEventListener("click", () => {
   state.renderedEventIds.clear();
   state.artifacts.clear();
   state.artifactRelated.clear();
+  state.activityRows.clear();
+  state.lastUserIntent = "";
   localStorage.removeItem("mnemo.conversation_id");
   localStorage.removeItem("mnemo.mission_id");
   localStorage.removeItem("mnemo.last_run_id");
   localStorage.removeItem("mnemo.last_event_id");
+  localStorage.removeItem("mnemo.last_user_intent");
   timeline.replaceChildren();
   clearActivity();
+  updateContextPanel();
   updateComposerState();
   setStatus("Ready");
 });
@@ -107,9 +117,10 @@ async function runTurn(message) {
   state.cancelRequested = false;
   state.activeRunId = "";
   state.assistantNode = null;
+  rememberUserIntent(message);
   updateComposerState();
   addMessage("user", message);
-  pushActivity("run", "Turn started", message);
+  upsertActivity("turn", "run", "Turn started", message);
   setStatus("Working");
 
   try {
@@ -218,6 +229,7 @@ function handleEvent(event) {
 
   switch (event.type) {
     case "turn.started":
+      handleTurnStarted(event);
       setStatus("Started");
       break;
     case "conversation.hydrated":
@@ -228,8 +240,7 @@ function handleEvent(event) {
       appendAssistant(event.data?.text || "");
       break;
     case "assistant.message":
-      if (!state.assistantNode) state.assistantNode = addMessage("assistant", event.data?.text || "");
-      if (state.assistantNode) state.assistantNode.classList.remove("streaming");
+      finalizeAssistantMarkdown(event.data?.text || "");
       break;
     case "action.queued":
     case "action.started":
@@ -255,7 +266,7 @@ function handleEvent(event) {
       persistRun(event);
       state.cancelRequested = false;
       state.activeRunId = "";
-      if (state.assistantNode) state.assistantNode.classList.remove("streaming");
+      if (state.assistantNode) finalizeAssistantMarkdown("");
       updateComposerState();
       setStatus("Ready");
       break;
@@ -284,79 +295,158 @@ function persistEventEnvelope(event) {
     state.lastRunId = event.run_id;
     localStorage.setItem("mnemo.last_run_id", state.lastRunId);
   }
+  updateContextPanel();
+}
+
+function handleTurnStarted(event) {
+  const summary = event.data?.input_summary || "";
+  if (summary) {
+    rememberUserIntent(summary);
+    if (!state.busy) {
+      addMessage("user", summary);
+    }
+  }
+}
+
+function rememberUserIntent(text) {
+  const compact = String(text || "").trim();
+  if (!compact) return;
+  state.lastUserIntent = compact;
+  localStorage.setItem("mnemo.last_user_intent", compact);
+  updateContextPanel();
+}
+
+function updateContextPanel() {
+  if (contextUserPrompt) contextUserPrompt.textContent = state.lastUserIntent || "No recent prompt";
+  if (contextConversation) contextConversation.textContent = compactId(state.conversationId, "new");
+  if (contextMission) contextMission.textContent = compactId(state.missionId, "new");
+  if (contextRun) contextRun.textContent = compactId(state.lastRunId || state.activeRunId, "none");
+}
+
+function compactId(value, fallback) {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  if (text.length <= 18) return text;
+  return `${text.slice(0, 8)}...${text.slice(-4)}`;
 }
 
 function renderActivity(event) {
   switch (event.type) {
     case "turn.started":
-      pushActivity("run", "Run started", event.data?.input_summary || event.run_id || "");
+      upsertActivity("turn", "run", "Run started", event.data?.input_summary || event.run_id || "");
       break;
     case "conversation.hydrated":
-      pushActivity("run", "Context restored", event.data?.summary || "");
+      upsertActivity("context", "run", "Context restored", event.data?.summary || "");
       break;
     case "status.updated":
-      pushActivity("run", "Status", event.data?.text || event.data?.summary || "");
+      upsertActivity("status", "run", "Status", event.data?.text || event.data?.summary || "");
       break;
     case "assistant.delta":
-      pushActivity("run", "Streaming answer", "Receiving model output");
+      upsertActivity("assistant-stream", "run", "Streaming answer", "Receiving model output");
       break;
     case "action.queued":
     case "action.started":
     case "action.completed":
-      pushActivity(
+      upsertActivity(
+        `action:${activityActionId(event)}`,
         "action",
         event.data?.action?.title || event.data?.tool_name || "Action",
         event.data?.summary || event.type.replace("action.", ""),
       );
       break;
     case "artifact.card":
-      pushActivity("artifact", event.data?.artifact?.title || "Artifact", event.data?.artifact?.kind || "");
+      upsertActivity(
+        `artifact:${event.data?.artifact?.artifact_id || Date.now()}`,
+        "artifact",
+        event.data?.artifact?.title || "Artifact",
+        event.data?.artifact?.kind || "",
+      );
       break;
     case "recall.card":
-      pushActivity("recall", "Recall", event.data?.recall?.query || "");
+      upsertActivity("recall", "recall", "Recall", event.data?.recall?.query || "");
       break;
     case "learning.chip":
-      pushActivity("learning", "Memory candidate", event.data?.item?.summary || event.data?.item?.status || "");
+      upsertActivity(
+        `learning:${event.data?.item?.item_id || Date.now()}`,
+        "learning",
+        "Memory candidate",
+        event.data?.item?.summary || event.data?.item?.status || "",
+      );
       break;
     case "decision.card":
-      pushActivity("decision", "Decision needed", event.data?.decision?.question || "");
+      upsertActivity(
+        `decision:${event.data?.decision?.item_id || Date.now()}`,
+        "decision",
+        "Decision needed",
+        event.data?.decision?.question || "",
+      );
       break;
     case "run.completed":
-      pushActivity("run", "Run completed", event.data?.status || "completed");
+      upsertActivity("completed", "run", "Run completed", event.data?.status || "completed");
       break;
     case "run.error":
     case "server.error":
-      pushActivity("error", "Error", event.data?.error || "Run failed");
+      upsertActivity("error", "error", "Error", event.data?.error || "Run failed");
       break;
     default:
       break;
   }
 }
 
-function pushActivity(kind, title, detail) {
+function activityActionId(event) {
+  return event.data?.action_id
+    || event.data?.action?.action_id
+    || event.data?.provider_call_id
+    || event.data?.tool_name
+    || "unknown";
+}
+
+function upsertActivity(key, kind, title, detail) {
   if (!activityList) return;
-  const item = document.createElement("div");
-  item.className = `activity-item ${kind || "run"}`;
-  const dot = document.createElement("span");
-  dot.className = "activity-dot";
-  const copy = document.createElement("div");
-  const titleNode = document.createElement("div");
-  titleNode.className = "activity-title";
-  titleNode.textContent = title || "Activity";
-  const detailNode = document.createElement("div");
-  detailNode.className = "activity-detail";
-  detailNode.textContent = detail || "";
-  copy.append(titleNode, detailNode);
-  item.append(dot, copy);
-  activityList.prepend(item);
+  let row = state.activityRows.get(key);
+  if (!row) {
+    row = activityRow(kind);
+    state.activityRows.set(key, row);
+    activityList.prepend(row.node);
+  }
+  row.node.className = `activity-item ${kind || "run"}`;
+  row.title.textContent = title || "Activity";
+  row.detail.textContent = detail || "";
+  if (row.node !== activityList.firstElementChild) {
+    activityList.prepend(row.node);
+  }
   while (activityList.children.length > 24) {
-    activityList.lastElementChild.remove();
+    const last = activityList.lastElementChild;
+    for (const [activityKey, activityRowValue] of state.activityRows.entries()) {
+      if (activityRowValue.node === last) state.activityRows.delete(activityKey);
+    }
+    last.remove();
   }
   updateActivityCount();
 }
 
+function pushActivity(kind, title, detail) {
+  upsertActivity(`note:${Date.now()}:${activityList?.children.length || 0}`, kind, title, detail);
+}
+
+function activityRow(kind) {
+  const node = document.createElement("div");
+  node.className = `activity-item ${kind || "run"}`;
+  const dot = document.createElement("span");
+  dot.className = "activity-dot";
+  const copy = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "activity-title";
+  const detail = document.createElement("div");
+  detail.className = "activity-detail";
+  copy.append(title, detail);
+  node.append(dot, copy);
+  return { node, title, detail };
+}
+
 function clearActivity() {
   if (!activityList) return;
+  state.activityRows.clear();
   activityList.replaceChildren();
   updateActivityCount();
 }
@@ -372,7 +462,9 @@ function appendAssistant(text) {
     state.assistantNode = addMessage("assistant", "");
   }
   state.assistantNode.classList.add("streaming");
-  state.assistantNode.textContent += text;
+  const rawText = `${state.assistantNode.dataset.rawText || state.assistantNode.textContent || ""}${text}`;
+  state.assistantNode.dataset.rawText = rawText;
+  state.assistantNode.textContent = rawText;
   scrollToEnd();
 }
 
@@ -1098,6 +1190,7 @@ function persistRun(event) {
   localStorage.setItem("mnemo.mission_id", state.missionId);
   localStorage.setItem("mnemo.last_run_id", state.lastRunId);
   localStorage.setItem("mnemo.last_event_id", state.lastEventId);
+  updateContextPanel();
 }
 
 function updateComposerState() {
@@ -1112,10 +1205,160 @@ function updateComposerState() {
 function addMessage(role, text) {
   const node = document.createElement("div");
   node.className = `message ${role}`;
-  node.textContent = text;
+  if (role === "assistant") {
+    renderMarkdownInto(node, text || "");
+  } else {
+    node.textContent = text;
+  }
   timeline.appendChild(node);
   scrollToEnd();
   return node;
+}
+
+function finalizeAssistantMarkdown(text) {
+  if (!state.assistantNode) {
+    state.assistantNode = addMessage("assistant", "");
+  }
+  const finalText = text || state.assistantNode.dataset.rawText || state.assistantNode.textContent || "";
+  state.assistantNode.classList.remove("streaming");
+  renderMarkdownInto(state.assistantNode, finalText);
+  scrollToEnd();
+}
+
+function renderMarkdownInto(node, text) {
+  node.dataset.rawText = text || "";
+  node.replaceChildren();
+  node.classList.add("markdown");
+  const blocks = markdownBlocks(text || "");
+  for (const block of blocks) {
+    node.appendChild(block);
+  }
+  if (blocks.length === 0) {
+    node.appendChild(document.createTextNode(""));
+  }
+}
+
+function markdownBlocks(text) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
+  const blocks = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    if (line.trim().startsWith("```")) {
+      const codeLines = [];
+      index += 1;
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = codeLines.join("\n");
+      pre.appendChild(code);
+      blocks.push(pre);
+      continue;
+    }
+
+    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+    if (heading) {
+      const level = String(heading[1]).length;
+      const node = document.createElement(`h${level + 2}`);
+      appendInlineMarkdown(node, heading[2]);
+      blocks.push(node);
+      index += 1;
+      continue;
+    }
+
+    if (/^\s*[-*]\s+/.test(line)) {
+      const list = document.createElement("ul");
+      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+        const item = document.createElement("li");
+        appendInlineMarkdown(item, lines[index].replace(/^\s*[-*]\s+/, ""));
+        list.appendChild(item);
+        index += 1;
+      }
+      blocks.push(list);
+      continue;
+    }
+
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const list = document.createElement("ol");
+      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+        const item = document.createElement("li");
+        appendInlineMarkdown(item, lines[index].replace(/^\s*\d+\.\s+/, ""));
+        list.appendChild(item);
+        index += 1;
+      }
+      blocks.push(list);
+      continue;
+    }
+
+    const paragraphLines = [];
+    while (
+      index < lines.length
+      && lines[index].trim()
+      && !lines[index].trim().startsWith("```")
+      && !/^(#{1,3})\s+/.test(lines[index])
+      && !/^\s*[-*]\s+/.test(lines[index])
+      && !/^\s*\d+\.\s+/.test(lines[index])
+    ) {
+      paragraphLines.push(lines[index].trim());
+      index += 1;
+    }
+    const paragraph = document.createElement("p");
+    appendInlineMarkdown(paragraph, paragraphLines.join(" "));
+    blocks.push(paragraph);
+  }
+  return blocks;
+}
+
+function appendInlineMarkdown(parent, text) {
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
+  let cursor = 0;
+  for (const match of String(text || "").matchAll(pattern)) {
+    if (match.index > cursor) {
+      parent.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+    }
+    parent.appendChild(inlineMarkdownNode(match[0]));
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < String(text || "").length) {
+    parent.appendChild(document.createTextNode(String(text).slice(cursor)));
+  }
+}
+
+function inlineMarkdownNode(token) {
+  if (token.startsWith("`") && token.endsWith("`")) {
+    const code = document.createElement("code");
+    code.textContent = token.slice(1, -1);
+    return code;
+  }
+  if (token.startsWith("**") && token.endsWith("**")) {
+    const strong = document.createElement("strong");
+    strong.textContent = token.slice(2, -2);
+    return strong;
+  }
+  if (token.startsWith("*") && token.endsWith("*")) {
+    const em = document.createElement("em");
+    em.textContent = token.slice(1, -1);
+    return em;
+  }
+  const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
+  if (link) {
+    const anchor = document.createElement("a");
+    anchor.textContent = link[1];
+    anchor.href = link[2];
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    return anchor;
+  }
+  return document.createTextNode(token);
 }
 
 function addCard(kind, title, bodyText) {
@@ -1153,4 +1396,5 @@ function scrollToEnd() {
 
 input.focus();
 updateComposerState();
+updateContextPanel();
 resumeLastRun();

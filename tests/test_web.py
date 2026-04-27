@@ -794,7 +794,13 @@ print(json.dumps({
                 self.assertEqual(css_status, 200)
                 self.assertIn('class="app-shell"', html)
                 self.assertIn('class="rail"', html)
+                self.assertIn('class="rail-brand"', html)
+                self.assertIn("Mnemo OS", html)
                 self.assertIn('id="activityPanel"', html)
+                self.assertIn('id="contextUserPrompt"', html)
+                self.assertIn('id="contextConversation"', html)
+                self.assertIn('id="contextMission"', html)
+                self.assertIn('id="contextRun"', html)
                 self.assertIn('class="composer-tools"', html)
                 self.assertIn('id="attachButton"', html)
                 self.assertIn('id="voiceButton"', html)
@@ -804,8 +810,54 @@ print(json.dumps({
                 self.assertIn("activity-collapsed", script)
                 self.assertIn("runBadge.textContent", script)
                 self.assertIn("activity-panel", css)
+                self.assertIn("context-panel", css)
+                self.assertIn("rail-brand", css)
+                self.assertIn("status-pill", css)
                 self.assertIn("composer-tools", css)
                 self.assertIn("app-shell", css)
+
+    def test_web_client_asset_renders_markdown_and_context_history(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn("renderMarkdownInto", script)
+                self.assertIn("markdownBlocks", script)
+                self.assertIn("appendInlineMarkdown", script)
+                self.assertIn("inlineMarkdownNode", script)
+                self.assertIn('document.createElement("pre")', script)
+                self.assertIn('document.createElement("strong")', script)
+                self.assertIn('document.createElement("em")', script)
+                self.assertIn('document.createElement("a")', script)
+                self.assertIn("node.replaceChildren()", script)
+                self.assertIn("textContent = link[1]", script)
+                self.assertIn("dataset.rawText", script)
+                self.assertIn("finalizeAssistantMarkdown", script)
+                self.assertNotIn("innerHTML", script)
+                self.assertIn("handleTurnStarted", script)
+                self.assertIn("rememberUserIntent", script)
+                self.assertIn('localStorage.setItem("mnemo.last_user_intent"', script)
+                self.assertIn('addMessage("user", summary)', script)
+                self.assertIn("updateContextPanel", script)
+                self.assertIn("compactId", script)
+                self.assertIn("message.markdown", css)
+
+    def test_web_client_asset_deduplicates_activity_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, script = server.request("GET", "/app.js")
+
+                self.assertEqual(status, 200)
+                self.assertIn("activityRows: new Map()", script)
+                self.assertIn("activityActionId", script)
+                self.assertIn("upsertActivity", script)
+                self.assertIn("state.activityRows.get(key)", script)
+                self.assertIn("state.activityRows.set(key, row)", script)
+                self.assertIn("activityList.prepend(row.node)", script)
+                self.assertIn("state.activityRows.clear()", script)
 
     def test_web_client_asset_resolves_decision_cards_inline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

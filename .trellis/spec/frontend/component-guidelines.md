@@ -26,6 +26,10 @@
 - Learning chips with `requires_confirmation=true` should use explicit confirmation wording before durable memory promotion.
 - The settings drawer renders compact connected-app, permission, quiet-hours, preference, and data-control summaries from `/api/settings`.
 - Settings drawer actions should either save narrow settings or prefill the single composer for normal user intent.
+- Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
+- Streaming assistant deltas should stay text-first; final `assistant.message` or `run.completed` may replace the text node with safe Markdown DOM.
+- Replayed `turn.started` events should render the historical user prompt when the client is not actively streaming a new turn.
+- Right-side activity rows should upsert by stable event/action keys so queued, started, and completed action events update one row.
 - Buttons must have clear text or `title` attributes when their action is not obvious.
 - Text containers must use wrapping constraints so long ids, URLs, and tool names do not overflow.
 
@@ -40,6 +44,8 @@
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
 | Learning chip | Shows compact learning text, high-risk confirmation wording, accept/this-turn/reject, and post-resolution undo actions | `tests/test_web.py`, `tests/test_runtime.py` |
 | Settings drawer | Shows compact low-frequency settings, saves quiet hours, and reuses composer prefill actions | `tests/test_web.py` |
+| Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
+| Activity upsert | Merges action lifecycle events into a stable row | Asset behavior in `tests/test_web.py` |
 | Duplicate replay event | Ignored by `renderedEventIds` | `tests/test_web.py` |
 | Stop control | Appears as a composer command while a run is busy | `tests/test_web.py` |
 | Error event | Renders visible error card | Manual/asset check |
@@ -55,6 +61,8 @@
 - Good: resolve or undo a Learning chip with small inline buttons rather than opening a memory dashboard.
 - Good: label review-gated Learning chip acceptance as an explicit confirmation instead of casual preference learning.
 - Good: let data-control actions prefill the single composer instead of adding a separate data-management screen.
+- Good: use `document.createElement`, `textContent`, and `replaceChildren` for Markdown blocks and inline marks.
+- Good: store streaming Markdown source in `dataset.rawText` before final formatting.
 - Base: small helper functions can create DOM nodes directly.
 - Bad: `element.innerHTML = modelOutput`.
 - Bad: adding a second operations dashboard for normal user workflows.
@@ -67,3 +75,5 @@
 - For recall cards, assert the asset handles `recall.card` and does not require a separate dashboard route.
 - For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses confirmation wording for review-gated items.
 - For settings, assert the asset calls `/api/settings`, renders the drawer, and reuses composer prefill for user actions.
+- For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
+- For activity rows, assert `activityRows`, `activityActionId`, and `upsertActivity` are present.

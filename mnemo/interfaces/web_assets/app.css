@@ -49,10 +49,10 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) minmax(280px, 360px);
-  gap: 16px;
+  grid-template-columns: 108px minmax(0, 1fr) minmax(320px, 380px);
+  gap: 18px;
   height: 100vh;
-  padding: 14px;
+  padding: 18px;
   overflow: hidden;
 }
 
@@ -61,7 +61,7 @@ button {
   grid-template-rows: auto auto auto auto 1fr;
   gap: 10px;
   align-items: start;
-  justify-items: center;
+  justify-items: stretch;
   padding: 10px 8px;
   background: rgba(255, 253, 248, 0.86);
   border: 1px solid var(--line);
@@ -70,7 +70,7 @@ button {
 }
 
 .rail-mark,
-.rail-button,
+.rail-icon,
 .icon-button {
   display: inline-grid;
   place-items: center;
@@ -81,10 +81,39 @@ button {
   line-height: 1;
 }
 
+.rail-brand {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 0 10px;
+  color: var(--graphite);
+  font-size: 12px;
+  font-weight: 760;
+}
+
 .rail-mark {
   background: var(--graphite);
   color: #ffffff;
   font-weight: 800;
+}
+
+.rail-button {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 58px;
+  padding: 8px 4px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 1.1;
+}
+
+.rail-icon {
+  background: var(--panel-soft);
+  color: var(--muted);
 }
 
 .rail-button,
@@ -119,6 +148,11 @@ button {
 .rail-button.active {
   background: var(--teal-soft);
   border-color: rgba(29, 117, 101, 0.35);
+  color: var(--teal);
+}
+
+.rail-button.active .rail-icon {
+  background: #ffffff;
   color: var(--teal);
 }
 
@@ -171,6 +205,7 @@ button {
   justify-content: flex-end;
 }
 
+.status-pill,
 .run-badge,
 .activity-count,
 .chip {
@@ -217,6 +252,79 @@ button {
   padding: 13px 15px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.message.markdown {
+  white-space: normal;
+}
+
+.message.markdown > :first-child {
+  margin-top: 0;
+}
+
+.message.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.message.markdown p {
+  margin: 0 0 10px;
+}
+
+.message.markdown h3,
+.message.markdown h4,
+.message.markdown h5 {
+  margin: 2px 0 9px;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.message.markdown ul,
+.message.markdown ol {
+  margin: 8px 0 10px 20px;
+  padding: 0;
+}
+
+.message.markdown li {
+  margin: 4px 0;
+  padding-left: 2px;
+}
+
+.message.markdown code {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 5px;
+  background: var(--panel-soft);
+  color: var(--rust);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 0.92em;
+}
+
+.message.markdown pre {
+  margin: 10px 0;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8faf6;
+}
+
+.message.markdown pre code {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.message.markdown a {
+  color: var(--teal);
+  font-weight: 650;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
 }
 
 .message.user {
@@ -452,7 +560,7 @@ button:disabled,
 
 .activity-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   height: 100%;
   background: rgba(255, 253, 248, 0.92);
@@ -463,28 +571,89 @@ button:disabled,
 }
 
 .app-shell.activity-collapsed {
-  grid-template-columns: 64px minmax(0, 1fr) 0;
+  grid-template-columns: 108px minmax(0, 1fr) 0;
 }
 
 .app-shell.activity-collapsed .activity-panel {
   display: none;
 }
 
+.context-panel {
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(229, 242, 239, 0.55), rgba(255, 253, 248, 0.88));
+}
+
+.context-header,
 .activity-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.activity-header {
   min-height: 72px;
   padding: 14px 16px;
   border-bottom: 1px solid var(--line);
 }
 
+.context-header h2,
 .activity-header h2,
 .settings-header h2 {
   margin: 0;
   font-size: 15px;
   font-weight: 760;
+}
+
+.context-header p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.live-dot {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 9px;
+  background: var(--teal);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.context-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  min-height: 74px;
+  padding: 10px;
+  border: 1px solid rgba(197, 204, 197, 0.82);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.context-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.context-card strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .activity-list {
@@ -649,7 +818,7 @@ button:disabled,
 
 @media (max-width: 1060px) {
   .app-shell {
-    grid-template-columns: 56px minmax(0, 1fr);
+    grid-template-columns: 92px minmax(0, 1fr);
   }
 
   .activity-panel {
@@ -669,6 +838,12 @@ button:disabled,
     grid-template-columns: auto auto auto auto 1fr;
     grid-template-rows: auto;
     justify-items: start;
+    align-items: center;
+  }
+
+  .rail-brand,
+  .rail-button {
+    width: auto;
   }
 
   .chat-shell {

@@ -13,11 +13,14 @@
 - Browser key: `mnemo.mission_id`
 - Browser key: `mnemo.last_run_id`
 - Browser key: `mnemo.last_event_id`
+- Browser key: `mnemo.last_user_intent`
 - Runtime state: `state.activeRunId: string`
 - Runtime state: `state.renderedEventIds: Set<string>`
+- Runtime state: `state.activityRows: Map<string, ActivityRow>`
 - Runtime state: `state.artifacts: Map<string, object>`
 - Runtime state: `state.artifactRelated: Map<string, object[]>`
 - Runtime state: `state.settings: object | null`
+- Runtime state: `state.lastUserIntent: string`
 - UI event: `recall.card` with `{ recall: { query: string, scope: string, count: number, items: RecallItem[] } }`
 - UI event: `learning.chip` with `{ item: { item_id: string, kind: string, status: string, summary: string, requires_confirmation?: boolean, risk?: string, confirmation_reason?: string } }`
 - API: `GET /api/events?run_id=<run_id>&chat=1`
@@ -38,6 +41,9 @@
 - When the visible timeline is empty, replay fetches all chat events for the last run.
 - Incremental resume uses `sinceEventId` and appends only later events.
 - The client must de-duplicate events by `event_id` before mutating the timeline.
+- `turn.started` replay should restore the user prompt into the timeline when the client is not busy.
+- `mnemo.last_user_intent` stores only a compact recent prompt summary for the browser-local context panel.
+- Right-panel activity rows are volatile browser state and must be rebuilt from stream/replay events, not stored in `localStorage`.
 - Reset clears all persisted chat continuity keys and the rendered-event set.
 - Reset is disabled and guarded while `state.busy` is true; active turns should use Stop instead.
 - Artifact cards render from streamed metadata and fetch artifact body content only when opened.
@@ -68,6 +74,8 @@
 | `sinceEventId` matches | Returns only later chat events | `tests/test_web.py` |
 | `sinceEventId` missing | Returns all chat events for safe rehydrate | `tests/test_web.py` |
 | Client asset | Contains `mnemo.last_event_id`, `sinceEventId`, and `renderedEventIds` handling | `tests/test_web.py` |
+| User prompt replay | `turn.started` restores the visible user prompt and recent ask context | Asset behavior in `tests/test_web.py` |
+| Activity de-duplication | Stable activity keys update existing rows instead of appending lifecycle duplicates | Asset behavior in `tests/test_web.py` |
 | Artifact fetch | Returns stored artifact body plus compact related metadata by id and rejects missing/unknown ids | `tests/test_web.py` |
 | Artifact viewer asset | Contains on-demand artifact fetch, body rendering, export, compare, and composer prefill hooks | `tests/test_web.py` |
 | Recall card asset | Handles `recall.card`, compact item rendering, artifact open, decision resolve, and composer prefill hooks | `tests/test_web.py` |
@@ -82,6 +90,8 @@
 
 ### 5. Good/Base/Bad Cases
 - Good: persist `event.event_id` after each processed chat event and use `sinceEventId` for incremental resume.
+- Good: persist the recent user intent separately from ledger replay ids as `mnemo.last_user_intent`.
+- Good: use an in-memory `activityRows` map for display de-duplication.
 - Good: fetch artifact body via `/api/artifacts` after the user opens an artifact card.
 - Good: export from an explicitly fetched body and keep related artifact lists compact.
 - Good: express side-effectful artifact operations as composer intent so the normal model/tool/permission loop decides.
@@ -96,6 +106,7 @@
 - Base: sequence-based `since` remains available for CLI/debug callers.
 - Bad: store ledger seq as frontend resume state.
 - Bad: append replayed events without event-id de-duplication.
+- Bad: persist activity rows or rendered cards in browser storage.
 - Bad: put full artifact bodies in every `artifact.card` event.
 - Bad: execute send/apply/revert directly in browser code.
 - Bad: abort the active stream immediately after requesting cancellation and miss the final `run.completed`.
@@ -107,6 +118,8 @@
 - Web replay API supports full replay and `sinceEventId`.
 - Unknown `sinceEventId` returns a safe full replay.
 - Frontend asset includes resume persistence and de-duplication logic.
+- Frontend asset restores user prompts from `turn.started` and updates the compact context panel.
+- Frontend asset de-duplicates activity rows with stable keys.
 - Artifact API covers success, missing id, and unknown id.
 - Artifact API includes compact same-mission related artifact metadata without bodies.
 - Frontend asset includes on-demand artifact body loading, browser export, comparison options, and composer-prefill artifact actions.
