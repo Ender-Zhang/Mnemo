@@ -93,6 +93,7 @@ learning packet
   → tool_propose_candidate writes spec draft with input/output/risk/evidence
   → shadow dry-run/eval applies only to tool candidates
   → activation requires risk review and rollback path
+  → rollback marks generated tool + source candidate rolled_back
 ```
 
 关键设计：
@@ -152,7 +153,7 @@ budget:
 | Shadow Mode | draft facts / low confidence | shadow skill | shadow tool |
 | Evaluation | memory-safety / personalization | selection/replay/conflict eval | replay/dry-run/side-effect eval |
 | Activation | write pipeline + compile | available → active/promoted skill | active generated tool |
-| Rollback | audit log / tombstone | skill version rollback | disable tool / revert tool yaml |
+| Rollback | audit log / tombstone | skill version rollback | `rolled_back` generated tool + candidate, then re-review |
 | User Confirmation | conflict/private/high confidence | high-risk skill patch | external/admin/high-risk tool |
 
 全局约束：

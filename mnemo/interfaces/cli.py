@@ -380,6 +380,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(tools_uninstall_parser)
     tools_uninstall_parser.add_argument("name")
     tools_uninstall_parser.add_argument("--json", action="store_true")
+    tools_rollback_parser = tools_subparsers.add_parser("rollback", help="Rollback an installed generated tool")
+    _add_state_dir(tools_rollback_parser)
+    tools_rollback_parser.add_argument("name")
+    tools_rollback_parser.add_argument("--reason", default="")
+    tools_rollback_parser.add_argument("--json", action="store_true")
 
     web_parser = subparsers.add_parser("web", help="Run the Mnemo single-chat web UI")
     _add_state_dir(web_parser)
@@ -1679,6 +1684,8 @@ def _cmd_tools(args: argparse.Namespace) -> int:
         )
     elif args.tools_command == "uninstall":
         result = service.uninstall_generated_tool(args.name)
+    elif args.tools_command == "rollback":
+        result = service.rollback_generated_tool(args.name, reason=args.reason)
     else:
         raise MnemoError("tools command requires a valid subcommand")
 
@@ -1709,6 +1716,9 @@ def _print_tools_result(command: str, result: dict[str, Any]) -> None:
         return
     if command == "uninstall":
         print(f"Disabled generated tool {result['name']}")
+        return
+    if command == "rollback":
+        print(f"Rolled back generated tool {result['name']}")
         return
     print(dumps(result))
 

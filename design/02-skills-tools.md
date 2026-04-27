@@ -838,6 +838,8 @@ interface ToolCandidateTool {
 
 示例：模型可能把“读取 PR 列表并规范化 JSON 字段”提议成工具；但“PR 是否该合并”“如何向用户解释风险”仍留给模型。系统只检查 schema、权限、risk、eval 和 rollback，不按固定次数阈值自动晋升。
 
+Rollback 是 generated tool 的一等生命周期动作：触发后 generated tool 和来源 candidate 都进入 `rolled_back`，不删除历史；若模型之后仍认为它值得恢复，必须重新通过 review/eval gate。
+
 ### 13.5 Tool 文件格式（Generated Tools）
 
 ```yaml

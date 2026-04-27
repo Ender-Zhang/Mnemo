@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Tool evolution code remains in mnemo/tools with CLI wrappers in interfaces"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Rollback uses existing generated_tools/tool_candidates tables"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI rollback must normalize missing generated tools"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Rollback is a provider-native tool surface with compact result"}
+{"file": ".trellis/spec/backend/tool-evolution.md", "reason": "Generated tool lifecycle contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Public tool/CLI changes need full tests"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Storage-service-tool-CLI state flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse uninstall disable primitive"}

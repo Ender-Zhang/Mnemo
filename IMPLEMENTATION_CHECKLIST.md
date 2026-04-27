@@ -52,7 +52,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
 - [~] Lightweight permission gate for read/write/external/admin exists; denied external/admin calls now create compact `tool_approval` Decision Cards and accepted approvals execute once through ToolHarness; side-effect flags, standing authority, and sandbox profile enforcement are not complete.
 - [x] Tool result compression and evidence cards.
-- [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, and safe alias installation exist; shadow dry-run, rollback, extension packaging, and richer eval gates are not complete.
+- [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, safe alias installation, and explicit rollback exist; shadow dry-run, extension packaging, and richer eval gates are not complete.
 
 ## Memory
 
@@ -184,7 +184,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-04-25-guard-web-event-shape`: web chat event handling now ignores non-object stream/replay payloads before state persistence or rendering, with asset regression coverage.
 - [x] `04-25-04-25-normalize-cli-memory-candidate-errors`: CLI memory promote/reject now normalize missing candidate errors as `mnemo:` stderr without Python tracebacks.
 - [x] `04-25-04-25-normalize-cli-skill-service-errors`: CLI skill promote/eval/crystallize now normalize expected service errors as `mnemo:` stderr without Python tracebacks.
-- [x] `04-25-04-25-expose-tool-evolution-cli`: CLI now exposes tool candidate listing, review, install, and generated-tool uninstall through the existing ToolEvolutionService lifecycle.
+- [x] `04-25-04-25-expose-tool-evolution-cli`: CLI now exposes tool candidate listing, review, install, generated-tool uninstall, and generated-tool rollback through the existing ToolEvolutionService lifecycle.
 - [x] `04-25-04-25-expose-eval-case-cli`: shared CLI eval case listing and pass/fail result recording now support memory/skill/tool evolution gates without requiring direct storage access.
 - [x] `04-25-04-25-expose-eval-case-create-cli`: shared CLI eval case creation now lets manual harnesses add draft skill/tool eval cases from existing runs before recording results.
 - [x] `04-25-04-25-expose-skill-usage-cli`: CLI now exposes stored skill usage/outcome events and aggregate stats without mutating skill state.
@@ -226,3 +226,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-27-external-command-runtime-adapter`: Mnemo now executes explicit external command runtimes through fresh context capsules, records proposal-only RunLedger events, ignores unsupported direct-write fields as boundary violations, and exposes the foundation through SDK/CLI/MCP plus external-harness coverage.
 - [x] `04-27-mcp-config-packaging-foundation`: MCP integration now exposes compact generic/Claude stdio client config snippets through `mnemo.mcp.mcp_server_config` and `mnemo mcp config`, with package smoke coverage.
 - [x] `04-27-http-core-api-foundation`: Mnemo now serves the core SDK contract over dependency-free HTTP JSON routes with compact OpenAPI discovery and CLI `mnemo api serve`, covered by web/CLI/package smoke tests.
+- [x] `04-27-generated-tool-rollback-foundation`: Generated tools now expose an explicit rollback lifecycle through `ToolEvolutionService`, provider-native `tool_rollback_generated`, and `mnemo tools rollback`, marking both generated tool and candidate as `rolled_back`.

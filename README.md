@@ -123,6 +123,7 @@ mnemo tools candidates --state-dir .mnemo
 mnemo tools review <candidate_id> --state-dir .mnemo
 mnemo tools install <candidate_id> --state-dir .mnemo
 mnemo tools uninstall <name> --state-dir .mnemo
+mnemo tools rollback <name> --reason "bad activation" --state-dir .mnemo
 ```
 
 Normal turns do not mutate stable memory directly. They write candidates and working notes; DreamCycle collects a compact delta, exposes a model-facing maintenance plan, persists a report, and uses local consolidation as fallback until provider-led idle runs are wired. Skills and tools follow the same model-directed pattern: propose, evaluate, review, then promote.

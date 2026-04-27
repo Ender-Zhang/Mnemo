@@ -92,18 +92,48 @@ class ToolEvolutionService:
         }
 
     def uninstall_generated_tool(self, name: str) -> dict[str, Any]:
+        return self._deactivate_generated_tool(
+            name,
+            generated_status="disabled",
+            candidate_status="ready",
+            action="uninstall",
+        )
+
+    def rollback_generated_tool(self, name: str, *, reason: str = "") -> dict[str, Any]:
+        return self._deactivate_generated_tool(
+            name,
+            generated_status="rolled_back",
+            candidate_status="rolled_back",
+            action="rollback",
+            reason=reason,
+        )
+
+    def _deactivate_generated_tool(
+        self,
+        name: str,
+        *,
+        generated_status: str,
+        candidate_status: str,
+        action: str,
+        reason: str = "",
+    ) -> dict[str, Any]:
         tool = self.store.get_generated_tool(name)
         if not tool:
             raise NotFoundError(f"generated tool not found: {name}")
-        self.store.update_generated_tool_status(name, "disabled")
+        previous_status = tool.get("status")
+        self.store.update_generated_tool_status(name, generated_status)
         candidate_id = tool.get("candidate_id")
         if candidate_id:
-            self.store.update_tool_candidate_status(str(candidate_id), "ready")
+            self.store.update_tool_candidate_status(str(candidate_id), candidate_status)
         return {
             "name": name,
-            "status": "disabled",
+            "action": action,
+            "status": generated_status,
+            "previous_status": previous_status,
             "candidate_id": candidate_id,
+            "candidate_status": candidate_status if candidate_id else None,
             "installed": False,
+            "reason": _compact_reason(reason),
         }
 
 
@@ -164,3 +194,7 @@ def _tool_risk(spec: Any) -> str | None:
     else:
         value = getattr(spec, "risk", None)
     return value if isinstance(value, str) else None
+
+
+def _compact_reason(reason: str) -> str:
+    return " ".join(str(reason or "").split())[:240]

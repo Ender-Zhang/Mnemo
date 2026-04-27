@@ -421,6 +421,18 @@ LEARNING_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="tool_rollback_generated",
+        description="Rollback an installed generated tool after a bad activation and require candidate review before reinstall.",
+        risk="write",
+        input_schema=_schema(
+            ["name"],
+            {
+                "name": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+        ),
+    ),
+    ToolSpec(
         name="skill_record_outcome",
         description="Record the observed outcome of using a skill so future skill selection can improve.",
         risk="write",
@@ -477,6 +489,7 @@ class ToolRegistry:
             "tool_review_candidate": self._tool_review_candidate,
             "tool_install_candidate": self._tool_install_candidate,
             "tool_uninstall_generated": self._tool_uninstall_generated,
+            "tool_rollback_generated": self._tool_rollback_generated,
             "skill_record_outcome": self._skill_record_outcome,
             "learning_discard": self._learning_discard,
         }
@@ -860,6 +873,17 @@ class ToolRegistry:
             self._handlers.pop(name, None)
         return result
 
+    def _tool_rollback_generated(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        result = ToolEvolutionService(context.store).rollback_generated_tool(
+            _require_str(args, "name"),
+            reason=str(args.get("reason") or ""),
+        )
+        name = str(result["name"])
+        if name in self._specs:
+            self._specs.pop(name)
+            self._handlers.pop(name, None)
+        return result
+
     def _skill_record_outcome(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         name = _require_str(args, "name")
         outcome = _require_outcome(args, "outcome")
@@ -1210,6 +1234,8 @@ def _tool_summary(result: ToolResult) -> str:
         return f"Installed tool candidate: {result.result.get('status', 'unknown')}."
     if result.name == "tool_uninstall_generated":
         return f"Uninstalled generated tool: {result.result.get('name', 'unknown')}."
+    if result.name == "tool_rollback_generated":
+        return f"Rolled back generated tool: {result.result.get('name', 'unknown')}."
     if result.result.get("generated_tool") == result.name:
         return f"Ran generated tool {result.name} via {result.result.get('target_tool', 'unknown')}."
     if result.name == "skill_review_candidate":
@@ -1401,6 +1427,18 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "id": str(result.result.get("name") or ""),
                 "title": str(result.result.get("name") or "Generated tool"),
                 "status": result.result.get("status"),
+            }
+        ]
+    if result.name == "tool_rollback_generated":
+        return [
+            {
+                "kind": "generated_tool_rollback",
+                "id": str(result.result.get("name") or ""),
+                "title": str(result.result.get("name") or "Generated tool"),
+                "status": result.result.get("status"),
+                "previous_status": result.result.get("previous_status"),
+                "candidate_status": result.result.get("candidate_status"),
+                "reason": result.result.get("reason", ""),
             }
         ]
     if result.result.get("generated_tool") == result.name:

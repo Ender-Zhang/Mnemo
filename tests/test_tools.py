@@ -889,6 +889,35 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(store.get_tool_candidate(candidate_id)["status"], "ready")
             self.assertNotIn("lookup_memory", [spec.name for spec in registry.specs()])
 
+    def test_tool_rollback_generated_marks_candidate_and_drops_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            candidate_id = _install_alias_directly(store, run_id)
+            registry = ToolRegistry.from_store(store)
+            harness = ToolHarness(store=store, ledger=RunLedger(store), registry=registry)
+
+            rolled_back = harness.execute(
+                ToolCallEnvelope(
+                    name="tool_rollback_generated",
+                    arguments={"name": "lookup_memory", "reason": "incorrect target result"},
+                    call_id="call_tool_rollback",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(rolled_back)
+
+            self.assertTrue(rolled_back.ok)
+            self.assertEqual(rolled_back.result["status"], "rolled_back")
+            self.assertEqual(rolled_back.result["previous_status"], "active")
+            self.assertEqual(store.get_generated_tool("lookup_memory")["status"], "rolled_back")
+            self.assertEqual(store.get_tool_candidate(candidate_id)["status"], "rolled_back")
+            self.assertNotIn("lookup_memory", [spec.name for spec in registry.specs()])
+            self.assertEqual(compact["evidence"][0]["kind"], "generated_tool_rollback")
+            self.assertEqual(compact["evidence"][0]["reason"], "incorrect target result")
+            self.assertNotIn("implementation", str(compact))
+
     def test_registry_from_store_exposes_active_generated_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, _mission_id = _store_with_run(tmp)

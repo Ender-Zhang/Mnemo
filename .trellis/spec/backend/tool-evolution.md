@@ -21,14 +21,17 @@
 - `ToolEvolutionService.review_candidate(candidate_id: str) -> dict[str, Any]`
 - `ToolEvolutionService.install_candidate(candidate_id: str, *, available_tools: Mapping[str, Any]) -> dict[str, Any]`
 - `ToolEvolutionService.uninstall_generated_tool(name: str) -> dict[str, Any]`
+- `ToolEvolutionService.rollback_generated_tool(name: str, *, reason: str = "") -> dict[str, Any]`
 - Tool: `eval_record_result(case_id: str, status: passed|failed, result?: object)`
 - Tool: `tool_review_candidate(candidate_id: str)`
 - Tool: `tool_install_candidate(candidate_id: str)`
 - Tool: `tool_uninstall_generated(name: str)`
+- Tool: `tool_rollback_generated(name: str, reason?: str)`
 - CLI: `mnemo tools candidates [--status STATUS] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo tools review <candidate_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo tools install <candidate_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo tools uninstall <name> [--state-dir DIR] [--json]`
+- CLI: `mnemo tools rollback <name> [--reason REASON] [--state-dir DIR] [--json]`
 - CLI: `mnemo evals create <run_id> <name> --case-json OBJECT [--state-dir DIR] [--json]`
 - CLI: `mnemo evals list [--status STATUS] [--tool-name NAME] [--skill-name NAME] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo evals record <case_id> passed|failed [--result-json OBJECT] [--state-dir DIR] [--json]`
@@ -58,6 +61,8 @@
 - Install rejects generated tool names that collide with existing registered tools.
 - Generated tool risk must be equal to or higher than the target tool risk.
 - Uninstall sets the generated tool `status` to `disabled` and returns the candidate to `ready`.
+- Rollback sets the generated tool `status` to `rolled_back`, marks the source candidate `rolled_back`, drops the active registry entry, and requires `review_candidate()` before reinstall.
+- Rollback returns compact action, previous status, candidate status, and bounded reason without implementation payloads.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -74,26 +79,30 @@
 | Risk downgrade | Candidate becomes `blocked:install_invalid` | `tests/test_tool_evolution.py` |
 | Existing tool name collision | Candidate becomes `blocked:install_invalid` | `tests/test_tool_evolution.py` |
 | Uninstall generated tool | Tool row becomes `disabled`, registry drops spec | `tests/test_tools.py` |
+| Rollback generated tool | Tool row and candidate become `rolled_back`, registry drops spec, and direct reinstall is blocked until review | `tests/test_tool_evolution.py`, `tests/test_tools.py` |
 | CLI candidate lifecycle | Review/install/uninstall commands update service state and keep `mnemo tools` list behavior | `tests/test_cli.py` |
+| CLI rollback lifecycle | Rollback command returns compact status and hides the generated tool from available tool specs | `tests/test_cli.py` |
 | CLI eval case lifecycle | Create/list/record persist case payload, target filters, and result status | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: model proposes candidate, proposes eval case, records eval result, then reviews candidate.
 - Good: model installs a ready alias candidate only after eval has passed.
 - Base: `ready` means reviewed and installable, not active.
+- Base: `rollback` is a safety lifecycle state; it does not delete candidate or generated tool history.
 - Bad: registering generated code directly from `tool_propose_candidate`.
 - Bad: marking a candidate ready without any passed linked eval.
 - Bad: aliasing an admin tool with a read-risk generated spec.
+- Bad: treating rollback as ordinary uninstall that leaves the candidate immediately installable.
 
 ### 6. Tests Required
 - Storage round-trip for tool candidates and eval cases.
 - Service tests for invalid, missing-eval, and ready outcomes.
 - Tool harness test for model-facing lifecycle tools.
-- CLI lifecycle test for candidate listing, review, install, uninstall, and missing-id errors.
+- CLI lifecycle test for candidate listing, review, install, uninstall, rollback, and missing-id errors.
 - CLI eval case test for creating, listing by tool/skill target, and recording pass/fail results.
 - Storage round-trip for installed generated tools.
 - Runtime test that active generated tools appear in provider tool specs.
-- Tool harness tests for install, execution, compact evidence, and uninstall.
+- Tool harness tests for install, execution, compact evidence, uninstall, and rollback.
 
 ### 7. Wrong vs Correct
 #### Wrong

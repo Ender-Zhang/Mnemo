@@ -82,7 +82,7 @@
 - Active generated tools are loaded from `StateStore.list_generated_tools(status="active")`.
 - Generated tools are normal provider-native tools once loaded into `ToolRegistry`.
 - Generated tool aliases execute by mapping model arguments to an existing target tool handler.
-- Compact results for install/uninstall and generated tool execution must not include implementation payloads.
+- Compact results for install/uninstall/rollback and generated tool execution must not include implementation payloads.
 - `artifact.card` events carry artifact metadata only; clients fetch body content explicitly when the user opens the artifact.
 - `recall.card` events carry recall query metadata and compact cards only; clients reuse existing artifact/decision actions or composer prefill for follow-up work.
 
@@ -124,6 +124,7 @@
 | Skill eval case run | Return compact eval status/evidence without body | `tests/test_tools.py` |
 | Generated tool install | Return compact install evidence without implementation payload | `tests/test_tools.py` |
 | Generated tool execution | Execute through existing handler and return generated-tool evidence | `tests/test_tools.py` |
+| Generated tool rollback | Mark generated tool and candidate `rolled_back`, drop active alias, and return compact evidence | `tests/test_tools.py` |
 | Generated tool runtime exposure | Provider runtime sends active generated tool specs | `tests/test_runtime.py` |
 | Artifact card projection | Emit id/title/kind without full artifact body | `tests/test_web.py`, `mnemo/runtime/common.py` |
 | Memory page read | Return stable page payload when `memory_read.id` is a memory page id | `tests/test_tools.py` |
@@ -168,6 +169,7 @@
 - Skill eval case: assert eval status is persisted and compact result omits full skill body.
 - Generated tool install: assert active tool row is persisted and compact result omits implementation payload.
 - Generated tool execution: assert alias argument mapping reaches the target handler.
+- Generated tool rollback: assert generated tool/candidate statuses become `rolled_back`, active registry drops the alias, and compact evidence omits implementation payload.
 - Artifact update: assert card payload has id/title/kind and omits body content.
 - Local path tools: assert workspace scoping and traversal rejection.
 - File patch: assert admin gating, exact edit success, path traversal rejection, and ambiguous replacement handling.

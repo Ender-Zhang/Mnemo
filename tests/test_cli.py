@@ -1218,11 +1218,55 @@ class CliTests(unittest.TestCase):
             self.assertEqual(listed_after.returncode, 0, listed_after.stderr)
             self.assertNotIn("lookup_memory", {tool["name"] for tool in json.loads(listed_after.stdout)["tools"]})
 
+    def test_tool_rollback_command_marks_generated_tool_rolled_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("tool rollback")
+            mission_id = store.create_mission(conversation_id, "tool rollback")
+            run_id = store.create_run(conversation_id, mission_id, "tool rollback")
+            candidate_id = store.add_tool_candidate(run_id, "lookup_memory", _tool_alias_spec("lookup_memory"))
+            case_id = store.add_eval_case(run_id, "lookup_memory smoke", {"tool_candidate": "lookup_memory"})
+            store.update_eval_case_status(case_id, "passed", result={"ok": True})
+
+            review = _run_cli(["tools", "review", candidate_id, "--state-dir", tmp, "--json"])
+            install = _run_cli(["tools", "install", candidate_id, "--state-dir", tmp, "--json"])
+            rollback = _run_cli(
+                [
+                    "tools",
+                    "rollback",
+                    "lookup_memory",
+                    "--reason",
+                    "bad activation",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            listed_after = _run_cli(["tools", "--state-dir", tmp, "--json"])
+            candidates_after = _run_cli(["tools", "candidates", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(review.returncode, 0, review.stderr)
+            self.assertEqual(install.returncode, 0, install.stderr)
+            self.assertEqual(rollback.returncode, 0, rollback.stderr)
+            rollback_payload = json.loads(rollback.stdout)
+            self.assertEqual(rollback_payload["status"], "rolled_back")
+            self.assertEqual(rollback_payload["previous_status"], "active")
+            self.assertEqual(rollback_payload["candidate_status"], "rolled_back")
+            self.assertEqual(rollback_payload["reason"], "bad activation")
+            self.assertNotIn("lookup_memory", {tool["name"] for tool in json.loads(listed_after.stdout)["tools"]})
+            candidate_statuses = {
+                item["id"]: item["status"]
+                for item in json.loads(candidates_after.stdout)["candidates"]
+            }
+            self.assertEqual(candidate_statuses[candidate_id], "rolled_back")
+
     def test_tool_evolution_cli_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             review = _run_cli(["tools", "review", "tc_missing", "--state-dir", tmp])
             install = _run_cli(["tools", "install", "tc_missing", "--state-dir", tmp])
             uninstall = _run_cli(["tools", "uninstall", "missing_tool", "--state-dir", tmp])
+            rollback = _run_cli(["tools", "rollback", "missing_tool", "--state-dir", tmp])
 
             self.assertEqual(review.returncode, 1)
             self.assertIn("mnemo: tool candidate not found: tc_missing", review.stderr)
@@ -1233,6 +1277,9 @@ class CliTests(unittest.TestCase):
             self.assertEqual(uninstall.returncode, 1)
             self.assertIn("mnemo: generated tool not found: missing_tool", uninstall.stderr)
             self.assertNotIn("Traceback", uninstall.stderr)
+            self.assertEqual(rollback.returncode, 1)
+            self.assertIn("mnemo: generated tool not found: missing_tool", rollback.stderr)
+            self.assertNotIn("Traceback", rollback.stderr)
 
     def test_evals_list_and_record_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

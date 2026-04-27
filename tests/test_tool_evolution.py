@@ -9,7 +9,7 @@ from mnemo.storage import StateStore
 
 
 class ToolEvolutionTests(unittest.TestCase):
-    def test_review_and_install_missing_candidate_raise_not_found(self) -> None:
+    def test_missing_candidate_or_generated_tool_raise_not_found(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, _run_id = _store_with_run(tmp)
             service = ToolEvolutionService(store)
@@ -21,6 +21,8 @@ class ToolEvolutionTests(unittest.TestCase):
                     "missing_candidate",
                     available_tools={spec.name: spec for spec in ToolRegistry().specs()},
                 )
+            with self.assertRaisesRegex(NotFoundError, "generated tool not found: missing_tool"):
+                service.rollback_generated_tool("missing_tool")
 
     def test_review_blocks_invalid_candidate_spec(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -76,6 +78,34 @@ class ToolEvolutionTests(unittest.TestCase):
             self.assertEqual(result["target_tool"], "memory_search")
             self.assertEqual(store.get_tool_candidate(candidate_id)["status"], "installed")
             self.assertEqual(installed["implementation"]["argument_map"]["query"]["from"], "term")
+
+    def test_rollback_generated_tool_requires_review_before_reinstall(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            candidate_id = store.add_tool_candidate(run_id, "lookup_memory", _alias_spec("lookup_memory"))
+            _mark_ready(store, run_id, candidate_id, "lookup_memory")
+            service = ToolEvolutionService(store)
+            installed = service.install_candidate(
+                candidate_id,
+                available_tools={spec.name: spec for spec in ToolRegistry().specs()},
+            )
+
+            result = service.rollback_generated_tool("lookup_memory", reason="bad output should not stay active")
+            direct_reinstall = service.install_candidate(
+                candidate_id,
+                available_tools={spec.name: spec for spec in ToolRegistry().specs()},
+            )
+            reviewed = service.review_candidate(candidate_id)
+
+            self.assertTrue(installed["installed"])
+            self.assertEqual(result["status"], "rolled_back")
+            self.assertEqual(result["previous_status"], "active")
+            self.assertEqual(result["candidate_status"], "rolled_back")
+            self.assertEqual(result["reason"], "bad output should not stay active")
+            self.assertEqual(store.get_generated_tool("lookup_memory")["status"], "rolled_back")
+            self.assertFalse(direct_reinstall["installed"])
+            self.assertEqual(direct_reinstall["status"], "blocked:not_ready")
+            self.assertEqual(reviewed["status"], "ready")
 
     def test_install_blocks_non_ready_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

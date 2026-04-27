@@ -112,7 +112,7 @@
 - Cancelling a non-pending queue item returns unchanged; active work should be cancelled through its `run_id`.
 - Stale recovery moves old `running` rows back to `pending` and clears worker/claim/heartbeat fields.
 - Daemon code must execute queued work through the existing `RunRequest` runtime path.
-- `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled status.
+- `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled/rolled_back status.
 - Generated tool implementations are data, not executable code.
 - `eval_cases` stores draft/passed/failed cases with source run provenance and structured `case` / `result` JSON payloads.
 - `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
@@ -170,7 +170,7 @@
 | Queue cancellation | Pending queue item becomes `cancelled` and cannot be claimed; running items remain unchanged | `tests/test_storage.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
-| Generated tool storage | Round-trip active/disabled generated tool manifests | `tests/test_storage.py` |
+| Generated tool storage | Round-trip active/disabled/rolled_back generated tool manifests | `tests/test_storage.py`, `tests/test_tool_evolution.py` |
 | Eval case storage | Add, list by target/status, and update result payloads | `tests/test_storage.py`, `tests/test_cli.py` |
 | Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
 | Artifact listing | List/filter artifact metadata without body text | `tests/test_storage.py`, `tests/test_cli.py` |

@@ -74,7 +74,7 @@
 - `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
 - `mnemo schedule feedback`, `pause`, `resume`, and `disable` normalize missing scheduled item ids and invalid Watch feedback policy this way.
 - `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
-- `mnemo tools review`, `install`, and `uninstall` normalize missing candidate/generated-tool errors this way.
+- `mnemo tools review`, `install`, `uninstall`, and `rollback` normalize missing candidate/generated-tool errors this way.
 - `mnemo evals create` and `record` normalize missing runs/eval cases and invalid JSON payloads this way.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
 - OpenAI-compatible smoke probes `/models` first, then `/chat/completions`.
