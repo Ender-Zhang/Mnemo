@@ -1767,3 +1767,37 @@ Added low-usefulness archival and optional replacement links to the existing mem
 ### Next Steps
 
 - None - task complete
+
+
+## Session 109: Memory harmful eval routing
+
+**Date**: 2026-04-27
+**Task**: Memory harmful eval routing
+**Branch**: `main`
+
+### Summary
+
+Added harmful memory tombstone routing into compact memory-core eval cases across MemoryEngine, CLI, ToolHarness, tests, specs, and design/checklist alignment. Verified full unittest suite, diff whitespace check, package build, and installed-wheel smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `354ea5e` | (see git log) |
+| `d3b2c1e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

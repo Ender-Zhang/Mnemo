@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 108
+- **Total Sessions**: 109
 - **Last Active**: 2026-04-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1769 | Active |
+| `journal-2.md` | ~1803 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 109 | 2026-04-27 | Memory harmful eval routing | `354ea5e`, `d3b2c1e` | `main` |
 | 108 | 2026-04-27 | Memory selective forgetting archival | `8de898c`, `119240e` | `main` |
 | 107 | 2026-04-27 | Memory private delete redaction | `e8d44fd`, `41f282f` | `main` |
 | 106 | 2026-04-27 | Memory health eval gates | `4cdfb0c`, `0b578f0` | `main` |
