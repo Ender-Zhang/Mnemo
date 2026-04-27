@@ -30,6 +30,7 @@
 - CLI: `mnemo dream run [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream --now [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
+- CLI: `mnemo schedule add --kind watch|cron|dream [--schedule SCHEDULE] [--next-run-at TIME] [--json]`
 - CLI: `mnemo artifacts read <artifact_id> [--json]`
 - CLI: `mnemo inbox show <item_id> [--json]`
 - CLI: `mnemo inbox resolve <item_id> --accept|--reject|--ignore [--json]`
@@ -79,6 +80,7 @@
 - `mnemo memory decay` mutates active memory pages through `MemoryEngine.decay_stale_pages()` and returns compact reports without raw evidence or full page bodies.
 - `mnemo dream run --actions-json` and `mnemo dream --now --actions-json` accept only valid JSON arrays of action objects; action-level service errors are reported inside the Dream report as compact skipped actions.
 - `mnemo dream report <missing_id>` normalizes missing report ids this way.
+- `mnemo schedule add --kind dream` uses the same schedule validation path as watch/cron and emits compact scheduled item metadata.
 - `mnemo artifacts read` normalizes missing artifact ids this way.
 - `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
 - `mnemo schedule feedback`, `pause`, `resume`, and `disable` normalize missing scheduled item ids and invalid Watch feedback policy this way.
@@ -129,6 +131,7 @@
 | Memory health/decay/tombstone listing | CLI exits zero with compact JSON or row output | `tests/test_cli.py` |
 | Dream actions JSON | Valid action arrays produce compact report action counts; invalid JSON or non-array input returns `mnemo:` errors | `tests/test_cli.py` |
 | Missing Dream report id | CLI exits non-zero with `mnemo:` error and no traceback | CLI behavior |
+| Dream scheduled item | CLI creates and ticks a due Dream item with compact report metadata and no traceback | `tests/test_cli.py` |
 | Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing Inbox item in CLI show/resolve | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing scheduled item in CLI status/feedback commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |

@@ -52,6 +52,53 @@ class ScheduleServiceTests(unittest.TestCase):
             self.assertEqual(updated["status"], "active")
             self.assertEqual(updated["next_run_at"], 70.0)
 
+    def test_tick_runs_due_dream_maintenance_and_refreshes_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("dream schedule")
+            mission_id = store.create_mission(conversation_id, "dream schedule")
+            run_id = store.create_run(conversation_id, mission_id, "remember dream schedule")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers scheduled Dream maintenance",
+                confidence=0.9,
+            )
+            service = ScheduleService(tmp)
+            item = service.add_dream(schedule="once", next_run_at=0, limit=10)
+
+            result = service.tick(now=1, limit=10)
+
+            queue = store.list_queue_items(status=None)
+            updated = store.get_scheduled_item(item["id"])
+            latest_report = store.state_dir / "runs" / "dream-reports" / "latest.json"
+            snapshot = store.state_dir / "wiki" / "l1-memory-snapshot.json"
+            processed = result["processed"][0]
+            self.assertEqual(processed["scheduled_item_id"], item["id"])
+            self.assertEqual(processed["status"], "dream_completed")
+            self.assertEqual(processed["item_status"], "completed")
+            self.assertEqual(processed["dream_report"]["promoted"], 1)
+            self.assertEqual(processed["dream_report"]["snapshot_items"], 1)
+            self.assertEqual(queue, [])
+            self.assertEqual(updated["status"], "completed")
+            self.assertIsNone(updated["next_run_at"])
+            self.assertEqual(updated["metadata"]["last_dream_report"]["id"], processed["dream_report"]["id"])
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "promoted")
+            self.assertTrue(latest_report.exists())
+            self.assertTrue(snapshot.exists())
+
+    def test_tick_advances_recurring_dream_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = ScheduleService(tmp)
+            item = service.add_dream(schedule="every:60", next_run_at=10, limit=5)
+
+            result = service.tick(now=10, limit=10)
+
+            updated = StateStore(tmp).get_scheduled_item(item["id"])
+            self.assertEqual(result["processed"][0]["status"], "dream_completed")
+            self.assertEqual(updated["status"], "active")
+            self.assertEqual(updated["next_run_at"], 70.0)
+
     def test_watch_feedback_records_model_sparsify_decision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = ScheduleService(tmp)

@@ -524,25 +524,27 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_cancel_parser.add_argument("--reason", default="cancelled")
     daemon_cancel_parser.add_argument("--json", action="store_true")
 
-    schedule_parser = subparsers.add_parser("schedule", help="Manage lightweight watch/cron schedules")
+    schedule_parser = subparsers.add_parser("schedule", help="Manage lightweight watch/cron/dream schedules")
     schedule_subparsers = schedule_parser.add_subparsers(dest="schedule_command")
-    schedule_add_parser = schedule_subparsers.add_parser("add", help="Add a watch or cron scheduled item")
+    schedule_add_parser = schedule_subparsers.add_parser("add", help="Add a watch, cron, or dream scheduled item")
     _add_state_dir(schedule_add_parser)
-    schedule_add_parser.add_argument("--kind", choices=["watch", "cron"], required=True)
+    schedule_add_parser.add_argument("--kind", choices=["watch", "cron", "dream"], required=True)
     schedule_add_parser.add_argument("--title")
     schedule_add_parser.add_argument("--instruction", help="Watch instruction or cron message")
     schedule_add_parser.add_argument("--target", help="Watch target title")
     schedule_add_parser.add_argument("--message", help="Cron message")
-    schedule_add_parser.add_argument("--schedule", default="once")
+    schedule_add_parser.add_argument("--schedule")
     schedule_add_parser.add_argument("--next-run-at", help="Optional due time: now, unix timestamp, or ISO timestamp")
+    schedule_add_parser.add_argument("--dream-limit", type=int, default=20)
+    schedule_add_parser.add_argument("--dream-min-confidence", type=float, default=0.7)
     schedule_add_parser.add_argument("--json", action="store_true")
     schedule_list_parser = schedule_subparsers.add_parser("list", help="List scheduled items")
     _add_state_dir(schedule_list_parser)
-    schedule_list_parser.add_argument("--kind", choices=["watch", "cron", "all"], default="all")
+    schedule_list_parser.add_argument("--kind", choices=["watch", "cron", "dream", "all"], default="all")
     schedule_list_parser.add_argument("--status", choices=["active", "paused", "completed", "disabled", "all"], default="active")
     schedule_list_parser.add_argument("--limit", type=int, default=50)
     schedule_list_parser.add_argument("--json", action="store_true")
-    schedule_tick_parser = schedule_subparsers.add_parser("tick", help="Enqueue due scheduled items")
+    schedule_tick_parser = schedule_subparsers.add_parser("tick", help="Run due scheduled items")
     _add_state_dir(schedule_tick_parser)
     schedule_tick_parser.add_argument("--now", help="Override current time for deterministic checks")
     schedule_tick_parser.add_argument("--limit", type=int, default=50)
@@ -2121,23 +2123,37 @@ def _cmd_schedule(args: argparse.Namespace) -> int:
             if args.kind == "watch":
                 target = args.target or args.title
                 instruction = args.instruction or args.message or target
+                schedule = args.schedule or "once"
                 result = {
                     "item": service.add_watch(
                         target=target,
                         instruction=instruction,
-                        schedule=args.schedule,
+                        schedule=schedule,
+                        next_run_at=args.next_run_at,
+                        metadata={"source": "cli", "workspace_root": os.getcwd()},
+                    )
+                }
+            elif args.kind == "cron":
+                message = args.message or args.instruction
+                schedule = args.schedule or "once"
+                result = {
+                    "item": service.add_cron(
+                        title=args.title,
+                        message=message,
+                        schedule=schedule,
                         next_run_at=args.next_run_at,
                         metadata={"source": "cli", "workspace_root": os.getcwd()},
                     )
                 }
             else:
-                message = args.message or args.instruction
+                schedule = args.schedule or "daily"
                 result = {
-                    "item": service.add_cron(
+                    "item": service.add_dream(
                         title=args.title,
-                        message=message,
-                        schedule=args.schedule,
+                        schedule=schedule,
                         next_run_at=args.next_run_at,
+                        limit=args.dream_limit,
+                        min_confidence=args.dream_min_confidence,
                         metadata={"source": "cli", "workspace_root": os.getcwd()},
                     )
                 }

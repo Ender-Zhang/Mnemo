@@ -135,10 +135,11 @@
 - `list_inbox_items()` returns parsed `action_data`, supports status/category/priority filters, and orders by priority then creation time.
 - `resolve_inbox_item()` resolves only open items; repeated resolution returns `changed=false` with the existing item.
 - CLI/Web Inbox inspection must use storage APIs and not read raw SQLite rows directly.
-- `scheduled_items` stores durable watch/cron registrations with kind, title, instruction, schedule string, source, status, next due time, last queue id/error, metadata, and timestamps.
-- Scheduled item kinds are `watch` and `cron`; statuses are `active`, `paused`, `completed`, and `disabled`.
+- `scheduled_items` stores durable watch/cron/dream registrations with kind, title, instruction, schedule string, source, status, next due time, last queue id/error, metadata, and timestamps.
+- Scheduled item kinds are `watch`, `cron`, and `dream`; statuses are `active`, `paused`, `completed`, and `disabled`.
 - `due_scheduled_items()` returns only active rows with `next_run_at <= now`, ordered by due time then creation time.
 - Scheduled items do not execute work directly; due processing must enqueue existing `run_queue` requests with `metadata.source="scheduler"`.
+- Dream scheduled items are the exception: due processing runs bounded `MemoryEngine.dream_maintenance()` directly, persists a compact Dream report, stores the latest compact report card in `scheduled_items.metadata.last_dream_report`, and does not enqueue `run_queue`.
 - One-shot schedules become `completed` after a successful tick; recurring schedules stay `active` with an advanced `next_run_at`.
 - Watch feedback is stored in `scheduled_items.metadata.watch_feedback` as compact counts, streaks, recent bounded outcomes, and the last explicit model/user decision.
 - `update_scheduled_item_policy()` is the only storage API for applying Watch policy changes such as sparse schedule, paused, or disabled status.
@@ -195,8 +196,8 @@
 | Tool approval Inbox item | Denied high-risk tools create compact `tool_approval` action data | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Accepted tool approval resolve | Returns compact `tool_result` once and records approval execution events | `tests/test_cli.py`, `tests/test_web.py` |
 | Inbox repeated resolve | Resolved item returns unchanged instead of mutating resolution again | `tests/test_storage.py` |
-| Scheduled item storage | Add/list/read/status/tick/policy metadata round-trip and invalid input normalization | `tests/test_storage.py` |
-| Scheduled processing | Due watch/cron items enqueue normal daemon queue work, advance/complete schedule, and apply model-supplied Watch feedback policy | `tests/test_scheduler.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
+| Scheduled item storage | Add/list/read/status/tick/policy metadata round-trip and invalid input normalization, including `dream` kind | `tests/test_storage.py` |
+| Scheduled processing | Due watch/cron items enqueue normal daemon queue work, due dream items run compact Dream maintenance, advance/complete schedule, and apply model-supplied Watch feedback policy | `tests/test_scheduler.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory page metadata | Page metadata round-trips and legacy rows default to `{}` after migration | `tests/test_memory.py`, `tests/test_storage.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
@@ -217,6 +218,7 @@
 - Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
 - Good: store user decisions as Inbox items and return item ids in chat events.
 - Good: process proactive work by enqueueing `run_queue` items so scheduled runs reuse the same runtime harness as user turns.
+- Good: process Dream scheduled items through `MemoryEngine.dream_maintenance()` because Dream is memory maintenance, not a user task run.
 - Good: record Watch learning as compact metadata and apply explicit model/user decisions through `ScheduleService`.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Good: expose L4 session recall as bounded snippets with provenance ids, not full transcripts.
@@ -228,6 +230,7 @@
 - Bad: extract zip members directly with `extractall()`.
 - Bad: create a second daemon worker for the same state directory without acquiring the local lock.
 - Bad: execute watch/cron semantics directly in scheduler code instead of asking the model through the normal run queue.
+- Bad: use `run_queue` cron messages as an implicit memory-maintenance workflow when a bounded Dream scheduled item is intended.
 - Bad: treating cancellation as provider failure after the cancellation signal has been observed.
 
 ### 6. Tests Required
@@ -252,6 +255,7 @@
 - Inbox storage round-trip, filters, and resolution lifecycle are covered.
 - Scheduled item storage, due lookup, status changes, and tick metadata are covered.
 - Scheduler enqueue behavior, Watch feedback policy, and CLI schedule commands are covered.
+- Dream scheduled maintenance covers one-shot and recurring ticks, compact report metadata, L1 snapshot refresh, and no queue enqueue.
 - Memory tombstone schema and read/write/filter APIs are covered.
 - Memory private-delete redaction is covered at engine, CLI, and tool boundaries.
 - Memory page metadata schema and read/list/search APIs are covered.

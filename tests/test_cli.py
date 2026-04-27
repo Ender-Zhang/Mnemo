@@ -2192,6 +2192,63 @@ print(json.dumps({
             self.assertIn("mnemo: scheduled item not found", missing.stderr)
             self.assertNotIn("Traceback", missing.stderr)
 
+    def test_schedule_can_run_due_dream_maintenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("cli dream schedule")
+            mission_id = store.create_mission(conversation_id, "cli dream schedule")
+            run_id = store.create_run(conversation_id, mission_id, "remember cli dream schedule")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers CLI scheduled Dream maintenance",
+                confidence=0.9,
+            )
+
+            add = _run_cli(
+                [
+                    "schedule",
+                    "add",
+                    "--kind",
+                    "dream",
+                    "--schedule",
+                    "once",
+                    "--next-run-at",
+                    "0",
+                    "--dream-limit",
+                    "10",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            tick = _run_cli(["schedule", "tick", "--state-dir", tmp, "--now", "1", "--json"])
+            status = _run_cli(["daemon", "status", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(add.returncode, 0, add.stderr)
+            item = json.loads(add.stdout)["item"]
+            self.assertEqual(item["kind"], "dream")
+            self.assertEqual(item["metadata"]["dream"]["limit"], 10)
+            self.assertEqual(tick.returncode, 0, tick.stderr)
+            tick_payload = json.loads(tick.stdout)
+            processed = tick_payload["processed"][0]
+            self.assertEqual(processed["status"], "dream_completed")
+            self.assertEqual(processed["dream_report"]["promoted"], 1)
+            self.assertEqual(processed["dream_report"]["snapshot_items"], 1)
+            self.assertEqual(tick_payload["queue"]["total"], 0)
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertEqual(json.loads(status.stdout)["scheduled"]["counts"]["dream"]["completed"], 1)
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "promoted")
+
+    def test_schedule_add_dream_defaults_to_daily(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _run_cli(["schedule", "add", "--kind", "dream", "--state-dir", tmp, "--json"])
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            item = json.loads(result.stdout)["item"]
+            self.assertEqual(item["kind"], "dream")
+            self.assertEqual(item["schedule"], "daily")
+
     def test_schedule_feedback_command_updates_watch_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             add = _run_cli(

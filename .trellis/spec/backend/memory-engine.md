@@ -63,6 +63,7 @@
 - CLI: `mnemo dream --now [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream status [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
+- CLI: `mnemo schedule add --kind dream [--schedule SCHEDULE] [--next-run-at TIME] [--dream-limit N] [--dream-min-confidence FLOAT] [--state-dir DIR] [--json]`; omitted `--schedule` defaults to `daily`.
 
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
@@ -98,6 +99,8 @@
 - Dream `memory_tombstone` actions support low-usefulness archival, harmful tombstone eval routing, and replacement links through `tombstone_memory()`.
 - Dream action result payloads must contain ids, statuses, counts, and compact eval/replacement metadata only; they must not copy full memory bodies or raw transcripts.
 - Dream reports are compact JSON documents persisted under `runs/dream-reports/` with `delta`, `plan`, `execution`, and `health_after`.
+- Due Dream scheduled items run `MemoryEngine.dream_maintenance()` with compact budget metadata and persist the latest report card on the scheduled item.
+- Dream scheduled ticks refresh the L1 snapshot through the normal Dream execution result, and tick/report payloads expose only snapshot counts and report ids.
 - `mnemo dream status` must be read-only and return latest report metadata plus current backlog counts.
 - `mnemo dream report --latest` must load the latest persisted report without recomputing memory maintenance.
 - L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
@@ -208,6 +211,7 @@
 | Dream model actions | Explicit model-proposed memory actions are applied before local fallback and report compact applied/skipped results | `tests/test_memory.py`, `tests/test_cli.py` |
 | Dream native tool-call action | Native-style function/tool-call actions can run safe memory maintenance tools | `tests/test_memory.py` |
 | Dream report persistence | Latest report reloads with delta, plan, execution, and health payloads | `tests/test_memory.py`, `tests/test_cli.py` |
+| Dream scheduled maintenance | Due dream scheduled item runs Dream maintenance, persists report, refreshes L1 snapshot, and advances/completes schedule | `tests/test_scheduler.py`, `tests/test_cli.py` |
 | CLI Dream status/report | `dream status`, `dream report --latest`, and `dream --now` use compact persisted reports | `tests/test_cli.py` |
 | CLI query debug | `--debug-query` includes query plan metadata while default JSON omits it | `tests/test_cli.py` |
 | CLI health and tombstones | Health, tombstone, and tombstone listing commands normalize output/errors | `tests/test_cli.py` |
@@ -223,6 +227,7 @@
 - Good: expose decay as a bounded tool the model may call after seeing health cards, not as an always-on workflow.
 - Good: apply explicit Dream maintenance actions through existing MemoryEngine tools and record skipped action reasons compactly.
 - Good: persist Dream reports as compact managed-state JSON so status/report inspection does not require another schema surface.
+- Good: schedule Dream as a bounded maintenance trigger while keeping consolidation/actions inside MemoryEngine.
 - Base: deterministic dream fallback may execute the current delta while provider-led Dream runs are not yet wired.
 - Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
@@ -260,6 +265,7 @@
 - L1 snapshot compile/load behavior is covered, including invalid files.
 - Dream maintenance report persistence, status, latest-report CLI, and delta-limited candidate processing are covered.
 - Dream maintenance action execution covers low-usefulness tombstone, harmful eval routing, native-style tool-call decay, compact action results, and invalid action skips.
+- Dream scheduled maintenance covers CLI creation, due tick execution, latest report persistence, and L1 snapshot refresh.
 - Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
 - Harness suite for memory health covers wrong-memory tombstone suppression, low-confidence over-personalization no-promotion, conflict health cards, and compact report payloads.
 

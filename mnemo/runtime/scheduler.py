@@ -6,15 +6,18 @@ import time
 from pathlib import Path
 from typing import Any
 
+from ..memory import MemoryEngine
 from ..storage import StateStore
 
 
 WATCH_FEEDBACK_OUTCOMES = ("notified", "silent", "no_feedback", "useful", "not_useful", "dismissed")
 WATCH_POLICY_ACTIONS = ("keep", "sparsify", "pause", "disable")
+DEFAULT_DREAM_LIMIT = 20
+DEFAULT_DREAM_MIN_CONFIDENCE = 0.7
 
 
 class ScheduleService:
-    """Lightweight scheduled-item service backed by the existing daemon queue."""
+    """Lightweight scheduled-item service for queue work and bounded Dream maintenance."""
 
     def __init__(self, state_dir: str | Path) -> None:
         self.store = StateStore(state_dir)
@@ -66,6 +69,36 @@ class ScheduleService:
             source=source,
             next_run_at=due_at,
             metadata=metadata or {},
+        )
+        return self.store.get_scheduled_item(item_id) or {}
+
+    def add_dream(
+        self,
+        *,
+        schedule: str = "daily",
+        title: str | None = None,
+        source: str = "cli",
+        next_run_at: float | str | None = None,
+        limit: int = DEFAULT_DREAM_LIMIT,
+        min_confidence: float = DEFAULT_DREAM_MIN_CONFIDENCE,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        clean_schedule = _require_text(schedule, "dream schedule")
+        dream_metadata = dict(metadata or {})
+        dream_metadata["dream"] = {
+            "limit": _bounded_dream_limit(limit),
+            "min_confidence": _bounded_dream_confidence(min_confidence),
+        }
+        due_at = _initial_due_time(clean_schedule, next_run_at=next_run_at)
+        item_id = self.store.add_scheduled_item(
+            kind="dream",
+            title=title.strip() if isinstance(title, str) and title.strip() else "Dream maintenance",
+            instruction="Run Dream memory maintenance",
+            schedule=clean_schedule,
+            source=source,
+            next_run_at=due_at,
+            metadata=dream_metadata,
         )
         return self.store.get_scheduled_item(item_id) or {}
 
@@ -142,6 +175,9 @@ class ScheduleService:
         }
 
     def _enqueue_due_item(self, item: dict[str, Any], *, now: float) -> dict[str, Any]:
+        if item.get("kind") == "dream":
+            return self._run_due_dream(item, now=now)
+
         item_id = str(item["id"])
         try:
             queue_id = self.store.enqueue_run_request(
@@ -170,6 +206,43 @@ class ScheduleService:
                 "status": "queued",
                 "item_status": updated["status"],
                 "next_run_at": updated["next_run_at"],
+            }
+        except Exception as exc:
+            self.store.record_scheduled_item_tick(
+                item_id,
+                next_run_at=item.get("next_run_at"),
+                error=str(exc),
+                now=now,
+            )
+            return {"scheduled_item_id": item_id, "status": "failed", "error": str(exc)}
+
+    def _run_due_dream(self, item: dict[str, Any], *, now: float) -> dict[str, Any]:
+        item_id = str(item["id"])
+        try:
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            dream_config = metadata.get("dream") if isinstance(metadata.get("dream"), dict) else {}
+            limit = _bounded_dream_limit(dream_config.get("limit", DEFAULT_DREAM_LIMIT))
+            min_confidence = _bounded_dream_confidence(
+                dream_config.get("min_confidence", DEFAULT_DREAM_MIN_CONFIDENCE)
+            )
+            report = MemoryEngine(self.store).dream_maintenance(limit=limit, min_confidence=min_confidence)
+            next_due = next_due_time(str(item["schedule"]), after=now)
+            status = "active" if next_due is not None else "completed"
+            updated = self.store.record_scheduled_item_tick(
+                item_id,
+                next_run_at=next_due,
+                status=status,
+                now=now,
+            )
+            updated_metadata = dict(updated.get("metadata") or {})
+            updated_metadata["last_dream_report"] = _compact_dream_tick_report(report)
+            updated = self.store.update_scheduled_item_policy(item_id, metadata=updated_metadata)
+            return {
+                "scheduled_item_id": item_id,
+                "status": "dream_completed",
+                "item_status": updated["status"],
+                "next_run_at": updated["next_run_at"],
+                "dream_report": updated_metadata["last_dream_report"],
             }
         except Exception as exc:
             self.store.record_scheduled_item_tick(
@@ -375,6 +448,22 @@ def _run_message(item: dict[str, Any]) -> str:
     return str(item.get("instruction") or "")
 
 
+def _compact_dream_tick_report(report: dict[str, Any]) -> dict[str, Any]:
+    execution = report.get("execution") if isinstance(report.get("execution"), dict) else {}
+    result = execution.get("result") if isinstance(execution.get("result"), dict) else {}
+    snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
+    return {
+        "id": report.get("id"),
+        "completed_at": report.get("completed_at"),
+        "mode": execution.get("mode"),
+        "promoted": len(result.get("promoted", [])),
+        "rejected": len(result.get("rejected", [])),
+        "skipped": len(result.get("skipped", [])),
+        "conflicts": len(result.get("conflicts", [])),
+        "snapshot_items": snapshot.get("page_count", 0),
+    }
+
+
 def _scheduled_card(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": item.get("id"),
@@ -392,6 +481,22 @@ def _require_text(value: Any, name: str) -> str:
     if not text:
         raise ValueError(f"{name} is required")
     return text
+
+
+def _bounded_dream_limit(value: Any) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = DEFAULT_DREAM_LIMIT
+    return min(200, max(1, parsed))
+
+
+def _bounded_dream_confidence(value: Any) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = DEFAULT_DREAM_MIN_CONFIDENCE
+    return min(1.0, max(0.0, parsed))
 
 
 def _preview(value: str, limit: int = 80) -> str:

@@ -24,7 +24,7 @@ QUEUE_STATUSES = ("pending", "running", "completed", "failed", "cancelled")
 SESSION_MESSAGE_ROLES = ("user", "assistant", "tool", "system")
 INBOX_STATUSES = ("open", "resolved")
 INBOX_RESOLUTIONS = ("accepted", "rejected", "ignored")
-SCHEDULED_ITEM_KINDS = ("watch", "cron")
+SCHEDULED_ITEM_KINDS = ("watch", "cron", "dream")
 SCHEDULED_ITEM_STATUSES = ("active", "paused", "completed", "disabled")
 _DEFAULT_TOMBSTONE_RULE = (
     "Do not recreate this memory from historical context unless the user explicitly restates it."

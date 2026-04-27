@@ -39,7 +39,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider-native tool calls bridged into ToolHarness.
 - [x] True streaming provider delta support.
 - [x] Timeout/retry/cancellation policy: provider timeout, non-streaming retry, and cooperative persisted cancellation exist.
-- [~] Daemon, queue, single-instance lock, stale queue recovery, scheduled watch/cron enqueue, and model-marked W0 pending recovery foundations exist; full Supervisor priority classes, Inbox recovery, Watch recovery, and child runtime cleanup are not complete.
+- [~] Daemon, queue, single-instance lock, stale queue recovery, scheduled watch/cron enqueue, scheduled Dream maintenance, and model-marked W0 pending recovery foundations exist; full Supervisor priority classes, Inbox recovery, Watch recovery, and child runtime cleanup are not complete.
 - [~] Replay harness supports deterministic trace/store checks, dry-run reconstruction, safe read-only live-tools drift checks, and compact run-to-run category diffs; full side-effecting live tool replay remains intentionally skipped.
 
 ## Tools
@@ -63,8 +63,8 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Associative recall / LLM Wiki style memory graph.
 - [x] Conflict detection, confidence updates, durable tombstones, private-delete redaction, low-usefulness archival, replacement links, harmful eval routing, compact memory health review cards, and metadata-driven decay/stale marking exist.
 - [x] W0 working memory to long-term candidate pipeline.
-- [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, applies explicit model-proposed memory maintenance actions, persists compact applied/skipped results, and limits local fallback to delta candidates; provider-led idle scheduling remains incomplete.
-- [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
+- [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, applies explicit model-proposed memory maintenance actions, persists compact applied/skipped results, supports lightweight scheduled Dream ticks, and limits local fallback to delta candidates; richer provider-led idle heuristics remain incomplete.
+- [~] L1 cache-friendly memory snapshot compile/load exists and scheduled Dream ticks refresh it through normal Dream execution; fine-grained cache invalidation remains incomplete.
 - [x] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, injection-scan, wrong-memory tombstone suppression, low-confidence over-personalization no-promotion, and compact Memory Health gates.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
 - [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, tombstone-aware session suppression, and CLI debug output exist; vector semantic retrieval and true MMR remain.
@@ -153,7 +153,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient`, `mnemo.core_api.v1` schema, proposal-only command `external_run`, stdlib HTTP JSON API, and compact OpenAPI discovery exist; non-Python generated clients are not complete.
 - [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC over standard Content-Length stdio, JSONL debug mode, CLI list/config/call/serve, and compact client config snippets exist for context/capsule/external-run/update/recall/search/watch/watch-feedback/skills/tools/cron/run/replay/eval/status; published external packaging remains incomplete.
 - [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
-- [~] Watch/Cron persistence and scheduled event processing: durable scheduled items, simple schedule grammar, CLI/MCP registration, runtime status, queue enqueue tick, and model-supplied Watch feedback policy exist; full cron expressions, quiet hours, delivery channels, Sense triggers, and richer Watch self-learning remain.
+- [~] Watch/Cron/Dream persistence and scheduled event processing: durable scheduled items, simple schedule grammar, CLI/MCP registration for watch/cron, CLI Dream registration, runtime status, queue enqueue tick, direct Dream maintenance tick, and model-supplied Watch feedback policy exist; full cron expressions, quiet hours, delivery channels, Sense triggers, and richer Watch self-learning remain.
 - [x] Sessions/messages/L4 search tables and FTS5 indexes for persisted run messages.
 
 ## Remaining Trellis Focus
@@ -169,6 +169,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-27-memory-harmful-eval-routing`: Harmful memory tombstones now create compact draft memory-core eval cases through MemoryEngine, CLI, and ToolHarness when run provenance is available.
 - [x] `04-27-memory-selective-forgetting-policy`: `memory_tombstone` now supports low-usefulness archival plus optional replacement links/metadata across MemoryEngine, CLI, ToolHarness, and tests.
 - [x] `04-27-memory-dream-maintenance-actions`: DreamCycle now applies explicit model-proposed memory tombstone/decay actions, supports native-style tool-call shapes, persists compact applied/skipped action results, and keeps local fallback delta-bounded.
+- [x] `04-27-dream-scheduled-maintenance`: Scheduler now supports `dream` scheduled items that run bounded Dream maintenance, persist compact report cards, refresh L1 snapshots through normal Dream execution, and expose CLI creation/tick coverage.
 - [x] `04-27-replay-harness-diff-modes`: replay reports now expose deterministic, dry-run, and safe live-tools modes with compact prompt/tool/memory/skill/output diffs.
 - [x] `04-27-daemon-w0-pending-recovery`: daemon status now reports model-marked W0 backlog, and daemon recover/run flush those notes through MemoryEngine without mutating ephemeral notes.
 - [x] `04-25-scheduled-watch-cron-foundation`: Watch/Cron now persist as lightweight scheduled items, expose CLI/MCP registration, enqueue due runs through the existing daemon queue, and report compact scheduled status.

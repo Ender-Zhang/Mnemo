@@ -170,6 +170,15 @@ class StateStoreTests(unittest.TestCase):
                 source="test",
                 next_run_at=0.0,
             )
+            dream_id = store.add_scheduled_item(
+                kind="dream",
+                title="Dream maintenance",
+                instruction="Run Dream memory maintenance",
+                schedule="weekly",
+                source="test",
+                next_run_at=20.0,
+                metadata={"dream": {"limit": 10}},
+            )
 
             self.assertEqual(store.get_scheduled_item(watch_id)["metadata"]["linked_page"], "goals/rust")
             self.assertEqual([item["id"] for item in store.due_scheduled_items(now=5.0)], [cron_id])
@@ -198,6 +207,8 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual(policy["status"], "active")
             self.assertEqual(policy["next_run_at"], 1000.0)
             self.assertEqual(policy["metadata"]["watch_feedback"]["counts"]["no_feedback"], 3)
+            self.assertEqual(store.get_scheduled_item(dream_id)["metadata"]["dream"]["limit"], 10)
+            self.assertEqual(store.list_scheduled_items(kind="dream", status="active")[0]["id"], dream_id)
             self.assertEqual(store.list_scheduled_items(kind="watch", status="active")[0]["id"], watch_id)
             self.assertEqual(completed["last_queue_id"], "queue_test")
             self.assertEqual(completed["last_run_at"], 12.0)

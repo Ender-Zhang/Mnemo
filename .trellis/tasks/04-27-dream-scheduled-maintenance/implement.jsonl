@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "scheduled_items kind and tick contract"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Dream maintenance and L1 snapshot contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI schedule/dream errors"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Scheduler to engine to CLI cross-layer flow"}

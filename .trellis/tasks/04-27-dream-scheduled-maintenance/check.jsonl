@@ -1,0 +1,6 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "verify scheduled item contract"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "verify Dream report and snapshot contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "unit/build/smoke gates"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "cross-layer verification"}
