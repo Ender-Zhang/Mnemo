@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "replay report is public SDK/CLI/MCP harness surface"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI replay mode errors must normalize"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "live-tools replay must respect tool risk boundaries"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "CLI/public import changes need quality gates"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "replay report crosses storage service CLI SDK"}
