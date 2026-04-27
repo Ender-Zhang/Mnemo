@@ -1903,3 +1903,37 @@ Exposed Dream scheduled maintenance through the MCP tool surface with mnemo_drea
 ### Next Steps
 
 - None - task complete
+
+
+## Session 113: Core API Dream schedule surface
+
+**Date**: 2026-04-27
+**Task**: Core API Dream schedule surface
+**Branch**: `main`
+
+### Summary
+
+Added SDK and HTTP Core API schedule_dream as compact facades over ScheduleService.add_dream, updated mnemo.core_api.v1 schema/OpenAPI/CLI schema output, validated HTTP next_run_at error normalization, extended package smoke, and synced design/spec/checklist docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4f63f1a` | (see git log) |
+| `cd43be5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

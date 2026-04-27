@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 112
+- **Total Sessions**: 113
 - **Last Active**: 2026-04-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1905 | Active |
+| `journal-2.md` | ~1939 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 113 | 2026-04-27 | Core API Dream schedule surface | `4f63f1a`, `cd43be5` | `main` |
 | 112 | 2026-04-27 | MCP Dream schedule surface | `2987ad4`, `4078587` | `main` |
 | 111 | 2026-04-27 | Dream scheduled maintenance | `d2ab982`, `05a4a12` | `main` |
 | 110 | 2026-04-27 | Memory Dream maintenance actions | `6f2e5d1`, `de2fea6` | `main` |
