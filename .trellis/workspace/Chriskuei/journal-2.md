@@ -1597,3 +1597,37 @@ Added compact replay modes for deterministic trace/store checks, dry-run prompt/
 ### Next Steps
 
 - None - task complete
+
+
+## Session 104: Memory decay stale foundation
+
+**Date**: 2026-04-27
+**Task**: Memory decay stale foundation
+**Branch**: `main`
+
+### Summary
+
+Implemented metadata-driven memory page decay/stale marking, exposed memory_decay_stale_pages and mnemo memory decay, updated design/spec/checklist, and validated with full tests plus package install smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a355579` | (see git log) |
+| `83898ce` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
