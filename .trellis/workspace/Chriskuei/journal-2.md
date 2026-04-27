@@ -1937,3 +1937,37 @@ Added SDK and HTTP Core API schedule_dream as compact facades over ScheduleServi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 114: Core API runtime status surface
+
+**Date**: 2026-04-27
+**Task**: Core API runtime status surface
+**Branch**: `main`
+
+### Summary
+
+Added read-only compact runtime_status to SDK and HTTP Core API, routed MCP runtime status through MnemoClient, updated schema/OpenAPI/CLI schema/package smoke coverage, and synced design/spec/checklist with full unittest and build/install smoke validation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b138952` | (see git log) |
+| `6bca9da` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
