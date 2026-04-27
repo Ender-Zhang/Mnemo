@@ -173,6 +173,26 @@ print(json.dumps({
                     "/api/core/schedule-dream",
                     {"schedule": "once", "next_run_at": 0, "limit": 11, "min_confidence": 0.83},
                 )
+                watch_status, _, watch_body = server.request(
+                    "POST",
+                    "/api/core/schedule-watch",
+                    {
+                        "target": "Calendar",
+                        "instruction": "Check calendar risk",
+                        "schedule": "hourly",
+                        "next_run_at": 0,
+                    },
+                )
+                cron_status, _, cron_body = server.request(
+                    "POST",
+                    "/api/core/schedule-cron",
+                    {
+                        "message": "remember: HTTP scheduled task",
+                        "title": "HTTP scheduled task",
+                        "schedule": "once",
+                        "next_run_at": 0,
+                    },
+                )
                 runtime_status, _, runtime_body = server.request(
                     "POST",
                     "/api/core/runtime-status",
@@ -186,6 +206,8 @@ print(json.dumps({
             external = json.loads(external_body)
             run = json.loads(run_body)
             dream = json.loads(dream_body)
+            watch = json.loads(watch_body)
+            cron = json.loads(cron_body)
             runtime = json.loads(runtime_body)
 
             self.assertEqual(schema_status, 200)
@@ -194,6 +216,8 @@ print(json.dumps({
             self.assertEqual(openapi["openapi"], "3.1.0")
             self.assertIn("/api/core/external-run", openapi["paths"])
             self.assertIn("/api/core/schedule-dream", openapi["paths"])
+            self.assertIn("/api/core/schedule-watch", openapi["paths"])
+            self.assertIn("/api/core/schedule-cron", openapi["paths"])
             self.assertIn("/api/core/runtime-status", openapi["paths"])
             self.assertEqual(context_status, 200)
             self.assertEqual(context["method"], "context")
@@ -213,10 +237,22 @@ print(json.dumps({
             self.assertEqual(dream["result"]["item"]["source"], "http")
             self.assertEqual(dream["result"]["item"]["metadata"]["dream"]["limit"], 11)
             self.assertNotIn("dream_report", dream_body)
+            self.assertEqual(watch_status, 200)
+            self.assertEqual(watch["method"], "schedule_watch")
+            self.assertEqual(watch["result"]["item"]["kind"], "watch")
+            self.assertEqual(watch["result"]["item"]["title"], "Calendar")
+            self.assertEqual(watch["result"]["item"]["source"], "http")
+            self.assertEqual(cron_status, 200)
+            self.assertEqual(cron["method"], "schedule_cron")
+            self.assertEqual(cron["result"]["item"]["kind"], "cron")
+            self.assertEqual(cron["result"]["item"]["title"], "HTTP scheduled task")
+            self.assertEqual(cron["result"]["item"]["source"], "http")
             self.assertEqual(runtime_status, 200)
             self.assertEqual(runtime["method"], "runtime_status")
             self.assertEqual(runtime["result"]["kind"], "runtime_status")
             self.assertEqual(runtime["result"]["scheduled"]["counts"]["dream"]["active"], 1)
+            self.assertEqual(runtime["result"]["scheduled"]["counts"]["watch"]["active"], 1)
+            self.assertEqual(runtime["result"]["scheduled"]["counts"]["cron"]["active"], 1)
             self.assertNotIn("output_text", runtime_body)
 
     def test_core_http_api_normalizes_request_errors(self) -> None:
@@ -233,6 +269,16 @@ print(json.dumps({
                     "POST",
                     "/api/core/runtime-status",
                     {"limit": "many"},
+                )
+                bad_watch_status, _, bad_watch_body = server.request(
+                    "POST",
+                    "/api/core/schedule-watch",
+                    {"instruction": "Missing target"},
+                )
+                bad_cron_status, _, bad_cron_body = server.request(
+                    "POST",
+                    "/api/core/schedule-cron",
+                    {"message": "bad schedule", "next_run_at": {"bad": True}},
                 )
 
                 host, port = server.server.server_address
@@ -255,6 +301,10 @@ print(json.dumps({
             self.assertIn("next_run_at must be a string, number, or null", json.loads(bad_schedule_body)["error"])
             self.assertEqual(bad_runtime_status, 400)
             self.assertIn("limit must be an integer", json.loads(bad_runtime_body)["error"])
+            self.assertEqual(bad_watch_status, 400)
+            self.assertIn("target is required", json.loads(bad_watch_body)["error"])
+            self.assertEqual(bad_cron_status, 400)
+            self.assertIn("next_run_at must be a string, number, or null", json.loads(bad_cron_body)["error"])
             self.assertEqual(invalid_response.status, 400)
             self.assertEqual(json.loads(invalid_body)["error"], "request body must be JSON")
 

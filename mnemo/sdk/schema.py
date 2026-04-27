@@ -194,6 +194,56 @@ _SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "schedule_watch": {
+            "description": "Register a durable Watch check through the existing scheduler.",
+            "side_effects": "writes_scheduled_item",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string"},
+                    "instruction": {"type": ["string", "null"]},
+                    "schedule": {"type": "string", "default": "daily"},
+                    "next_run_at": {"type": ["string", "number", "null"]},
+                    "source": {"type": "string", "default": "sdk"},
+                },
+                "required": ["target"],
+                "additionalProperties": False,
+            },
+            "output_schema": {
+                "type": "object",
+                "required": ["kind", "item"],
+                "properties": {
+                    "kind": {"const": "scheduled_item"},
+                    "version": {"type": "string"},
+                    "item": {"type": "object"},
+                },
+            },
+        },
+        "schedule_cron": {
+            "description": "Register a durable queued Mnemo task through the existing scheduler.",
+            "side_effects": "writes_scheduled_item",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string"},
+                    "schedule": {"type": "string", "default": "once"},
+                    "title": {"type": ["string", "null"]},
+                    "next_run_at": {"type": ["string", "number", "null"]},
+                    "source": {"type": "string", "default": "sdk"},
+                },
+                "required": ["message"],
+                "additionalProperties": False,
+            },
+            "output_schema": {
+                "type": "object",
+                "required": ["kind", "item"],
+                "properties": {
+                    "kind": {"const": "scheduled_item"},
+                    "version": {"type": "string"},
+                    "item": {"type": "object"},
+                },
+            },
+        },
         "runtime_status": {
             "description": "Return compact queue, run, inbox, generated-tool, and scheduled-item status.",
             "side_effects": "read_only",

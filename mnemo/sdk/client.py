@@ -183,6 +183,52 @@ class MnemoClient:
             "item": item,
         }
 
+    def schedule_watch(
+        self,
+        target: str,
+        *,
+        instruction: str | None = None,
+        schedule: str = "daily",
+        next_run_at: float | str | None = None,
+        source: str = "sdk",
+    ) -> dict[str, Any]:
+        item = ScheduleService(self.state_dir).add_watch(
+            target=target,
+            instruction=instruction if instruction is not None else target,
+            schedule=schedule,
+            source=source,
+            next_run_at=next_run_at,
+            metadata={"source": source},
+        )
+        return {
+            "kind": "scheduled_item",
+            "version": "mnemo.schedule_watch.v1",
+            "item": item,
+        }
+
+    def schedule_cron(
+        self,
+        message: str,
+        *,
+        schedule: str = "once",
+        title: str | None = None,
+        next_run_at: float | str | None = None,
+        source: str = "sdk",
+    ) -> dict[str, Any]:
+        item = ScheduleService(self.state_dir).add_cron(
+            title=title,
+            message=message,
+            schedule=schedule,
+            source=source,
+            next_run_at=next_run_at,
+            metadata={"source": source},
+        )
+        return {
+            "kind": "scheduled_item",
+            "version": "mnemo.schedule_cron.v1",
+            "item": item,
+        }
+
     def runtime_status(self, *, limit: int = 10) -> dict[str, Any]:
         bounded_limit = max(1, min(50, int(limit)))
         store = self._store()

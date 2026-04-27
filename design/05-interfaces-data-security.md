@@ -16,6 +16,8 @@ interface MnemoCore {
   update(req: UpdateRequest): UpdateResult;
   recall(req: RecallRequest): AssociativeCluster;
   scheduleDream(req: DreamScheduleRequest): ScheduledItem;
+  scheduleWatch(req: WatchScheduleRequest): ScheduledItem;
+  scheduleCron(req: CronScheduleRequest): ScheduledItem;
   runtimeStatus(req: RuntimeStatusRequest): RuntimeStatus;
   run(req: AgentRequest): AgentRunResult;
   replay(req: ReplayRequest): ReplayResult;
@@ -132,6 +134,22 @@ class MnemoClient:
     ) -> ScheduledItem:
         """注册 bounded Dream maintenance 触发器；真正执行仍由 scheduler tick 负责"""
 
+    def schedule_watch(
+        self,
+        target: str,
+        instruction: str | None = None,
+        schedule: str = "daily",
+    ) -> ScheduledItem:
+        """注册 Watch 检查；到期后仍由 scheduler tick 进入普通 daemon queue"""
+
+    def schedule_cron(
+        self,
+        message: str,
+        schedule: str = "once",
+        title: str | None = None,
+    ) -> ScheduledItem:
+        """注册 Cron 任务；到期后仍由 scheduler tick 进入普通 daemon queue"""
+
     def runtime_status(
         self,
         limit: int = 10,
@@ -169,6 +187,8 @@ POST /api/core/recall
 POST /api/core/capsule
 POST /api/core/external-run
 POST /api/core/schedule-dream
+POST /api/core/schedule-watch
+POST /api/core/schedule-cron
 POST /api/core/runtime-status
 POST /api/core/run
 POST /api/core/replay
@@ -184,7 +204,7 @@ POST /api/core/evaluate
 }
 ```
 
-`external-run` 仍然只接受显式 `command: string[]`，不接受 shell 字符串；输出继续遵守 proposal-only 边界。`schedule-dream` 只注册 scheduled item 和预算，不直接运行 Dream，也不返回 Dream report 正文。`runtime-status` 是只读紧凑状态面，不暴露完整 run body、trace、prompt 或 artifact body。
+`external-run` 仍然只接受显式 `command: string[]`，不接受 shell 字符串；输出继续遵守 proposal-only 边界。`schedule-dream` 只注册 scheduled item 和预算，不直接运行 Dream，也不返回 Dream report 正文。`schedule-watch` / `schedule-cron` 只注册 scheduled item，不直接 enqueue 或执行任务；真正处理仍由 scheduler tick 和 daemon queue 负责。`runtime-status` 是只读紧凑状态面，不暴露完整 run body、trace、prompt 或 artifact body。
 
 ### 8.2 MCP Server（Agent 生态互联）
 

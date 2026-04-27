@@ -1928,6 +1928,8 @@ class CliTests(unittest.TestCase):
                 "run",
                 "external_run",
                 "schedule_dream",
+                "schedule_watch",
+                "schedule_cron",
                 "runtime_status",
                 "replay",
                 "evaluate",
@@ -1936,12 +1938,16 @@ class CliTests(unittest.TestCase):
         self.assertIn("release_gate", payload["methods"]["evaluate"]["input_schema"]["properties"])
         self.assertIn("command", payload["methods"]["external_run"]["input_schema"]["properties"])
         self.assertIn("min_confidence", payload["methods"]["schedule_dream"]["input_schema"]["properties"])
+        self.assertIn("target", payload["methods"]["schedule_watch"]["input_schema"]["properties"])
+        self.assertIn("message", payload["methods"]["schedule_cron"]["input_schema"]["properties"])
         self.assertIn("limit", payload["methods"]["runtime_status"]["input_schema"]["properties"])
         self.assertNotIn("input_schema", str(payload["methods"]["run"]["output_schema"]))
         self.assertEqual(text_result.returncode, 0, text_result.stderr)
         self.assertIn("MnemoCore mnemo.core_api.v1", text_result.stdout)
         self.assertIn("- context:", text_result.stdout)
         self.assertIn("- schedule_dream:", text_result.stdout)
+        self.assertIn("- schedule_watch:", text_result.stdout)
+        self.assertIn("- schedule_cron:", text_result.stdout)
         self.assertIn("- runtime_status:", text_result.stdout)
         self.assertIn("- capsule:", text_result.stdout)
         self.assertIn("- external_run:", text_result.stdout)

@@ -494,6 +494,23 @@ def _dispatch_core_api(config: WebServerConfig, method: str, body: dict[str, Any
             min_confidence=_float_field(body, "min_confidence", default=0.7),
             source=_string_field(body, "source", default="http"),
         )
+    if method == "schedule_watch":
+        target = _required_string(body, "target")
+        return client.schedule_watch(
+            target,
+            instruction=_string_field(body, "instruction", default=target),
+            schedule=_string_field(body, "schedule", default="daily"),
+            next_run_at=_optional_schedule_time(body, "next_run_at"),
+            source=_string_field(body, "source", default="http"),
+        )
+    if method == "schedule_cron":
+        return client.schedule_cron(
+            _required_string(body, "message"),
+            schedule=_string_field(body, "schedule", default="once"),
+            title=_optional_string(body.get("title")),
+            next_run_at=_optional_schedule_time(body, "next_run_at"),
+            source=_string_field(body, "source", default="http"),
+        )
     if method == "runtime_status":
         return client.runtime_status(limit=_int_field(body, "limit", default=10))
     if method == "replay":

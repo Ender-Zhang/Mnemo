@@ -156,6 +156,43 @@ print(json.dumps({
             self.assertEqual(item["metadata"]["dream"]["min_confidence"], 0.82)
             self.assertNotIn("dream_report", str(result))
 
+    def test_schedule_watch_and_cron_use_existing_scheduler_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MnemoClient(state_dir=tmp)
+
+            watch = client.schedule_watch(
+                "Calendar",
+                instruction="Check calendar risk",
+                schedule="hourly",
+                next_run_at=0,
+            )
+            cron = client.schedule_cron(
+                "remember: scheduled API task",
+                title="Scheduled API task",
+                schedule="once",
+                next_run_at=0,
+            )
+            status = client.runtime_status(limit=5)
+
+            self.assertEqual(watch["kind"], "scheduled_item")
+            self.assertEqual(watch["version"], "mnemo.schedule_watch.v1")
+            self.assertEqual(watch["item"]["kind"], "watch")
+            self.assertEqual(watch["item"]["title"], "Calendar")
+            self.assertEqual(watch["item"]["instruction"], "Check calendar risk")
+            self.assertEqual(watch["item"]["schedule"], "hourly")
+            self.assertEqual(watch["item"]["source"], "sdk")
+            self.assertEqual(watch["item"]["metadata"]["source"], "sdk")
+            self.assertEqual(cron["kind"], "scheduled_item")
+            self.assertEqual(cron["version"], "mnemo.schedule_cron.v1")
+            self.assertEqual(cron["item"]["kind"], "cron")
+            self.assertEqual(cron["item"]["title"], "Scheduled API task")
+            self.assertEqual(cron["item"]["instruction"], "remember: scheduled API task")
+            self.assertEqual(cron["item"]["source"], "sdk")
+            self.assertEqual(status["scheduled"]["counts"]["watch"]["active"], 1)
+            self.assertEqual(status["scheduled"]["counts"]["cron"]["active"], 1)
+            self.assertIsNone(watch["item"]["last_queue_id"])
+            self.assertIsNone(cron["item"]["last_queue_id"])
+
     def test_runtime_status_returns_compact_operational_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = MnemoClient(state_dir=tmp)
@@ -188,6 +225,8 @@ print(json.dumps({
                 "run",
                 "external_run",
                 "schedule_dream",
+                "schedule_watch",
+                "schedule_cron",
                 "runtime_status",
                 "replay",
                 "evaluate",
@@ -199,6 +238,10 @@ print(json.dumps({
         self.assertIn("command", schema["methods"]["external_run"]["input_schema"]["properties"])
         self.assertEqual(schema["methods"]["schedule_dream"]["side_effects"], "writes_scheduled_item")
         self.assertIn("min_confidence", schema["methods"]["schedule_dream"]["input_schema"]["properties"])
+        self.assertEqual(schema["methods"]["schedule_watch"]["side_effects"], "writes_scheduled_item")
+        self.assertIn("target", schema["methods"]["schedule_watch"]["input_schema"]["properties"])
+        self.assertEqual(schema["methods"]["schedule_cron"]["side_effects"], "writes_scheduled_item")
+        self.assertIn("message", schema["methods"]["schedule_cron"]["input_schema"]["properties"])
         self.assertEqual(schema["methods"]["runtime_status"]["side_effects"], "read_only")
         self.assertIn("limit", schema["methods"]["runtime_status"]["input_schema"]["properties"])
         self.assertIn("variants", schema["methods"]["evaluate"]["input_schema"]["properties"])
