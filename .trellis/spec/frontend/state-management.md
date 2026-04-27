@@ -20,6 +20,7 @@
 - Runtime state: `state.artifacts: Map<string, object>`
 - Runtime state: `state.artifactRelated: Map<string, object[]>`
 - Runtime state: `state.settings: object | null`
+- Runtime state: `state.pendingAssistantNode: HTMLElement | null`
 - Runtime state: `state.lastUserIntent: string`
 - UI event: `recall.card` with `{ recall: { query: string, scope: string, count: number, items: RecallItem[] } }`
 - UI event: `learning.chip` with `{ item: { item_id: string, kind: string, status: string, summary: string, requires_confirmation?: boolean, risk?: string, confirmation_reason?: string } }`
@@ -33,6 +34,7 @@
 - API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject"|"undo" }`
 - API: `GET /api/settings`
 - API: `POST /api/settings` with JSON `{ "quiet_hours": { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string } }`
+- API: `GET /api/memory/ontology` returns compact ten-dimensional memory counts and clipped page/candidate summaries.
 
 ### 3. Contracts
 - The browser stores durable conversation, mission, last run, and last processed chat event ids in `localStorage`.
@@ -60,6 +62,10 @@
 - Settings drawer state is fetched on open through `/api/settings`; it is not persisted in browser storage.
 - Settings drawer can update quiet hours through `/api/settings` and otherwise prefill the single composer for user-facing actions.
 - `/api/settings` payloads must summarize learned preferences and data counts without raw artifact bodies, raw memory dumps, or provider secrets.
+- `/api/memory/ontology` is a read-only settings-drawer view; it must summarize ten-dimensional memory coverage without provider secrets or unbounded raw memory bodies.
+- Enter submits the composer while Shift+Enter inserts a newline.
+- After a user submits a turn, the client renders one volatile pending assistant message until the first assistant delta, final message, run error, or stream error arrives.
+- Pending assistant state must never be persisted in browser storage.
 - While a run is streaming, the composer exposes one stop control that calls `/api/runs/cancel`.
 - `activeRunId` is a volatile current-stream id and must not be stored in `localStorage`.
 - Stop/cancel requests use `activeRunId`; `lastRunId` remains the durable replay/resume id.
@@ -85,6 +91,10 @@
 | Settings summary | Returns compact connected app, permission, quiet-hours, preference, and data-control data without secrets | `tests/test_web.py` |
 | Settings update | Saves valid quiet-hours settings and rejects invalid time payloads with JSON errors | `tests/test_web.py` |
 | Settings asset | Opens a drawer from chat and preloads settings through `/api/settings` | `tests/test_web.py` |
+| Memory ontology asset | Opens compact ten-dimensional memory coverage from settings | `tests/test_web.py` |
+| Memory ontology API | Returns compact dimension counts/summaries without secrets | `tests/test_web.py` |
+| Enter submit | Enter sends and Shift+Enter remains newline-capable | Asset behavior in `tests/test_web.py` |
+| Pending assistant | Volatile reply indicator appears during stream wait and is cleaned up | Asset behavior in `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
 | Busy reset | Reset is disabled/guarded while a stream is active | `tests/test_web.py` |
 
@@ -100,6 +110,8 @@
 - Good: resolve or undo learning chips by candidate id through `/api/learning/memory`, leaving conversation replay keys untouched.
 - Good: keep `requires_confirmation` as streamed card-local presentation metadata.
 - Good: fetch settings only when the drawer opens and keep ordinary user actions in composer prefill.
+- Good: keep ten-dimensional memory inspection read-only and drawer-scoped.
+- Good: keep pending assistant UI as volatile DOM state.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
 - Good: clear `activeRunId` before each new turn so a stale replay id cannot be cancelled.
 - Good: keep reset as an idle-only operation; use Stop for active run interruption.
@@ -113,6 +125,8 @@
 - Bad: send cancellation with `lastRunId` while a new stream is still waiting for its first event.
 - Bad: clearing localStorage/timeline while a stream is still appending events.
 - Bad: storing provider secrets or raw memory/artifact bodies in settings payloads.
+- Bad: rendering the same tool result as an action card and as a separate source card in the main timeline.
+- Bad: persisting pending assistant indicators or other transient stream UI in localStorage.
 
 ### 6. Tests Required
 - Web replay API supports full replay and `sinceEventId`.
@@ -128,6 +142,9 @@
 - Frontend asset includes inline decision resolution hooks.
 - Learning memory API covers accept, this-turn-only, reject, undo, missing candidate, and invalid action errors.
 - Frontend asset includes inline learning resolution hooks and review-gated confirmation wording.
+- Frontend asset includes Enter-to-send handling and volatile pending assistant cleanup.
+- Frontend asset includes `/api/memory/ontology` settings-drawer loading.
+- Memory ontology API covers ten dimensions and compact body/secret behavior.
 - Settings API covers summary, quiet-hours update, invalid time errors, and no secret leakage.
 - Frontend asset includes settings drawer hooks and composer-prefill actions.
 - Run cancel API covers success, missing id, unknown id, and frontend stop-control asset hooks.

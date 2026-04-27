@@ -115,9 +115,12 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Web chat replays historical user prompts from `turn.started` and shows compact browser continuity context.
 - [x] Web activity panel de-duplicates action lifecycle updates into stable rows.
 - [x] Web activity hides internal learning housekeeping such as `learning_discard` and learning-tone status updates.
+- [x] Web composer sends on Enter, preserves Shift+Enter newline, and shows a volatile "回复中" pending assistant indicator while waiting for model output.
+- [x] Web tool action cards show compact call arguments and completed results in one card while suppressing duplicate tool-result source cards.
 - [x] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
+- [x] Recall result cards compact repeated title/summary text.
 - [x] Learning chips can resolve memory candidates with "以后这样", "这次而已", reject, undo, and review-gated confirmation actions.
-- [x] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, and data controls.
+- [x] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, ten-dimensional memory inspection, and data controls.
 - [~] Artifact operations beyond open/view: web artifact cards now support continue edit, export, compare related artifacts, send draft, and diff apply/revert composer intents; direct apply/revert/send execution remains tool/model-led.
 
 ## Provider And Model Integration
@@ -170,6 +173,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-27-polish-chat-interactions-memory-view`: Web chat now sends on Enter, shows a pending assistant indicator, consolidates tool call/result details into one card, suppresses duplicate tool-result source cards, compacts recall duplication, and exposes ten-dimensional memory inspection from settings.
 - [x] `04-27-skip-low-signal-learning-reflection`: Provider after-turn learning now uses a structure-only evidence gate, skips zero/low-tool turns without a second model call, and hides internal learning housekeeping from Web Activity.
 - [x] `04-27-polish-reference-frontend-markdown`: Web UI now more closely follows the generated reference with labeled rail navigation, compact user context, de-duplicated activity rows, replayed user prompts, and safe DOM-built Markdown rendering for assistant messages.
 - [x] `04-27-redesign-single-chat-frontend`: Web UI now uses a polished single-chat shell with rail navigation, contextual activity panel, refined composer affordances, and preserved inline action/decision/learning/artifact/recall rendering.

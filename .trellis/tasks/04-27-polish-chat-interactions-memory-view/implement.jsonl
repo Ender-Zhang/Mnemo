@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "chat interactions and cards"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "frontend state and replay"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "memory ontology payload"}

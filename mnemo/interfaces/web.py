@@ -109,6 +109,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_inbox(parsed.query)
             elif parsed.path == "/api/settings":
                 self._handle_settings()
+            elif parsed.path == "/api/memory/ontology":
+                self._handle_memory_ontology()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -253,6 +255,9 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
 
         def _handle_settings(self) -> None:
             self._send_json(_settings_payload(config))
+
+        def _handle_memory_ontology(self) -> None:
+            self._send_json(_memory_ontology_payload(config))
 
         def _handle_settings_update(self) -> None:
             try:
@@ -635,6 +640,88 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
             ],
         },
     }
+
+
+MEMORY_ONTOLOGY_DIMENSIONS = [
+    "identity",
+    "cognition",
+    "values",
+    "goals",
+    "preferences",
+    "relationships",
+    "context",
+    "history",
+    "patterns",
+    "boundaries",
+]
+
+
+def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
+    store = StateStore(config.state_dir)
+    store.initialize()
+    pages = store.list_memory_pages(status="active", limit=1000)
+    candidates = store.list_memory_candidates(status=None, limit=1000)
+    buckets = {
+        dimension: {"dimension": dimension, "pages": 0, "candidates": 0, "items": []}
+        for dimension in MEMORY_ONTOLOGY_DIMENSIONS
+    }
+    for page in pages:
+        dimension = _memory_dimension(page, fallback="context")
+        bucket = buckets.setdefault(dimension, {"dimension": dimension, "pages": 0, "candidates": 0, "items": []})
+        bucket["pages"] += 1
+        if len(bucket["items"]) < 3:
+            bucket["items"].append(
+                {
+                    "kind": "page",
+                    "id": page.get("id"),
+                    "title": _clip_text(str(page.get("title") or dimension), 90),
+                    "summary": _clip_text(str(page.get("content") or ""), 160),
+                    "confidence": page.get("confidence"),
+                }
+            )
+    for candidate in candidates:
+        dimension = _memory_dimension(candidate, fallback="context")
+        bucket = buckets.setdefault(dimension, {"dimension": dimension, "pages": 0, "candidates": 0, "items": []})
+        bucket["candidates"] += 1
+        if len(bucket["items"]) < 3:
+            bucket["items"].append(
+                {
+                    "kind": "candidate",
+                    "id": candidate.get("id"),
+                    "title": _clip_text(str(candidate.get("claim") or dimension), 90),
+                    "summary": _clip_text(str(candidate.get("status") or "candidate"), 160),
+                    "confidence": candidate.get("confidence"),
+                }
+            )
+    dimensions = [buckets[dimension] for dimension in MEMORY_ONTOLOGY_DIMENSIONS]
+    extras = [item for key, item in buckets.items() if key not in MEMORY_ONTOLOGY_DIMENSIONS]
+    return {
+        "kind": "memory_ontology",
+        "dimensions": [*dimensions, *extras],
+        "counts": {
+            "pages": len(pages),
+            "candidates": len(candidates),
+            "covered_dimensions": sum(
+                1 for item in dimensions if int(item["pages"]) + int(item["candidates"]) > 0
+            ),
+        },
+    }
+
+
+def _memory_dimension(item: dict[str, Any], *, fallback: str) -> str:
+    value = str(item.get("dimension") or "").strip().lower()
+    if not value:
+        title = str(item.get("title") or "").strip().lower()
+        value = title.split(":", 1)[0].strip() if ":" in title else ""
+    aliases = {"preference": "preferences", "user_preference": "preferences", "current_context": "context"}
+    return aliases.get(value, value) if value else fallback
+
+
+def _clip_text(value: str, limit: int) -> str:
+    compact = " ".join(value.strip().split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: max(0, limit - 14)].rstrip() + "...[truncated]"
 
 
 def _connected_app_cards(config: WebServerConfig) -> list[dict[str, Any]]:

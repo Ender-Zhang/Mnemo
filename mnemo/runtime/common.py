@@ -99,6 +99,7 @@ def action_card(registry: ToolRegistry, call: ToolCallEnvelope) -> dict[str, Any
         "summary": spec.description,
         "risk": spec.risk,
         "provider": call.provider,
+        "arguments": _compact_call_arguments(call.arguments),
     }
 
 
@@ -123,6 +124,42 @@ def tool_result_summary(result: ToolResult) -> str:
     if result.name == "ask_user":
         return "需要用户确认。"
     return "工具调用已完成。"
+
+
+def tool_result_card(result: ToolResult) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "ok": result.ok,
+        "summary": tool_result_summary(result),
+    }
+    if result.error:
+        payload["error"] = _compact_argument_value(result.error)
+    if result.result:
+        payload["result"] = _compact_argument_value(result.result)
+    return payload
+
+
+def _compact_call_arguments(arguments: dict[str, Any]) -> dict[str, Any]:
+    redacted_keys = {"api_key", "authorization", "password", "secret", "token"}
+    compact: dict[str, Any] = {}
+    for key, value in (arguments or {}).items():
+        normalized = str(key).lower()
+        if any(secret in normalized for secret in redacted_keys):
+            compact[key] = "[redacted]"
+        else:
+            compact[key] = _compact_argument_value(value)
+    return compact
+
+
+def _compact_argument_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return value if len(value) <= 240 else value[:220].rstrip() + "...[truncated]"
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    if isinstance(value, list):
+        return [_compact_argument_value(item) for item in value[:8]]
+    if isinstance(value, dict):
+        return {str(key): _compact_argument_value(item) for key, item in list(value.items())[:12]}
+    return str(value)[:240]
 
 
 def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[ChatEvent]:

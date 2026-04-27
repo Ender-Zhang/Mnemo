@@ -21,6 +21,7 @@ from .common import (
     project_tool_result,
     result_as_dict,
     run_result_from_dict,
+    tool_result_card,
     tool_result_summary,
 )
 from .learning import (
@@ -233,6 +234,7 @@ class ProviderAgentRuntime:
                             "outcome": "success" if result.ok else "failed",
                             "summary": tool_result_summary(result),
                             "tool_name": result.name,
+                            "result": tool_result_card(result),
                         },
                     )
                     for projected in project_tool_result(result, emit):
@@ -403,6 +405,7 @@ class ProviderAgentRuntime:
                     "outcome": "success" if result.ok else "failed",
                     "summary": tool_result_summary(result),
                     "tool_name": result.name,
+                    "result": tool_result_card(result),
                 },
             )
             for projected in project_tool_result(result, emit):

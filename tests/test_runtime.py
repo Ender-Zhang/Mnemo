@@ -149,10 +149,15 @@ class LocalRuntimeTests(unittest.TestCase):
             )
             events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="remember via model", state_dir=tmp)))
             event_types = [event.type for event in events]
+            action_completed = next(event for event in events if event.type == "action.completed")
 
             self.assertIn("action.queued", event_types)
             self.assertIn("action.completed", event_types)
             self.assertIn("learning.chip", event_types)
+            self.assertEqual(action_completed.data["result"]["ok"], True)
+            self.assertTrue(action_completed.data["result"]["summary"])
+            self.assertTrue(action_completed.data["result"]["result"]["candidate_id"].startswith("mem_"))
+            self.assertEqual(action_completed.data["result"]["result"]["status"], "draft")
             self.assertEqual(events[-1].data["result"]["response"], "Recorded.")
             self.assertEqual(len(provider.requests), 3)
             self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")

@@ -7,6 +7,7 @@ const state = {
   renderedEventIds: new Set(),
   busy: false,
   assistantNode: null,
+  pendingAssistantNode: null,
   actions: new Map(),
   activityRows: new Map(),
   artifacts: new Map(),
@@ -51,6 +52,11 @@ form.addEventListener("submit", (event) => {
 });
 
 input.addEventListener("input", resizeInput);
+input.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  if (!state.busy) form.requestSubmit();
+});
 stop.addEventListener("click", () => {
   requestCancel();
 });
@@ -117,9 +123,11 @@ async function runTurn(message) {
   state.cancelRequested = false;
   state.activeRunId = "";
   state.assistantNode = null;
+  removePendingAssistant();
   rememberUserIntent(message);
   updateComposerState();
   addMessage("user", message);
+  showPendingAssistant();
   upsertActivity("turn", "run", "Turn started", message);
   setStatus("Working");
 
@@ -141,6 +149,7 @@ async function runTurn(message) {
 
     await readNdjson(response.body, handleEvent);
   } catch (error) {
+    removePendingAssistant();
     addCard("error", "Error", error.message || String(error));
   } finally {
     state.busy = false;
@@ -239,9 +248,11 @@ function handleEvent(event) {
       setStatus(event.data?.text || event.data?.summary || "Working");
       break;
     case "assistant.delta":
+      removePendingAssistant();
       appendAssistant(event.data?.text || "");
       break;
     case "assistant.message":
+      removePendingAssistant();
       finalizeAssistantMarkdown(event.data?.text || "");
       break;
     case "action.queued":
@@ -250,7 +261,7 @@ function handleEvent(event) {
       if (!isInternalLearningEvent(event)) renderAction(event);
       break;
     case "source.attached":
-      renderSource(event.data?.source);
+      if (!isToolResultSource(event.data?.source)) renderSource(event.data?.source);
       break;
     case "artifact.card":
       renderArtifact(event.data?.artifact);
@@ -274,6 +285,7 @@ function handleEvent(event) {
       break;
     case "run.error":
     case "server.error":
+      removePendingAssistant();
       addCard("error", "Error", event.data?.error || "Run failed");
       break;
     default:
@@ -340,6 +352,10 @@ function isInternalLearningEvent(event) {
     return (event.data?.tool_name || event.data?.action?.title) === "learning_discard";
   }
   return false;
+}
+
+function isToolResultSource(source) {
+  return source?.kind === "tool_result";
 }
 
 function renderActivity(event) {
@@ -480,6 +496,27 @@ function appendAssistant(text) {
   scrollToEnd();
 }
 
+function showPendingAssistant() {
+  removePendingAssistant();
+  const node = document.createElement("div");
+  node.className = "message assistant pending";
+  const text = document.createElement("span");
+  text.textContent = "回复中";
+  const dots = document.createElement("span");
+  dots.className = "typing-dots";
+  dots.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+  node.append(text, dots);
+  state.pendingAssistantNode = node;
+  timeline.appendChild(node);
+  scrollToEnd();
+}
+
+function removePendingAssistant() {
+  if (!state.pendingAssistantNode) return;
+  state.pendingAssistantNode.remove();
+  state.pendingAssistantNode = null;
+}
+
 function renderAction(event) {
   const action = event.data?.action || {};
   const actionId = event.data?.action_id || action.action_id || event.data?.provider_call_id;
@@ -487,6 +524,7 @@ function renderAction(event) {
   if (!card) {
     card = addCard("action", action.title || event.data?.tool_name || "Action", action.summary || "");
     state.actions.set(actionId, card);
+    renderToolDetails(card, action, event.data || {});
   }
 
   const body = card.querySelector(".event-body");
@@ -494,8 +532,55 @@ function renderAction(event) {
   if (event.type === "action.completed") {
     badge.textContent = event.data?.outcome || "completed";
     body.textContent = event.data?.summary || body.textContent || "Completed";
+    renderToolResult(card, event.data || {});
   } else {
     badge.textContent = event.type.replace("action.", "");
+  }
+}
+
+function renderToolDetails(card, action, data) {
+  const details = document.createElement("div");
+  details.className = "tool-details";
+  const args = action.arguments || data.arguments || {};
+  if (Object.keys(args).length > 0) {
+    details.appendChild(toolDetailBlock("Call", args));
+  }
+  card.appendChild(details);
+}
+
+function renderToolResult(card, data) {
+  if (card.dataset.resultRendered === "true") return;
+  let details = card.querySelector(".tool-details");
+  if (!details) {
+    details = document.createElement("div");
+    details.className = "tool-details";
+    card.appendChild(details);
+  }
+  const result = data.result || {
+    outcome: data.outcome || "completed",
+    summary: data.summary || "",
+    tool: data.tool_name || "",
+  };
+  details.appendChild(toolDetailBlock("Result", result));
+  card.dataset.resultRendered = "true";
+}
+
+function toolDetailBlock(label, value) {
+  const block = document.createElement("details");
+  block.className = "tool-detail";
+  const summary = document.createElement("summary");
+  summary.textContent = label;
+  const body = document.createElement("pre");
+  body.textContent = compactJson(value);
+  block.append(summary, body);
+  return block;
+}
+
+function compactJson(value) {
+  try {
+    return JSON.stringify(value || {}, null, 2);
+  } catch (_error) {
+    return String(value || "");
   }
 }
 
@@ -794,7 +879,8 @@ function recallItem(item) {
   const titleRow = document.createElement("div");
   titleRow.className = "recall-title";
   const title = document.createElement("span");
-  title.textContent = item.title || "Untitled";
+  const titleText = compactRecallTitle(item);
+  title.textContent = titleText;
   const chip = document.createElement("span");
   chip.className = "chip";
   chip.textContent = item.kind || item.source_type || "context";
@@ -802,7 +888,8 @@ function recallItem(item) {
 
   const summary = document.createElement("div");
   summary.className = "event-body";
-  summary.textContent = item.summary || "";
+  const summaryText = String(item.summary || "").trim();
+  summary.textContent = summaryText && summaryText !== titleText ? summaryText : "";
 
   const actions = document.createElement("div");
   actions.className = "recall-actions";
@@ -810,6 +897,17 @@ function recallItem(item) {
   row.append(titleRow, summary, actions);
   appendRecallActions(actions, item, row, chip);
   return row;
+}
+
+function compactRecallTitle(item) {
+  const title = String(item.title || "").trim();
+  const summary = String(item.summary || "").trim();
+  if (!title) return summary || "Untitled";
+  const parts = title.split(":");
+  if (parts.length > 1 && parts.slice(1).join(":").trim() === summary) {
+    return parts[0].trim() || summary;
+  }
+  return title;
 }
 
 function appendRecallActions(actions, item, row, statusChip) {
@@ -1014,6 +1112,7 @@ function renderSettings(payload) {
     settingsPermissionSection(payload.permissions || {}),
     settingsQuietHoursSection(payload.quiet_hours || payload.settings?.quiet_hours || {}),
     settingsPreferenceSection(payload.learned_preferences || {}),
+    settingsMemoryOntologySection(),
     settingsDataControlSection(payload.data_controls || {}),
   );
 }
@@ -1129,6 +1228,68 @@ function settingsDataControlSection(dataControls) {
   }
   body.appendChild(actions);
   return settingsSection("Data Controls", body);
+}
+
+function settingsMemoryOntologySection() {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  const target = document.createElement("div");
+  target.className = "memory-ontology";
+  body.appendChild(settingsActionButton("View ten dimensions", async () => {
+    target.replaceChildren(settingsLoadingRow("Loading memory ontology"));
+    try {
+      const response = await fetch("/api/memory/ontology");
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      target.replaceChildren(memoryOntologyView(payload));
+    } catch (error) {
+      target.replaceChildren(settingsLoadingRow(error.message || String(error)));
+    }
+  }));
+  body.appendChild(target);
+  return settingsSection("Memory Ontology", body);
+}
+
+function memoryOntologyView(payload) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "memory-dimensions";
+  const counts = payload.counts || {};
+  wrapper.appendChild(
+    settingsRow(
+      "Coverage",
+      `${counts.covered_dimensions || 0}/10`,
+      `${counts.pages || 0} pages · ${counts.candidates || 0} candidates`,
+    ),
+  );
+  for (const dimension of payload.dimensions || []) {
+    wrapper.appendChild(memoryDimensionRow(dimension));
+  }
+  return wrapper;
+}
+
+function memoryDimensionRow(dimension) {
+  const row = document.createElement("div");
+  row.className = "memory-dimension";
+  const header = document.createElement("div");
+  header.className = "memory-dimension-header";
+  const title = document.createElement("strong");
+  title.textContent = dimension.dimension || "memory";
+  const count = document.createElement("span");
+  count.className = "settings-value";
+  count.textContent = `${dimension.pages || 0}/${dimension.candidates || 0}`;
+  header.append(title, count);
+  const items = document.createElement("div");
+  items.className = "memory-dimension-items";
+  const entries = Array.isArray(dimension.items) ? dimension.items : [];
+  if (entries.length === 0) {
+    items.appendChild(settingsLoadingRow("No memory yet"));
+  } else {
+    for (const item of entries) {
+      items.appendChild(settingsRow(item.title || item.kind || "Memory", confidenceLabel(item.confidence), item.summary || ""));
+    }
+  }
+  row.append(header, items);
+  return row;
 }
 
 function settingsSection(title, body) {

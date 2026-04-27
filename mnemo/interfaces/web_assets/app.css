@@ -343,6 +343,53 @@ button {
   border-color: rgba(29, 117, 101, 0.32);
 }
 
+.message.pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-width: 112px;
+  color: var(--muted);
+  border-color: rgba(29, 117, 101, 0.26);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.typing-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--teal);
+  opacity: 0.35;
+  animation: typing-pulse 900ms ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+@keyframes typing-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+
+  50% {
+    transform: translateY(-3px);
+    opacity: 0.95;
+  }
+}
+
 .event-card {
   align-self: flex-start;
   padding: 12px 14px;
@@ -397,6 +444,41 @@ button {
   font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.tool-details {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.tool-detail {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.tool-detail summary {
+  cursor: pointer;
+  padding: 8px 10px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.tool-detail pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding: 10px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .artifact-actions,
@@ -814,6 +896,41 @@ button:disabled,
   padding: 0 10px;
   color: var(--ink);
   background: #ffffff;
+}
+
+.memory-ontology {
+  display: grid;
+  gap: 10px;
+}
+
+.memory-dimensions {
+  display: grid;
+  gap: 10px;
+}
+
+.memory-dimension {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.74);
+  padding: 10px;
+}
+
+.memory-dimension-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.memory-dimension-header strong {
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
+.memory-dimension-items {
+  display: grid;
+  gap: 8px;
 }
 
 @media (max-width: 1060px) {

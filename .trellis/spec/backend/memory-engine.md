@@ -54,6 +54,7 @@
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
+- Web API: `GET /api/memory/ontology`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
@@ -146,6 +147,8 @@
 - `session_message` results contain `id`, `message_id`, `conversation_id`, `mission_id`, `run_id`, `role`, `snippet`, and `created_at`; they must omit raw `content`.
 - Prompt-facing context cards for `session_message` include compact `summary` and provenance ids, not full transcripts.
 - `memory_read` must read stable memory pages as well as memory candidates.
+- `/api/memory/ontology` must expose the configured ten-dimension memory coverage as compact counts and clipped page/candidate summaries for user inspection.
+- `/api/memory/ontology` must be read-only and must not expose provider secrets, raw evidence blobs, or unbounded memory bodies.
 - `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.
 - `mnemo memory list` defaults to draft candidates; page listing defaults to active pages.
 - `mnemo memory list --status all` means no status filter.
@@ -190,6 +193,7 @@
 | L4 session search | `search_scope="sessions"` returns bounded message snippets and omits raw content | `tests/test_memory.py` |
 | Tombstone-aware session recall | Default session/all search suppresses snippets matching tombstones; explicit include returns them for historical lookup | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |
 | Memory page read | `memory_read` can load stable pages by id | `tests/test_tools.py` |
+| Memory ontology API | Web settings can inspect ten-dimensional memory coverage with clipped summaries | `tests/test_web.py` |
 | CLI memory list | Candidate/page listing uses status defaults and `all` filter | `tests/test_cli.py` |
 | CLI memory read | Candidate and page ids return typed memory payloads | `tests/test_cli.py` |
 | CLI memory links | Outgoing and incoming links can be inspected by id | `tests/test_cli.py` |

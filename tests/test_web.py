@@ -702,6 +702,56 @@ print(json.dumps({
             self.assertEqual(invalid_status, 400)
             self.assertIn("quiet_hours start", json.loads(invalid_body)["error"])
 
+    def test_web_memory_ontology_api_returns_compact_ten_dimension_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("web memory ontology")
+            mission_id = store.create_mission(conversation_id, "web memory ontology")
+            run_id = store.create_run(conversation_id, mission_id, "memory ontology")
+            store.upsert_memory_page(
+                "preferences: reports",
+                "User prefers concise reports. " + ("long private detail " * 30),
+                confidence=0.91,
+            )
+            store.upsert_memory_page("goals: mnemo", "Build a lightweight agentic system.", confidence=0.82)
+            store.add_memory_candidate(run_id, "User may prefer calmer UI", dimension="preferences")
+
+            with RunningServer(
+                WebServerConfig(
+                    state_dir=tmp,
+                    port=0,
+                    provider="openai-compatible",
+                    model="ontology-model",
+                    api_key="secret-ontology-key",
+                )
+            ) as server:
+                status, _, body = server.request("GET", "/api/memory/ontology")
+
+            payload = json.loads(body)
+            dimensions = {item["dimension"]: item for item in payload["dimensions"]}
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["kind"], "memory_ontology")
+            self.assertEqual(len([name for name in dimensions if name in {
+                "identity",
+                "cognition",
+                "values",
+                "goals",
+                "preferences",
+                "relationships",
+                "context",
+                "history",
+                "patterns",
+                "boundaries",
+            }]), 10)
+            self.assertEqual(payload["counts"]["pages"], 2)
+            self.assertEqual(payload["counts"]["candidates"], 1)
+            self.assertGreaterEqual(payload["counts"]["covered_dimensions"], 2)
+            self.assertEqual(dimensions["preferences"]["pages"], 1)
+            self.assertEqual(dimensions["preferences"]["candidates"], 1)
+            self.assertIn("...[truncated]", json.dumps(dimensions["preferences"]))
+            self.assertNotIn("secret-ontology-key", body)
+
     def test_web_cancel_run_endpoint_marks_run_and_records_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -916,6 +966,8 @@ print(json.dumps({
                 self.assertIn("decisionButton(\"Approve\"", script)
                 self.assertIn("event-card.recall", css)
                 self.assertIn("recall-button", css)
+                self.assertIn("compactRecallTitle", script)
+                self.assertIn("summaryText !== titleText", script)
 
     def test_web_client_asset_renders_settings_drawer(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -932,9 +984,39 @@ print(json.dumps({
                 self.assertIn("/api/settings", script)
                 self.assertIn("renderSettings", script)
                 self.assertIn("settingsQuietHoursSection", script)
+                self.assertIn("settingsMemoryOntologySection", script)
+                self.assertIn("/api/memory/ontology", script)
+                self.assertIn("memoryOntologyView", script)
                 self.assertIn("prefillMessage(item.prompt", script)
                 self.assertIn("settings-drawer", css)
                 self.assertIn("settings-action", css)
+                self.assertIn("memory-dimensions", css)
+
+    def test_web_client_asset_supports_enter_pending_and_tool_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn('input.addEventListener("keydown"', script)
+                self.assertIn('event.key !== "Enter"', script)
+                self.assertIn("event.shiftKey", script)
+                self.assertIn("form.requestSubmit()", script)
+                self.assertIn("pendingAssistantNode", script)
+                self.assertIn("showPendingAssistant", script)
+                self.assertIn("removePendingAssistant", script)
+                self.assertIn("typing-dots", script)
+                self.assertIn("renderToolDetails", script)
+                self.assertIn("renderToolResult", script)
+                self.assertIn("toolDetailBlock", script)
+                self.assertIn("data.result", script)
+                self.assertIn("isToolResultSource", script)
+                self.assertIn('source?.kind === "tool_result"', script)
+                self.assertIn("message.pending", css)
+                self.assertIn("typing-dots", css)
+                self.assertIn("tool-detail", css)
 
 
 class RunningServer:
