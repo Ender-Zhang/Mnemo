@@ -140,3 +140,43 @@ Added a structure-only evidence gate before after-turn provider learning reflect
 ### Next Steps
 
 - None - task complete
+
+
+## Session 119: Polish chat interactions and memory view
+
+**Date**: 2026-04-28
+**Task**: Polish chat interactions and memory view
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| Frontend | Added Enter-to-send, Shift+Enter newline preservation, volatile reply pending animation, compact tool call/result details, duplicate tool-result source suppression, and recall title/summary compaction. |
+| Memory UI/API | Added `/api/memory/ontology` and settings-drawer ten-dimensional memory inspection with compact counts and clipped summaries. |
+| Runtime Events | Added compact `result` payloads to `action.completed` events for local/provider runtimes with argument/result redaction and clipping. |
+| Specs/Checklist | Updated frontend state/component contracts, memory engine contract, and implementation checklist. |
+| Validation | Ran `node --check mnemo/interfaces/web_assets/app.js`, `git diff --check`, `python -m unittest tests.test_web tests.test_runtime`, full `python -m unittest discover -s tests` (328 tests), and wheel install smoke. |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `241dafb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
