@@ -1263,3 +1263,37 @@ Added a minimal-disclosure external runtime ContextCapsuleBuilder with SDK, CLI,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 94: Harness release gate report
+
+**Date**: 2026-04-27
+**Task**: Harness release gate report
+**Branch**: `main`
+
+### Summary
+
+Added a compact release gate report that aggregates personalization variant gates plus memory-safety, skill-evolution, and external-harness suites across EvalHarness, CLI, SDK, MCP, tests, docs, checklist, and backend integration/error specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `574c627` | (see git log) |
+| `bcd6251` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
