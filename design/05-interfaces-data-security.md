@@ -15,6 +15,7 @@ interface MnemoCore {
   context(req: ContextRequest): ContextBlock;
   update(req: UpdateRequest): UpdateResult;
   recall(req: RecallRequest): AssociativeCluster;
+  scheduleDream(req: DreamScheduleRequest): ScheduledItem;
   run(req: AgentRequest): AgentRunResult;
   replay(req: ReplayRequest): ReplayResult;
   evaluate(req: EvalRequest): EvalReport;
@@ -122,6 +123,14 @@ class MnemoClient:
         输入仅为 context capsule；输出只接受 proposal 字段并写入 RunLedger。
         """
 
+    def schedule_dream(
+        self,
+        schedule: str = "daily",
+        limit: int = 20,
+        min_confidence: float = 0.7,
+    ) -> ScheduledItem:
+        """注册 bounded Dream maintenance 触发器；真正执行仍由 scheduler tick 负责"""
+
     def replay(
         self,
         run_id: str,
@@ -152,6 +161,7 @@ POST /api/core/context
 POST /api/core/recall
 POST /api/core/capsule
 POST /api/core/external-run
+POST /api/core/schedule-dream
 POST /api/core/run
 POST /api/core/replay
 POST /api/core/evaluate
@@ -166,7 +176,7 @@ POST /api/core/evaluate
 }
 ```
 
-`external-run` 仍然只接受显式 `command: string[]`，不接受 shell 字符串；输出继续遵守 proposal-only 边界。
+`external-run` 仍然只接受显式 `command: string[]`，不接受 shell 字符串；输出继续遵守 proposal-only 边界。`schedule-dream` 只注册 scheduled item 和预算，不直接运行 Dream，也不返回 Dream report 正文。
 
 ### 8.2 MCP Server（Agent 生态互联）
 

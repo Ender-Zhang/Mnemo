@@ -21,6 +21,7 @@
 - CLI: `mnemo api capsule TASK... [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo api external-run TASK... --command-json '[...]' [--runtime RUNTIME] [--agent-type TYPE] [--timeout-s S] [--state-dir DIR] [--json]`
 - HTTP: `GET /api/core/schema`, `GET /api/core/openapi.json`, `POST /api/core/<method>`
+- HTTP: `POST /api/core/schedule-dream`
 - CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
@@ -61,6 +62,7 @@
 - Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404; valid actions are `accept`, `this_time`, `reject`, and `undo`.
 - Web settings endpoint errors are JSON: invalid quiet-hours payloads return 400 and settings summaries do not expose provider secrets.
 - HTTP core API errors are JSON: invalid JSON or bad fields return 400, unknown methods return 404, and expected `MnemoError` service failures map to 400 or 404 without traceback.
+- HTTP `schedule-dream` validates `next_run_at` as a string, number, or null and returns compact JSON errors for invalid payload shapes.
 - Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.
 - `mnemo api capsule` normalizes service validation errors this way; argparse handles missing required `TASK`.
 - `mnemo api external-run` normalizes invalid command JSON, invalid command arrays, timeout, process start, and non-zero external command failures this way; external stdout/stderr bodies are compacted and not printed by default.
@@ -119,6 +121,7 @@
 | Web learning memory endpoint | Valid action returns compact candidate payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web settings endpoint | Valid quiet-hours update returns settings payload; invalid time payload returns JSON error; API keys are not exposed | `tests/test_web.py` |
 | HTTP core API errors | Invalid JSON, missing required fields, and unknown methods return compact JSON errors | `tests/test_web.py` |
+| HTTP Dream schedule errors | Invalid `next_run_at` returns compact JSON 400 without traceback | `tests/test_web.py` |
 | MCP config output | CLI returns compact generic/Claude stdio config without raw tool schemas | `tests/test_cli.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |

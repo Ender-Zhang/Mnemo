@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "SDK schema and HTTP core API contracts for schedule_dream"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "scheduled_items and ScheduleService.add_dream persistence contract"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Dream scheduled maintenance trigger contract and compact payloads"}

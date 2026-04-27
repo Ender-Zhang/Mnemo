@@ -9,7 +9,7 @@ from ..evals import EvalHarness, replay_summary
 from ..memory import MemoryEngine
 from ..providers import provider_capabilities
 from ..prompt import PromptAssembler, load_prompt_bootstrap
-from ..runtime import ExternalRunRequest, build_context_capsule, run_external, run_local
+from ..runtime import ExternalRunRequest, ScheduleService, build_context_capsule, run_external, run_local
 from ..runtime.common import build_tool_bundle
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService, default_skill_roots
@@ -150,6 +150,31 @@ class MnemoClient:
                 timeout_s=timeout_s,
             )
         )
+
+    def schedule_dream(
+        self,
+        *,
+        schedule: str = "daily",
+        title: str | None = None,
+        next_run_at: float | str | None = None,
+        limit: int = 20,
+        min_confidence: float = 0.7,
+        source: str = "sdk",
+    ) -> dict[str, Any]:
+        item = ScheduleService(self.state_dir).add_dream(
+            title=title,
+            schedule=schedule,
+            source=source,
+            next_run_at=next_run_at,
+            limit=limit,
+            min_confidence=min_confidence,
+            metadata={"source": source},
+        )
+        return {
+            "kind": "scheduled_item",
+            "version": "mnemo.schedule_dream.v1",
+            "item": item,
+        }
 
     def run(
         self,

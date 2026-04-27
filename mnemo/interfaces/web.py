@@ -485,6 +485,15 @@ def _dispatch_core_api(config: WebServerConfig, method: str, body: dict[str, Any
             mission_id=_optional_string(body.get("mission_id")),
             prompt_mode=_string_field(body, "prompt_mode", default="full"),
         )
+    if method == "schedule_dream":
+        return client.schedule_dream(
+            schedule=_string_field(body, "schedule", default="daily"),
+            title=_optional_string(body.get("title")),
+            next_run_at=_optional_schedule_time(body, "next_run_at"),
+            limit=_int_field(body, "limit", default=20),
+            min_confidence=_float_field(body, "min_confidence", default=0.7),
+            source=_string_field(body, "source", default="http"),
+        )
     if method == "replay":
         return client.replay(_required_string(body, "run_id"))
     if method == "evaluate":
@@ -733,6 +742,17 @@ def _optional_string(value: Any) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
     return None
+
+
+def _optional_schedule_time(payload: dict[str, Any], key: str) -> float | str | None:
+    if key not in payload or payload.get(key) is None:
+        return None
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise ValueError(f"{key} must be a string, number, or null")
+    if isinstance(value, str):
+        return value.strip() or None
+    return float(value)
 
 
 def _first_param(params: dict[str, list[str]], key: str) -> str | None:

@@ -169,6 +169,31 @@ _SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "schedule_dream": {
+            "description": "Register bounded Dream memory maintenance through the existing scheduler.",
+            "side_effects": "writes_scheduled_item",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "schedule": {"type": "string", "default": "daily"},
+                    "title": {"type": ["string", "null"]},
+                    "next_run_at": {"type": ["string", "number", "null"]},
+                    "limit": {"type": "integer", "default": 20, "minimum": 1, "maximum": 200},
+                    "min_confidence": {"type": "number", "default": 0.7, "minimum": 0.0, "maximum": 1.0},
+                    "source": {"type": "string", "default": "sdk"},
+                },
+                "additionalProperties": False,
+            },
+            "output_schema": {
+                "type": "object",
+                "required": ["kind", "item"],
+                "properties": {
+                    "kind": {"const": "scheduled_item"},
+                    "version": {"type": "string"},
+                    "item": {"type": "object"},
+                },
+            },
+        },
         "replay": {
             "description": "Summarize a persisted run trace for debugging and harness replay.",
             "side_effects": "read_only",

@@ -168,6 +168,11 @@ print(json.dumps({
                     "/api/core/run",
                     {"message": "remember: HTTP core API should reuse SDK"},
                 )
+                dream_status, _, dream_body = server.request(
+                    "POST",
+                    "/api/core/schedule-dream",
+                    {"schedule": "once", "next_run_at": 0, "limit": 11, "min_confidence": 0.83},
+                )
 
             schema = json.loads(schema_body)["api_schema"]
             openapi = json.loads(openapi_body)
@@ -175,12 +180,14 @@ print(json.dumps({
             capsule = json.loads(capsule_body)
             external = json.loads(external_body)
             run = json.loads(run_body)
+            dream = json.loads(dream_body)
 
             self.assertEqual(schema_status, 200)
             self.assertEqual(schema["schema_version"], "mnemo.core_api.v1")
             self.assertEqual(openapi_status, 200)
             self.assertEqual(openapi["openapi"], "3.1.0")
             self.assertIn("/api/core/external-run", openapi["paths"])
+            self.assertIn("/api/core/schedule-dream", openapi["paths"])
             self.assertEqual(context_status, 200)
             self.assertEqual(context["method"], "context")
             self.assertEqual(context["result"]["kind"], "context_block")
@@ -193,12 +200,23 @@ print(json.dumps({
             self.assertIn("memory_writes", external["result"]["ignored_fields"])
             self.assertEqual(run_status, 200)
             self.assertTrue(run["result"]["run_id"].startswith("run_"))
+            self.assertEqual(dream_status, 200)
+            self.assertEqual(dream["method"], "schedule_dream")
+            self.assertEqual(dream["result"]["item"]["kind"], "dream")
+            self.assertEqual(dream["result"]["item"]["source"], "http")
+            self.assertEqual(dream["result"]["item"]["metadata"]["dream"]["limit"], 11)
+            self.assertNotIn("dream_report", dream_body)
 
     def test_core_http_api_normalizes_request_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
                 missing_status, _, missing_body = server.request("POST", "/api/core/recall", {})
                 unknown_status, _, unknown_body = server.request("POST", "/api/core/not-a-method", {})
+                bad_schedule_status, _, bad_schedule_body = server.request(
+                    "POST",
+                    "/api/core/schedule-dream",
+                    {"next_run_at": {"bad": True}},
+                )
 
                 host, port = server.server.server_address
                 conn = http.client.HTTPConnection(host, port, timeout=5)
@@ -216,6 +234,8 @@ print(json.dumps({
             self.assertEqual(json.loads(missing_body)["error"], "seed is required")
             self.assertEqual(unknown_status, 404)
             self.assertIn("unknown core API method", json.loads(unknown_body)["error"])
+            self.assertEqual(bad_schedule_status, 400)
+            self.assertIn("next_run_at must be a string, number, or null", json.loads(bad_schedule_body)["error"])
             self.assertEqual(invalid_response.status, 400)
             self.assertEqual(json.loads(invalid_body)["error"], "request body must be JSON")
 

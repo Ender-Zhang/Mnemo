@@ -706,7 +706,7 @@ DreamCycle 是 Mnemo 的低优先级后台记忆维护循环。daemon 负责触�
 | backlog threshold | `pending_obs`、`draft_facts` 或 stale candidates 积累到阈值 |
 | manual | `mnemo dream --now` |
 
-当前实现用轻量 scheduler 承载 daily/idle 触发：`mnemo schedule add --kind dream` 默认创建 daily Dream maintenance item，也可显式传入 `--schedule daily`。MCP 侧通过 `mnemo_dream_schedule` 暴露同一注册能力，仍然只写入 scheduled item 和预算元数据。到期 tick 会直接运行 bounded `MemoryEngine.dream_maintenance()`，写入 compact Dream report，刷新 L1 snapshot，并把最新 report card 存回 scheduled item metadata；watch/cron 仍然走普通 queue。
+当前实现用轻量 scheduler 承载 daily/idle 触发：`mnemo schedule add --kind dream` 默认创建 daily Dream maintenance item，也可显式传入 `--schedule daily`。SDK/HTTP 侧通过 `schedule_dream`，MCP 侧通过 `mnemo_dream_schedule` 暴露同一注册能力，仍然只写入 scheduled item 和预算元数据。到期 tick 会直接运行 bounded `MemoryEngine.dream_maintenance()`，写入 compact Dream report，刷新 L1 snapshot，并把最新 report card 存回 scheduled item metadata；watch/cron 仍然走普通 queue。
 
 **输入只看增量**:
 

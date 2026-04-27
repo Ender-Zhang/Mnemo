@@ -1,0 +1,6 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "verify SDK/HTTP route is a thin transport over ScheduleService"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "verify HTTP validation errors stay compact JSON"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "package smoke and full unittest expectations"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "schema-to-HTTP-to-SDK-to-storage data flow check"}

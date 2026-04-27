@@ -139,15 +139,37 @@ print(json.dumps({
             with self.assertRaisesRegex(ValueError, "release_gate cannot be combined"):
                 client.evaluate(release_gate=True, variants=["full_mnemo"])
 
+    def test_schedule_dream_uses_existing_scheduler_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MnemoClient(state_dir=tmp)
+
+            result = client.schedule_dream(limit=12, min_confidence=0.82)
+
+            self.assertEqual(result["kind"], "scheduled_item")
+            self.assertEqual(result["version"], "mnemo.schedule_dream.v1")
+            item = result["item"]
+            self.assertEqual(item["kind"], "dream")
+            self.assertEqual(item["schedule"], "daily")
+            self.assertEqual(item["source"], "sdk")
+            self.assertEqual(item["metadata"]["source"], "sdk")
+            self.assertEqual(item["metadata"]["dream"]["limit"], 12)
+            self.assertEqual(item["metadata"]["dream"]["min_confidence"], 0.82)
+            self.assertNotIn("dream_report", str(result))
+
     def test_api_schema_exposes_core_methods(self) -> None:
         schema = mnemo_core_api_schema()
 
         self.assertEqual(schema["schema_version"], "mnemo.core_api.v1")
-        self.assertEqual(set(schema["methods"]), {"context", "recall", "capsule", "run", "external_run", "replay", "evaluate"})
+        self.assertEqual(
+            set(schema["methods"]),
+            {"context", "recall", "capsule", "run", "external_run", "schedule_dream", "replay", "evaluate"},
+        )
         self.assertEqual(schema["methods"]["context"]["side_effects"], "read_only")
         self.assertIn("prompt_mode", schema["methods"]["context"]["input_schema"]["properties"])
         self.assertIn("requested_pages", schema["methods"]["capsule"]["input_schema"]["properties"])
         self.assertIn("command", schema["methods"]["external_run"]["input_schema"]["properties"])
+        self.assertEqual(schema["methods"]["schedule_dream"]["side_effects"], "writes_scheduled_item")
+        self.assertIn("min_confidence", schema["methods"]["schedule_dream"]["input_schema"]["properties"])
         self.assertIn("variants", schema["methods"]["evaluate"]["input_schema"]["properties"])
         self.assertIn("release_gate", schema["methods"]["evaluate"]["input_schema"]["properties"])
 
