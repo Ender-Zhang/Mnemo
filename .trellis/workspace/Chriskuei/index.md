@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-2.md`
-- **Total Sessions**: 114
+- **Active File**: `journal-3.md`
+- **Total Sessions**: 115
 - **Last Active**: 2026-04-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1973 | Active |
+| `journal-3.md` | ~41 | Active |
+| `journal-2.md` | ~1973 | Archived |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 115 | 2026-04-27 | Core API Watch Cron schedule surface | `af76b2d`, `d0d4d0a` | `main` |
 | 114 | 2026-04-27 | Core API runtime status surface | `b138952`, `6bca9da` | `main` |
 | 113 | 2026-04-27 | Core API Dream schedule surface | `4f63f1a`, `cd43be5` | `main` |
 | 112 | 2026-04-27 | MCP Dream schedule surface | `2987ad4`, `4078587` | `main` |
