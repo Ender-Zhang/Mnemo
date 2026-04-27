@@ -73,3 +73,37 @@ Generated a new single-chat product direction and implemented it in the stdlib W
 ### Next Steps
 
 - None - task complete
+
+
+## Session 117: Polish reference frontend and Markdown
+
+**Date**: 2026-04-27
+**Task**: Polish reference frontend and Markdown
+**Branch**: `main`
+
+### Summary
+
+Polished the single-chat frontend toward the generated reference with labeled rail navigation, compact user context, safe DOM-built Markdown rendering, replayed user prompts, de-duplicated activity rows, refreshed frontend specs, asset tests, full tests, and package smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e81ed70` | (see git log) |
+| `8efa3ba` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
