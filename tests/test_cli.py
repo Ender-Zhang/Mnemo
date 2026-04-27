@@ -1161,6 +1161,12 @@ class CliTests(unittest.TestCase):
         self.assertTrue(memory_safety_payload["passed"])
         self.assertEqual(memory_safety_payload["case_count"], 5)
 
+        memory_health = _run_cli(["harness", "eval", "memory-health", "--json"])
+        self.assertEqual(memory_health.returncode, 0, memory_health.stderr)
+        memory_health_payload = json.loads(memory_health.stdout)
+        self.assertTrue(memory_health_payload["passed"])
+        self.assertEqual(memory_health_payload["case_count"], 4)
+
         skill_evolution = _run_cli(["harness", "eval", "skill-evolution", "--json"])
         self.assertEqual(skill_evolution.returncode, 0, skill_evolution.stderr)
         skill_evolution_payload = json.loads(skill_evolution.stdout)
@@ -1192,6 +1198,7 @@ class CliTests(unittest.TestCase):
         release_payload = json.loads(release.stdout)
         self.assertEqual(release_payload["kind"], "harness_release_report")
         self.assertTrue(release_payload["passed"])
+        self.assertIn("memory-health", release_payload["suites"])
         self.assertIn("proactive-watch", release_payload["suites"])
         self.assertIn("external-harness", release_payload["suites"])
 
@@ -1203,6 +1210,7 @@ class CliTests(unittest.TestCase):
         suite_list = _run_cli(["harness", "list", "--json"])
         self.assertEqual(suite_list.returncode, 0, suite_list.stderr)
         suite_payload = json.loads(suite_list.stdout)
+        self.assertIn("memory-health", suite_payload["suites"])
         self.assertIn("memory-safety", suite_payload["suites"])
         self.assertIn("proactive-watch", suite_payload["suites"])
         self.assertIn("skill-evolution", suite_payload["suites"])

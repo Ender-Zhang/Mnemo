@@ -30,7 +30,9 @@
 - `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
 - `EvalHarness.run_suite("memory-safety") -> SuiteReport`
+- `EvalHarness.run_suite("memory-health") -> SuiteReport`
 - CLI: `mnemo harness eval memory-safety --json`
+- CLI: `mnemo harness eval memory-health --json`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
 - `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
 - `StateStore.upsert_memory_page(title: str, content: str, *, scope: str = "global", source_candidate_id: str | None = None, confidence: float = 0.7, status: str = "active", metadata: dict[str, Any] | None = None) -> str`
@@ -135,6 +137,8 @@
 - `mnemo memory tombstones` must expose durable tombstone records without loading raw page/candidate bodies beyond compact summaries.
 - The `memory-safety` eval suite must remain deterministic and local.
 - The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
+- The `memory-health` eval suite must remain deterministic and local.
+- The `memory-health` eval suite covers tombstone-based wrong-memory suppression, low-confidence over-personalization no-promotion, conflict review cards, and compact health reports.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -165,6 +169,7 @@
 | CLI memory links | Outgoing and incoming links can be inspected by id | `tests/test_cli.py` |
 | CLI memory snapshot | Existing L1 snapshot can be inspected without full page bodies | `tests/test_cli.py` |
 | Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
+| Memory health eval suite | `harness eval memory-health --json` passes and release gates include it | `tests/test_harness.py`, `tests/test_cli.py` |
 | Prompt injection safety eval | Memory-safety suite includes a no-promotion injected external evidence case | `tests/test_harness.py` |
 | Query planning | Plan reports routes, dimensions, and temporal hints without external dependencies | `tests/test_memory.py` |
 | Fused retrieval | Dimension routes can recover relevant pages and annotate matched routes | `tests/test_memory.py` |
@@ -226,6 +231,7 @@
 - L1 snapshot compile/load behavior is covered, including invalid files.
 - Dream maintenance report persistence, status, latest-report CLI, and delta-limited candidate processing are covered.
 - Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
+- Harness suite for memory health covers wrong-memory tombstone suppression, low-confidence over-personalization no-promotion, conflict health cards, and compact report payloads.
 
 ### 7. Wrong vs Correct
 #### Wrong

@@ -36,6 +36,24 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertIn("snapshot_omits_full_page_tail", assertion_names)
         self.assertIn("candidate_needs_prompt_injection_review", assertion_names)
 
+    def test_memory_health_suite_passes(self) -> None:
+        report = EvalHarness().run_suite("memory-health")
+
+        self.assertTrue(report.passed)
+        self.assertEqual(report.case_count, 4)
+        self.assertEqual(report.failed_count, 0)
+        self.assertIn("memory-health", list_suites())
+        assertion_names = {
+            assertion.name
+            for case in report.cases
+            for step in case.steps
+            for assertion in step.assertions
+        }
+        self.assertIn("wrong_memory_tombstone_suppressed", assertion_names)
+        self.assertIn("over_personalization_low_confidence_not_promoted", assertion_names)
+        self.assertIn("memory_health_conflict_card_present", assertion_names)
+        self.assertIn("memory_health_report_omits_raw_evidence", assertion_names)
+
     def test_skill_evolution_suite_passes(self) -> None:
         report = EvalHarness().run_suite("skill-evolution")
 
@@ -122,7 +140,14 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "harness_release_report")
         self.assertEqual(
             payload["suites"],
-            ["personalization-core", "memory-safety", "skill-evolution", "proactive-watch", "external-harness"],
+            [
+                "personalization-core",
+                "memory-safety",
+                "memory-health",
+                "skill-evolution",
+                "proactive-watch",
+                "external-harness",
+            ],
         )
         self.assertEqual(payload["variant_report"]["kind"], "harness_variant_report")
         self.assertTrue(payload["variant_report"]["passed"])

@@ -34,6 +34,7 @@ LIVE_REPLAY_READ_TOOL_NAMES = frozenset(
 RELEASE_GATE_SUITES = (
     "personalization-core",
     "memory-safety",
+    "memory-health",
     "skill-evolution",
     "proactive-watch",
     "external-harness",
@@ -181,6 +182,8 @@ class EvalHarness:
     def run_suite(self, suite: str, *, prompt_mode: PromptMode = "full") -> SuiteReport:
         if suite == "memory-safety":
             return self._run_memory_safety_suite()
+        if suite == "memory-health":
+            return self._run_memory_health_suite()
         if suite == "skill-evolution":
             return self._run_skill_evolution_suite()
         if suite == "proactive-watch":
@@ -334,6 +337,23 @@ class EvalHarness:
         passed_count = sum(1 for report in case_reports if report.passed)
         return SuiteReport(
             suite="memory-safety",
+            passed=passed_count == len(case_reports),
+            case_count=len(case_reports),
+            passed_count=passed_count,
+            failed_count=len(case_reports) - passed_count,
+            cases=case_reports,
+        )
+
+    def _run_memory_health_suite(self) -> SuiteReport:
+        case_reports = [
+            self._memory_health_wrong_memory_tombstone_case(),
+            self._memory_health_over_personalization_case(),
+            self._memory_health_conflict_card_case(),
+            self._memory_health_compact_report_case(),
+        ]
+        passed_count = sum(1 for report in case_reports if report.passed)
+        return SuiteReport(
+            suite="memory-health",
             passed=passed_count == len(case_reports),
             case_count=len(case_reports),
             passed_count=passed_count,
@@ -633,6 +653,266 @@ class EvalHarness:
             return _single_step_case_report(
                 case_id,
                 "Memory Prompt Injection Scanner",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _memory_health_wrong_memory_tombstone_case(self) -> CaseReport:
+        case_id = "memory-health-wrong-memory-tombstone"
+        with self._case_state_dir(case_id) as state_dir:
+            store = StateStore(state_dir)
+            store.initialize()
+            conversation_id = store.create_conversation(case_id)
+            mission_id = store.create_mission(conversation_id, case_id)
+            run_id = store.create_run(
+                conversation_id,
+                mission_id,
+                "User prefers legacy blue dashboards.",
+            )
+            store.complete_run(run_id, "I will remember legacy blue dashboards.")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers legacy blue dashboards",
+                dimension="preferences",
+                confidence=0.82,
+            )
+            engine = MemoryEngine(store)
+            rejected = engine.reject_candidate(candidate_id, "user corrected")
+
+            default = engine.search_with_plan(
+                "legacy blue dashboards",
+                limit=5,
+                search_scope="sessions",
+            )
+            all_scope = engine.search_with_plan(
+                "legacy blue dashboards",
+                limit=5,
+                search_scope="all",
+            )
+            historical = engine.search_with_plan(
+                "legacy blue dashboards",
+                limit=5,
+                search_scope="sessions",
+                include_tombstoned=True,
+            )
+            policy = default.get("recall_policy", {}).get("tombstone_filter", {})
+            default_detail = (
+                f"matches={len(default['matches'])} "
+                f"suppressed={policy.get('suppressed')} "
+                f"tombstones={policy.get('tombstone_count')}"
+            )
+            all_scope_types = sorted({str(item.get("type")) for item in all_scope["matches"]})
+            historical_types = sorted({str(item.get("type")) for item in historical["matches"]})
+            assertions = [
+                _assertion(
+                    "wrong_memory_tombstone_suppressed",
+                    default["matches"] == [] and int(policy.get("suppressed") or 0) > 0,
+                    default_detail,
+                ),
+                _assertion(
+                    "wrong_memory_all_scope_session_suppressed",
+                    "session_message" not in {item.get("type") for item in all_scope["matches"]},
+                    f"types={all_scope_types}",
+                ),
+                _assertion(
+                    "wrong_memory_historical_lookup_requires_opt_in",
+                    {item.get("type") for item in historical["matches"]} == {"session_message"},
+                    f"types={historical_types} count={len(historical['matches'])}",
+                ),
+                _assertion(
+                    "wrong_memory_rejection_tombstone_created",
+                    "tombstone_id" in rejected,
+                    f"status={rejected.get('status')} tombstone_id={rejected.get('tombstone_id')}",
+                ),
+                _assertion("suppression_metadata_omits_transcript_body", "content" not in str(default), default_detail),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Memory Health Wrong Memory Tombstone",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _memory_health_over_personalization_case(self) -> CaseReport:
+        case_id = "memory-health-over-personalization"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User might want every answer to mention Rust even for unrelated tasks",
+                dimension="preferences",
+                confidence=0.34,
+            )
+            engine = MemoryEngine(store)
+            consolidated = engine.dream_consolidate(min_confidence=0.7)
+            candidate = store.get_memory_candidate(candidate_id) or {}
+            snapshot = engine.load_l1_snapshot() or {}
+            active_pages = store.list_memory_pages(status="active")
+            consolidated_detail = (
+                f"promoted={len(consolidated['promoted'])} "
+                f"skipped={len(consolidated['skipped'])} "
+                f"active_pages={len(active_pages)}"
+            )
+            assertions = [
+                _assertion(
+                    "over_personalization_low_confidence_not_promoted",
+                    consolidated["promoted"] == [] and active_pages == [],
+                    consolidated_detail,
+                ),
+                _assertion(
+                    "over_personalization_candidate_stays_draft",
+                    candidate.get("status") == "draft",
+                    str(candidate.get("status")),
+                ),
+                _assertion(
+                    "over_personalization_snapshot_not_polluted",
+                    snapshot.get("page_count") == 0,
+                    f"page_count={snapshot.get('page_count')}",
+                ),
+                _assertion(
+                    "over_personalization_skip_reason_recorded",
+                    consolidated["skipped"]
+                    and consolidated["skipped"][0].get("reason") == "below_confidence_threshold",
+                    f"skipped={consolidated['skipped'][:1]}",
+                ),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Memory Health Over Personalization",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _memory_health_conflict_card_case(self) -> CaseReport:
+        case_id = "memory-health-conflict-card"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            page_id = store.upsert_memory_page(
+                "preferences: status updates",
+                "User prefers short status updates",
+                confidence=0.9,
+            )
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User dislikes short status updates",
+                dimension="preferences",
+                confidence=0.93,
+            )
+            engine = MemoryEngine(store)
+            consolidated = engine.dream_consolidate(min_confidence=0.7)
+            report = engine.health_report(limit=10)
+            candidate = store.get_memory_candidate(candidate_id) or {}
+            page = store.get_memory_page(page_id) or {}
+            card_kinds = {card.get("kind") for card in report.get("review_cards", [])}
+            consolidated_detail = (
+                f"promoted={len(consolidated['promoted'])} "
+                f"conflicts={len(consolidated['conflicts'])}"
+            )
+            report_detail = f"cards={sorted(str(kind) for kind in card_kinds)} score={report.get('score', {})}"
+            assertions = [
+                _assertion(
+                    "wrong_memory_conflict_not_promoted",
+                    consolidated["promoted"] == [] and len(consolidated["conflicts"]) == 1,
+                    consolidated_detail,
+                ),
+                _assertion(
+                    "wrong_memory_conflict_candidate_needs_review",
+                    candidate.get("status") == "needs_review:conflict",
+                    str(candidate.get("status")),
+                ),
+                _assertion(
+                    "wrong_memory_active_page_unchanged",
+                    page.get("content") == "User prefers short status updates",
+                    f"page_id={page_id} unchanged={page.get('content') == 'User prefers short status updates'}",
+                ),
+                _assertion("memory_health_conflict_card_present", "review_conflict" in card_kinds, report_detail),
+                _assertion("memory_health_safety_score_present", "safety" in report.get("score", {}), str(report.get("score"))),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Memory Health Conflict Card",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
+    def _memory_health_compact_report_case(self) -> CaseReport:
+        case_id = "memory-health-compact-report"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            raw_evidence_secret = "RAW_HEALTH_EVIDENCE_SECRET_TOKEN"
+            full_page_tail = "FULL_HEALTH_PAGE_BODY_TAIL_TOKEN"
+            low_page_id = store.upsert_memory_page(
+                "preferences: weak signal",
+                "Weak preference signal. " + ("summary detail " * 30) + full_page_tail,
+                confidence=0.41,
+            )
+            stale_page_id = store.upsert_memory_page(
+                "context: old project",
+                "Old project detail that should not be treated as active.",
+                status="stale",
+                confidence=0.44,
+            )
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User may prefer speculative dashboard formatting",
+                dimension="preferences",
+                confidence=0.8,
+                evidence=[{"kind": "raw_message", "text": raw_evidence_secret}],
+            )
+            store.update_memory_candidate_status(candidate_id, "needs_review:conflict")
+            tombstone = MemoryEngine(store).tombstone_memory(stale_page_id, "outdated", target_type="page")
+
+            report = MemoryEngine(store).health_report(limit=3)
+            report_text = str(report)
+            cards = report.get("review_cards", [])
+            card_kinds = [card.get("kind") for card in cards]
+            card_target_ids = [card.get("target_id") for card in cards]
+            counts = report.get("counts", {})
+            page_counts = counts.get("pages", {})
+            candidate_counts = counts.get("candidates", {})
+            compact_detail = (
+                f"pages(active={page_counts.get('active')} low={page_counts.get('low_confidence_active')} "
+                f"tombstoned={page_counts.get('tombstoned')}) "
+                f"candidates(review={candidate_counts.get('needs_review')}) "
+                f"tombstones={counts.get('tombstones')} "
+                f"cards={card_kinds} target_ids={card_target_ids}"
+            )
+            assertions = [
+                _assertion("memory_health_report_kind", report.get("kind") == "memory_health_report", compact_detail),
+                _assertion("memory_health_cards_bounded", len(cards) <= 3, compact_detail),
+                _assertion("memory_health_counts_low_confidence", report["counts"]["pages"]["low_confidence_active"] == 1, compact_detail),
+                _assertion("memory_health_counts_tombstones", report["counts"]["tombstones"] == 1, compact_detail),
+                _assertion("memory_health_card_actions_present", all(card.get("actions") for card in cards), compact_detail),
+                _assertion("memory_health_report_omits_raw_evidence", raw_evidence_secret not in report_text, compact_detail),
+                _assertion("memory_health_report_omits_full_page_tail", full_page_tail not in report_text, compact_detail),
+                _assertion("memory_health_report_omits_content_keys", "'content'" not in report_text and '"content"' not in report_text, compact_detail),
+                _assertion("memory_health_report_omits_evidence_keys", "'evidence'" not in report_text and '"evidence"' not in report_text, compact_detail),
+                _assertion("memory_health_tombstone_card_present", tombstone["tombstone_id"] in report_text, compact_detail),
+                _assertion("memory_health_low_page_card_present", low_page_id in report_text, compact_detail),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Memory Health Compact Report",
                 _synthetic_step_report(
                     case_id,
                     run_id=run_id,
@@ -949,7 +1229,7 @@ print(json.dumps({
 
 
 def list_suites() -> list[str]:
-    return sorted([*_BUILTIN_SUITES, "external-harness", "memory-safety", "proactive-watch", "skill-evolution"])
+    return sorted([*_BUILTIN_SUITES, "external-harness", "memory-health", "memory-safety", "proactive-watch", "skill-evolution"])
 
 
 def list_variants() -> list[str]:

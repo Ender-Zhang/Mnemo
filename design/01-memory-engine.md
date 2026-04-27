@@ -680,6 +680,8 @@ memory_health:
 
 健康度的用途不是给用户制造负担，而是给模型一个“下一步该维护什么”的状态输入。`mnemo stats` 和晨报只展示高价值建议，例如：“`relationships` 维度覆盖低，但近期任务没有用到，暂不打扰”；“`context/current-projects` 影响多个 Watch，建议验证”。
 
+`memory-health` harness 是这套机制的确定性回归门禁：它不调用模型、不跑后台流程，只验证 tombstone 是否压住 wrong-memory 复活、低置信偏好是否不会污染 L1/稳定页、冲突候选是否进入 review card、健康报告是否保持 compact 且不泄露原始证据或完整页面内容。
+
 ### 3.14 DreamCycle：空闲期记忆整理
 
 DreamCycle 是 Mnemo 的低优先级后台记忆维护循环。daemon 负责触发条件、预算、锁、暂停和账本；具体整理什么、怎么合并、是否建 link、是否提出 skill/tool 候选，由模型在一次受限的 Dream maintenance run 中决定。

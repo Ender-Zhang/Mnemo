@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Unit, release, and package smoke quality gates"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory health harness contracts and validation matrix"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI harness error normalization contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Compact tool and memory result constraints"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Harness data flow spans engine CLI tests and docs"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing harness and memory assertion patterns"}
