@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "SDK/HTTP Core API schedule_watch and schedule_cron contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "scheduled item service and storage contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP Core API JSON error behavior"}
