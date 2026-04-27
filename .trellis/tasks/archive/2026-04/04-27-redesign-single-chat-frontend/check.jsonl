@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "verify card rendering and composer affordances"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "verify resume/cancel state contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "unittest and package smoke gates"}

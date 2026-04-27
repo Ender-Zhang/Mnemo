@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "stdlib no-build web asset layout"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "single-chat DOM component rendering contracts"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "event replay, cancellation, artifact, decision, learning state"}
