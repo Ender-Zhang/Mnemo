@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "SDK/HTTP/MCP runtime_status contract"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "queue, inbox, scheduled item compact read APIs"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP core JSON error behavior"}
