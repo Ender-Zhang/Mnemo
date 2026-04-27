@@ -15,17 +15,25 @@ const state = {
 };
 
 const timeline = document.querySelector("#timeline");
+const appShell = document.querySelector(".app-shell");
 const form = document.querySelector("#composer");
 const input = document.querySelector("#message");
 const send = document.querySelector("#send");
 const stop = document.querySelector("#stop");
 const reset = document.querySelector("#reset");
 const statusText = document.querySelector("#status");
+const runBadge = document.querySelector("#runBadge");
 const settingsOpen = document.querySelector("#settingsOpen");
 const settingsOverlay = document.querySelector("#settingsOverlay");
 const settingsClose = document.querySelector("#settingsClose");
 const settingsContent = document.querySelector("#settingsContent");
 const settingsStatus = document.querySelector("#settingsStatus");
+const activityToggle = document.querySelector("#activityToggle");
+const activityList = document.querySelector("#activityList");
+const activityCount = document.querySelector("#activityCount");
+const attachButton = document.querySelector("#attachButton");
+const voiceButton = document.querySelector("#voiceButton");
+const mentionButton = document.querySelector("#mentionButton");
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -57,6 +65,7 @@ reset.addEventListener("click", () => {
   localStorage.removeItem("mnemo.last_run_id");
   localStorage.removeItem("mnemo.last_event_id");
   timeline.replaceChildren();
+  clearActivity();
   updateComposerState();
   setStatus("Ready");
 });
@@ -73,6 +82,22 @@ settingsOverlay.addEventListener("click", (event) => {
   if (event.target === settingsOverlay) closeSettings();
 });
 
+activityToggle.addEventListener("click", () => {
+  appShell.classList.toggle("activity-collapsed");
+});
+
+attachButton.addEventListener("click", () => {
+  prefillMessage("Use this file: ");
+});
+
+voiceButton.addEventListener("click", () => {
+  prefillMessage("Voice note: ");
+});
+
+mentionButton.addEventListener("click", () => {
+  prefillMessage("@");
+});
+
 window.addEventListener("online", () => {
   resumeLastRun();
 });
@@ -84,6 +109,7 @@ async function runTurn(message) {
   state.assistantNode = null;
   updateComposerState();
   addMessage("user", message);
+  pushActivity("run", "Turn started", message);
   setStatus("Working");
 
   try {
@@ -188,6 +214,7 @@ function handleEvent(event) {
     state.lastEventId = event.event_id;
     localStorage.setItem("mnemo.last_event_id", state.lastEventId);
   }
+  renderActivity(event);
 
   switch (event.type) {
     case "turn.started":
@@ -201,7 +228,8 @@ function handleEvent(event) {
       appendAssistant(event.data?.text || "");
       break;
     case "assistant.message":
-      if (!state.assistantNode) addMessage("assistant", event.data?.text || "");
+      if (!state.assistantNode) state.assistantNode = addMessage("assistant", event.data?.text || "");
+      if (state.assistantNode) state.assistantNode.classList.remove("streaming");
       break;
     case "action.queued":
     case "action.started":
@@ -227,6 +255,7 @@ function handleEvent(event) {
       persistRun(event);
       state.cancelRequested = false;
       state.activeRunId = "";
+      if (state.assistantNode) state.assistantNode.classList.remove("streaming");
       updateComposerState();
       setStatus("Ready");
       break;
@@ -257,11 +286,92 @@ function persistEventEnvelope(event) {
   }
 }
 
+function renderActivity(event) {
+  switch (event.type) {
+    case "turn.started":
+      pushActivity("run", "Run started", event.data?.input_summary || event.run_id || "");
+      break;
+    case "conversation.hydrated":
+      pushActivity("run", "Context restored", event.data?.summary || "");
+      break;
+    case "status.updated":
+      pushActivity("run", "Status", event.data?.text || event.data?.summary || "");
+      break;
+    case "assistant.delta":
+      pushActivity("run", "Streaming answer", "Receiving model output");
+      break;
+    case "action.queued":
+    case "action.started":
+    case "action.completed":
+      pushActivity(
+        "action",
+        event.data?.action?.title || event.data?.tool_name || "Action",
+        event.data?.summary || event.type.replace("action.", ""),
+      );
+      break;
+    case "artifact.card":
+      pushActivity("artifact", event.data?.artifact?.title || "Artifact", event.data?.artifact?.kind || "");
+      break;
+    case "recall.card":
+      pushActivity("recall", "Recall", event.data?.recall?.query || "");
+      break;
+    case "learning.chip":
+      pushActivity("learning", "Memory candidate", event.data?.item?.summary || event.data?.item?.status || "");
+      break;
+    case "decision.card":
+      pushActivity("decision", "Decision needed", event.data?.decision?.question || "");
+      break;
+    case "run.completed":
+      pushActivity("run", "Run completed", event.data?.status || "completed");
+      break;
+    case "run.error":
+    case "server.error":
+      pushActivity("error", "Error", event.data?.error || "Run failed");
+      break;
+    default:
+      break;
+  }
+}
+
+function pushActivity(kind, title, detail) {
+  if (!activityList) return;
+  const item = document.createElement("div");
+  item.className = `activity-item ${kind || "run"}`;
+  const dot = document.createElement("span");
+  dot.className = "activity-dot";
+  const copy = document.createElement("div");
+  const titleNode = document.createElement("div");
+  titleNode.className = "activity-title";
+  titleNode.textContent = title || "Activity";
+  const detailNode = document.createElement("div");
+  detailNode.className = "activity-detail";
+  detailNode.textContent = detail || "";
+  copy.append(titleNode, detailNode);
+  item.append(dot, copy);
+  activityList.prepend(item);
+  while (activityList.children.length > 24) {
+    activityList.lastElementChild.remove();
+  }
+  updateActivityCount();
+}
+
+function clearActivity() {
+  if (!activityList) return;
+  activityList.replaceChildren();
+  updateActivityCount();
+}
+
+function updateActivityCount() {
+  if (!activityCount || !activityList) return;
+  activityCount.textContent = String(activityList.children.length);
+}
+
 function appendAssistant(text) {
   if (!text) return;
   if (!state.assistantNode) {
     state.assistantNode = addMessage("assistant", "");
   }
+  state.assistantNode.classList.add("streaming");
   state.assistantNode.textContent += text;
   scrollToEnd();
 }
@@ -996,6 +1106,7 @@ function updateComposerState() {
   stop.hidden = !state.busy;
   stop.disabled = !state.activeRunId || state.cancelRequested;
   stop.textContent = state.cancelRequested ? "Stopping" : "Stop";
+  runBadge.textContent = state.cancelRequested ? "Stopping" : state.busy ? "Running" : "Idle";
 }
 
 function addMessage(role, text) {

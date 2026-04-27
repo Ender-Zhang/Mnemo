@@ -166,6 +166,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-27-redesign-single-chat-frontend`: Web UI now uses a polished single-chat shell with rail navigation, contextual activity panel, refined composer affordances, and preserved inline action/decision/learning/artifact/recall rendering.
 - [x] `04-27-memory-harmful-eval-routing`: Harmful memory tombstones now create compact draft memory-core eval cases through MemoryEngine, CLI, and ToolHarness when run provenance is available.
 - [x] `04-27-memory-selective-forgetting-policy`: `memory_tombstone` now supports low-usefulness archival plus optional replacement links/metadata across MemoryEngine, CLI, ToolHarness, and tests.
 - [x] `04-27-memory-dream-maintenance-actions`: DreamCycle now applies explicit model-proposed memory tombstone/decay actions, supports native-style tool-call shapes, persists compact applied/skipped action results, and keeps local fallback delta-bounded.

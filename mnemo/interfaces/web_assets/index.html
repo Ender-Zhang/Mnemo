@@ -7,23 +7,52 @@
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
-        <div>
-          <h1>Mnemo</h1>
-          <p id="status">Ready</p>
-        </div>
-        <div class="topbar-actions">
-          <button id="settingsOpen" type="button" title="Settings">Settings</button>
-          <button id="reset" type="button" title="New conversation">New</button>
-        </div>
-      </header>
-      <section id="timeline" class="timeline" aria-live="polite"></section>
-      <form id="composer" class="composer">
-        <textarea id="message" name="message" rows="1" placeholder="Tell Mnemo what to do"></textarea>
-        <button id="stop" class="stop" type="button" title="Stop current run" hidden>Stop</button>
-        <button id="send" type="submit">Send</button>
-      </form>
+    <main class="app-shell">
+      <nav class="rail" aria-label="Mnemo">
+        <div class="rail-mark" aria-label="Mnemo">M</div>
+        <button class="rail-button active" type="button" title="Chat" aria-label="Chat">C</button>
+        <button id="activityToggle" class="rail-button" type="button" title="Activity" aria-label="Activity">A</button>
+        <button id="settingsOpen" class="rail-button" type="button" title="Settings" aria-label="Settings">S</button>
+      </nav>
+
+      <section class="chat-shell">
+        <header class="topbar">
+          <div class="topbar-copy">
+            <h1>Mnemo</h1>
+            <p id="status">Ready</p>
+          </div>
+          <div class="topbar-actions">
+            <span id="runBadge" class="run-badge">Idle</span>
+            <button id="reset" class="ghost-button" type="button" title="New conversation">New</button>
+          </div>
+        </header>
+
+        <section id="timeline" class="timeline" aria-live="polite"></section>
+
+        <form id="composer" class="composer">
+          <div class="composer-tools" aria-label="Composer tools">
+            <button id="attachButton" class="icon-button" type="button" title="Attach file" aria-label="Attach file">+</button>
+            <button id="voiceButton" class="icon-button" type="button" title="Voice input" aria-label="Voice input">mic</button>
+            <button id="mentionButton" class="icon-button" type="button" title="Mention app" aria-label="Mention app">@</button>
+          </div>
+          <textarea id="message" name="message" rows="1" placeholder="Ask Mnemo to do anything"></textarea>
+          <div class="composer-actions">
+            <button id="stop" class="stop" type="button" title="Stop current run" hidden>Stop</button>
+            <button id="send" class="send-button" type="submit" title="Send">Send</button>
+          </div>
+        </form>
+      </section>
+
+      <aside id="activityPanel" class="activity-panel" aria-label="Activity stream">
+        <header class="activity-header">
+          <div>
+            <h2>Activity</h2>
+            <p>Live run context</p>
+          </div>
+          <span id="activityCount" class="activity-count">0</span>
+        </header>
+        <div id="activityList" class="activity-list"></div>
+      </aside>
     </main>
     <div id="settingsOverlay" class="settings-overlay" hidden>
       <aside class="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">

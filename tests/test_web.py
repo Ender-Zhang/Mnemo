@@ -782,6 +782,31 @@ print(json.dumps({
                 self.assertIn("if (state.busy) return;", script)
                 self.assertIn("reset.disabled = state.busy", script)
 
+    def test_web_client_asset_uses_polished_single_chat_shell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, html = server.request("GET", "/")
+                script_status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(script_status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn('class="app-shell"', html)
+                self.assertIn('class="rail"', html)
+                self.assertIn('id="activityPanel"', html)
+                self.assertIn('class="composer-tools"', html)
+                self.assertIn('id="attachButton"', html)
+                self.assertIn('id="voiceButton"', html)
+                self.assertIn('id="mentionButton"', html)
+                self.assertIn("renderActivity", script)
+                self.assertIn("pushActivity", script)
+                self.assertIn("activity-collapsed", script)
+                self.assertIn("runBadge.textContent", script)
+                self.assertIn("activity-panel", css)
+                self.assertIn("composer-tools", css)
+                self.assertIn("app-shell", css)
+
     def test_web_client_asset_resolves_decision_cards_inline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
