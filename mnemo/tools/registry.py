@@ -176,6 +176,23 @@ CORE_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="memory_private_delete",
+        description="Private-delete a memory candidate or stable page by redacting stored text and recording a minimal tombstone hash.",
+        risk="write",
+        input_schema=_schema(
+            ["id"],
+            {
+                "id": {"type": "string"},
+                "reason": {"type": "string", "default": "private_delete"},
+                "target_type": {
+                    "type": "string",
+                    "enum": ["auto", "candidate", "page"],
+                    "default": "auto",
+                },
+            },
+        ),
+    ),
+    ToolSpec(
         name="recall_search",
         description="Find compact, actionable cards across memory, prior work, artifacts, and decisions.",
         risk="read",
@@ -483,6 +500,7 @@ class ToolRegistry:
             "memory_health_report": self._memory_health_report,
             "memory_decay_stale_pages": self._memory_decay_stale_pages,
             "memory_tombstone": self._memory_tombstone,
+            "memory_private_delete": self._memory_private_delete,
             "recall_search": self._recall_search,
             "working_note": self._working_note,
             "skills_list": self._skills_list,
@@ -683,6 +701,12 @@ class ToolRegistry:
         reason = _require_str(args, "reason")
         target_type = _memory_tombstone_target_type(args)
         return MemoryEngine(context.store).tombstone_memory(memory_id, reason, target_type=target_type)
+
+    def _memory_private_delete(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        memory_id = _require_str(args, "id")
+        reason = str(args.get("reason") or "private_delete")
+        target_type = _memory_tombstone_target_type(args)
+        return MemoryEngine(context.store).private_delete_memory(memory_id, reason, target_type=target_type)
 
     def _recall_search(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         query = _require_str(args, "query")
@@ -1234,6 +1258,8 @@ def _tool_summary(result: ToolResult) -> str:
         )
     if result.name == "memory_tombstone":
         return "Memory tombstone recorded."
+    if result.name == "memory_private_delete":
+        return "Memory private-delete completed."
     if result.name == "working_note":
         return "Working note recorded."
     if result.name == "skills_list":
@@ -1410,6 +1436,18 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "target_id": result.result.get("memory_id"),
                 "target_type": result.result.get("target_type"),
                 "reason": result.result.get("reason"),
+            }
+        ]
+    if result.name == "memory_private_delete":
+        return [
+            {
+                "kind": "memory_private_delete",
+                "id": str(result.result.get("tombstone_id") or ""),
+                "target_id": result.result.get("memory_id"),
+                "target_type": result.result.get("target_type"),
+                "reason": result.result.get("reason"),
+                "redacted": bool(result.result.get("redacted")),
+                "related_count": len(result.result.get("related_redactions", [])),
             }
         ]
     if result.name == "working_note":

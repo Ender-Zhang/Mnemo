@@ -63,6 +63,8 @@
 - `StateStore.get_memory_page(page_id: str) -> dict[str, Any] | None`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
+- `StateStore.redact_memory_candidate(candidate_id: str, *, claim: str, status: str, evidence: Iterable[dict[str, Any]] | None = None, confidence: float = 0.0) -> None`
+- `StateStore.redact_memory_page(page_id: str, *, title: str, content: str, status: str, metadata: dict[str, Any] | None = None, confidence: float = 0.0) -> None`
 - `StateStore.add_memory_tombstone(target_id: str, target_type: str, reason: str, *, summary: str = "", target_hash: str | None = None, evidence_run_id: str | None = None, rule: str | None = None, metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.get_memory_tombstone(tombstone_id: str) -> dict[str, Any] | None`
 - `StateStore.list_memory_tombstones(*, target_id: str | None = None, target_type: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
@@ -151,6 +153,9 @@
 - Tombstone APIs validate target type as `candidate` or `page` and never require callers to read raw SQLite rows.
 - `list_memory_tombstones()` orders by newest first and supports target id/type filters.
 - `update_memory_page_status()` updates `updated_at` with the status change.
+- `redact_memory_candidate()` updates only existing candidate rows and replaces claim, evidence, confidence, and status for private-delete flows.
+- `redact_memory_page()` updates only existing page rows and replaces title, content, confidence, status, metadata, and `updated_at` for private-delete flows.
+- Private-delete tombstones store `reason="private_delete"`, a non-raw summary, `target_hash`, optional source `evidence_run_id`, and redaction metadata without deleted text.
 - Chat replay by `event_id` is derived from persisted `chat.event` payloads in run order.
 - Unknown chat `event_id` returns all chat events for the run so clients can safely rehydrate.
 
@@ -194,6 +199,7 @@
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
 | Memory tombstones | Tombstone table initializes, round-trips metadata, filters by target, and hashes compact summaries | `tests/test_storage.py` |
+| Memory private delete | Existing candidate/page rows can be redacted without schema migration while compact tombstones preserve hash/provenance | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |
 | Chat replay after event id | Returns only later chat events, or full replay if unknown | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -244,6 +250,7 @@
 - Scheduled item storage, due lookup, status changes, and tick metadata are covered.
 - Scheduler enqueue behavior, Watch feedback policy, and CLI schedule commands are covered.
 - Memory tombstone schema and read/write/filter APIs are covered.
+- Memory private-delete redaction is covered at engine, CLI, and tool boundaries.
 - Memory page metadata schema and read/list/search APIs are covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.

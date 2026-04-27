@@ -436,6 +436,53 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: Memory item not found for tombstone: mem_missing", missing.stderr)
             self.assertNotIn("Traceback", missing.stderr)
 
+    def test_memory_forget_command_private_deletes_without_leaking_body(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            secret = "CLI_PRIVATE_DELETE_SECRET_TOKEN"
+            page_id = store.upsert_memory_page(
+                "preferences: secret cli",
+                f"User private CLI memory {secret}",
+                confidence=0.8,
+            )
+
+            forget = _run_cli(
+                [
+                    "memory",
+                    "forget",
+                    page_id,
+                    "--reason",
+                    "user requested deletion",
+                    "--target-type",
+                    "page",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            read = _run_cli(["memory", "read", page_id, "--state-dir", tmp, "--json"])
+            tombstones = _run_cli(["memory", "tombstones", "--target-id", page_id, "--state-dir", tmp, "--json"])
+            plain = _run_cli(["memory", "forget", "mem_missing", "--state-dir", tmp])
+            forget_plain = _run_cli(["memory", "forget", page_id, "--state-dir", tmp])
+
+            self.assertEqual(forget.returncode, 0, forget.stderr)
+            payload = json.loads(forget.stdout)
+            self.assertEqual(payload["kind"], "memory_private_delete")
+            self.assertEqual(payload["target_type"], "page")
+            self.assertNotIn(secret, forget.stdout)
+            self.assertEqual(read.returncode, 0, read.stderr)
+            self.assertNotIn(secret, read.stdout)
+            self.assertEqual(json.loads(read.stdout)["memory"]["title"], "[private memory deleted]")
+            listed = json.loads(tombstones.stdout)["tombstones"]
+            self.assertEqual(listed[0]["reason"], "private_delete")
+            self.assertEqual(listed[0]["summary"], "[private memory deleted]")
+            self.assertNotIn(secret, tombstones.stdout)
+            self.assertEqual(plain.returncode, 1)
+            self.assertIn("mnemo: Memory item not found for private delete: mem_missing", plain.stderr)
+            self.assertEqual(forget_plain.returncode, 0, forget_plain.stderr)
+            self.assertIn("private-deleted page", forget_plain.stdout)
+
     def test_memory_decay_command_marks_expired_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

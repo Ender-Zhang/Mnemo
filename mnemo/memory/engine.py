@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 import time
 from datetime import datetime, timezone
@@ -18,6 +19,11 @@ W0_MEMORY_RETENTION = "memory_candidate"
 DEFAULT_W0_CONFIDENCE = 0.62
 MIN_W0_CANDIDATE_CHARS = 12
 MEMORY_SEARCH_SCOPES = {"memory", "stable", "sessions", "all"}
+PRIVATE_DELETE_SUMMARY = "[private memory deleted]"
+PRIVATE_DELETE_TOMBSTONE_REASON = "private_delete"
+PRIVATE_DELETE_RULE = (
+    "Private delete: do not recreate this memory from historical context unless the user explicitly restates it."
+)
 
 
 class MemoryEngine:
@@ -458,6 +464,27 @@ class MemoryEngine:
                 }
 
         raise ValueError(f"Memory item not found for tombstone: {memory_id}")
+
+    def private_delete_memory(
+        self,
+        memory_id: str,
+        reason: str = PRIVATE_DELETE_TOMBSTONE_REASON,
+        *,
+        target_type: str = "auto",
+    ) -> dict[str, Any]:
+        normalized_target_type = _normalize_tombstone_target_type(target_type)
+        reason_text = _normalize_space(reason) or PRIVATE_DELETE_TOMBSTONE_REASON
+        if normalized_target_type in {"auto", "page"}:
+            page = self._get_page(memory_id)
+            if page:
+                return self._private_delete_page(page, reason_text, redact_source_candidate=True)
+
+        if normalized_target_type in {"auto", "candidate"}:
+            candidate = self._get_candidate(memory_id)
+            if candidate:
+                return self._private_delete_candidate(candidate, reason_text, redact_promoted_pages=True)
+
+        raise ValueError(f"Memory item not found for private delete: {memory_id}")
 
     def health_report(self, limit: int = 20) -> dict[str, Any]:
         card_limit = max(1, min(50, int(limit)))
@@ -927,6 +954,147 @@ class MemoryEngine:
                     page_ids.append(page_id)
         return page_ids
 
+    def _private_delete_page(
+        self,
+        page: dict[str, Any],
+        reason_text: str,
+        *,
+        redact_source_candidate: bool,
+    ) -> dict[str, Any]:
+        page_id = str(page["id"])
+        status = f"private_delete:{_status_reason(reason_text)}"
+        target_hash = _memory_hash("page", page.get("title"), page.get("content"))
+        source_candidate_id = page.get("source_candidate_id")
+        source_candidate = self._get_candidate(str(source_candidate_id)) if source_candidate_id else None
+        evidence_run_id = source_candidate.get("run_id") if source_candidate else None
+        tombstone_id = self.store.add_memory_tombstone(
+            page_id,
+            "page",
+            PRIVATE_DELETE_TOMBSTONE_REASON,
+            summary=PRIVATE_DELETE_SUMMARY,
+            target_hash=target_hash,
+            evidence_run_id=evidence_run_id,
+            rule=PRIVATE_DELETE_RULE,
+            metadata=_private_delete_metadata(
+                reason_text,
+                previous_status=page.get("status"),
+                target_hash=target_hash,
+                scope=page.get("scope"),
+            ),
+        )
+        redact_page = getattr(self.store, "redact_memory_page", None)
+        if not redact_page:
+            raise ValueError("memory page private delete is not supported by this store")
+        redact_page(
+            page_id,
+            title=PRIVATE_DELETE_SUMMARY,
+            content=PRIVATE_DELETE_SUMMARY,
+            confidence=0.0,
+            status=status,
+            metadata=_private_delete_metadata(
+                reason_text,
+                previous_status=page.get("status"),
+                target_hash=target_hash,
+                scope=page.get("scope"),
+            ),
+        )
+
+        related_redactions: list[dict[str, Any]] = []
+        if redact_source_candidate and source_candidate and not _is_private_delete_status(source_candidate.get("status")):
+            related_redactions.append(
+                self._private_delete_candidate(
+                    source_candidate,
+                    reason_text,
+                    redact_promoted_pages=False,
+                )
+            )
+
+        return {
+            "kind": "memory_private_delete",
+            "memory_id": page_id,
+            "target_type": "page",
+            "status": status,
+            "reason": reason_text,
+            "tombstone_reason": PRIVATE_DELETE_TOMBSTONE_REASON,
+            "tombstone_id": tombstone_id,
+            "target_hash": target_hash,
+            "redacted": True,
+            "memory": self._get_page(page_id),
+            "related_redactions": _compact_private_redactions(related_redactions),
+        }
+
+    def _private_delete_candidate(
+        self,
+        candidate: dict[str, Any],
+        reason_text: str,
+        *,
+        redact_promoted_pages: bool,
+    ) -> dict[str, Any]:
+        candidate_id = str(candidate["id"])
+        status = f"private_delete:{_status_reason(reason_text)}"
+        target_hash = _memory_hash("candidate", candidate.get("claim"), candidate.get("evidence"))
+        tombstone_id = self.store.add_memory_tombstone(
+            candidate_id,
+            "candidate",
+            PRIVATE_DELETE_TOMBSTONE_REASON,
+            summary=PRIVATE_DELETE_SUMMARY,
+            target_hash=target_hash,
+            evidence_run_id=candidate.get("run_id"),
+            rule=PRIVATE_DELETE_RULE,
+            metadata=_private_delete_metadata(
+                reason_text,
+                previous_status=candidate.get("status"),
+                target_hash=target_hash,
+                dimension=candidate.get("dimension"),
+                scope=candidate.get("scope"),
+            ),
+        )
+        redact_candidate = getattr(self.store, "redact_memory_candidate", None)
+        if not redact_candidate:
+            raise ValueError("memory candidate private delete is not supported by this store")
+        redact_candidate(
+            candidate_id,
+            claim=PRIVATE_DELETE_SUMMARY,
+            confidence=0.0,
+            status=status,
+            evidence=[
+                {
+                    "kind": "private_delete",
+                    "redacted": True,
+                    "reason": reason_text,
+                    "target_hash": target_hash,
+                }
+            ],
+        )
+
+        related_redactions: list[dict[str, Any]] = []
+        if redact_promoted_pages:
+            for page_id in self._promoted_page_ids(candidate_id):
+                page = self._get_page(page_id)
+                if not page or _is_private_delete_status(page.get("status")):
+                    continue
+                related_redactions.append(
+                    self._private_delete_page(
+                        page,
+                        reason_text,
+                        redact_source_candidate=False,
+                    )
+                )
+
+        return {
+            "kind": "memory_private_delete",
+            "memory_id": candidate_id,
+            "target_type": "candidate",
+            "status": status,
+            "reason": reason_text,
+            "tombstone_reason": PRIVATE_DELETE_TOMBSTONE_REASON,
+            "tombstone_id": tombstone_id,
+            "target_hash": target_hash,
+            "redacted": True,
+            "memory": self._get_candidate(candidate_id),
+            "related_redactions": _compact_private_redactions(related_redactions),
+        }
+
     def _associated_pages(
         self,
         pages: list[dict[str, Any]],
@@ -1134,7 +1302,9 @@ def _session_suppression_tombstones(store: Any, *, limit: int = 100) -> list[dic
     return [
         tombstone
         for tombstone in list_tombstones(limit=limit)
-        if _tombstone_signal_terms(tombstone) or _tombstone_signal_phrase(tombstone)
+        if _is_private_delete_tombstone(tombstone)
+        or _tombstone_signal_terms(tombstone)
+        or _tombstone_signal_phrase(tombstone)
     ]
 
 
@@ -1145,6 +1315,10 @@ def _matching_session_tombstone(message: dict[str, Any], tombstones: list[dict[s
     snippet_text = snippet.casefold()
     snippet_terms = set(_keywords(snippet))
     for tombstone in tombstones:
+        if _is_private_delete_tombstone(tombstone):
+            if _private_delete_tombstone_matches_session(message, tombstone):
+                return tombstone
+            continue
         phrase = _tombstone_signal_phrase(tombstone)
         if phrase and phrase.casefold() in snippet_text:
             return tombstone
@@ -1218,6 +1392,19 @@ def _tombstone_signal_terms(tombstone: dict[str, Any]) -> set[str]:
         metadata.get("scope"),
     ]
     return set(_keywords(" ".join(str(value or "") for value in values)))
+
+
+def _is_private_delete_tombstone(tombstone: dict[str, Any]) -> bool:
+    metadata = tombstone.get("metadata") if isinstance(tombstone.get("metadata"), dict) else {}
+    return (
+        tombstone.get("reason") == PRIVATE_DELETE_TOMBSTONE_REASON
+        or metadata.get("redaction") == PRIVATE_DELETE_TOMBSTONE_REASON
+    )
+
+
+def _private_delete_tombstone_matches_session(message: dict[str, Any], tombstone: dict[str, Any]) -> bool:
+    evidence_run_id = str(tombstone.get("evidence_run_id") or "")
+    return bool(evidence_run_id and evidence_run_id == str(message.get("run_id") or ""))
 
 
 def _compact_run(run: dict[str, Any]) -> dict[str, Any]:
@@ -1424,6 +1611,41 @@ def _bounded_confidence(value: Any, default: float) -> float:
     except (TypeError, ValueError):
         confidence = default
     return min(1.0, max(0.0, confidence))
+
+
+def _memory_hash(kind: str, *parts: Any) -> str:
+    payload = dumps(
+        {
+            "kind": kind,
+            "parts": [part for part in parts if part is not None],
+        }
+    )
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _private_delete_metadata(reason: str, **values: Any) -> dict[str, Any]:
+    metadata = {
+        "redaction": PRIVATE_DELETE_TOMBSTONE_REASON,
+        "delete_reason": _truncate(reason, limit=120),
+        "redacted_at": time.time(),
+    }
+    for key, value in values.items():
+        if value is not None:
+            metadata[key] = value
+    return metadata
+
+
+def _compact_private_redactions(redactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "memory_id": item.get("memory_id"),
+            "target_type": item.get("target_type"),
+            "status": item.get("status"),
+            "tombstone_id": item.get("tombstone_id"),
+            "redacted": bool(item.get("redacted")),
+        }
+        for item in redactions
+    ]
 
 
 def _fingerprint(value: str) -> str:
@@ -1703,6 +1925,10 @@ def _is_tombstone_status(status: Any) -> bool:
         or "private_delete" in normalized
         or "deleted" in normalized
     )
+
+
+def _is_private_delete_status(status: Any) -> bool:
+    return str(status or "").casefold().startswith("private_delete")
 
 
 def _truncate(value: str, limit: int = 220) -> str:

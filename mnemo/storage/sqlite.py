@@ -1438,6 +1438,25 @@ class StateStore:
                 (confidence, time.time(), page_id),
             )
 
+    def redact_memory_candidate(
+        self,
+        candidate_id: str,
+        *,
+        claim: str,
+        status: str,
+        evidence: Iterable[dict[str, Any]] | None = None,
+        confidence: float = 0.0,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE memory_candidates
+                SET claim = ?, confidence = ?, evidence_json = ?, status = ?
+                WHERE id = ?
+                """,
+                (claim, confidence, dumps(list(evidence or [])), status, candidate_id),
+            )
+
     def get_memory_candidate(self, candidate_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
@@ -1502,6 +1521,26 @@ class StateStore:
                     (page_id, title, content, scope, confidence, status, source_candidate_id, metadata_json or "{}", now, now),
                 )
         return page_id
+
+    def redact_memory_page(
+        self,
+        page_id: str,
+        *,
+        title: str,
+        content: str,
+        status: str,
+        metadata: dict[str, Any] | None = None,
+        confidence: float = 0.0,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE memory_pages
+                SET title = ?, content = ?, confidence = ?, status = ?, metadata_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (title, content, confidence, status, dumps(metadata or {}), time.time(), page_id),
+            )
 
     def search_memory_pages(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         pattern = f"%{query}%"

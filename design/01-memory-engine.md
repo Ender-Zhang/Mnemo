@@ -375,6 +375,12 @@ memory_tombstone:
 
 Tombstone 只存最小必要信息，避免把用户要求删除的敏感内容再次写回系统。
 
+实现接口：
+- `MemoryEngine.private_delete_memory(id, reason, target_type)`：redact page/candidate 原文，写 `reason=private_delete` tombstone，只保留 `target_hash`、source run provenance 和非原文摘要。
+- `mnemo memory forget <id>` / `memory_private_delete` tool：显式触发 private delete；这是模型可选择调用的写工具，不是后台固定流程。
+- 对由 candidate promoted 出来的 page，private delete 会同步 redact source candidate；对 candidate，会同步 redact promoted pages。
+- L4 session search 默认用 private-delete tombstone 的 `evidence_run_id` 抑制源 run snippets；不为了抑制召回而重新保存被删除文本。
+
 ### 3.8 记忆信息决策树
 
 ```

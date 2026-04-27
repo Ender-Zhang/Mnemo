@@ -244,6 +244,7 @@ mnemo schedule feedback <watch_id> --outcome no_feedback --action sparsify --pol
 # 联想召回
 mnemo recall "deadline pressure" --depth 2
 mnemo memory search "apple" --debug-query  # 展示 QueryPlanner 多路 query 和召回来源
+mnemo memory forget <memory_id>          # private-delete：redact 原文，只保留最小 tombstone hash
 
 # 记忆养成与健康度
 mnemo stats                              # Memory Health Score + 十维覆盖率

@@ -295,6 +295,12 @@ def build_parser() -> argparse.ArgumentParser:
     memory_tombstone_parser.add_argument("--reason", required=True)
     memory_tombstone_parser.add_argument("--target-type", choices=["auto", "candidate", "page"], default="auto")
     memory_tombstone_parser.add_argument("--json", action="store_true")
+    memory_forget_parser = memory_subparsers.add_parser("forget", help="Private-delete and redact a memory candidate or page")
+    _add_state_dir(memory_forget_parser)
+    memory_forget_parser.add_argument("memory_id")
+    memory_forget_parser.add_argument("--reason", default="private_delete")
+    memory_forget_parser.add_argument("--target-type", choices=["auto", "candidate", "page"], default="auto")
+    memory_forget_parser.add_argument("--json", action="store_true")
     memory_promote_parser = memory_subparsers.add_parser("promote", help="Promote a memory candidate")
     _add_state_dir(memory_promote_parser)
     memory_promote_parser.add_argument("candidate_id")
@@ -1300,6 +1306,8 @@ def _cmd_memory(args: argparse.Namespace) -> int:
             }
         elif args.memory_command == "tombstone":
             result = engine.tombstone_memory(args.memory_id, args.reason, target_type=args.target_type)
+        elif args.memory_command == "forget":
+            result = engine.private_delete_memory(args.memory_id, args.reason, target_type=args.target_type)
         elif args.memory_command == "promote":
             result = engine.promote_candidate(args.candidate_id)
         elif args.memory_command == "reject":
@@ -1462,6 +1470,13 @@ def _print_memory_result(result: dict) -> None:
             print(_format_memory_tombstone(tombstone))
         return
     if "tombstone_id" in result and "memory_id" in result:
+        if result.get("kind") == "memory_private_delete":
+            print(
+                f"private-deleted {result['target_type']} {result['memory_id']} "
+                f"-> {result['tombstone_id']} related={len(result.get('related_redactions', []))} "
+                f"reason={result.get('reason', '')}"
+            )
+            return
         print(
             f"tombstoned {result['target_type']} {result['memory_id']} "
             f"-> {result['tombstone_id']} reason={result.get('reason', '')}"

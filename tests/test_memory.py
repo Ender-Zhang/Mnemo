@@ -136,6 +136,79 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(store.list_memory_tombstones(target_id=page_id)[0]["reason"], "superseded")
             self.assertEqual(MemoryEngine(store).search("OldEdit", limit=5), [])
 
+    def test_private_delete_page_redacts_page_source_candidate_and_outputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            secret = "PRIVATE_DELETE_SECRET_TOKEN"
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                f"User private memory contains {secret}",
+                dimension="preferences",
+                confidence=0.9,
+                evidence=[{"kind": "raw_message", "text": secret}],
+            )
+            promoted = MemoryEngine(store).promote_candidate(candidate_id)
+            page_id = promoted["page_id"]
+
+            result = MemoryEngine(store).private_delete_memory(
+                page_id,
+                "user requested deletion",
+                target_type="page",
+            )
+
+            page = store.get_memory_page(page_id)
+            candidate = store.get_memory_candidate(candidate_id)
+            tombstones = [
+                *store.list_memory_tombstones(target_id=page_id),
+                *store.list_memory_tombstones(target_id=candidate_id),
+            ]
+            health = MemoryEngine(store).health_report(limit=10)
+            serialized = str({"result": result, "page": page, "candidate": candidate, "tombstones": tombstones, "health": health})
+            self.assertEqual(result["kind"], "memory_private_delete")
+            self.assertEqual(result["target_type"], "page")
+            self.assertTrue(result["redacted"])
+            self.assertEqual(page["title"], "[private memory deleted]")
+            self.assertEqual(page["content"], "[private memory deleted]")
+            self.assertTrue(page["status"].startswith("private_delete:"))
+            self.assertEqual(candidate["claim"], "[private memory deleted]")
+            self.assertTrue(candidate["status"].startswith("private_delete:"))
+            self.assertNotIn(secret, serialized)
+            self.assertTrue(all(item["reason"] == "private_delete" for item in tombstones))
+            self.assertTrue(all(item["summary"] == "[private memory deleted]" for item in tombstones))
+            self.assertTrue(all(str(item["target_hash"]).startswith("sha256:") for item in tombstones))
+            self.assertEqual(MemoryEngine(store).search(secret, limit=5), [])
+
+    def test_private_delete_candidate_suppresses_source_run_session_snippets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("private delete")
+            mission_id = store.create_mission(conversation_id, "forget sensitive memory")
+            secret = "PRIVATE_SESSION_DELETE_TOKEN"
+            run_id = store.create_run(conversation_id, mission_id, f"Remember sensitive preference {secret}")
+            store.complete_run(run_id, f"I will remember sensitive preference {secret}.")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                f"User sensitive preference {secret}",
+                dimension="preferences",
+                confidence=0.8,
+            )
+
+            result = MemoryEngine(store).private_delete_memory(candidate_id, target_type="candidate")
+            default = MemoryEngine(store).search_with_plan(secret, limit=5, search_scope="sessions")
+            historical = MemoryEngine(store).search(
+                secret,
+                limit=5,
+                search_scope="sessions",
+                include_tombstoned=True,
+            )
+
+            self.assertEqual(result["target_type"], "candidate")
+            self.assertEqual(store.get_memory_candidate(candidate_id)["claim"], "[private memory deleted]")
+            self.assertEqual(default["matches"], [])
+            self.assertGreater(default["recall_policy"]["tombstone_filter"]["suppressed"], 0)
+            self.assertEqual({item["type"] for item in historical}, {"session_message"})
+
     def test_memory_health_report_surfaces_counts_and_review_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)

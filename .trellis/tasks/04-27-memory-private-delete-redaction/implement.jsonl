@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Private delete and selective forgetting contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Storage redaction APIs and tombstone persistence"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Provider-native memory private delete tool contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Unit/build/package smoke gates"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI missing-id normalization"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Engine storage CLI tool data flow"}

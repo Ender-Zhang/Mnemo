@@ -61,14 +61,14 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Stable memory is not directly mutated by normal task tools.
 - [x] Memory engine pages/indexes beyond candidates.
 - [x] Associative recall / LLM Wiki style memory graph.
-- [~] Conflict detection, confidence updates, durable tombstones, compact memory health review cards, and metadata-driven decay/stale marking exist; full selective forgetting/private-delete redaction is not complete.
+- [~] Conflict detection, confidence updates, durable tombstones, private-delete redaction, compact memory health review cards, and metadata-driven decay/stale marking exist; broader selective-forgetting policy for replacement/low-usefulness remains incomplete.
 - [x] W0 working memory to long-term candidate pipeline.
 - [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, persists reports, and limits local fallback to delta candidates; provider-led idle scheduling and broader memory maintenance actions remain incomplete.
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
 - [x] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, injection-scan, wrong-memory tombstone suppression, low-confidence over-personalization no-promotion, and compact Memory Health gates.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
 - [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, tombstone-aware session suppression, and CLI debug output exist; vector semantic retrieval and true MMR remain.
-- [~] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, compact health scores/cards, metadata-driven decay/stale marking, tool calls, and CLI inspection exist; private-delete redaction and full selective forgetting remain.
+- [~] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, private-delete redaction, compact health scores/cards, metadata-driven decay/stale marking, tool calls, and CLI inspection exist; broader selective forgetting remains.
 - [~] Memory write taint tracking and prompt-injection scanner foundation: `memory_write_candidate` and W0 candidate writes append safety evidence, detect prompt override/secret/tool-call injection, and route suspicious writes to review; deeper source-boundary enforcement across MCP/external runtimes remains.
 
 ## Skills And Evolution
@@ -233,3 +233,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-27-learning-chip-high-risk-confirmation`: Review-gated memory candidates now stream compact confirmation metadata and render as explicit inline learning confirmations without a separate workflow.
 - [x] `04-27-memory-decay-stale-foundation`: Memory pages now round-trip maintenance metadata, health reports surface decay-due cards, and `memory_decay_stale_pages` / `mnemo memory decay` can mark expired or sufficiently decayed active pages stale.
 - [x] `04-27-tombstone-aware-session-recall`: L4 session recall now suppresses tombstone-matching snippets by default, exposes compact recall-policy metadata, and supports explicit historical lookup through `include_tombstoned`.
+- [x] `04-27-memory-private-delete-redaction`: Private-delete now redacts page/candidate text and evidence, writes minimal hash tombstones, suppresses source-run L4 snippets, and is exposed through `mnemo memory forget` plus `memory_private_delete`.

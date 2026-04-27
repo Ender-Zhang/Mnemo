@@ -32,6 +32,8 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
         self.assertIn("tool_expand_schema", minimal.tool_names)
         self.assertGreater(first.schema_token_estimate, minimal.schema_token_estimate)
         self.assertNotIn("input_schema", str(first.metadata()))
+        self.assertIn("memory_private_delete", first.tool_names)
+        self.assertNotIn("memory_private_delete", minimal.tool_names)
 
     def test_tool_search_and_expand_schema_are_compact_read_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -394,6 +396,36 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(store.get_memory_page(page_id)["status"], "tombstoned:superseded")
             self.assertEqual(store.list_memory_tombstones(target_id=page_id)[0]["reason"], "superseded")
             self.assertEqual(compact["evidence"][0]["kind"], "memory_tombstone")
+
+    def test_memory_private_delete_tool_redacts_and_returns_compact_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            secret = "TOOL_PRIVATE_DELETE_SECRET_TOKEN"
+            page_id = store.upsert_memory_page(
+                "preferences: secret tool",
+                f"User private tool memory {secret}",
+                confidence=0.8,
+            )
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="memory_private_delete",
+                    arguments={"id": page_id, "reason": "user requested deletion", "target_type": "page"},
+                    call_id="call_memory_private_delete",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+            serialized = str({"result": result.result, "compact": compact, "tombstones": store.list_memory_tombstones(target_id=page_id)})
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["kind"], "memory_private_delete")
+            self.assertEqual(store.get_memory_page(page_id)["content"], "[private memory deleted]")
+            self.assertEqual(compact["evidence"][0]["kind"], "memory_private_delete")
+            self.assertTrue(compact["evidence"][0]["redacted"])
+            self.assertNotIn(secret, serialized)
 
     def test_memory_search_can_target_session_snippets(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
