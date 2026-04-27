@@ -1,0 +1,4 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "verify daemon recovery storage behavior"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "verify W0 memory contract"}

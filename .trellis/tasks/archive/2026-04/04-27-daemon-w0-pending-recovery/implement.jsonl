@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "daemon recovery touches queue/storage contracts"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "W0 ingestion must reuse MemoryEngine contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "tests and package quality gates"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "CLI/runtime/storage payload crosses layers"}
