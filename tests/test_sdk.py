@@ -156,13 +156,42 @@ print(json.dumps({
             self.assertEqual(item["metadata"]["dream"]["min_confidence"], 0.82)
             self.assertNotIn("dream_report", str(result))
 
+    def test_runtime_status_returns_compact_operational_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MnemoClient(state_dir=tmp)
+            store = StateStore(tmp)
+            store.initialize()
+            inbox_id = store.add_inbox_item(category="decision", title="Approve compact status")
+            client.schedule_dream(schedule="once", next_run_at=0)
+            run = client.run("remember: SDK runtime status should stay compact")
+
+            status = client.runtime_status(limit=5)
+
+            self.assertEqual(status["kind"], "runtime_status")
+            self.assertIn("queue", status)
+            self.assertEqual(status["open_inbox"]["items"][0]["id"], inbox_id)
+            self.assertEqual(status["scheduled"]["counts"]["dream"]["active"], 1)
+            self.assertEqual(status["recent_runs"][0]["run_id"], run["run_id"])
+            self.assertIn("SDK runtime status", status["recent_runs"][0]["input"])
+            self.assertNotIn("output_text", str(status))
+
     def test_api_schema_exposes_core_methods(self) -> None:
         schema = mnemo_core_api_schema()
 
         self.assertEqual(schema["schema_version"], "mnemo.core_api.v1")
         self.assertEqual(
             set(schema["methods"]),
-            {"context", "recall", "capsule", "run", "external_run", "schedule_dream", "replay", "evaluate"},
+            {
+                "context",
+                "recall",
+                "capsule",
+                "run",
+                "external_run",
+                "schedule_dream",
+                "runtime_status",
+                "replay",
+                "evaluate",
+            },
         )
         self.assertEqual(schema["methods"]["context"]["side_effects"], "read_only")
         self.assertIn("prompt_mode", schema["methods"]["context"]["input_schema"]["properties"])
@@ -170,6 +199,8 @@ print(json.dumps({
         self.assertIn("command", schema["methods"]["external_run"]["input_schema"]["properties"])
         self.assertEqual(schema["methods"]["schedule_dream"]["side_effects"], "writes_scheduled_item")
         self.assertIn("min_confidence", schema["methods"]["schedule_dream"]["input_schema"]["properties"])
+        self.assertEqual(schema["methods"]["runtime_status"]["side_effects"], "read_only")
+        self.assertIn("limit", schema["methods"]["runtime_status"]["input_schema"]["properties"])
         self.assertIn("variants", schema["methods"]["evaluate"]["input_schema"]["properties"])
         self.assertIn("release_gate", schema["methods"]["evaluate"]["input_schema"]["properties"])
 

@@ -10,7 +10,7 @@ from .. import __version__
 from ..core.config import DEFAULT_STATE_DIR
 from ..core.jsonutil import dumps
 from ..memory import MemoryEngine
-from ..runtime import ScheduleService, scheduled_item_stats
+from ..runtime import ScheduleService
 from ..sdk import MnemoClient
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
@@ -364,24 +364,7 @@ class MnemoMcpServer:
 
     def _runtime_status(self, args: dict[str, Any]) -> dict[str, Any]:
         limit = _bounded_int(args.get("limit"), default=10, minimum=1, maximum=50)
-        store = self._store()
-        inbox_items = store.list_inbox_items(status="open", limit=limit)
-        generated_tools = store.list_generated_tools(status=None, limit=100)
-        return {
-            "kind": "runtime_status",
-            "version": "mnemo.runtime_status.v1",
-            "queue": store.queue_stats(),
-            "recent_runs": [
-                _run_status_card(run)
-                for run in store.list_runs(limit=limit)
-            ],
-            "open_inbox": {
-                "count": len(inbox_items),
-                "items": [_inbox_card(item) for item in inbox_items],
-            },
-            "generated_tools": _status_counts(generated_tools),
-            "scheduled": scheduled_item_stats(store),
-        }
+        return self.client.runtime_status(limit=limit)
 
     def _store(self) -> StateStore:
         store = StateStore(self.state_dir)
@@ -899,63 +882,6 @@ def _update_evidence(source: str, raw: Any) -> dict[str, Any]:
             if raw.get(key):
                 evidence[key] = raw[key]
     return evidence
-
-
-def _deferred_surface(kind: str, args: dict[str, Any], reason: str) -> dict[str, Any]:
-    return {
-        "kind": f"{kind}_surface",
-        "status": "not_implemented",
-        "reason": reason,
-        "requested": _compact_mapping(args),
-    }
-
-
-def _run_status_card(run: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "run_id": run.get("id"),
-        "conversation_id": run.get("conversation_id"),
-        "mission_id": run.get("mission_id"),
-        "status": run.get("status"),
-        "input": _truncate(run.get("input_text"), limit=120),
-        "created_at": run.get("created_at"),
-        "completed_at": run.get("completed_at"),
-    }
-
-
-def _inbox_card(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": item.get("id"),
-        "priority": item.get("priority"),
-        "category": item.get("category"),
-        "title": item.get("title"),
-        "action_type": item.get("action_type"),
-        "source_run_id": item.get("source_run_id"),
-        "created_at": item.get("created_at"),
-    }
-
-
-def _status_counts(items: list[dict[str, Any]]) -> dict[str, Any]:
-    counts: dict[str, int] = {}
-    for item in items:
-        status = str(item.get("status") or "unknown")
-        counts[status] = counts.get(status, 0) + 1
-    return {"total": len(items), "counts": counts}
-
-
-def _compact_mapping(value: dict[str, Any]) -> dict[str, Any]:
-    compact: dict[str, Any] = {}
-    for key, item in value.items():
-        if isinstance(item, str):
-            compact[key] = _truncate(item, limit=180)
-        elif isinstance(item, (int, float, bool)) or item is None:
-            compact[key] = item
-        elif isinstance(item, list):
-            compact[key] = {"count": len(item)}
-        elif isinstance(item, dict):
-            compact[key] = {"keys": sorted(str(k) for k in item)[:20]}
-        else:
-            compact[key] = str(type(item).__name__)
-    return compact
 
 
 def _prompt_mode(value: Any, *, default: str) -> str:

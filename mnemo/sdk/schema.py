@@ -194,6 +194,30 @@ _SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "runtime_status": {
+            "description": "Return compact queue, run, inbox, generated-tool, and scheduled-item status.",
+            "side_effects": "read_only",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 50},
+                },
+                "additionalProperties": False,
+            },
+            "output_schema": {
+                "type": "object",
+                "required": ["kind", "queue", "recent_runs", "open_inbox", "generated_tools", "scheduled"],
+                "properties": {
+                    "kind": {"const": "runtime_status"},
+                    "version": {"type": "string"},
+                    "queue": {"type": "object"},
+                    "recent_runs": {"type": "array"},
+                    "open_inbox": {"type": "object"},
+                    "generated_tools": {"type": "object"},
+                    "scheduled": {"type": "object"},
+                },
+            },
+        },
         "replay": {
             "description": "Summarize a persisted run trace for debugging and harness replay.",
             "side_effects": "read_only",

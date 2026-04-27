@@ -494,6 +494,8 @@ def _dispatch_core_api(config: WebServerConfig, method: str, body: dict[str, Any
             min_confidence=_float_field(body, "min_confidence", default=0.7),
             source=_string_field(body, "source", default="http"),
         )
+    if method == "runtime_status":
+        return client.runtime_status(limit=_int_field(body, "limit", default=10))
     if method == "replay":
         return client.replay(_required_string(body, "run_id"))
     if method == "evaluate":

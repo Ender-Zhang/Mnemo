@@ -13,6 +13,7 @@
 - `MnemoClient.capsule(task: str, *, runtime="external", agent_type="general", requested_pages=None, allowed_pages=None, conversation_id=None, mission_id=None, limit=8) -> dict[str, Any]`
 - `MnemoClient.external_run(task: str, *, command: list[str] | tuple[str, ...], runtime="external-command", agent_type="general", requested_pages=None, allowed_pages=None, conversation_id=None, mission_id=None, timeout_s=30.0) -> dict[str, Any]`
 - `MnemoClient.schedule_dream(*, schedule="daily", title=None, next_run_at=None, limit=20, min_confidence=0.7, source="sdk") -> dict[str, Any]`
+- `MnemoClient.runtime_status(*, limit=10) -> dict[str, Any]`
 - `MnemoClient.run(message: str, *, conversation_id=None, mission_id=None, prompt_mode="full") -> dict[str, Any]`
 - `MnemoClient.replay(run_id: str) -> dict[str, Any]`
 - `replay_summary(state_dir: str | Path, run_id: str, *, mode: str = "deterministic", compare_run_id: str | None = None) -> dict[str, Any]`
@@ -51,7 +52,9 @@
 - `evaluate(release_gate=True)` returns the fixed core release gate report across personalization, memory-safety, skill-evolution, proactive-watch, and external-harness gates; it cannot be combined with `variants`.
 - `schedule_dream()` creates a durable Dream scheduled item through `ScheduleService.add_dream()` and returns compact scheduled item metadata only.
 - `schedule_dream()` is a trigger/budget registration surface; it must not run Dream maintenance directly or return Dream report bodies.
-- `mnemo_core_api_schema()` returns a JSON-serializable language-neutral contract for `context`, `recall`, `capsule`, `external_run`, `schedule_dream`, `run`, `replay`, and `evaluate`.
+- `runtime_status()` returns compact queue stats, recent run cards, open Inbox cards, generated-tool counts, and scheduled-item stats.
+- `runtime_status()` is read-only and must not expose raw run input/output bodies, prompt text, traces, artifact bodies, or tool result blobs.
+- `mnemo_core_api_schema()` returns a JSON-serializable language-neutral contract for `context`, `recall`, `capsule`, `external_run`, `schedule_dream`, `runtime_status`, `run`, `replay`, and `evaluate`.
 - The `evaluate` API schema exposes an optional `variants` array with the public harness variant enum.
 - The `evaluate` API schema exposes `release_gate` as an optional boolean.
 - `mnemo api schema --json` wraps the schema as `{ "api_schema": ... }`; text mode prints readable method summaries.
@@ -66,6 +69,7 @@
 | Capsule request | Compact external-runtime capsule with pointer-only blocked pages and no raw state | `tests/test_sdk.py` |
 | External runtime request | Explicit command receives capsule and returns proposals only; ignored fields become boundary violations | `tests/test_runtime_external.py`, `tests/test_sdk.py` |
 | Dream schedule request | SDK registers a compact Dream scheduled item through existing scheduler service | `tests/test_sdk.py` |
+| Runtime status request | SDK returns compact read-only status cards without raw run bodies | `tests/test_sdk.py` |
 | Run request | Existing runtime creates run ledger and compact tool summary | `tests/test_sdk.py` |
 | Replay/evaluate request | Existing harness services return compact suite, variant, and release-gate reports | `tests/test_sdk.py` |
 | Replay modes | Deterministic, dry-run, live-tools, and compare reports stay compact and normalize invalid modes | `tests/test_replay.py`, `tests/test_harness.py`, `tests/test_cli.py` |
@@ -84,7 +88,7 @@
 - Bad: replaying write/external/admin tool calls while checking drift.
 
 ### 6. Tests Required
-- SDK context, recall, capsule, external_run, schedule_dream, run/replay/evaluate, variant-report, release-gate, and schema shape tests.
+- SDK context, recall, capsule, external_run, schedule_dream, runtime_status, run/replay/evaluate, variant-report, release-gate, and schema shape tests.
 - Replay mode tests for deterministic mirror checks, dry-run reconstruction, safe live-tools replay, side-effect skips, and run-to-run diffs.
 - CLI schema command tests for JSON and readable output.
 - Package install smoke import coverage for `mnemo.sdk`.
@@ -114,6 +118,7 @@
 - `POST /api/core/capsule`
 - `POST /api/core/external-run`
 - `POST /api/core/schedule-dream`
+- `POST /api/core/runtime-status`
 - `POST /api/core/run`
 - `POST /api/core/replay`
 - `POST /api/core/evaluate`
@@ -127,13 +132,14 @@
 - `run` mirrors SDK/local behavior; provider-backed streaming chat remains `/api/chat`.
 - `external-run` requires `command` as a JSON array of non-empty strings and preserves the same proposal-only boundary as SDK/CLI/MCP.
 - `schedule-dream` mirrors SDK `schedule_dream()` and validates `next_run_at` as string, number, or null at the HTTP boundary.
+- `runtime-status` mirrors SDK `runtime_status()` and returns compact read-only status cards.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
 | --- | --- | --- |
 | Core schema | `GET /api/core/schema` returns `mnemo.core_api.v1` | `tests/test_web.py` |
-| OpenAPI discovery | `GET /api/core/openapi.json` lists `/api/core/external-run`, `/api/core/schedule-dream`, and method schemas | `tests/test_web.py` |
-| Core method dispatch | Context/capsule/run/external-run/schedule-dream route to SDK and return compact results | `tests/test_web.py` |
+| OpenAPI discovery | `GET /api/core/openapi.json` lists `/api/core/external-run`, `/api/core/schedule-dream`, `/api/core/runtime-status`, and method schemas | `tests/test_web.py` |
+| Core method dispatch | Context/capsule/run/external-run/schedule-dream/runtime-status route to SDK and return compact results | `tests/test_web.py` |
 | Invalid JSON | Returns HTTP 400 JSON `{ "error": ... }` | `tests/test_web.py` |
 | Missing required field | Returns HTTP 400 JSON without traceback | `tests/test_web.py` |
 | Unknown method | Returns HTTP 404 JSON without traceback | `tests/test_web.py` |
@@ -147,7 +153,7 @@
 - Bad: returning raw provider tool schemas, full transcripts, or external command stdout bodies through HTTP.
 
 ### 6. Tests Required
-- Web tests for schema, OpenAPI discovery, method dispatch including schedule-dream, compactness, and JSON error handling.
+- Web tests for schema, OpenAPI discovery, method dispatch including schedule-dream and runtime-status, compactness, and JSON error handling.
 - CLI tests for `mnemo api serve --help`.
 - Package install smoke coverage for `mnemo.interfaces.web`.
 
@@ -194,7 +200,7 @@
 - `mnemo_watch` and `mnemo_cron` create durable scheduled items through `ScheduleService`; due processing still runs through the normal daemon queue.
 - `mnemo_dream_schedule` creates durable Dream maintenance scheduled items through `ScheduleService.add_dream()`; due processing runs bounded `MemoryEngine.dream_maintenance()` through the existing scheduler.
 - `mnemo_watch_feedback` records compact Watch outcomes and applies an explicit model/user policy decision through `ScheduleService`.
-- `mnemo_runtime_status` includes compact scheduled-item status.
+- `mnemo_runtime_status` routes through `MnemoClient.runtime_status()` and includes compact scheduled-item status.
 - JSON-RPC support covers `initialize`, `tools/list`, and `tools/call` with structured error responses.
 - `mnemo mcp serve` defaults to MCP stdio `Content-Length` framing; JSONL stdio remains an explicit debug transport.
 - `mcp_server_config()` is packaging metadata only; it must not start a server, mutate state, or execute external clients.

@@ -173,6 +173,11 @@ print(json.dumps({
                     "/api/core/schedule-dream",
                     {"schedule": "once", "next_run_at": 0, "limit": 11, "min_confidence": 0.83},
                 )
+                runtime_status, _, runtime_body = server.request(
+                    "POST",
+                    "/api/core/runtime-status",
+                    {"limit": 5},
+                )
 
             schema = json.loads(schema_body)["api_schema"]
             openapi = json.loads(openapi_body)
@@ -181,6 +186,7 @@ print(json.dumps({
             external = json.loads(external_body)
             run = json.loads(run_body)
             dream = json.loads(dream_body)
+            runtime = json.loads(runtime_body)
 
             self.assertEqual(schema_status, 200)
             self.assertEqual(schema["schema_version"], "mnemo.core_api.v1")
@@ -188,6 +194,7 @@ print(json.dumps({
             self.assertEqual(openapi["openapi"], "3.1.0")
             self.assertIn("/api/core/external-run", openapi["paths"])
             self.assertIn("/api/core/schedule-dream", openapi["paths"])
+            self.assertIn("/api/core/runtime-status", openapi["paths"])
             self.assertEqual(context_status, 200)
             self.assertEqual(context["method"], "context")
             self.assertEqual(context["result"]["kind"], "context_block")
@@ -206,6 +213,11 @@ print(json.dumps({
             self.assertEqual(dream["result"]["item"]["source"], "http")
             self.assertEqual(dream["result"]["item"]["metadata"]["dream"]["limit"], 11)
             self.assertNotIn("dream_report", dream_body)
+            self.assertEqual(runtime_status, 200)
+            self.assertEqual(runtime["method"], "runtime_status")
+            self.assertEqual(runtime["result"]["kind"], "runtime_status")
+            self.assertEqual(runtime["result"]["scheduled"]["counts"]["dream"]["active"], 1)
+            self.assertNotIn("output_text", runtime_body)
 
     def test_core_http_api_normalizes_request_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -216,6 +228,11 @@ print(json.dumps({
                     "POST",
                     "/api/core/schedule-dream",
                     {"next_run_at": {"bad": True}},
+                )
+                bad_runtime_status, _, bad_runtime_body = server.request(
+                    "POST",
+                    "/api/core/runtime-status",
+                    {"limit": "many"},
                 )
 
                 host, port = server.server.server_address
@@ -236,6 +253,8 @@ print(json.dumps({
             self.assertIn("unknown core API method", json.loads(unknown_body)["error"])
             self.assertEqual(bad_schedule_status, 400)
             self.assertIn("next_run_at must be a string, number, or null", json.loads(bad_schedule_body)["error"])
+            self.assertEqual(bad_runtime_status, 400)
+            self.assertIn("limit must be an integer", json.loads(bad_runtime_body)["error"])
             self.assertEqual(invalid_response.status, 400)
             self.assertEqual(json.loads(invalid_body)["error"], "request body must be JSON")
 

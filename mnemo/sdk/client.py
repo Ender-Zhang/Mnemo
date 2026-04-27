@@ -9,7 +9,14 @@ from ..evals import EvalHarness, replay_summary
 from ..memory import MemoryEngine
 from ..providers import provider_capabilities
 from ..prompt import PromptAssembler, load_prompt_bootstrap
-from ..runtime import ExternalRunRequest, ScheduleService, build_context_capsule, run_external, run_local
+from ..runtime import (
+    ExternalRunRequest,
+    ScheduleService,
+    build_context_capsule,
+    run_external,
+    run_local,
+    scheduled_item_stats,
+)
 from ..runtime.common import build_tool_bundle
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService, default_skill_roots
@@ -176,6 +183,27 @@ class MnemoClient:
             "item": item,
         }
 
+    def runtime_status(self, *, limit: int = 10) -> dict[str, Any]:
+        bounded_limit = max(1, min(50, int(limit)))
+        store = self._store()
+        inbox_items = store.list_inbox_items(status="open", limit=bounded_limit)
+        generated_tools = store.list_generated_tools(status=None, limit=100)
+        return {
+            "kind": "runtime_status",
+            "version": "mnemo.runtime_status.v1",
+            "queue": store.queue_stats(),
+            "recent_runs": [
+                _run_status_card(run)
+                for run in store.list_runs(limit=bounded_limit)
+            ],
+            "open_inbox": {
+                "count": len(inbox_items),
+                "items": [_inbox_card(item) for item in inbox_items],
+            },
+            "generated_tools": _status_counts(generated_tools),
+            "scheduled": scheduled_item_stats(store),
+        }
+
     def run(
         self,
         message: str,
@@ -303,6 +331,41 @@ def _event_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
         "chat_event_count": len(event_types),
         "event_types": event_types,
     }
+
+
+def _run_status_card(run: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "run_id": run.get("id"),
+        "conversation_id": run.get("conversation_id"),
+        "mission_id": run.get("mission_id"),
+        "status": run.get("status"),
+        "input": _compact_text(
+            run.get("input_preview") or run.get("input_text"),
+            limit=120,
+        ),
+        "created_at": run.get("created_at"),
+        "completed_at": run.get("completed_at"),
+    }
+
+
+def _inbox_card(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": item.get("id"),
+        "priority": item.get("priority"),
+        "category": item.get("category"),
+        "title": item.get("title"),
+        "action_type": item.get("action_type"),
+        "source_run_id": item.get("source_run_id"),
+        "created_at": item.get("created_at"),
+    }
+
+
+def _status_counts(items: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    for item in items:
+        status = str(item.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+    return {"total": len(items), "counts": counts}
 
 
 def _compact_text(value: Any, *, limit: int = 240) -> str:

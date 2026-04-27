@@ -76,6 +76,8 @@ def main() -> int:
         raise AssertionError("packaged SDK schema is missing context, capsule, or external_run method")
     if "schedule_dream" not in methods or not hasattr(MnemoClient, "schedule_dream"):
         raise AssertionError("packaged SDK schema is missing schedule_dream method")
+    if "runtime_status" not in methods or not hasattr(MnemoClient, "runtime_status"):
+        raise AssertionError("packaged SDK schema is missing runtime_status method")
     tool_names = {tool["name"] for tool in MnemoMcpServer().tools()}
     if "mnemo_context" not in tool_names or "mnemo_capsule" not in tool_names or "mnemo_external_run" not in tool_names:
         raise AssertionError("packaged MCP server is missing external runtime tools")
