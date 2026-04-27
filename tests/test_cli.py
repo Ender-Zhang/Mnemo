@@ -436,6 +436,28 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: Memory item not found for tombstone: mem_missing", missing.stderr)
             self.assertNotIn("Traceback", missing.stderr)
 
+    def test_memory_decay_command_marks_expired_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            page_id = store.upsert_memory_page(
+                "context: expired cli",
+                "This memory is past its explicit expiry.",
+                confidence=0.8,
+                metadata={"expires": "2000-01-01"},
+            )
+
+            decay_json = _run_cli(["memory", "decay", "--state-dir", tmp, "--json"])
+            decay_plain = _run_cli(["memory", "decay", "--state-dir", tmp])
+
+            self.assertEqual(decay_json.returncode, 0, decay_json.stderr)
+            payload = json.loads(decay_json.stdout)
+            self.assertEqual(payload["kind"], "memory_decay_report")
+            self.assertEqual(payload["counts"]["staled"], 1)
+            self.assertEqual(store.get_memory_page(page_id)["status"], "stale:expired")
+            self.assertEqual(decay_plain.returncode, 0, decay_plain.stderr)
+            self.assertIn("Memory decay checked=", decay_plain.stdout)
+
     def test_memory_links_command_reads_outgoing_and_incoming_edges(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

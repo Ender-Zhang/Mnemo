@@ -273,6 +273,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(memory_health_parser)
     memory_health_parser.add_argument("--limit", type=int, default=20)
     memory_health_parser.add_argument("--json", action="store_true")
+    memory_decay_parser = memory_subparsers.add_parser("decay", help="Apply metadata-driven memory decay and stale marking")
+    _add_state_dir(memory_decay_parser)
+    memory_decay_parser.add_argument("--limit", type=int, default=50)
+    memory_decay_parser.add_argument("--stale-confidence", type=float, default=0.35)
+    memory_decay_parser.add_argument("--json", action="store_true")
     memory_tombstones_parser = memory_subparsers.add_parser("tombstones", help="List durable memory tombstones")
     _add_state_dir(memory_tombstones_parser)
     memory_tombstones_parser.add_argument("--target-id")
@@ -1270,6 +1275,8 @@ def _cmd_memory(args: argparse.Namespace) -> int:
             result = {"exists": snapshot is not None, "snapshot": snapshot}
         elif args.memory_command == "health":
             result = engine.health_report(limit=args.limit)
+        elif args.memory_command == "decay":
+            result = engine.decay_stale_pages(limit=args.limit, stale_confidence=args.stale_confidence)
         elif args.memory_command == "tombstones":
             result = {
                 "limit": max(0, int(args.limit)),
@@ -1408,6 +1415,28 @@ def _print_memory_result(result: dict) -> None:
             print(
                 f"- {card.get('kind')} {card.get('target_type')}:{card.get('target_id')} "
                 f"[{card.get('status') or card.get('reason') or '-'}] {_short_text(card.get('summary', ''))}"
+            )
+        return
+    if result.get("kind") == "memory_decay_report":
+        counts = result.get("counts", {})
+        print(
+            "Memory decay "
+            f"checked={counts.get('checked', 0)} decayed={counts.get('decayed', 0)} "
+            f"staled={counts.get('staled', 0)} skipped={counts.get('skipped', 0)}"
+        )
+        for item in result.get("staled", []):
+            print(
+                f"- stale {item.get('page_id')} [{item.get('status')}] "
+                f"confidence={float(item.get('confidence') or 0.0):.2f}: "
+                f"{_short_text(item.get('title', ''))}"
+            )
+        for item in result.get("decayed", []):
+            if item.get("page_id") in {stale.get("page_id") for stale in result.get("staled", [])}:
+                continue
+            print(
+                f"- decay {item.get('page_id')} "
+                f"{float(item.get('previous_confidence') or 0.0):.2f}->"
+                f"{float(item.get('confidence') or 0.0):.2f}: {_short_text(item.get('title', ''))}"
             )
         return
     if "tombstones" in result and "matches" not in result:

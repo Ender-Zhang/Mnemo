@@ -349,6 +349,8 @@ class TemporalManager:
 
 选择性遗忘不是物理删除，而是把“不应再被用作事实”的信息从 active recall 中移出，并留下可审计的 tombstone，防止 DreamCycle 或 L4 session search 又把旧事实挖回来。
 
+实现上不需要固定的“每日衰减流水线”。MemoryEngine 暴露一个有界维护能力：读取 active page 的 `metadata.expires` / `metadata.expires_at` / `metadata.decay_days` / `metadata.last_verified_at`，生成 `memory_decay_report`，并在模型决定调用时把过期页面标为 `stale:expired`、把置信度衰减到阈值以下的页面标为 `stale:decay`。Health report 只给出 `decay_due_active`、`expired_active` 和 review cards，不直接替模型做调度决策。
+
 | Forget reason | 触发 | 处理 |
 |---------------|------|------|
 | `stale` | 过期且低置信 | 移出 L1，保留 L2 stale，等待验证 |
@@ -717,6 +719,8 @@ Dream 的 less-is-more 分工：
 | RunLedger | 记录 plan、tool calls、patch、跳过原因、成本和 eval |
 
 系统不把每天维护写死成必须完整跑完的流水线。模型拿到 delta、预算和工具后，自主决定本轮优先级；预算不足时宁可少做，也不全量扫库。
+
+当 health cards 显示存在过期或衰减候选时，Dream plan 可以把 `memory_decay_stale_pages` 作为可选工具暴露给模型。模型可以选择执行、先读取证据、请求用户确认，或跳过并记录原因。
 
 ```text
 Dream maintenance run

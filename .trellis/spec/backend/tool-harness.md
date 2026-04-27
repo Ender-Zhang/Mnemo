@@ -47,6 +47,7 @@
 - `memory_read` reads either a memory candidate or a stable memory page by id.
 - `memory_read` includes durable tombstone metadata for the requested id and still requires explicit read intent.
 - `memory_health_report(limit=20)` is read-only and returns compact counts, scores, configured-dimension coverage, and bounded review cards.
+- `memory_decay_stale_pages(limit=50, stale_confidence=0.35)` is write risk and applies bounded metadata-driven decay/expiry to active memory pages.
 - `memory_tombstone(id, reason, target_type="auto")` is write risk and records a durable tombstone while updating candidate/page status.
 - `recall_search(query, scope="all", limit=8)` returns compact actionable cards across knowledge, past work, artifacts, and decisions.
 - `recall_search.scope` is one of `all`, `knowledge`, `past_work`, `artifacts`, or `decisions`.
@@ -130,6 +131,7 @@
 | Generated tool runtime exposure | Provider runtime sends active generated tool specs | `tests/test_runtime.py` |
 | Artifact card projection | Emit id/title/kind without full artifact body | `tests/test_web.py`, `mnemo/runtime/common.py` |
 | Memory page read | Return stable page payload when `memory_read.id` is a memory page id | `tests/test_tools.py` |
+| Memory decay tool | Mark expired/decayed active pages stale through ToolHarness and return compact evidence | `tests/test_tools.py` |
 | Session memory search | `memory_search` can target L4 snippets through `search_scope="sessions"` | `tests/test_tools.py` |
 | Memory query plan | `memory_search` result includes compact query plan metadata | `tests/test_tools.py` |
 | Memory health report | Return compact health evidence without raw page bodies beyond review summaries | `tests/test_tools.py` |
@@ -138,6 +140,7 @@
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new tool by defining `ToolSpec`, registering a handler, and adding summary/evidence projection.
+- Good: keep memory maintenance tools bounded and compact so the model chooses when to call them.
 - Base: read-only tools should be usable by the default policy.
 - Good: keep artifact bodies in storage and reference them by id in UI/event payloads.
 - Good: expose associative memory through existing memory tools instead of a separate workflow router.

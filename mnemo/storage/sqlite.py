@@ -15,7 +15,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 EXPORT_KIND = "mnemo_state_export"
 EXPORT_MANIFEST = "manifest.json"
 MANAGED_STATE_DIRS = ("wiki", "skills", "runs", "artifacts")
@@ -172,6 +172,7 @@ class StateStore:
                     confidence REAL NOT NULL,
                     status TEXT NOT NULL,
                     source_candidate_id TEXT REFERENCES memory_candidates(id),
+                    metadata_json TEXT NOT NULL,
                     created_at REAL NOT NULL,
                     updated_at REAL NOT NULL
                 );
@@ -1460,8 +1461,10 @@ class StateStore:
         source_candidate_id: str | None = None,
         confidence: float = 0.7,
         status: str = "active",
+        metadata: dict[str, Any] | None = None,
     ) -> str:
         now = time.time()
+        metadata_json = dumps(metadata) if metadata is not None else None
         with self.connect() as conn:
             existing = None
             if source_candidate_id:
@@ -1481,21 +1484,22 @@ class StateStore:
                     """
                     UPDATE memory_pages
                     SET content = ?, confidence = ?, status = ?, source_candidate_id = COALESCE(?, source_candidate_id),
+                        metadata_json = COALESCE(?, metadata_json),
                         updated_at = ?
                     WHERE id = ?
                     """,
-                    (content, confidence, status, source_candidate_id, now, page_id),
+                    (content, confidence, status, source_candidate_id, metadata_json, now, page_id),
                 )
             else:
                 page_id = new_id("mempg")
                 conn.execute(
                     """
                     INSERT INTO memory_pages(
-                        id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+                        id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
                     )
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (page_id, title, content, scope, confidence, status, source_candidate_id, now, now),
+                    (page_id, title, content, scope, confidence, status, source_candidate_id, metadata_json or "{}", now, now),
                 )
         return page_id
 
@@ -1504,7 +1508,7 @@ class StateStore:
         with self.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+                SELECT id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
                 FROM memory_pages
                 WHERE status = 'active' AND (title LIKE ? OR content LIKE ?)
                 ORDER BY updated_at DESC
@@ -1512,12 +1516,12 @@ class StateStore:
                 """,
                 (pattern, pattern, limit),
             ).fetchall()
-        return [dict(row) for row in rows]
+        return [_memory_page_from_row(row) for row in rows]
 
     def list_memory_pages(self, status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]:
         limit_value = max(0, int(limit))
         sql = """
-            SELECT id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+            SELECT id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
             FROM memory_pages
         """
         params: list[Any] = []
@@ -1529,19 +1533,19 @@ class StateStore:
 
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
-        return [dict(row) for row in rows]
+        return [_memory_page_from_row(row) for row in rows]
 
     def get_memory_page(self, page_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
                 """
-                SELECT id, title, content, scope, confidence, status, source_candidate_id, created_at, updated_at
+                SELECT id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
                 FROM memory_pages
                 WHERE id = ?
                 """,
                 (page_id,),
             ).fetchone()
-        return dict(row) if row else None
+        return _memory_page_from_row(row) if row else None
 
     def add_memory_link(
         self,
@@ -2276,6 +2280,12 @@ def _memory_candidate_from_row(row: sqlite3.Row) -> dict[str, Any]:
     return result
 
 
+def _memory_page_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json", None), {})
+    return result
+
+
 def _memory_tombstone_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["metadata"] = loads(result.pop("metadata_json"), {})
@@ -2767,6 +2777,11 @@ def _migration_scheduled_items(conn: sqlite3.Connection) -> None:
     )
 
 
+def _migration_memory_page_metadata(conn: sqlite3.Connection) -> None:
+    _ensure_column(conn, "memory_pages", "metadata_json", "TEXT")
+    conn.execute("UPDATE memory_pages SET metadata_json = '{}' WHERE metadata_json IS NULL")
+
+
 MIGRATIONS = (
     SchemaMigration(1, "initial_schema", _migration_initial_schema),
     SchemaMigration(2, "post_v1_generated_lifecycle_columns", _migration_post_v1_generated_lifecycle_columns),
@@ -2777,6 +2792,7 @@ MIGRATIONS = (
     SchemaMigration(7, "inbox_items", _migration_inbox_items),
     SchemaMigration(8, "memory_tombstones", _migration_memory_tombstones),
     SchemaMigration(9, "scheduled_items", _migration_scheduled_items),
+    SchemaMigration(10, "memory_page_metadata", _migration_memory_page_metadata),
 )
 
 

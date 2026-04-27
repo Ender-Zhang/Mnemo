@@ -18,6 +18,7 @@
 - `MemoryEngine.undo_candidate(candidate_id: str, reason: str = "user undo") -> dict[str, Any]`
 - `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto") -> dict[str, Any]`
 - `MemoryEngine.health_report(limit: int = 20) -> dict[str, Any]`
+- `MemoryEngine.decay_stale_pages(limit: int = 50, *, now: float | None = None, stale_confidence: float = 0.35) -> dict[str, Any]`
 - `MemoryEngine.collect_dream_delta(limit: int = 20, *, since: float | None = None) -> dict[str, Any]`
 - `MemoryEngine.build_dream_plan(delta: dict[str, Any], *, limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.dream_maintenance(limit: int = 20, min_confidence: float = 0.7, *, since: float | None = None, persist: bool = True) -> dict[str, Any]`
@@ -32,6 +33,7 @@
 - CLI: `mnemo harness eval memory-safety --json`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
 - `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
+- `StateStore.upsert_memory_page(title: str, content: str, *, scope: str = "global", source_candidate_id: str | None = None, confidence: float = 0.7, status: str = "active", metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_candidates(status: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
@@ -49,6 +51,7 @@
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream run [--limit N] [--min-confidence FLOAT] [--state-dir DIR] [--json]`
@@ -88,6 +91,13 @@
 - L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
 - L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
 - Prompt-facing snapshots must omit raw evidence and full page content.
+- Stable memory pages may carry compact `metadata` for maintenance hints such as `expires`, `expires_at`, `decay_days`, `last_verified_at`, and `verified_at`.
+- `MemoryEngine.decay_stale_pages()` inspects active pages only and applies bounded metadata-driven maintenance; pages without expiry or decay metadata are skipped.
+- Expired active pages are marked `stale:expired`.
+- Decayed pages reduce confidence by `0.01 * overdue_days` after `decay_days`; pages at or below `stale_confidence` are marked `stale:decay`.
+- `decay_stale_pages()` returns `memory_decay_report` with compact counts, changed page ids/titles, confidence deltas, reasons, and review cards; it must not include raw evidence or full page bodies.
+- `MemoryEngine.health_report()` surfaces `decay_due_active` and `expired_active` counts plus advisory review cards without mutating memory.
+- Dream plans may include the `memory_decay_stale_pages` tool when health counts show decay-due active pages; the model still decides whether to run it.
 - `MemoryEngine.search()` may include `linked_page` results by following one hop from matching active pages through outgoing links and backlinks.
 - `linked_page` results must be active pages, bounded by the search limit, deterministic, and de-duplicated from seed page/candidate ids.
 - Prompt-facing context cards for `linked_page` include compact `summary`, `relation`, and `linked_from`, not raw evidence.
@@ -158,6 +168,10 @@
 | Candidate rejection tombstone | Rejected candidates get durable tombstone rows | `tests/test_memory.py` |
 | Page tombstone | Page status becomes `tombstoned:<reason>` and active recall omits it | `tests/test_memory.py` |
 | Memory health report | Counts, coverage, score, and review cards stay compact | `tests/test_memory.py` |
+| Metadata-driven decay | Expired pages become `stale:expired`, overdue low-confidence pages become `stale:decay`, fresh pages remain active | `tests/test_memory.py` |
+| Decay health cards | Health report surfaces decay-due cards without mutation | `tests/test_memory.py` |
+| CLI memory decay | `mnemo memory decay` emits compact JSON/plain reports and marks stale pages | `tests/test_cli.py` |
+| Tool memory decay | `memory_decay_stale_pages` mutates through ToolHarness and returns compact evidence | `tests/test_tools.py` |
 | Dream delta-limited maintenance | Old candidates before `since` remain draft while delta candidates are processed | `tests/test_memory.py` |
 | Dream report persistence | Latest report reloads with delta, plan, execution, and health payloads | `tests/test_memory.py`, `tests/test_cli.py` |
 | CLI Dream status/report | `dream status`, `dream report --latest`, and `dream --now` use compact persisted reports | `tests/test_cli.py` |
@@ -171,6 +185,7 @@
 - Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
 - Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
 - Good: expose health cards as compact model input so the model chooses whether to verify, link, archive, or ignore.
+- Good: expose decay as a bounded tool the model may call after seeing health cards, not as an always-on workflow.
 - Good: persist Dream reports as compact managed-state JSON so status/report inspection does not require another schema surface.
 - Base: deterministic dream fallback may execute the current delta while provider-led Dream runs are not yet wired.
 - Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
@@ -196,6 +211,7 @@
 - QueryPlanner covers lexical/dimension/temporal route generation, fused retrieval annotations, and CLI debug output.
 - Durable tombstones cover candidate rejection, explicit page tombstone, filtered tombstone listing, and compact read payloads.
 - Memory health covers counts, coverage, review cards, compact tool evidence, and CLI output.
+- Memory decay covers page metadata round-trip, expired/stale status changes, L1 active filtering, CLI output, and tool evidence.
 - `memory_read` covers both candidates and stable pages.
 - CLI `memory list` covers default draft candidates, active pages, unfiltered all inventory, and compact non-JSON rows.
 - CLI `memory read` covers candidates, pages, non-JSON output, and missing ids.

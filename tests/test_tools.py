@@ -339,6 +339,34 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact["evidence"][0]["kind"], "memory_health")
             self.assertIn("review cards", compact["summary"])
 
+    def test_memory_decay_tool_marks_expired_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "context: expired tool",
+                "This tool-visible memory has expired.",
+                confidence=0.8,
+                metadata={"expires": "2000-01-01"},
+            )
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="memory_decay_stale_pages",
+                    arguments={"limit": 5},
+                    call_id="call_memory_decay",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["kind"], "memory_decay_report")
+            self.assertEqual(result.result["counts"]["staled"], 1)
+            self.assertEqual(store.get_memory_page(page_id)["status"], "stale:expired")
+            self.assertEqual(compact["evidence"][0]["kind"], "memory_decay")
+
     def test_memory_tombstone_tool_records_durable_tombstone(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

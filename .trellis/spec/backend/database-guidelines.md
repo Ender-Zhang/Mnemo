@@ -59,6 +59,9 @@
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
+- `StateStore.upsert_memory_page(title: str, content: str, *, scope: str = "global", source_candidate_id: str | None = None, confidence: float = 0.7, status: str = "active", metadata: dict[str, Any] | None = None) -> str`
+- `StateStore.get_memory_page(page_id: str) -> dict[str, Any] | None`
+- `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
 - `StateStore.add_memory_tombstone(target_id: str, target_type: str, reason: str, *, summary: str = "", target_hash: str | None = None, evidence_run_id: str | None = None, rule: str | None = None, metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.get_memory_tombstone(tombstone_id: str) -> dict[str, Any] | None`
@@ -139,6 +142,9 @@
 - CLI scheduled-item commands must use storage/service APIs and not read raw SQLite rows directly.
 - `working_notes` stores W0 notes with mission/run provenance, metadata, processing status, and result payloads.
 - CLI W0 inspection must use the read API and remain read-only: `mnemo memory notes`.
+- `memory_pages.metadata_json` stores compact maintenance hints and must round-trip as `page["metadata"]`.
+- `upsert_memory_page(..., metadata=None)` preserves existing metadata on updates; passing a metadata dict replaces the page metadata.
+- Memory page metadata is for page-local maintenance hints such as `expires`, `decay_days`, and verification timestamps, not raw evidence or large bodies.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
 - CLI graph inspection must use these read APIs and remain read-only: `mnemo memory links <memory_id>`.
 - `memory_tombstones` stores compact do-not-resurrect records with target id/type, target hash, reason, summary, optional evidence run id, rule, metadata, and created time.
@@ -184,6 +190,7 @@
 | Scheduled item storage | Add/list/read/status/tick/policy metadata round-trip and invalid input normalization | `tests/test_storage.py` |
 | Scheduled processing | Due watch/cron items enqueue normal daemon queue work, advance/complete schedule, and apply model-supplied Watch feedback policy | `tests/test_scheduler.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
+| Memory page metadata | Page metadata round-trips and legacy rows default to `{}` after migration | `tests/test_memory.py`, `tests/test_storage.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
 | Memory tombstones | Tombstone table initializes, round-trips metadata, filters by target, and hashes compact summaries | `tests/test_storage.py` |
@@ -191,6 +198,7 @@
 
 ### 5. Good/Base/Bad Cases
 - Good: add a new schema change by appending one `SchemaMigration` and bumping `SCHEMA_VERSION`.
+- Good: use `_ensure_column()` plus backfill when adding nullable JSON metadata to existing tables.
 - Good: make migrations idempotent with `CREATE ... IF NOT EXISTS` or `_ensure_column`.
 - Good: consume pending outbox events through `list_outbox_events()` and mark delivery through `mark_outbox_event()`.
 - Good: keep backup archives limited to managed state paths and validate every member before extraction.
@@ -236,5 +244,6 @@
 - Scheduled item storage, due lookup, status changes, and tick metadata are covered.
 - Scheduler enqueue behavior, Watch feedback policy, and CLI schedule commands are covered.
 - Memory tombstone schema and read/write/filter APIs are covered.
+- Memory page metadata schema and read/list/search APIs are covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.

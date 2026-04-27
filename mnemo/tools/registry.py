@@ -146,6 +146,18 @@ CORE_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="memory_decay_stale_pages",
+        description="Apply bounded metadata-driven decay/expiration to active memory pages and return review cards.",
+        risk="write",
+        input_schema=_schema(
+            [],
+            {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+                "stale_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.35},
+            },
+        ),
+    ),
+    ToolSpec(
         name="memory_tombstone",
         description="Move a memory candidate or stable page out of active use and record a durable tombstone.",
         risk="write",
@@ -468,6 +480,7 @@ class ToolRegistry:
             "memory_search": self._memory_search,
             "memory_read": self._memory_read,
             "memory_health_report": self._memory_health_report,
+            "memory_decay_stale_pages": self._memory_decay_stale_pages,
             "memory_tombstone": self._memory_tombstone,
             "recall_search": self._recall_search,
             "working_note": self._working_note,
@@ -652,6 +665,11 @@ class ToolRegistry:
     def _memory_health_report(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         limit = _bounded_limit(args.get("limit"), default=20, maximum=50)
         return MemoryEngine(context.store).health_report(limit=limit)
+
+    def _memory_decay_stale_pages(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        limit = _bounded_limit(args.get("limit"), default=50, maximum=200)
+        stale_confidence = _bounded_float(args.get("stale_confidence"), default=0.35)
+        return MemoryEngine(context.store).decay_stale_pages(limit=limit, stale_confidence=stale_confidence)
 
     def _memory_tombstone(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         memory_id = _require_str(args, "id")
@@ -1200,6 +1218,13 @@ def _tool_summary(result: ToolResult) -> str:
         return "Memory item loaded."
     if result.name == "memory_health_report":
         return f"Memory health report has {len(result.result.get('review_cards', []))} review cards."
+    if result.name == "memory_decay_stale_pages":
+        counts = result.result.get("counts") or {}
+        return (
+            "Memory decay checked "
+            f"{counts.get('checked', 0)} pages; staled={counts.get('staled', 0)} "
+            f"decayed={counts.get('decayed', 0)}."
+        )
     if result.name == "memory_tombstone":
         return "Memory tombstone recorded."
     if result.name == "working_note":
@@ -1354,6 +1379,17 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 "summary": f"{len(result.result.get('review_cards', []))} review cards",
                 "counts": counts,
                 "score": score,
+                "review_cards": result.result.get("review_cards", [])[:5],
+            }
+        ]
+    if result.name == "memory_decay_stale_pages":
+        counts = result.result.get("counts") or {}
+        return [
+            {
+                "kind": "memory_decay",
+                "summary": f"checked={counts.get('checked', 0)} staled={counts.get('staled', 0)}",
+                "counts": counts,
+                "staled": result.result.get("staled", [])[:5],
                 "review_cards": result.result.get("review_cards", [])[:5],
             }
         ]
@@ -1707,6 +1743,14 @@ def _bounded_limit(value: Any, *, default: int, maximum: int) -> int:
     except (TypeError, ValueError):
         limit = default
     return max(1, min(maximum, limit))
+
+
+def _bounded_float(value: Any, *, default: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
 
 
 def _require_str(args: dict[str, Any], key: str) -> str:

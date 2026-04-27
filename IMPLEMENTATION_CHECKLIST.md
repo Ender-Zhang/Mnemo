@@ -61,14 +61,14 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Stable memory is not directly mutated by normal task tools.
 - [x] Memory engine pages/indexes beyond candidates.
 - [x] Associative recall / LLM Wiki style memory graph.
-- [~] Conflict detection, confidence updates, durable tombstones, and compact memory health review cards exist; decay passes, stale review execution, and full selective forgetting are not complete.
+- [~] Conflict detection, confidence updates, durable tombstones, compact memory health review cards, and metadata-driven decay/stale marking exist; full selective forgetting/private-delete redaction is not complete.
 - [x] W0 working memory to long-term candidate pipeline.
 - [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, persists reports, and limits local fallback to delta candidates; provider-led idle scheduling and broader memory maintenance actions remain incomplete.
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
 - [~] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, and a deterministic injection-scan gate; full wrong-memory, over-personalization, and Memory Health gates are not complete.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
-- [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, and CLI debug output exist; vector semantic retrieval, true MMR, tombstone-aware session suppression, and stale decay passes remain.
-- [~] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, compact health scores/cards, tool calls, and CLI inspection exist; decay passes, stale review execution, private-delete redaction, and full selective forgetting remain.
+- [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, and CLI debug output exist; vector semantic retrieval, true MMR, and tombstone-aware session suppression remain.
+- [~] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, compact health scores/cards, metadata-driven decay/stale marking, tool calls, and CLI inspection exist; private-delete redaction and full selective forgetting remain.
 - [~] Memory write taint tracking and prompt-injection scanner foundation: `memory_write_candidate` and W0 candidate writes append safety evidence, detect prompt override/secret/tool-call injection, and route suspicious writes to review; deeper source-boundary enforcement across MCP/external runtimes remains.
 
 ## Skills And Evolution
@@ -231,3 +231,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-27-generated-tool-rollback-foundation`: Generated tools now expose an explicit rollback lifecycle through `ToolEvolutionService`, provider-native `tool_rollback_generated`, and `mnemo tools rollback`, marking both generated tool and candidate as `rolled_back`.
 - [x] `04-27-learning-chip-undo-foundation`: Inline memory learning chips can undo accepted learning by tombstoning the promoted page and candidate through existing memory curation records.
 - [x] `04-27-learning-chip-high-risk-confirmation`: Review-gated memory candidates now stream compact confirmation metadata and render as explicit inline learning confirmations without a separate workflow.
+- [x] `04-27-memory-decay-stale-foundation`: Memory pages now round-trip maintenance metadata, health reports surface decay-due cards, and `memory_decay_stale_pages` / `mnemo memory decay` can mark expired or sufficiently decayed active pages stale.

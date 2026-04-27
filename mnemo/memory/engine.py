@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -402,9 +403,25 @@ class MemoryEngine:
             for page in active_pages
             if float(page.get("confidence") or 0.0) < 0.65
         ]
+        now = time.time()
+        decay_due = [
+            (page, decision)
+            for page in active_pages
+            for decision in [_page_decay_decision(page, now=now, stale_confidence=0.35)]
+            if decision["action"] != "skip"
+        ]
+        expired_pages = [
+            page
+            for page, decision in decay_due
+            if "expired" in decision.get("reasons", [])
+        ]
         dimensions = _dimension_counts(active_pages, candidates)
         review_cards = _bounded_cards(
             [
+                *[
+                    _page_review_card("verify_stale", page)
+                    for page, _decision in decay_due
+                ],
                 *[_page_review_card("verify_stale", page) for page in stale_pages],
                 *[_page_review_card("improve_evidence", page) for page in low_confidence_pages],
                 *[
@@ -427,6 +444,8 @@ class MemoryEngine:
                     "tombstoned": len(tombstoned_pages),
                     "orphan_active": len(orphan_pages),
                     "low_confidence_active": len(low_confidence_pages),
+                    "decay_due_active": len(decay_due),
+                    "expired_active": len(expired_pages),
                 },
                 "candidates": {
                     "total": len(candidates),
@@ -450,6 +469,58 @@ class MemoryEngine:
                 review_candidates=review_candidates,
             ),
             "review_cards": review_cards,
+        }
+
+    def decay_stale_pages(
+        self,
+        limit: int = 50,
+        *,
+        now: float | None = None,
+        stale_confidence: float = 0.35,
+    ) -> dict[str, Any]:
+        generated_at = time.time() if now is None else float(now)
+        bounded_limit = max(0, min(200, int(limit)))
+        threshold = _bounded_confidence(stale_confidence, 0.35)
+        pages = self.store.list_memory_pages(status="active", limit=bounded_limit)
+        decayed: list[dict[str, Any]] = []
+        staled: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+        review_cards: list[dict[str, Any]] = []
+
+        for page in pages:
+            decision = _page_decay_decision(page, now=generated_at, stale_confidence=threshold)
+            if decision["action"] == "skip":
+                skipped.append({"page_id": page.get("id"), "reason": decision["reason"]})
+                continue
+
+            page_id = str(page["id"])
+            if decision.get("decayed"):
+                self.store.update_memory_page_confidence(page_id, decision["confidence"])
+                decayed.append(_compact_decay_change(page, decision))
+
+            if decision.get("stale"):
+                self.store.update_memory_page_status(page_id, decision["status"])
+                stale_item = _compact_decay_change(page, decision)
+                stale_item["status"] = decision["status"]
+                staled.append(stale_item)
+                updated_page = self._get_page(page_id) or {**page, "status": decision["status"]}
+                review_cards.append(_page_review_card("verify_stale", updated_page))
+
+        return {
+            "kind": "memory_decay_report",
+            "generated_at": generated_at,
+            "limit": bounded_limit,
+            "stale_confidence": threshold,
+            "counts": {
+                "checked": len(pages),
+                "decayed": len(decayed),
+                "staled": len(staled),
+                "skipped": len(skipped),
+            },
+            "decayed": decayed,
+            "staled": staled,
+            "skipped": skipped[: min(20, bounded_limit)],
+            "review_cards": _bounded_cards(review_cards, limit=min(20, bounded_limit)),
         }
 
     def collect_dream_delta(self, limit: int = 20, *, since: float | None = None) -> dict[str, Any]:
@@ -542,6 +613,16 @@ class MemoryEngine:
             focus.append({"kind": "review_drafts", "count": counts["draft_candidates"], "tool": "memory_read"})
         if counts.get("review_cards"):
             focus.append({"kind": "memory_health", "count": counts["review_cards"], "tool": "memory_health_report"})
+        health_counts = delta.get("health", {}).get("counts", {}) if isinstance(delta.get("health"), dict) else {}
+        page_counts = health_counts.get("pages", {}) if isinstance(health_counts.get("pages"), dict) else {}
+        if page_counts.get("decay_due_active"):
+            focus.append(
+                {
+                    "kind": "memory_decay_due",
+                    "count": page_counts["decay_due_active"],
+                    "tool": "memory_decay_stale_pages",
+                }
+            )
         if counts.get("tombstones"):
             focus.append({"kind": "respect_tombstones", "count": counts["tombstones"], "tool": "memory_search"})
         return {
@@ -558,6 +639,7 @@ class MemoryEngine:
                 "memory_read",
                 "memory_write_candidate",
                 "memory_health_report",
+                "memory_decay_stale_pages",
                 "memory_tombstone",
                 "skill_propose_candidate",
                 "tool_propose_candidate",
@@ -1025,6 +1107,41 @@ def _float_or_zero(value: Any) -> float:
         return 0.0
 
 
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _non_negative_float(value: Any) -> float | None:
+    parsed = _float_or_none(value)
+    if parsed is None or parsed < 0:
+        return None
+    return parsed
+
+
+def _metadata_timestamp(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    number_value = _float_or_none(text)
+    if number_value is not None:
+        return number_value
+    normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
+
+
 def _page_result(page: dict[str, Any]) -> dict[str, Any]:
     return {
         "type": "page",
@@ -1246,6 +1363,88 @@ def _page_review_card(kind: str, page: dict[str, Any]) -> dict[str, Any]:
         "updated_at": page.get("updated_at"),
         "actions": _review_actions(kind),
     }
+
+
+def _page_decay_decision(page: dict[str, Any], *, now: float, stale_confidence: float) -> dict[str, Any]:
+    metadata = page.get("metadata") if isinstance(page.get("metadata"), dict) else {}
+    expires_value = metadata["expires_at"] if "expires_at" in metadata else metadata.get("expires")
+    expires_at = _metadata_timestamp(expires_value)
+    decay_days = _non_negative_float(metadata.get("decay_days"))
+    current_confidence = _bounded_confidence(page.get("confidence"), 0.0)
+    base_at = _memory_page_decay_base_at(page, metadata, now=now)
+    age_days = max(0.0, (now - base_at) / 86400.0)
+    reasons: list[str] = []
+
+    expired = expires_at is not None and expires_at <= now
+    if expired:
+        reasons.append("expired")
+
+    confidence = current_confidence
+    overdue_days = 0.0
+    decayed = False
+    if decay_days is not None and age_days > decay_days:
+        overdue_days = age_days - decay_days
+        confidence = max(0.0, current_confidence - (0.01 * overdue_days))
+        decayed = confidence < current_confidence
+        if decayed:
+            reasons.append("decay_due")
+
+    stale = expired or confidence <= stale_confidence
+    if stale and not expired and "decay_due" in reasons:
+        reasons.append("low_confidence")
+
+    if not reasons:
+        reason = "no_decay_metadata" if expires_at is None and decay_days is None else "not_due"
+        return {
+            "action": "skip",
+            "reason": reason,
+            "confidence": round(confidence, 6),
+            "previous_confidence": round(current_confidence, 6),
+            "age_days": round(age_days, 3),
+        }
+
+    status = "stale:expired" if expired else "stale:decay"
+    return {
+        "action": "stale" if stale else "decay",
+        "status": status if stale else None,
+        "stale": stale,
+        "decayed": decayed,
+        "reasons": reasons,
+        "confidence": round(confidence, 6),
+        "previous_confidence": round(current_confidence, 6),
+        "age_days": round(age_days, 3),
+        "decay_days": decay_days,
+        "overdue_days": round(overdue_days, 3),
+        "expires_at": expires_at,
+    }
+
+
+def _compact_decay_change(page: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "page_id": page.get("id"),
+        "title": _truncate(page.get("title", ""), limit=96),
+        "scope": page.get("scope") or "global",
+        "reasons": decision.get("reasons", []),
+        "previous_confidence": decision.get("previous_confidence"),
+        "confidence": decision.get("confidence"),
+        "age_days": decision.get("age_days"),
+        "decay_days": decision.get("decay_days"),
+        "overdue_days": decision.get("overdue_days"),
+        "expires_at": decision.get("expires_at"),
+    }
+
+
+def _memory_page_decay_base_at(page: dict[str, Any], metadata: dict[str, Any], *, now: float) -> float:
+    for value in (
+        metadata.get("last_verified_at"),
+        metadata.get("verified_at"),
+        page.get("updated_at"),
+        page.get("created_at"),
+    ):
+        parsed = _metadata_timestamp(value)
+        if parsed is not None:
+            return parsed
+    return now
 
 
 def _candidate_review_card(kind: str, candidate: dict[str, Any]) -> dict[str, Any]:

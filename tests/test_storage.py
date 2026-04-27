@@ -45,6 +45,30 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual([item["version"] for item in second], list(range(1, SCHEMA_VERSION + 1)))
             self.assertEqual(len(first), len(second))
 
+    def test_memory_page_metadata_round_trips_and_preserves_on_update(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            page_id = store.upsert_memory_page(
+                "context: metadata",
+                "Page with maintenance metadata",
+                metadata={"expires": "2099-01-01", "decay_days": 30},
+            )
+
+            page = store.get_memory_page(page_id)
+            listed = store.list_memory_pages(status="active", limit=10)
+            searched = store.search_memory_pages("maintenance metadata", limit=10)
+            store.upsert_memory_page("context: metadata", "Updated body")
+            preserved = store.get_memory_page(page_id)
+            store.upsert_memory_page("context: metadata", "Updated body again", metadata={"decay_days": 7})
+            replaced = store.get_memory_page(page_id)
+
+            self.assertEqual(page["metadata"]["expires"], "2099-01-01")
+            self.assertEqual(listed[0]["metadata"]["decay_days"], 30)
+            self.assertEqual(searched[0]["metadata"]["expires"], "2099-01-01")
+            self.assertEqual(preserved["metadata"]["expires"], "2099-01-01")
+            self.assertEqual(replaced["metadata"], {"decay_days": 7})
+
     def test_initialize_upgrades_legacy_schema_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "state.db"

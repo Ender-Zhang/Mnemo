@@ -179,6 +179,71 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertIn("review_conflict", card_kinds)
             self.assertIn("respect_tombstone", card_kinds)
 
+    def test_decay_stale_pages_marks_expired_and_decayed_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            engine = MemoryEngine(store)
+            now = 1_700_000_000.0
+            expired_id = store.upsert_memory_page(
+                "context: expired project",
+                "This project context has an explicit expiry.",
+                confidence=0.9,
+                metadata={"expires": "2000-01-01"},
+            )
+            decayed_id = store.upsert_memory_page(
+                "preferences: old signal",
+                "User had an old weak preference.",
+                confidence=0.5,
+                metadata={"decay_days": 1},
+            )
+            fresh_id = store.upsert_memory_page(
+                "preferences: fresh signal",
+                "User has a fresh durable preference.",
+                confidence=0.8,
+                metadata={"decay_days": 30},
+            )
+            with store.connect() as conn:
+                conn.execute(
+                    "UPDATE memory_pages SET updated_at = ?, created_at = ? WHERE id IN (?, ?)",
+                    (now - (10 * 86400), now - (10 * 86400), decayed_id, fresh_id),
+                )
+
+            result = engine.decay_stale_pages(limit=10, now=now, stale_confidence=0.45)
+
+            self.assertEqual(result["kind"], "memory_decay_report")
+            self.assertEqual(result["counts"]["checked"], 3)
+            self.assertEqual(result["counts"]["staled"], 2)
+            self.assertEqual(store.get_memory_page(expired_id)["status"], "stale:expired")
+            self.assertEqual(store.get_memory_page(decayed_id)["status"], "stale:decay")
+            self.assertEqual(store.get_memory_page(fresh_id)["status"], "active")
+            self.assertLess(store.get_memory_page(decayed_id)["confidence"], 0.45)
+            self.assertEqual(store.get_memory_page(expired_id)["metadata"]["expires"], "2000-01-01")
+            snapshot = engine.compile_l1_snapshot(limit=10)
+            self.assertEqual(snapshot["items"][0]["id"], fresh_id)
+            self.assertNotIn(expired_id, str(snapshot))
+            self.assertNotIn(decayed_id, str(snapshot))
+
+    def test_memory_health_report_surfaces_decay_due_cards_without_mutating(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "context: old but active",
+                "This active page is old enough to need model review.",
+                confidence=0.5,
+                metadata={"decay_days": 1},
+            )
+            with store.connect() as conn:
+                conn.execute(
+                    "UPDATE memory_pages SET updated_at = ?, created_at = ? WHERE id = ?",
+                    (time.time() - (10 * 86400), time.time() - (10 * 86400), page_id),
+                )
+
+            report = MemoryEngine(store).health_report(limit=10)
+
+            self.assertEqual(report["counts"]["pages"]["decay_due_active"], 1)
+            self.assertEqual(store.get_memory_page(page_id)["status"], "active")
+            self.assertIn(page_id, {card["target_id"] for card in report["review_cards"]})
+
     def test_search_returns_pages_and_candidates_with_type(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)
