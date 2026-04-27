@@ -67,7 +67,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
 - [~] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, and a deterministic injection-scan gate; full wrong-memory, over-personalization, and Memory Health gates are not complete.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
-- [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, and CLI debug output exist; vector semantic retrieval, true MMR, and tombstone-aware session suppression remain.
+- [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, tombstone-aware session suppression, and CLI debug output exist; vector semantic retrieval and true MMR remain.
 - [~] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, compact health scores/cards, metadata-driven decay/stale marking, tool calls, and CLI inspection exist; private-delete redaction and full selective forgetting remain.
 - [~] Memory write taint tracking and prompt-injection scanner foundation: `memory_write_candidate` and W0 candidate writes append safety evidence, detect prompt override/secret/tool-call injection, and route suspicious writes to review; deeper source-boundary enforcement across MCP/external runtimes remains.
 
@@ -232,3 +232,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-27-learning-chip-undo-foundation`: Inline memory learning chips can undo accepted learning by tombstoning the promoted page and candidate through existing memory curation records.
 - [x] `04-27-learning-chip-high-risk-confirmation`: Review-gated memory candidates now stream compact confirmation metadata and render as explicit inline learning confirmations without a separate workflow.
 - [x] `04-27-memory-decay-stale-foundation`: Memory pages now round-trip maintenance metadata, health reports surface decay-due cards, and `memory_decay_stale_pages` / `mnemo memory decay` can mark expired or sufficiently decayed active pages stale.
+- [x] `04-27-tombstone-aware-session-recall`: L4 session recall now suppresses tombstone-matching snippets by default, exposes compact recall-policy metadata, and supports explicit historical lookup through `include_tombstoned`.

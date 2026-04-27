@@ -42,8 +42,10 @@
 - `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
 - `memory_search` may return `linked_page` matches from one-hop memory associations.
 - `memory_search.search_scope`: optional, one of `memory`, `stable`, `sessions`, or `all`; default is `memory`.
+- `memory_search.include_tombstoned`: optional boolean; default `false`; only set `true` for explicit historical lookup.
 - `memory_search` returns compact `query_plan` metadata plus `matches`; the plan contains routes and annotations, not raw transcripts.
 - `memory_search(search_scope="sessions")` returns bounded `session_message` snippets with conversation/mission/run/message ids and no raw transcript body.
+- `memory_search(search_scope="sessions"|"all")` suppresses tombstone-matching session snippets by default and may include compact `recall_policy.tombstone_filter` metadata.
 - `memory_read` reads either a memory candidate or a stable memory page by id.
 - `memory_read` includes durable tombstone metadata for the requested id and still requires explicit read intent.
 - `memory_health_report(limit=20)` is read-only and returns compact counts, scores, configured-dimension coverage, and bounded review cards.
@@ -133,6 +135,7 @@
 | Memory page read | Return stable page payload when `memory_read.id` is a memory page id | `tests/test_tools.py` |
 | Memory decay tool | Mark expired/decayed active pages stale through ToolHarness and return compact evidence | `tests/test_tools.py` |
 | Session memory search | `memory_search` can target L4 snippets through `search_scope="sessions"` | `tests/test_tools.py` |
+| Tombstone-aware session search | `memory_search` suppresses tombstoned session snippets by default and honors explicit historical opt-in | `tests/test_tools.py` |
 | Memory query plan | `memory_search` result includes compact query plan metadata | `tests/test_tools.py` |
 | Memory health report | Return compact health evidence without raw page bodies beyond review summaries | `tests/test_tools.py` |
 | Memory tombstone | Write policy records durable tombstone and compact evidence | `tests/test_tools.py` |

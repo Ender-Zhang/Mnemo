@@ -7,10 +7,10 @@
 - Goal: preserve candidate-first learning while producing explicit provenance signals for reinforcement and conflicts.
 
 ### 2. Signatures
-- `MemoryEngine.search(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
+- `MemoryEngine.search(query: str, limit: int = 5, *, search_scope: str = "memory", include_tombstoned: bool = False) -> list[dict[str, Any]]`
 - `MemoryEngine.plan_query(query: str) -> MemoryQueryPlan`
-- `MemoryEngine.search_with_plan(query: str, limit: int = 5, *, search_scope: str = "memory") -> dict[str, Any]`
-- `MemoryEngine.context_cards(query: str, limit: int = 5, *, search_scope: str = "memory") -> list[dict[str, Any]]`
+- `MemoryEngine.search_with_plan(query: str, limit: int = 5, *, search_scope: str = "memory", include_tombstoned: bool = False) -> dict[str, Any]`
+- `MemoryEngine.context_cards(query: str, limit: int = 5, *, search_scope: str = "memory", include_tombstoned: bool = False) -> list[dict[str, Any]]`
 - `MemoryEngine.write_candidate(run_id: str, claim: str, *, dimension: str | None = None, scope: str = "global", confidence: float = 0.5, evidence: list[dict[str, Any]] | None = None) -> dict[str, Any]`
 - `MemoryEngine.ingest_working_notes(limit: int = 20, *, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
@@ -46,7 +46,7 @@
 - `StateStore.update_working_note_status(note_id: str, status: str, *, result: dict[str, Any] | None = None) -> None`
 - CLI: `mnemo memory notes [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory list [--kind candidate|page|all] [--status STATUS|all] [--limit N] [--state-dir DIR] [--json]`
-- CLI: `mnemo memory search <query...> [--scope memory|stable|sessions|all] [--limit N] [--debug-query] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory search <query...> [--scope memory|stable|sessions|all] [--limit N] [--debug-query] [--include-tombstoned] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory read <memory_id> [--state-dir DIR] [--json]`
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
@@ -105,6 +105,9 @@
 - `MemoryEngine.search(search_scope="stable")` is accepted as an alias of `memory`.
 - `MemoryEngine.search(search_scope="sessions")` returns L4 `session_message` snippets from prior run messages without page/candidate results.
 - `MemoryEngine.search(search_scope="all")` includes stable memory results and session snippets.
+- Session recall suppresses snippets that match durable memory tombstones by default so rejected/deleted facts do not re-enter model context through L4.
+- `include_tombstoned=True` is an explicit historical lookup opt-in for `search_scope="sessions"` or `"all"`; prompt-facing results remain compact snippets and still omit raw transcript content.
+- `MemoryEngine.search_with_plan()` includes compact `recall_policy.tombstone_filter` metadata for session searches: enabled flag, tombstone count, suppressed count, and bounded suppressed item provenance.
 - `MemoryEngine.plan_query()` returns a compact deterministic plan with original, lexical, semantic, alias, temporal, dimension, clarification, and route fields.
 - Query planning preserves the original user language and exact proper nouns as lexical routes.
 - The first QueryPlanner implementation is deterministic and dependency-free; vector embedding, reranking, and model-led spreading activation remain extensions.
@@ -155,6 +158,7 @@
 | Reverse association | Search returns active pages linked back to the query match | `tests/test_memory.py` |
 | Association cards | Context cards include relation metadata without full raw payloads | `tests/test_memory.py` |
 | L4 session search | `search_scope="sessions"` returns bounded message snippets and omits raw content | `tests/test_memory.py` |
+| Tombstone-aware session recall | Default session/all search suppresses snippets matching tombstones; explicit include returns them for historical lookup | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |
 | Memory page read | `memory_read` can load stable pages by id | `tests/test_tools.py` |
 | CLI memory list | Candidate/page listing uses status defaults and `all` filter | `tests/test_cli.py` |
 | CLI memory read | Candidate and page ids return typed memory payloads | `tests/test_cli.py` |
@@ -183,6 +187,7 @@
 - Good: store scanner output as compact evidence on the candidate instead of adding a separate workflow.
 - Good: use one-hop page links to surface adjacent wiki knowledge while keeping tool schemas unchanged.
 - Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
+- Good: suppress tombstoned facts at the L4 recall boundary by default, with explicit historical opt-in.
 - Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
 - Good: expose health cards as compact model input so the model chooses whether to verify, link, archive, or ignore.
 - Good: expose decay as a bounded tool the model may call after seeing health cards, not as an always-on workflow.
@@ -208,6 +213,7 @@
 - Search/context cards remain compact and omit raw evidence.
 - Associative recall covers direct links, backlinks, archived-page filtering, and compact context cards.
 - L4 session search covers explicit session scope, compact context cards, and omission of raw message content.
+- Tombstone-aware L4 recall covers default suppression, `search_scope="all"` suppression, CLI/tool opt-in, and compact suppression metadata.
 - QueryPlanner covers lexical/dimension/temporal route generation, fused retrieval annotations, and CLI debug output.
 - Durable tombstones cover candidate rejection, explicit page tombstone, filtered tombstone listing, and compact read payloads.
 - Memory health covers counts, coverage, review cards, compact tool evidence, and CLI output.

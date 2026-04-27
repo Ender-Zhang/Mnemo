@@ -433,6 +433,42 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertIn("summary", cards[0])
             self.assertNotIn("content", cards[0])
 
+    def test_session_search_suppresses_tombstoned_facts_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("session tombstone")
+            mission_id = store.create_mission(conversation_id, "forget old preference")
+            run_id = store.create_run(
+                conversation_id,
+                mission_id,
+                "User prefers dark mode dashboards.",
+            )
+            store.complete_run(run_id, "I will remember dark mode dashboards.")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers dark mode dashboards",
+                dimension="preferences",
+                confidence=0.8,
+            )
+            MemoryEngine(store).reject_candidate(candidate_id, "user rejected")
+
+            engine = MemoryEngine(store)
+            default = engine.search_with_plan("dark mode dashboards", limit=5, search_scope="sessions")
+            all_scope = engine.search("dark mode dashboards", limit=5, search_scope="all")
+            historical = engine.search(
+                "dark mode dashboards",
+                limit=5,
+                search_scope="sessions",
+                include_tombstoned=True,
+            )
+
+            self.assertEqual(default["matches"], [])
+            self.assertGreater(default["recall_policy"]["tombstone_filter"]["suppressed"], 0)
+            self.assertNotIn("session_message", {item["type"] for item in all_scope})
+            self.assertEqual({item["type"] for item in historical}, {"session_message"})
+            self.assertNotIn("content", historical[0])
+
     def test_dream_consolidate_promotes_confident_drafts_and_skips_low_confidence(
         self,
     ) -> None:

@@ -256,6 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
     memory_search_parser.add_argument("--limit", type=int, default=5)
     memory_search_parser.add_argument("--scope", choices=["memory", "stable", "sessions", "all"], default="memory")
     memory_search_parser.add_argument("--debug-query", action="store_true", help="Include compact query plan metadata")
+    memory_search_parser.add_argument(
+        "--include-tombstoned",
+        action="store_true",
+        help="Include session snippets that match durable memory tombstones for explicit historical lookup",
+    )
     memory_search_parser.add_argument("--json", action="store_true")
     memory_read_parser = memory_subparsers.add_parser("read", help="Read a memory candidate or page by id")
     _add_state_dir(memory_read_parser)
@@ -1264,7 +1269,12 @@ def _cmd_memory(args: argparse.Namespace) -> int:
         elif args.memory_command == "list":
             result = _list_memory_items(store, args.kind, args.status, args.limit)
         elif args.memory_command == "search":
-            search = engine.search_with_plan(" ".join(args.query), limit=args.limit, search_scope=args.scope)
+            search = engine.search_with_plan(
+                " ".join(args.query),
+                limit=args.limit,
+                search_scope=args.scope,
+                include_tombstoned=args.include_tombstoned,
+            )
             result = search if args.debug_query else {"matches": search["matches"]}
         elif args.memory_command == "read":
             result = {"memory": _read_memory_item(store, args.memory_id)}
@@ -1373,6 +1383,14 @@ def _print_memory_result(result: dict) -> None:
             f"dimensions={','.join(plan.get('dimensions', [])) or '-'} "
             f"temporal={plan.get('temporal') or '-'}"
         )
+    if "recall_policy" in result:
+        tombstone_filter = result.get("recall_policy", {}).get("tombstone_filter", {})
+        if tombstone_filter:
+            print(
+                "recall_policy "
+                f"tombstone_filter={'on' if tombstone_filter.get('enabled') else 'off'} "
+                f"suppressed={tombstone_filter.get('suppressed', 0)}"
+            )
     if "notes" in result:
         for note in result["notes"]:
             metadata = note.get("metadata") or {}

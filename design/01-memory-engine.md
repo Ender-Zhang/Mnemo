@@ -351,6 +351,8 @@ class TemporalManager:
 
 实现上不需要固定的“每日衰减流水线”。MemoryEngine 暴露一个有界维护能力：读取 active page 的 `metadata.expires` / `metadata.expires_at` / `metadata.decay_days` / `metadata.last_verified_at`，生成 `memory_decay_report`，并在模型决定调用时把过期页面标为 `stale:expired`、把置信度衰减到阈值以下的页面标为 `stale:decay`。Health report 只给出 `decay_due_active`、`expired_active` 和 review cards，不直接替模型做调度决策。
 
+L4 session recall 默认也要尊重 tombstone：`memory_search(scope="sessions"|"all")` 会过滤命中 tombstone 摘要/标题信号的 session snippets，避免被否认的事实从历史聊天重新进入上下文。只有当用户或模型明确要做历史追溯时，才传 `include_tombstoned=true`，并且仍只返回 bounded snippet，不返回完整 transcript。
+
 | Forget reason | 触发 | 处理 |
 |---------------|------|------|
 | `stale` | 过期且低置信 | 移出 L1，保留 L2 stale，等待验证 |

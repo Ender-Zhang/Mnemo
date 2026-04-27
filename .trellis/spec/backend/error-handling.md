@@ -67,7 +67,8 @@
 - `mnemo harness eval` and `mnemo harness variants` normalize unknown suites or variants this way.
 - `mnemo harness release` exits non-zero when any release gate fails and keeps the report compact.
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
-- `mnemo memory search --debug-query` remains read-only and returns compact query metadata without raw transcripts.
+- `mnemo memory search --debug-query` remains read-only and returns compact query and recall-policy metadata without raw transcripts.
+- `mnemo memory search --include-tombstoned` is an explicit historical lookup opt-in; it still returns bounded session snippets, not raw message content.
 - `mnemo memory read` normalizes missing candidate/page ids this way.
 - `mnemo memory tombstone` normalizes missing candidate/page ids this way.
 - `mnemo memory health` and `mnemo memory tombstones` are read-only inspection commands and do not require raw SQLite access.
@@ -116,7 +117,7 @@
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Unknown replay mode | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
-| Memory query debug | CLI emits compact query plan metadata without changing default JSON shape | `tests/test_cli.py` |
+| Memory query debug | CLI emits compact query plan and recall-policy metadata without changing default JSON shape | `tests/test_cli.py` |
 | Missing memory id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory id in CLI tombstone | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Memory health/decay/tombstone listing | CLI exits zero with compact JSON or row output | `tests/test_cli.py` |

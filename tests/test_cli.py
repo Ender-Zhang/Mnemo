@@ -799,6 +799,57 @@ class CliTests(unittest.TestCase):
             self.assertIn("session_message", plain.stdout)
             self.assertIn("timeline first", plain.stdout)
 
+    def test_memory_search_command_can_suppress_tombstoned_session_snippets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("session tombstone cli")
+            mission_id = store.create_mission(conversation_id, "forget old session fact")
+            run_id = store.create_run(conversation_id, mission_id, "Use dark mode dashboards for reports.")
+            store.complete_run(run_id, "I will use dark mode dashboards for reports.")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "Use dark mode dashboards for reports",
+                dimension="preferences",
+                confidence=0.8,
+            )
+            MemoryEngine(store).reject_candidate(candidate_id, "user rejected")
+
+            default = _run_cli(["memory", "search", "dark mode dashboards", "--scope", "sessions", "--state-dir", tmp, "--json"])
+            debug = _run_cli(
+                [
+                    "memory",
+                    "search",
+                    "dark mode dashboards",
+                    "--scope",
+                    "sessions",
+                    "--debug-query",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            historical = _run_cli(
+                [
+                    "memory",
+                    "search",
+                    "dark mode dashboards",
+                    "--scope",
+                    "sessions",
+                    "--include-tombstoned",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(default.returncode, 0, default.stderr)
+            self.assertEqual(json.loads(default.stdout)["matches"], [])
+            self.assertEqual(debug.returncode, 0, debug.stderr)
+            self.assertGreater(json.loads(debug.stdout)["recall_policy"]["tombstone_filter"]["suppressed"], 0)
+            self.assertEqual(historical.returncode, 0, historical.stderr)
+            self.assertEqual({item["type"] for item in json.loads(historical.stdout)["matches"]}, {"session_message"})
+
     def test_events_chat_and_replay_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run = _run_cli(["run", "remember: replay CLI", "--state-dir", tmp, "--json"])

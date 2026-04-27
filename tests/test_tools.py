@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from mnemo.core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolSpec
+from mnemo.memory import MemoryEngine
 from mnemo.runtime import ScheduleService
 from mnemo.runtime.ledger import RunLedger
 from mnemo.storage import StateStore
@@ -417,6 +418,53 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertNotIn("content", str(result.result["matches"]))
             self.assertEqual(compact["evidence"][0]["kind"], "memory_search")
             self.assertEqual(compact["evidence"][0]["items"][0]["type"], "session_message")
+
+    def test_memory_search_suppresses_tombstoned_session_snippets_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            store.complete_run(run_id, "I will keep dark mode dashboards in reports.")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "keep dark mode dashboards in reports",
+                dimension="preferences",
+                confidence=0.8,
+            )
+            MemoryEngine(store).reject_candidate(candidate_id, "user rejected")
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            default = harness.execute(
+                ToolCallEnvelope(
+                    name="memory_search",
+                    arguments={"query": "dark mode dashboards", "search_scope": "sessions", "limit": 5},
+                    call_id="call_memory_search_tombstone_filtered",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            historical = harness.execute(
+                ToolCallEnvelope(
+                    name="memory_search",
+                    arguments={
+                        "query": "dark mode dashboards",
+                        "search_scope": "sessions",
+                        "limit": 5,
+                        "include_tombstoned": True,
+                    },
+                    call_id="call_memory_search_tombstone_history",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(default)
+
+            self.assertTrue(default.ok)
+            self.assertEqual(default.result["matches"], [])
+            self.assertGreater(default.result["recall_policy"]["tombstone_filter"]["suppressed"], 0)
+            self.assertEqual(compact["evidence"][0]["recall_policy"]["tombstone_filter"]["suppressed"], 1)
+            self.assertTrue(historical.ok)
+            self.assertEqual({match["type"] for match in historical.result["matches"]}, {"session_message"})
 
     def test_recall_search_returns_compact_actionable_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

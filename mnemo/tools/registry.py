@@ -125,6 +125,7 @@ CORE_TOOL_SPECS = [
                     "enum": ["memory", "stable", "sessions", "all"],
                     "default": "memory",
                 },
+                "include_tombstoned": {"type": "boolean", "default": False},
             },
         ),
     ),
@@ -638,7 +639,13 @@ class ToolRegistry:
         query = _require_str(args, "query")
         limit = int(args.get("limit", 5))
         search_scope = _memory_search_scope(args)
-        return MemoryEngine(context.store).search_with_plan(query, limit=limit, search_scope=search_scope)
+        include_tombstoned = optional_bool(args.get("include_tombstoned"), default=False)
+        return MemoryEngine(context.store).search_with_plan(
+            query,
+            limit=limit,
+            search_scope=search_scope,
+            include_tombstoned=include_tombstoned,
+        )
 
     def _memory_read(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         memory_id = _require_str(args, "id")
@@ -1319,13 +1326,15 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
         return [evidence]
     if result.name == "memory_search":
         matches = result.result.get("matches", [])
-        return [
-            {
-                "kind": "memory_search",
-                "summary": f"{len(matches)} matches",
-                "items": [_compact_memory_match(item) for item in matches[:5]],
-            }
-        ]
+        evidence = {
+            "kind": "memory_search",
+            "summary": f"{len(matches)} matches",
+            "items": [_compact_memory_match(item) for item in matches[:5]],
+        }
+        recall_policy = result.result.get("recall_policy")
+        if isinstance(recall_policy, dict) and recall_policy:
+            evidence["recall_policy"] = _compact_recall_policy(recall_policy)
+        return [evidence]
     if result.name == "recall_search":
         items = result.result.get("items", [])
         return [
@@ -1623,6 +1632,20 @@ def _compact_memory_match(item: dict[str, Any]) -> dict[str, Any]:
         "type": item.get("type"),
         "title": str(title)[:160],
         "confidence": item.get("confidence"),
+    }
+
+
+def _compact_recall_policy(policy: dict[str, Any]) -> dict[str, Any]:
+    tombstone_filter = policy.get("tombstone_filter") if isinstance(policy.get("tombstone_filter"), dict) else {}
+    if not tombstone_filter:
+        return {}
+    return {
+        "tombstone_filter": {
+            "enabled": bool(tombstone_filter.get("enabled")),
+            "suppressed": int(tombstone_filter.get("suppressed") or 0),
+            "tombstone_count": int(tombstone_filter.get("tombstone_count") or 0),
+            "suppressed_items": tombstone_filter.get("suppressed_items", [])[:5],
+        }
     }
 
 
