@@ -1364,3 +1364,36 @@ Added proposal-only external command RuntimeAdapter with SDK/CLI/MCP entrypoints
 ### Next Steps
 
 - None - task complete
+
+
+## Session 97: HTTP core API foundation
+
+**Date**: 2026-04-27
+**Task**: HTTP core API foundation
+**Branch**: `main`
+
+### Summary
+
+Added dependency-free HTTP JSON endpoints for MnemoCore schema, OpenAPI 3.1 discovery, SDK method dispatch, CLI api serve, request error normalization, and package/web/CLI coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `71b5618` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
