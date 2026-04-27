@@ -1496,3 +1496,36 @@ Added a compact learning-chip undo path that tombstones accepted memory candidat
 ### Next Steps
 
 - None - task complete
+
+
+## Session 101: Learning chip high-risk confirmation
+
+**Date**: 2026-04-27
+**Task**: Learning chip high-risk confirmation
+**Branch**: `main`
+
+### Summary
+
+Projected memory safety review signals into learning chips, rendered review-gated memory candidates with explicit confirmation wording in the single-chat UI, updated design/spec/checklist, and verified with focused runtime/web tests, related suites, full unittest, compileall, and installed package smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6a3f69c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
