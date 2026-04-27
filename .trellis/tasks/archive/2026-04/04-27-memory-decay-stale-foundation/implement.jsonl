@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "memory maintenance API and CLI contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "StateStore memory page update contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI command error normalization"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test and package smoke expectations"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "engine to CLI data flow"}
