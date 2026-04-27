@@ -1835,3 +1835,37 @@ Added compact DreamCycle model action execution for memory_tombstone and memory_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 111: Dream scheduled maintenance
+
+**Date**: 2026-04-27
+**Task**: Dream scheduled maintenance
+**Branch**: `main`
+
+### Summary
+
+Added first-class dream scheduled items that run bounded MemoryEngine.dream_maintenance during scheduler ticks, persist compact report metadata, refresh L1 snapshots through normal Dream execution, expose CLI creation/tick/status coverage, and sync design/spec/checklist/test coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d2ab982` | (see git log) |
+| `05a4a12` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
