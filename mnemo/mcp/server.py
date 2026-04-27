@@ -41,6 +41,7 @@ class MnemoMcpServer:
         handlers = {
             "mnemo_context": self._context,
             "mnemo_capsule": self._capsule,
+            "mnemo_external_run": self._external_run,
             "mnemo_update": self._update,
             "mnemo_recall": self._recall,
             "mnemo_search": self._search,
@@ -153,6 +154,19 @@ class MnemoMcpServer:
             conversation_id=_optional_string(args.get("conversation_id")),
             mission_id=_optional_string(args.get("mission_id")),
             limit=_bounded_int(args.get("limit"), default=8, minimum=1, maximum=50),
+        )
+
+    def _external_run(self, args: dict[str, Any]) -> dict[str, Any]:
+        return self.client.external_run(
+            _required_string(args.get("task"), "task"),
+            command=_command_list(args.get("command")),
+            runtime=_string(args.get("runtime"), default="external-command"),
+            agent_type=_string(args.get("agent_type"), default="general"),
+            requested_pages=_string_list(args.get("requested_pages")),
+            allowed_pages=_string_list(args.get("allowed_pages")),
+            conversation_id=_optional_string(args.get("conversation_id")),
+            mission_id=_optional_string(args.get("mission_id")),
+            timeout_s=_bounded_float(args.get("timeout_s"), default=30.0, minimum=0.1, maximum=3600.0),
         )
 
     def _update(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -501,6 +515,26 @@ _TOOL_DESCRIPTORS = [
         ),
         risk="read",
         read_only=True,
+    ),
+    _descriptor(
+        "mnemo_external_run",
+        "Run an explicit command runtime with a minimal-disclosure context capsule and proposal-only return contract.",
+        _schema(
+            {
+                "task": {"type": "string"},
+                "command": {"type": "array", "items": {"type": "string"}},
+                "runtime": {"type": "string", "default": "external-command"},
+                "agent_type": {"type": "string", "default": "general"},
+                "requested_pages": {"type": "array", "items": {"type": "string"}},
+                "allowed_pages": {"type": "array", "items": {"type": "string"}},
+                "conversation_id": {"type": ["string", "null"]},
+                "mission_id": {"type": ["string", "null"]},
+                "timeout_s": {"type": "number", "default": 30.0},
+            },
+            required=["task", "command"],
+        ),
+        risk="external",
+        read_only=False,
     ),
     _descriptor(
         "mnemo_update",
@@ -905,6 +939,12 @@ def _string_list(value: Any) -> list[str]:
             if text:
                 result.append(text)
     return result
+
+
+def _command_list(value: Any) -> list[str]:
+    if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+        raise ValueError("command must be an array of non-empty strings")
+    return value
 
 
 def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:

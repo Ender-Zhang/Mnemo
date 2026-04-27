@@ -9,8 +9,14 @@ _SCHEMA: dict[str, Any] = {
     "title": "MnemoCore",
     "description": "Compact personal AI OS API for SDK, MCP, CLI, and external runtime integrations.",
     "transport": {
-        "current": ["python:in_process", "cli:schema", "mcp:stdio_content_length", "mcp:json_rpc_jsonl"],
-        "planned": ["http", "runtime_adapter"],
+        "current": [
+            "python:in_process",
+            "cli:schema",
+            "runtime_adapter:command",
+            "mcp:stdio_content_length",
+            "mcp:json_rpc_jsonl",
+        ],
+        "planned": ["http", "runtime_adapter:openclaw", "runtime_adapter:acp"],
     },
     "methods": {
         "context": {
@@ -125,6 +131,40 @@ _SCHEMA: dict[str, Any] = {
                     "response": {"type": "string"},
                     "tool_summary": {"type": "array"},
                     "event_summary": {"type": "object"},
+                },
+            },
+        },
+        "external_run": {
+            "description": "Execute an explicit command runtime with a minimal-disclosure context capsule and proposal-only return contract.",
+            "side_effects": "process_spawn_writes_run_ledger_proposals_only",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "task": {"type": "string"},
+                    "command": {"type": "array", "items": {"type": "string"}},
+                    "runtime": {"type": "string", "default": "external-command"},
+                    "agent_type": {"type": "string", "default": "general"},
+                    "requested_pages": {"type": "array", "items": {"type": "string"}},
+                    "allowed_pages": {"type": "array", "items": {"type": "string"}},
+                    "conversation_id": {"type": ["string", "null"]},
+                    "mission_id": {"type": ["string", "null"]},
+                    "timeout_s": {"type": "number", "default": 30.0, "exclusiveMinimum": 0},
+                },
+                "required": ["task", "command"],
+                "additionalProperties": False,
+            },
+            "output_schema": {
+                "type": "object",
+                "required": ["kind", "run_id", "conversation_id", "mission_id", "capsule", "proposal"],
+                "properties": {
+                    "kind": {"const": "external_runtime_result"},
+                    "run_id": {"type": "string"},
+                    "conversation_id": {"type": "string"},
+                    "mission_id": {"type": "string"},
+                    "capsule": {"type": "object"},
+                    "proposal": {"type": "object"},
+                    "ignored_fields": {"type": "array"},
+                    "exit_code": {"type": "integer"},
                 },
             },
         },

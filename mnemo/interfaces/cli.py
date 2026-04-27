@@ -614,6 +614,25 @@ def build_parser() -> argparse.ArgumentParser:
     api_capsule_parser.add_argument("--mission-id")
     api_capsule_parser.add_argument("--limit", type=int, default=8)
     api_capsule_parser.add_argument("--json", action="store_true")
+    api_external_parser = api_subparsers.add_parser(
+        "external-run",
+        help="Run an explicit command runtime with a context capsule",
+    )
+    _add_state_dir(api_external_parser)
+    api_external_parser.add_argument("task", nargs="+")
+    api_external_parser.add_argument(
+        "--command-json",
+        required=True,
+        help='Command argv as JSON, for example: ["python3","adapter.py"]',
+    )
+    api_external_parser.add_argument("--runtime", default="external-command")
+    api_external_parser.add_argument("--agent-type", default="general")
+    api_external_parser.add_argument("--requested-page", action="append", default=[])
+    api_external_parser.add_argument("--allowed-page", action="append", default=[])
+    api_external_parser.add_argument("--conversation-id")
+    api_external_parser.add_argument("--mission-id")
+    api_external_parser.add_argument("--timeout-s", type=float, default=30.0)
+    api_external_parser.add_argument("--json", action="store_true")
 
     mcp_parser = subparsers.add_parser("mcp", help="Expose Mnemo MCP-style tools")
     mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
@@ -652,6 +671,32 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_api(args: argparse.Namespace) -> int:
+    if args.api_command == "external-run":
+        try:
+            command = _command_json(args.command_json)
+            result = MnemoClient(state_dir=args.state_dir, workspace_root=Path.cwd()).external_run(
+                " ".join(args.task),
+                command=command,
+                runtime=args.runtime,
+                agent_type=args.agent_type,
+                requested_pages=args.requested_page,
+                allowed_pages=args.allowed_page,
+                conversation_id=args.conversation_id,
+                mission_id=args.mission_id,
+                timeout_s=args.timeout_s,
+            )
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
+        if args.json:
+            print(dumps({"external_run": result}))
+        else:
+            print(result["proposal"]["summary"])
+            print(f"conversation_id={result['conversation_id']}")
+            print(f"mission_id={result['mission_id']}")
+            print(f"run_id={result['run_id']}")
+            if result["ignored_fields"]:
+                print("ignored_fields=" + ",".join(result["ignored_fields"]))
+        return 0
     if args.api_command == "capsule":
         try:
             capsule = MnemoClient(state_dir=args.state_dir, workspace_root=Path.cwd()).capsule(
@@ -683,6 +728,16 @@ def _cmd_api(args: argparse.Namespace) -> int:
             print(f"- {name}: {method['description']} ({method['side_effects']})")
         return 0
     raise MnemoError("api command requires a subcommand")
+
+
+def _command_json(value: str) -> list[str]:
+    try:
+        parsed = loads(value, None)
+    except ValueError as exc:
+        raise MnemoError(f"invalid --command-json: {exc}") from exc
+    if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+        raise MnemoError("--command-json must decode to an array of strings")
+    return parsed
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

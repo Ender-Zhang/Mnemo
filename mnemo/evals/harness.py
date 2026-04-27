@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+import sys
 import tempfile
 from typing import Any
 
 from ..core.models import PromptMode, RunRequest
 from ..memory import MemoryEngine
-from ..runtime import ScheduleService, stream_local
+from ..runtime import ExternalRunRequest, ScheduleService, run_external, stream_local
 from ..runtime.capsule import ContextCapsuleBuilder
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService
@@ -866,6 +867,38 @@ class EvalHarness:
                 conversation_id=conversation_id,
                 mission_id=mission_id,
             )
+            script = Path(state_dir) / "external_adapter.py"
+            script.write_text(
+                """
+import json
+import sys
+
+payload = json.loads(sys.stdin.read())
+serialized = json.dumps(payload)
+print(json.dumps({
+    "summary": "external harness saw_secret=%s" % ("FULL_PRIVATE_BODY_SECRET_TOKEN" in serialized or "RAW_RELATIONSHIP_SECRET_TOKEN" in serialized),
+    "memory_observations": [{"summary": "observation proposal only"}],
+    "memory_writes": [{"claim": "must not be written"}],
+    "confidence": 0.8
+}))
+""".strip(),
+                encoding="utf-8",
+            )
+            external_result = run_external(
+                ExternalRunRequest(
+                    task="Ask Codex to inspect the repo tests",
+                    state_dir=state_dir,
+                    command=[sys.executable, str(script)],
+                    runtime="codex",
+                    agent_type="coding",
+                    requested_pages=[allowed_id, blocked_id, "missing_page"],
+                    allowed_pages=[allowed_id],
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    timeout_s=5.0,
+                )
+            )
+            external_events = [event["event_type"] for event in store.get_run_events(external_result["run_id"])]
             capsule_text = str(capsule)
             assertions = [
                 _assertion("capsule_kind", capsule.get("kind") == "context_capsule", str(capsule.get("kind"))),
@@ -880,13 +913,18 @@ class EvalHarness:
                 _assertion("omits_full_skill_body", "FULL_SKILL_BODY_SECRET_TOKEN" not in capsule_text, capsule_text),
                 _assertion("omits_raw_tool_schemas", "input_schema" not in capsule_text, capsule_text),
                 _assertion("boundary_is_proposals_only", capsule["return_contract"]["side_effects"] == "proposals_only", str(capsule["return_contract"])),
+                _assertion("adapter_result_kind", external_result["kind"] == "external_runtime_result", str(external_result)),
+                _assertion("adapter_keeps_secret_out", "saw_secret=False" in external_result["proposal"]["summary"], str(external_result)),
+                _assertion("adapter_ignores_direct_writes", "memory_writes" in external_result["ignored_fields"], str(external_result)),
+                _assertion("adapter_records_proposals", "external.result.proposed" in external_events, str(external_events)),
+                _assertion("adapter_records_boundary_violation", "runtime.boundary_violation" in external_events, str(external_events)),
             ]
             return _single_step_case_report(
                 case_id,
                 "External Context Capsule Boundary",
                 _synthetic_step_report(
                     case_id,
-                    run_id=run_id,
+                    run_id=external_result["run_id"],
                     conversation_id=conversation_id,
                     mission_id=mission_id,
                     assertions=assertions,

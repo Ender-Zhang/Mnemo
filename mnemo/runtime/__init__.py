@@ -1,6 +1,7 @@
 from .common import result_as_dict
 from .capsule import ContextCapsuleBuilder, build_context_capsule
 from .daemon import DaemonLock, DaemonRunner
+from .external import ExternalRunRequest, ExternalRuntimeError, run_external
 from .local import LocalAgentRuntime, run_local, stream_local
 from .provider import ProviderAgentRuntime, run_provider, stream_provider
 from .scheduler import ScheduleService, parse_schedule_time, scheduled_item_stats
@@ -8,6 +9,8 @@ from .scheduler import ScheduleService, parse_schedule_time, scheduled_item_stat
 __all__ = [
     "DaemonLock",
     "DaemonRunner",
+    "ExternalRunRequest",
+    "ExternalRuntimeError",
     "ContextCapsuleBuilder",
     "LocalAgentRuntime",
     "ProviderAgentRuntime",
@@ -16,6 +19,7 @@ __all__ = [
     "parse_schedule_time",
     "result_as_dict",
     "run_local",
+    "run_external",
     "run_provider",
     "scheduled_item_stats",
     "stream_local",

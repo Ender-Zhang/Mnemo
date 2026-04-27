@@ -70,11 +70,11 @@ def main() -> int:
 
     schema = mnemo_core_api_schema()
     methods = schema.get("methods", {})
-    if "context" not in methods or "capsule" not in methods:
-        raise AssertionError("packaged SDK schema is missing context or capsule method")
+    if "context" not in methods or "capsule" not in methods or "external_run" not in methods:
+        raise AssertionError("packaged SDK schema is missing context, capsule, or external_run method")
     tool_names = {tool["name"] for tool in MnemoMcpServer().tools()}
-    if "mnemo_context" not in tool_names or "mnemo_capsule" not in tool_names:
-        raise AssertionError("packaged MCP server is missing capsule tool")
+    if "mnemo_context" not in tool_names or "mnemo_capsule" not in tool_names or "mnemo_external_run" not in tool_names:
+        raise AssertionError("packaged MCP server is missing external runtime tools")
     if not hasattr(MnemoMcpServer(), "serve_content_length"):
         raise AssertionError("packaged MCP server is missing content-length serve transport")
     if "quiet_hours" not in load_user_settings(Path.cwd()):

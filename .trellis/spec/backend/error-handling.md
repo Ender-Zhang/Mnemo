@@ -19,6 +19,7 @@
 - CLI: `mnemo config smoke --stream --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config capabilities [--provider local|openai-compatible|anthropic] [--model MODEL] [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo api capsule TASK... [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--state-dir DIR] [--json]`
+- CLI: `mnemo api external-run TASK... --command-json '[...]' [--runtime RUNTIME] [--agent-type TYPE] [--timeout-s S] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
@@ -54,6 +55,7 @@
 - Web settings endpoint errors are JSON: invalid quiet-hours payloads return 400 and settings summaries do not expose provider secrets.
 - Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.
 - `mnemo api capsule` normalizes service validation errors this way; argparse handles missing required `TASK`.
+- `mnemo api external-run` normalizes invalid command JSON, invalid command arrays, timeout, process start, and non-zero external command failures this way; external stdout/stderr bodies are compacted and not printed by default.
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
 - `mnemo harness eval` and `mnemo harness variants` normalize unknown suites or variants this way.
@@ -88,6 +90,8 @@
 | Provider returns HTTP error | CLI exits non-zero and stderr includes normalized status | `tests/test_cli.py` |
 | Invalid provider payload | Adapter raises `ProviderPayloadError` | `tests/test_providers.py` |
 | Provider timeout | Adapter raises `ProviderTimeoutError` | `tests/test_providers.py` |
+| External command succeeds with unsupported fields | CLI/SDK return proposals and ignored field names without direct writes | `tests/test_cli.py`, `tests/test_runtime_external.py` |
+| External command exits non-zero | CLI/SDK persist failed run and surface normalized `ExternalRuntimeError` | `tests/test_runtime_external.py` |
 | Retryable provider status | Non-streaming adapter retries and can recover | `tests/test_providers.py` |
 | Non-retryable provider status | Adapter fails without extra attempts | `tests/test_providers.py` |
 | Streaming provider status | Streaming adapter fails without retry | `tests/test_providers.py` |

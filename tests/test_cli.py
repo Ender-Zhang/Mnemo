@@ -1517,13 +1517,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(json_result.returncode, 0, json_result.stderr)
         payload = json.loads(json_result.stdout)["api_schema"]
         self.assertEqual(payload["schema_version"], "mnemo.core_api.v1")
-        self.assertEqual(set(payload["methods"]), {"context", "recall", "capsule", "run", "replay", "evaluate"})
+        self.assertEqual(set(payload["methods"]), {"context", "recall", "capsule", "run", "external_run", "replay", "evaluate"})
         self.assertIn("release_gate", payload["methods"]["evaluate"]["input_schema"]["properties"])
+        self.assertIn("command", payload["methods"]["external_run"]["input_schema"]["properties"])
         self.assertNotIn("input_schema", str(payload["methods"]["run"]["output_schema"]))
         self.assertEqual(text_result.returncode, 0, text_result.stderr)
         self.assertIn("MnemoCore mnemo.core_api.v1", text_result.stdout)
         self.assertIn("- context:", text_result.stdout)
         self.assertIn("- capsule:", text_result.stdout)
+        self.assertIn("- external_run:", text_result.stdout)
 
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -1554,6 +1556,39 @@ class CliTests(unittest.TestCase):
             self.assertEqual(capsule["kind"], "context_capsule")
             self.assertEqual(capsule["allowed_pages"][0]["id"], page_id)
             self.assertNotIn("FULL_PRIVATE_BODY_SECRET_TOKEN", str(capsule))
+
+            script = Path(tmp) / "adapter.py"
+            script.write_text(
+                """
+import json
+import sys
+
+payload = json.loads(sys.stdin.read())
+print(json.dumps({
+    "summary": "cli adapter " + payload["capsule"]["capsule_id"],
+    "evidence": [{"task": payload["task"]}],
+    "memory_writes": [{"claim": "must not persist"}]
+}))
+""".strip(),
+                encoding="utf-8",
+            )
+            external_result = _run_cli(
+                [
+                    "api",
+                    "external-run",
+                    "Inspect external adapter",
+                    "--state-dir",
+                    tmp,
+                    "--command-json",
+                    json.dumps([sys.executable, str(script)]),
+                    "--json",
+                ]
+            )
+            self.assertEqual(external_result.returncode, 0, external_result.stderr)
+            external_payload = json.loads(external_result.stdout)["external_run"]
+            self.assertEqual(external_payload["kind"], "external_runtime_result")
+            self.assertIn("cli adapter capsule_", external_payload["proposal"]["summary"])
+            self.assertIn("memory_writes", external_payload["ignored_fields"])
 
             missing_task = _run_cli(["api", "capsule", "--state-dir", tmp, "--json"])
             self.assertEqual(missing_task.returncode, 2)

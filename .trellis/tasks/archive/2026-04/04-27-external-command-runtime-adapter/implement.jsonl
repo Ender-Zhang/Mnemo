@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "SDK/API/MCP external_run contract"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI external runtime command errors"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test and package smoke expectations"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "runtime adapter spans SDK CLI MCP harness ledger"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "external runtime cannot bypass Mnemo tool/memory boundaries"}

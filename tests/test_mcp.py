@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from io import BytesIO, StringIO
 import json
+from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -45,6 +47,7 @@ class MnemoMcpTests(unittest.TestCase):
             {
                 "mnemo_context",
                 "mnemo_capsule",
+                "mnemo_external_run",
                 "mnemo_update",
                 "mnemo_recall",
                 "mnemo_search",
@@ -64,6 +67,9 @@ class MnemoMcpTests(unittest.TestCase):
         self.assertNotIn("input_schema", str(tools))
         eval_descriptor = next(tool for tool in tools if tool["name"] == "mnemo_eval")
         self.assertIn("release_gate", eval_descriptor["inputSchema"]["properties"])
+        external_descriptor = next(tool for tool in tools if tool["name"] == "mnemo_external_run")
+        self.assertEqual(external_descriptor["mnemo"]["risk"], "external")
+        self.assertIn("command", external_descriptor["inputSchema"]["properties"])
 
     def test_context_search_recall_skills_and_tools_are_compact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -97,6 +103,37 @@ class MnemoMcpTests(unittest.TestCase):
             self.assertNotIn("evidence", str(search["cards"]))
             self.assertNotIn("content", str(capsule["memory_pointers"]))
             self.assertNotIn("input_schema", str(tools))
+
+    def test_external_run_tool_returns_proposal_only_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "adapter.py"
+            script.write_text(
+                """
+import json
+import sys
+
+payload = json.loads(sys.stdin.read())
+print(json.dumps({
+    "summary": "mcp adapter " + payload["capsule"]["capsule_id"],
+    "tool_calls": [{"name": "memory_write_candidate"}]
+}))
+""".strip(),
+                encoding="utf-8",
+            )
+            server = MnemoMcpServer(state_dir=tmp)
+
+            result = server.call_tool(
+                "mnemo_external_run",
+                {
+                    "task": "MCP external adapter",
+                    "command": [sys.executable, str(script)],
+                    "timeout_s": 5.0,
+                },
+            )
+
+            self.assertEqual(result["kind"], "external_runtime_result")
+            self.assertIn("mcp adapter capsule_", result["proposal"]["summary"])
+            self.assertIn("tool_calls", result["ignored_fields"])
 
     def test_update_writes_memory_candidates_and_working_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import tempfile
+from pathlib import Path
+import sys
 import unittest
 
 from mnemo.sdk import MnemoClient, mnemo_core_api_schema
@@ -83,6 +85,35 @@ class MnemoSdkTests(unittest.TestCase):
             self.assertNotIn("FULL_PRIVATE_BODY_SECRET_TOKEN", str(capsule))
             self.assertNotIn("input_schema", str(capsule))
 
+    def test_external_run_uses_command_runtime_adapter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "adapter.py"
+            script.write_text(
+                """
+import json
+import sys
+
+payload = json.loads(sys.stdin.read())
+print(json.dumps({
+    "summary": "sdk adapter " + payload["capsule"]["capsule_id"],
+    "evidence": [{"task": payload["task"]}],
+    "unexpected_direct_write": True
+}))
+""".strip(),
+                encoding="utf-8",
+            )
+
+            result = MnemoClient(state_dir=tmp).external_run(
+                "SDK external runtime",
+                command=[sys.executable, str(script)],
+                timeout_s=5.0,
+            )
+
+            self.assertEqual(result["kind"], "external_runtime_result")
+            self.assertTrue(result["run_id"].startswith("run_"))
+            self.assertIn("sdk adapter capsule_", result["proposal"]["summary"])
+            self.assertIn("unexpected_direct_write", result["ignored_fields"])
+
     def test_run_replay_and_evaluate_reuse_existing_harnesses(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             client = MnemoClient(state_dir=tmp)
@@ -112,10 +143,11 @@ class MnemoSdkTests(unittest.TestCase):
         schema = mnemo_core_api_schema()
 
         self.assertEqual(schema["schema_version"], "mnemo.core_api.v1")
-        self.assertEqual(set(schema["methods"]), {"context", "recall", "capsule", "run", "replay", "evaluate"})
+        self.assertEqual(set(schema["methods"]), {"context", "recall", "capsule", "run", "external_run", "replay", "evaluate"})
         self.assertEqual(schema["methods"]["context"]["side_effects"], "read_only")
         self.assertIn("prompt_mode", schema["methods"]["context"]["input_schema"]["properties"])
         self.assertIn("requested_pages", schema["methods"]["capsule"]["input_schema"]["properties"])
+        self.assertIn("command", schema["methods"]["external_run"]["input_schema"]["properties"])
         self.assertIn("variants", schema["methods"]["evaluate"]["input_schema"]["properties"])
         self.assertIn("release_gate", schema["methods"]["evaluate"]["input_schema"]["properties"])
 

@@ -9,7 +9,7 @@ from ..evals import EvalHarness, replay_summary
 from ..memory import MemoryEngine
 from ..providers import provider_capabilities
 from ..prompt import PromptAssembler, load_prompt_bootstrap
-from ..runtime import build_context_capsule, run_local
+from ..runtime import ExternalRunRequest, build_context_capsule, run_external, run_local
 from ..runtime.common import build_tool_bundle
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService, default_skill_roots
@@ -120,6 +120,35 @@ class MnemoClient:
             conversation_id=conversation_id,
             mission_id=mission_id,
             limit=limit,
+        )
+
+    def external_run(
+        self,
+        task: str,
+        *,
+        command: list[str] | tuple[str, ...],
+        runtime: str = "external-command",
+        agent_type: str = "general",
+        requested_pages: list[str] | tuple[str, ...] | None = None,
+        allowed_pages: list[str] | tuple[str, ...] | None = None,
+        conversation_id: str | None = None,
+        mission_id: str | None = None,
+        timeout_s: float = 30.0,
+    ) -> dict[str, Any]:
+        return run_external(
+            ExternalRunRequest(
+                task=task,
+                state_dir=self.state_dir,
+                command=command,
+                runtime=runtime,
+                agent_type=agent_type,
+                requested_pages=requested_pages,
+                allowed_pages=allowed_pages,
+                conversation_id=conversation_id,
+                mission_id=mission_id,
+                workspace_root=self.workspace_root,
+                timeout_s=timeout_s,
+            )
         )
 
     def run(

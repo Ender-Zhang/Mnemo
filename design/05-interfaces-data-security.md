@@ -110,6 +110,18 @@ class MnemoClient:
     ) -> ContextCapsule:
         """为外部 runtime 构建最小披露 context capsule；不是执行入口"""
 
+    def external_run(
+        self,
+        task: str,
+        command: list[str],
+        runtime: str = "external-command",
+        agent_type: str = "general",
+    ) -> ExternalRuntimeResult:
+        """
+        用显式 argv 命令执行外部 runtime。
+        输入仅为 context capsule；输出只接受 proposal 字段并写入 RunLedger。
+        """
+
     def replay(
         self,
         run_id: str,
@@ -144,6 +156,9 @@ mnemo_update(facts, observations)
 
 mnemo_capsule(task, runtime, requested_pages?, allowed_pages?)
   → 返回: ContextCapsule（task、mission_brief、L1 pointers、allowed summaries、return_contract）
+
+mnemo_external_run(task, command, runtime?, requested_pages?, allowed_pages?)
+  → 返回: ExternalRuntimeResult（run_id、capsule summary、proposal、ignored_fields）
 
 mnemo_recall(seed, depth, context)
   → 返回: AssociativeCluster
@@ -224,6 +239,10 @@ mnemo daemon stop
 # 通过 Runtime Harness 执行一轮
 mnemo run "整理今天会议纪要并更新相关记忆" --runtime native
 mnemo run "让 Codex 检查这个 repo 的测试失败" --runtime codex
+mnemo api external-run "让外部 Codex adapter 检查测试失败" \
+  --runtime codex \
+  --command-json '["python3","external_adapter.py"]' \
+  --json
 
 # 回放/评测/质量门禁
 mnemo harness replay <run_id> --mode deterministic

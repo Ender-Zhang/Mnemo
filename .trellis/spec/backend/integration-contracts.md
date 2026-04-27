@@ -11,12 +11,14 @@
 - `MnemoClient.context(intent="", *, agent_role="general", budget_tokens=4000, include_associations=True, prompt_mode="full") -> dict[str, Any]`
 - `MnemoClient.recall(seed: str, *, depth=2, context="", limit=8) -> dict[str, Any]`
 - `MnemoClient.capsule(task: str, *, runtime="external", agent_type="general", requested_pages=None, allowed_pages=None, conversation_id=None, mission_id=None, limit=8) -> dict[str, Any]`
+- `MnemoClient.external_run(task: str, *, command: list[str] | tuple[str, ...], runtime="external-command", agent_type="general", requested_pages=None, allowed_pages=None, conversation_id=None, mission_id=None, timeout_s=30.0) -> dict[str, Any]`
 - `MnemoClient.run(message: str, *, conversation_id=None, mission_id=None, prompt_mode="full") -> dict[str, Any]`
 - `MnemoClient.replay(run_id: str) -> dict[str, Any]`
 - `MnemoClient.evaluate(suite="smoke", *, variants: list[str] | tuple[str, ...] | None = None, release_gate: bool = False) -> dict[str, Any]`
 - `mnemo.sdk.mnemo_core_api_schema() -> dict[str, Any]`
 - CLI: `mnemo api schema [--json]`
 - CLI: `mnemo api capsule TASK... [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--state-dir DIR] [--json]`
+- CLI: `mnemo api external-run TASK... --command-json '[...]' [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--timeout-s S] [--state-dir DIR] [--json]`
 
 ### 3. Contracts
 - The SDK is a reference in-process binding; it must not introduce a second runtime loop.
@@ -28,12 +30,16 @@
 - `capsule()` builds a minimal-disclosure `context_capsule` for external runtimes; it exposes task, mission brief, persona-min, L1-style pointers, allowed page summaries, retention policy, and return contract.
 - `capsule()` must not expose full Soul, full memory page bodies, full session transcripts, raw tool schemas, or full skill bodies.
 - `requested_pages` not present in `allowed_pages` remain pointer-only; missing or inactive page ids are reported as unresolved instead of failing.
+- `external_run()` creates/resolves normal conversation and mission state, builds a `context_capsule`, passes a `runtime_adapter_request` JSON envelope to an explicit argv command over stdin, and returns `external_runtime_result`.
+- `external_run()` accepts only proposal fields: `summary`, `evidence`, `files_changed`, `artifact_patches`, `memory_observations`, `skill_patches`, `open_questions`, and `confidence`.
+- `external_run()` records proposal events in RunLedger and ignores non-proposal fields with `runtime.boundary_violation`; it must not directly mutate stable memory, skills, generated tools, schedules, or artifacts from external output.
+- `external_run()` records compact command lifecycle events without storing raw stdout/stderr bodies in the SDK result.
 - `run()` executes through `run_local()` and returns run ids, response, compact `tool_summary`, and chat `event_summary`.
 - `replay()` reuses `replay_summary()`.
 - `evaluate()` reuses `EvalHarness`; without variants it returns the normal suite report.
 - `evaluate(..., variants=[...])` returns the harness variant report for `no_memory`, `skills_only`, and/or `full_mnemo`.
 - `evaluate(release_gate=True)` returns the fixed core release gate report across personalization, memory-safety, skill-evolution, proactive-watch, and external-harness gates; it cannot be combined with `variants`.
-- `mnemo_core_api_schema()` returns a JSON-serializable language-neutral contract for `context`, `recall`, `capsule`, `run`, `replay`, and `evaluate`.
+- `mnemo_core_api_schema()` returns a JSON-serializable language-neutral contract for `context`, `recall`, `capsule`, `external_run`, `run`, `replay`, and `evaluate`.
 - The `evaluate` API schema exposes an optional `variants` array with the public harness variant enum.
 - The `evaluate` API schema exposes `release_gate` as an optional boolean.
 - `mnemo api schema --json` wraps the schema as `{ "api_schema": ... }`; text mode prints readable method summaries.
@@ -45,6 +51,7 @@
 | Context request | Prompt-ready messages and compact metadata without raw schemas | `tests/test_sdk.py` |
 | Recall request | Compact associative cards with query plan and no raw evidence | `tests/test_sdk.py` |
 | Capsule request | Compact external-runtime capsule with pointer-only blocked pages and no raw state | `tests/test_sdk.py` |
+| External runtime request | Explicit command receives capsule and returns proposals only; ignored fields become boundary violations | `tests/test_runtime_external.py`, `tests/test_sdk.py` |
 | Run request | Existing runtime creates run ledger and compact tool summary | `tests/test_sdk.py` |
 | Replay/evaluate request | Existing harness services return compact suite, variant, and release-gate reports | `tests/test_sdk.py` |
 | CLI schema JSON | Returns `api_schema` with all core methods | `tests/test_cli.py` |
@@ -55,12 +62,22 @@
 - Good: keep SDK return payloads compact enough for external agents to pass through context capsules.
 - Base: the first SDK implementation is local and dependency-free.
 - Bad: duplicating memory search, prompt assembly, run execution, or eval logic inside SDK methods.
+- Bad: letting external runtime stdout directly write memory pages, skills, generated tools, schedules, or artifact bodies.
 - Bad: exposing raw tool schemas, full session transcripts, or full artifact bodies in SDK summaries.
 
 ### 6. Tests Required
-- SDK context, recall, capsule, run/replay/evaluate, variant-report, release-gate, and schema shape tests.
+- SDK context, recall, capsule, external_run, run/replay/evaluate, variant-report, release-gate, and schema shape tests.
 - CLI schema command tests for JSON and readable output.
 - Package install smoke import coverage for `mnemo.sdk`.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Spawn an external process from each transport and let its stdout call memory/skill/tool services directly.
+- Return full external stdout, stderr, capsule text, or raw trace bodies from SDK results.
+
+#### Correct
+- Route SDK/CLI/MCP execution through `MnemoClient.external_run()` / `run_external()` so capsule building, proposal filtering, RunLedger events, and error normalization stay in one service.
+- Return `external_runtime_result` with `capsule` summary, `proposal`, `ignored_fields`, ids, and exit code only.
 
 ## Scenario: MCP-Style Tool Server
 
@@ -83,8 +100,9 @@
 ### 3. Contracts
 - MCP is a transport/tool facade; it must reuse SDK and domain services rather than defining workflow steps.
 - Tool descriptors use MCP-style `inputSchema` and annotations, plus a compact `mnemo.risk` field.
-- `mnemo_context`, `mnemo_capsule`, `mnemo_recall`, `mnemo_run`, `mnemo_replay`, and `mnemo_eval` route through `MnemoClient`.
+- `mnemo_context`, `mnemo_capsule`, `mnemo_external_run`, `mnemo_recall`, `mnemo_run`, `mnemo_replay`, and `mnemo_eval` route through `MnemoClient`.
 - `mnemo_capsule` is read-only and returns the same minimal-disclosure `context_capsule` shape as the SDK.
+- `mnemo_external_run` is `external` risk, requires an explicit command array, returns `external_runtime_result`, and preserves the same proposal-only boundary as the SDK.
 - `mnemo_eval` accepts optional `variants`; when present it returns the same compact harness variant report as the SDK.
 - `mnemo_eval` accepts `release_gate: true`; when present it returns the same compact release-gate report as the SDK.
 - `mnemo_update` writes memory candidates and W0 working notes only; it must not mutate stable memory pages directly.
@@ -102,6 +120,7 @@
 | --- | --- | --- |
 | Tool descriptors | Core tool names, `inputSchema`, and read/write annotations are present | `tests/test_mcp.py` |
 | Compact reads | Context/capsule/search/recall/skills/tools do not expose raw evidence, full state, or raw input schemas | `tests/test_mcp.py` |
+| External runtime call | `mnemo_external_run` executes explicit argv command and returns compact proposals with ignored fields | `tests/test_mcp.py` |
 | Update writes | External facts become memory candidates and observations become W0 notes | `tests/test_mcp.py` |
 | Watch/Cron calls | MCP calls create scheduled watch/cron items, record Watch feedback policy, and runtime status reports due count | `tests/test_mcp.py` |
 | Runtime calls | Run/replay/eval/variant-eval/release-gate/status reuse existing services and compact results | `tests/test_mcp.py` |
@@ -117,7 +136,14 @@
 - Bad: returning full traces, full artifacts, raw provider schemas, or stable-memory mutations from generic update calls.
 
 ### 6. Tests Required
-- Direct MCP server tests for descriptors, calls, capsule compactness, variant-eval, release-gate, scheduled watch/cron, and Watch feedback surfaces.
+- Direct MCP server tests for descriptors, calls, capsule compactness, external_run, variant-eval, release-gate, scheduled watch/cron, and Watch feedback surfaces.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Define MCP-specific external-runtime behavior that bypasses the SDK command adapter or accepts shell strings.
+
+#### Correct
+- Keep `mnemo_external_run` as a thin MCP wrapper over `MnemoClient.external_run()` with an explicit command array and compact proposal-only result.
 - JSON-RPC tests for success, Content-Length framing, JSONL debug serving, and structured errors.
 - CLI tests for JSON output, serve transport selection, and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.

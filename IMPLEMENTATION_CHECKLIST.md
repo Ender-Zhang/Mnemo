@@ -150,8 +150,8 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Config file and env override model.
 - [x] Daemon status command.
 - [x] Backup/export/import.
-- [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient` and `mnemo.core_api.v1` schema exist; HTTP/OpenAPI server bindings and non-Python generated clients are not complete.
-- [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC over standard Content-Length stdio, JSONL debug mode, and CLI list/call/serve exist for context/update/recall/search/watch/watch-feedback/skills/tools/cron/run/replay/eval/status; external packaging remains incomplete.
+- [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient`, `mnemo.core_api.v1` schema, and proposal-only command `external_run` exist; HTTP/OpenAPI server bindings and non-Python generated clients are not complete.
+- [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC over standard Content-Length stdio, JSONL debug mode, and CLI list/call/serve exist for context/capsule/external-run/update/recall/search/watch/watch-feedback/skills/tools/cron/run/replay/eval/status; external packaging remains incomplete.
 - [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
 - [~] Watch/Cron persistence and scheduled event processing: durable scheduled items, simple schedule grammar, CLI/MCP registration, runtime status, queue enqueue tick, and model-supplied Watch feedback policy exist; full cron expressions, quiet hours, delivery channels, Sense triggers, and richer Watch self-learning remain.
 - [x] Sessions/messages/L4 search tables and FTS5 indexes for persisted run messages.
@@ -161,7 +161,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] README reflects current runtime, provider, web, daemon, cancellation, evolution, and harness workflows.
 - [~] Implementation checklist now separates runnable foundations from incomplete full-design capabilities.
 - [~] Highest-priority core alignment: L4 memory search, Soul/bootstrap prompt input, Inbox/Decision persistence, provider after-turn learning packets, and one-shot high-risk approval execution are implemented; local/background learning reflection and richer frontend recall/learning actions remain.
-- [~] Highest-priority integration alignment: SDK/API schema, MCP-style tool server, and external context capsule boundaries exist; actual RuntimeAdapter execution remains.
+- [~] Highest-priority integration alignment: SDK/API schema, MCP-style tool server, external context capsule boundaries, and a proposal-only command RuntimeAdapter foundation exist; OpenClaw/Codex/ACP-specific adapters remain.
 - [ ] Extension alignment: Watch/Proactive, Sense/Android, Sub-Agent/AgentCard, richer generated-tool extension packaging, messaging/calendar/mail connectors, and full harness suites.
 
 ## Recently Landed Trellis Tasks
@@ -223,3 +223,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-external-runtime-context-capsule`: SDK/CLI/MCP now build minimal-disclosure external runtime context capsules, and the external-harness eval verifies capsule boundaries.
 - [x] `04-27-harness-release-gate-report`: Harness now aggregates personalization variant gates plus memory-safety, skill-evolution, and external-harness suites into a compact release report across CLI, SDK, and MCP.
 - [x] `04-27-proactive-watch-feedback-gates`: Watch feedback now records compact outcomes and applies explicit model/user policy decisions through ScheduleService, exposed via CLI/MCP/provider tools and covered by the proactive-watch harness suite.
+- [x] `04-27-external-command-runtime-adapter`: Mnemo now executes explicit external command runtimes through fresh context capsules, records proposal-only RunLedger events, ignores unsupported direct-write fields as boundary violations, and exposes the foundation through SDK/CLI/MCP plus external-harness coverage.
