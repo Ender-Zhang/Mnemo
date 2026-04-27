@@ -1430,3 +1430,36 @@ Added compact MCP server config packaging through mnemo.mcp.mcp_server_config an
 ### Next Steps
 
 - None - task complete
+
+
+## Session 99: Generated tool rollback foundation
+
+**Date**: 2026-04-27
+**Task**: Generated tool rollback foundation
+**Branch**: `main`
+
+### Summary
+
+Added explicit generated tool rollback through ToolEvolutionService, provider-native tool_rollback_generated, and mnemo tools rollback. Rollback marks generated tool and source candidate rolled_back, drops the active alias, blocks direct reinstall until review, and updates checklist/design/spec docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e031ad8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
