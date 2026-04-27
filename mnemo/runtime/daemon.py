@@ -10,11 +10,14 @@ from ..core.errors import DaemonLockError
 from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 from ..core.models import RunRequest, RunResult
+from ..memory.engine import MemoryEngine, W0_MEMORY_RETENTION
 from ..storage import StateStore
 from .scheduler import scheduled_item_stats
 
 
 RunExecutor = Callable[[RunRequest], RunResult]
+DEFAULT_W0_RECOVERY_LIMIT = 20
+DEFAULT_W0_RECOVERY_SCAN_LIMIT = 200
 
 
 class DaemonLock:
@@ -122,13 +125,40 @@ class DaemonRunner:
         return {
             "queue": self.store.queue_stats(),
             "scheduled": scheduled_item_stats(self.store),
+            "w0": self._w0_stats(),
             "lock": DaemonLock(self.store.state_dir).status(),
         }
 
-    def recover(self, *, stale_after_s: float = 900.0) -> dict[str, Any]:
+    def recover(self, *, stale_after_s: float = 900.0, w0_limit: int = DEFAULT_W0_RECOVERY_LIMIT) -> dict[str, Any]:
         self.store.initialize()
         recovered = self.store.recover_stale_queue_items(stale_after_s=stale_after_s)
-        return {"recovered": recovered, "stats": self.store.queue_stats()}
+        w0 = self.recover_w0(limit=w0_limit)
+        return {"recovered": recovered, "w0": w0, "stats": self.store.queue_stats()}
+
+    def recover_w0(
+        self,
+        *,
+        limit: int = DEFAULT_W0_RECOVERY_LIMIT,
+        scan_limit: int = DEFAULT_W0_RECOVERY_SCAN_LIMIT,
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        pending_note_ids = self._pending_w0_note_ids(scan_limit=scan_limit)
+        note_ids = pending_note_ids[: max(0, int(limit))]
+        if not note_ids:
+            return {
+                "created": [],
+                "skipped": [],
+                "pending_before": len(pending_note_ids),
+                "pending_after": len(pending_note_ids),
+                "scan_limit": max(0, int(scan_limit)),
+            }
+        result = MemoryEngine(self.store).ingest_working_notes(limit=max(0, int(scan_limit)), note_ids=note_ids)
+        return {
+            **result,
+            "pending_before": len(pending_note_ids),
+            "pending_after": len(self._pending_w0_note_ids(scan_limit=scan_limit)),
+            "scan_limit": max(0, int(scan_limit)),
+        }
 
     def cancel(self, queue_id: str, *, reason: str = "cancelled") -> dict[str, Any]:
         self.store.initialize()
@@ -148,6 +178,7 @@ class DaemonRunner:
         processed: list[dict[str, Any]] = []
         with DaemonLock(self.store.state_dir):
             recovered = self.store.recover_stale_queue_items(stale_after_s=stale_after_s)
+            w0 = self.recover_w0(limit=DEFAULT_W0_RECOVERY_LIMIT)
             for _ in range(max(0, int(limit))):
                 item = self.store.claim_next_queue_item(worker)
                 if not item:
@@ -156,6 +187,7 @@ class DaemonRunner:
         return {
             "processed": processed,
             "recovered": recovered,
+            "w0": w0,
             "stats": self.store.queue_stats(),
         }
 
@@ -176,6 +208,19 @@ class DaemonRunner:
             return {"id": queue_id, "status": "failed", "error": str(exc)}
         self.store.complete_queue_item(queue_id, "completed", run_id=result.run_id)
         return {"id": queue_id, "status": "completed", "run_id": result.run_id}
+
+    def _w0_stats(self) -> dict[str, Any]:
+        note_ids = self._pending_w0_note_ids(scan_limit=DEFAULT_W0_RECOVERY_SCAN_LIMIT)
+        return {"pending": len(note_ids), "scan_limit": DEFAULT_W0_RECOVERY_SCAN_LIMIT}
+
+    def _pending_w0_note_ids(self, *, scan_limit: int = DEFAULT_W0_RECOVERY_SCAN_LIMIT) -> list[str]:
+        notes = self.store.list_working_notes(status="open", limit=max(0, int(scan_limit)))
+        pending: list[str] = []
+        for note in notes:
+            metadata = note.get("metadata") if isinstance(note.get("metadata"), dict) else {}
+            if metadata.get("retention") == W0_MEMORY_RETENTION:
+                pending.append(str(note["id"]))
+        return pending
 
 
 def _pid_is_running(pid: int) -> bool:

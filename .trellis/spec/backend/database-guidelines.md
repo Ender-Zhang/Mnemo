@@ -112,6 +112,8 @@
 - Cancelling a non-pending queue item returns unchanged; active work should be cancelled through its `run_id`.
 - Stale recovery moves old `running` rows back to `pending` and clears worker/claim/heartbeat fields.
 - Daemon code must execute queued work through the existing `RunRequest` runtime path.
+- Daemon recovery may flush pending W0 working notes through the MemoryEngine only when note metadata already has `retention="memory_candidate"`.
+- Daemon W0 recovery must use `StateStore.list_working_notes()` and must not mutate ordinary `ephemeral` open notes.
 - `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled/rolled_back status.
 - Generated tool implementations are data, not executable code.
 - `eval_cases` stores draft/passed/failed cases with source run provenance and structured `case` / `result` JSON payloads.
@@ -170,6 +172,7 @@
 | Queue cancellation | Pending queue item becomes `cancelled` and cannot be claimed; running items remain unchanged | `tests/test_storage.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | Queue crash recovery | Stale running jobs return to pending | `tests/test_storage.py`, `tests/test_daemon.py` |
 | Daemon CLI | Enqueue, run, status, and recover operate through persisted queue | `tests/test_cli.py` |
+| Daemon W0 recovery | Model-marked W0 notes become candidates during recover/drain while ephemeral notes remain open | `tests/test_daemon.py`, `tests/test_cli.py` |
 | Generated tool storage | Round-trip active/disabled/rolled_back generated tool manifests | `tests/test_storage.py`, `tests/test_tool_evolution.py` |
 | Eval case storage | Add, list by target/status, and update result payloads | `tests/test_storage.py`, `tests/test_cli.py` |
 | Artifact lookup | Round-trip artifact metadata/body by id, unknown id returns `None` | `tests/test_storage.py` |
@@ -223,6 +226,7 @@
 - Backup export/import round-trip is covered.
 - Import target and archive safety failures are covered.
 - Queue lifecycle, daemon drain, single-instance lock, and stale recovery are covered.
+- Daemon recover/drain covers model-marked W0 recovery and non-mutating ephemeral notes.
 - Run and queue cancellation are covered at storage, CLI, daemon, and provider runtime boundaries.
 - Generated tool manifest round-trip and migration coverage are covered.
 - Eval case add/list/update behavior is covered.

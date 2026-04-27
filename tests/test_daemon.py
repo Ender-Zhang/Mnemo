@@ -54,6 +54,57 @@ class DaemonRunnerTests(unittest.TestCase):
             self.assertEqual(result["processed"], [])
             self.assertEqual(StateStore(tmp).list_queue_items(status="cancelled")[0]["id"], queue_id)
 
+    def test_recover_ingests_model_marked_w0_without_mutating_ephemeral_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("daemon w0")
+            mission_id = store.create_mission(conversation_id, "recover w0")
+            run_id = store.create_run(conversation_id, mission_id, "note")
+            retained_note_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "User prefers daemon recovery to preserve implementation progress notes",
+                metadata={"retention": "memory_candidate", "confidence": 0.83},
+            )
+            ephemeral_note_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "Temporary daemon scratchpad context",
+                metadata={"retention": "ephemeral"},
+            )
+
+            result = DaemonRunner(tmp).recover()
+
+            created = result["w0"]["created"][0]
+            candidate = store.get_memory_candidate(created["candidate_id"])
+            open_notes = {note["id"] for note in store.list_working_notes(status="open")}
+            self.assertEqual(created["note_id"], retained_note_id)
+            self.assertEqual(candidate["claim"], "User prefers daemon recovery to preserve implementation progress notes")
+            self.assertEqual(store.list_working_notes(status="candidate_created")[0]["id"], retained_note_id)
+            self.assertIn(ephemeral_note_id, open_notes)
+            self.assertEqual(result["w0"]["pending_after"], 0)
+
+    def test_drain_runs_w0_recovery_before_queue_work(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("daemon drain w0")
+            mission_id = store.create_mission(conversation_id, "drain w0")
+            run_id = store.create_run(conversation_id, mission_id, "note")
+            note_id = store.add_working_note(
+                mission_id,
+                run_id,
+                "User prefers daemon drain to recover marked W0 observations",
+                metadata={"retention": "memory_candidate", "confidence": 0.8},
+            )
+
+            result = DaemonRunner(tmp).drain(run_local, limit=0)
+
+            self.assertEqual(result["processed"], [])
+            self.assertEqual(result["w0"]["created"][0]["note_id"], note_id)
+            self.assertEqual(store.list_working_notes(status="candidate_created")[0]["id"], note_id)
+
     def test_lock_blocks_second_worker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             lock = DaemonLock(tmp)

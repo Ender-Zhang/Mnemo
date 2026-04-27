@@ -68,6 +68,7 @@
 - User-facing learning undo uses `MemoryEngine.undo_candidate()` to tombstone the promoted page and candidate through existing curation records.
 - W0 working notes are mission-scoped scratchpad entries.
 - DreamCycle only turns W0 notes into memory candidates when the note metadata has `retention="memory_candidate"`.
+- Daemon recovery may call W0 ingestion with explicit model-marked note ids, but it must not classify or mutate ordinary ephemeral notes.
 - W0 ingestion creates draft candidates and marks source notes as `candidate_created`; it never writes stable memory pages directly.
 - W0 notes without durable retention are marked `skipped:ephemeral`; short notes are marked `skipped:too_short`.
 - `mnemo memory notes` must expose read-only W0 working note inventory for DreamCycle inspection.
@@ -136,6 +137,7 @@
 | Learning undo | Tombstone an accepted candidate and its linked stable page | `tests/test_memory.py`, `tests/test_web.py` |
 | W0 note with memory retention | Create candidate, mark note `candidate_created`, continue normal consolidation | `tests/test_memory.py` |
 | W0 note without memory retention | Mark note `skipped:ephemeral`, create no candidate | `tests/test_memory.py` |
+| Daemon W0 recovery | Only model-marked W0 notes are ingested; ephemeral notes remain open | `tests/test_daemon.py`, `tests/test_cli.py` |
 | CLI W0 note list | Open and processed working notes can be inspected without mutation | `tests/test_cli.py` |
 | Missing or invalid snapshot file | Return `None` | `tests/test_memory.py` |
 | Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
@@ -183,6 +185,7 @@
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
 - Learning undo tombstones promoted pages and candidates through existing tombstone APIs.
 - W0 ingestion creates candidates from model-marked working notes and skips ephemeral notes.
+- Daemon W0 recovery covers model-marked notes without mutating ephemeral notes.
 - Candidate writes cover trusted/low-risk and injected/high-risk safety scans.
 - CLI `memory notes` covers default open notes, unfiltered notes, metadata/result payloads, and compact non-JSON rows.
 - Duplicate reinforcement updates confidence and creates `reinforces`.

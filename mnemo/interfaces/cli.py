@@ -2100,9 +2100,10 @@ def _print_daemon_result(command: str, result: dict[str, Any]) -> None:
         print(f"Queued run {result['queue_id']}")
         return
     if command == "run":
+        w0 = result.get("w0") if isinstance(result.get("w0"), dict) else {}
         print(
             f"Daemon processed={len(result['processed'])} recovered={len(result['recovered'])} "
-            f"pending={result['stats']['counts']['pending']}"
+            f"w0_created={len(w0.get('created', []))} pending={result['stats']['counts']['pending']}"
         )
         return
     if command == "status":
@@ -2111,11 +2112,13 @@ def _print_daemon_result(command: str, result: dict[str, Any]) -> None:
         print(
             f"Queue pending={counts['pending']} running={counts['running']} "
             f"completed={counts['completed']} failed={counts['failed']} "
-            f"scheduled_due={result.get('scheduled', {}).get('due', 0)} lock={lock}"
+            f"scheduled_due={result.get('scheduled', {}).get('due', 0)} "
+            f"w0_pending={result.get('w0', {}).get('pending', 0)} lock={lock}"
         )
         return
     if command == "recover":
-        print(f"Recovered {len(result['recovered'])} queued run(s)")
+        w0 = result.get("w0") if isinstance(result.get("w0"), dict) else {}
+        print(f"Recovered {len(result['recovered'])} queued run(s), w0_created={len(w0.get('created', []))}")
         return
     if command == "cancel":
         changed = "cancelled" if result.get("changed") else "unchanged"
