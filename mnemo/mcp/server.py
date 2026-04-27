@@ -52,6 +52,7 @@ class MnemoMcpServer:
             "mnemo_watch": self._watch,
             "mnemo_watch_feedback": self._watch_feedback,
             "mnemo_cron": self._cron,
+            "mnemo_dream_schedule": self._dream_schedule,
             "mnemo_run": self._run,
             "mnemo_replay": self._replay,
             "mnemo_eval": self._eval,
@@ -329,6 +330,18 @@ class MnemoMcpServer:
             metadata={"source": "mcp"},
         )
         return {"kind": "scheduled_item", "version": "mnemo.cron.v1", "item": item}
+
+    def _dream_schedule(self, args: dict[str, Any]) -> dict[str, Any]:
+        item = ScheduleService(self.state_dir).add_dream(
+            title=_optional_string(args.get("title")),
+            schedule=_string(args.get("schedule"), default="daily"),
+            source=_string(args.get("source"), default="mcp"),
+            next_run_at=args.get("next_run_at"),
+            limit=_bounded_int(args.get("limit"), default=20, minimum=1, maximum=200),
+            min_confidence=_bounded_float(args.get("min_confidence"), default=0.7, minimum=0.0, maximum=1.0),
+            metadata={"source": "mcp"},
+        )
+        return {"kind": "scheduled_item", "version": "mnemo.dream_schedule.v1", "item": item}
 
     def _run(self, args: dict[str, Any]) -> dict[str, Any]:
         return self.client.run(
@@ -712,6 +725,22 @@ _TOOL_DESCRIPTORS = [
                 "source": {"type": "string", "default": "mcp"},
             },
             required=["schedule", "message"],
+        ),
+        risk="write",
+        read_only=False,
+    ),
+    _descriptor(
+        "mnemo_dream_schedule",
+        "Register bounded Dream memory maintenance through the existing scheduler.",
+        _schema(
+            {
+                "schedule": {"type": "string", "default": "daily"},
+                "title": {"type": "string"},
+                "next_run_at": {"type": ["string", "number", "null"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 20},
+                "min_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.7},
+                "source": {"type": "string", "default": "mcp"},
+            }
         ),
         risk="write",
         read_only=False,

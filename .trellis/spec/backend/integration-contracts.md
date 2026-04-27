@@ -167,6 +167,7 @@
 - `MnemoMcpServer.serve_content_length(input_stream=None, output_stream=None) -> None`
 - `MnemoMcpServer.serve_jsonl(input_stream=None, output_stream=None) -> None`
 - `mnemo.mcp.mcp_server_config(client="generic", command="mnemo", state_dir=DEFAULT_STATE_DIR) -> dict[str, Any]`
+- MCP tool: `mnemo_dream_schedule(schedule="daily", title=None, next_run_at=None, limit=20, min_confidence=0.7, source="mcp")`
 - CLI: `mnemo mcp tools [--state-dir DIR] [--json]`
 - CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
 - CLI: `mnemo mcp call TOOL --arguments-json JSON [--state-dir DIR] [--json]`
@@ -185,6 +186,7 @@
 - `mnemo_skills` returns compact skill cards; full skill bodies remain behind existing skill-specific surfaces.
 - `mnemo_tools` returns compact tool cards and ToolBundle metadata; it must not return raw provider input schemas by default.
 - `mnemo_watch` and `mnemo_cron` create durable scheduled items through `ScheduleService`; due processing still runs through the normal daemon queue.
+- `mnemo_dream_schedule` creates durable Dream maintenance scheduled items through `ScheduleService.add_dream()`; due processing runs bounded `MemoryEngine.dream_maintenance()` through the existing scheduler.
 - `mnemo_watch_feedback` records compact Watch outcomes and applies an explicit model/user policy decision through `ScheduleService`.
 - `mnemo_runtime_status` includes compact scheduled-item status.
 - JSON-RPC support covers `initialize`, `tools/list`, and `tools/call` with structured error responses.
@@ -200,7 +202,7 @@
 | Compact reads | Context/capsule/search/recall/skills/tools do not expose raw evidence, full state, or raw input schemas | `tests/test_mcp.py` |
 | External runtime call | `mnemo_external_run` executes explicit argv command and returns compact proposals with ignored fields | `tests/test_mcp.py` |
 | Update writes | External facts become memory candidates and observations become W0 notes | `tests/test_mcp.py` |
-| Watch/Cron calls | MCP calls create scheduled watch/cron items, record Watch feedback policy, and runtime status reports due count | `tests/test_mcp.py` |
+| Watch/Cron/Dream calls | MCP calls create scheduled watch/cron/dream items, record Watch feedback policy, run due Dream items through the scheduler, and runtime status reports due/count metadata | `tests/test_mcp.py` |
 | Runtime calls | Run/replay/eval/variant-eval/release-gate/status reuse existing services and compact results | `tests/test_mcp.py` |
 | JSON-RPC | Initialize, list, call, unknown-method, JSONL serving, and Content-Length framing behave predictably | `tests/test_mcp.py` |
 | Config packaging | Helper and CLI return compact client config snippets without raw tool schemas | `tests/test_mcp.py`, `tests/test_cli.py` |
@@ -211,11 +213,12 @@
 - Good: add new MCP tools as thin wrappers over SDK/domain services with compact outputs.
 - Good: keep tool outputs model-actionable and small enough for external context capsules.
 - Base: watch/cron tools register scheduled work; model-led execution happens when the daemon queue drains the due item, then the model may record feedback policy through `mnemo_watch_feedback`.
+- Base: Dream scheduling registers a maintenance trigger/budget; memory promotion, decay, and tombstone decisions remain inside `MemoryEngine` and model-supplied Dream actions.
 - Bad: adding provider-specific workflow routing inside the MCP server.
 - Bad: returning full traces, full artifacts, raw provider schemas, or stable-memory mutations from generic update calls.
 
 ### 6. Tests Required
-- Direct MCP server tests for descriptors, calls, capsule compactness, external_run, variant-eval, release-gate, scheduled watch/cron, and Watch feedback surfaces.
+- Direct MCP server tests for descriptors, calls, capsule compactness, external_run, variant-eval, release-gate, scheduled watch/cron/dream, and Watch feedback surfaces.
 
 ### 7. Wrong vs Correct
 #### Wrong

@@ -1,0 +1,6 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "verify MCP Dream tool stays a thin facade over ScheduleService"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "verify scheduled item persistence and runtime status behavior"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "verify CLI MCP call error normalization remains intact"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "MCP descriptor-to-service-to-storage cross-layer verification"}

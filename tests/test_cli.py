@@ -2017,6 +2017,18 @@ print(json.dumps({
                     "--json",
                 ]
             )
+            dream_call = _run_cli(
+                [
+                    "mcp",
+                    "call",
+                    "mnemo_dream_schedule",
+                    "--state-dir",
+                    tmp,
+                    "--arguments-json",
+                    '{"schedule":"once","next_run_at":0,"limit":10}',
+                    "--json",
+                ]
+            )
             invalid = _run_cli(
                 [
                     "mcp",
@@ -2045,6 +2057,11 @@ print(json.dumps({
             self.assertEqual(json.loads(text_config.stdout)["transport"], "stdio")
             self.assertEqual(call.returncode, 0, call.stderr)
             self.assertEqual(json.loads(call.stdout)["result"]["kind"], "context_block")
+            self.assertEqual(dream_call.returncode, 0, dream_call.stderr)
+            dream_payload = json.loads(dream_call.stdout)["result"]
+            self.assertEqual(dream_payload["kind"], "scheduled_item")
+            self.assertEqual(dream_payload["item"]["kind"], "dream")
+            self.assertEqual(dream_payload["item"]["metadata"]["dream"]["limit"], 10)
             self.assertEqual(invalid.returncode, 1)
             self.assertIn("mnemo: invalid --arguments-json", invalid.stderr)
             self.assertNotIn("Traceback", invalid.stderr)

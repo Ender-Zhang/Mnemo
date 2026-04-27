@@ -215,6 +215,9 @@ mnemo_tools(profile, task, platform)
 mnemo_cron(action, job)
   → 创建/更新/暂停/恢复/运行/删除长期任务；可绑定 skills 和 delivery
 
+mnemo_dream_schedule(schedule?, limit?, min_confidence?)
+  → 创建 bounded Dream memory maintenance 触发器；到期后通过 scheduler 运行 MemoryEngine
+
 mnemo_run(request, runtime)
   → 返回: {run_id, trace_id, response, tool_summary, memory_delta, skill_delta}
 

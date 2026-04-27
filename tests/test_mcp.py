@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from mnemo.mcp import MnemoMcpServer, mcp_server_config, mcp_tool_descriptors
+from mnemo.runtime import ScheduleService
 from mnemo.storage import StateStore
 
 
@@ -78,6 +79,7 @@ class MnemoMcpTests(unittest.TestCase):
                 "mnemo_skills",
                 "mnemo_tools",
                 "mnemo_cron",
+                "mnemo_dream_schedule",
                 "mnemo_run",
                 "mnemo_replay",
                 "mnemo_eval",
@@ -92,6 +94,9 @@ class MnemoMcpTests(unittest.TestCase):
         external_descriptor = next(tool for tool in tools if tool["name"] == "mnemo_external_run")
         self.assertEqual(external_descriptor["mnemo"]["risk"], "external")
         self.assertIn("command", external_descriptor["inputSchema"]["properties"])
+        dream_descriptor = next(tool for tool in tools if tool["name"] == "mnemo_dream_schedule")
+        self.assertEqual(dream_descriptor["mnemo"]["risk"], "write")
+        self.assertEqual(dream_descriptor["inputSchema"]["properties"]["schedule"]["default"], "daily")
 
     def test_context_search_recall_skills_and_tools_are_compact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -225,6 +230,7 @@ print(json.dumps({
                 "mnemo_cron",
                 {"schedule": "once", "message": "remember: MCP cron", "next_run_at": 0},
             )
+            dream = server.call_tool("mnemo_dream_schedule", {"limit": 9, "min_confidence": 0.81})
             status = server.call_tool("mnemo_runtime_status", {"limit": 5})
 
             self.assertTrue(run["run_id"].startswith("run_"))
@@ -242,9 +248,47 @@ print(json.dumps({
             self.assertEqual(feedback["item"]["schedule"], "weekly")
             self.assertEqual(feedback["decision"]["source"], "model")
             self.assertEqual(cron["item"]["kind"], "cron")
+            self.assertEqual(dream["item"]["kind"], "dream")
+            self.assertEqual(dream["item"]["schedule"], "daily")
+            self.assertEqual(dream["item"]["metadata"]["dream"]["limit"], 9)
+            self.assertEqual(dream["item"]["metadata"]["dream"]["min_confidence"], 0.81)
             self.assertEqual(status["kind"], "runtime_status")
             self.assertGreaterEqual(len(status["recent_runs"]), 1)
+            self.assertEqual(status["scheduled"]["counts"]["dream"]["active"], 1)
             self.assertEqual(status["scheduled"]["due"], 1)
+
+    def test_mcp_dream_schedule_runs_through_existing_scheduler(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("mcp dream schedule")
+            mission_id = store.create_mission(conversation_id, "mcp dream schedule")
+            run_id = store.create_run(conversation_id, mission_id, "remember mcp dream maintenance")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "MCP clients can schedule Dream maintenance",
+                confidence=0.92,
+            )
+            server = MnemoMcpServer(state_dir=tmp)
+
+            dream = server.call_tool(
+                "mnemo_dream_schedule",
+                {"schedule": "once", "next_run_at": 0, "limit": 10, "source": "unit-test"},
+            )
+            tick = ScheduleService(tmp).tick(now=1, limit=5)
+            status = server.call_tool("mnemo_runtime_status", {"limit": 5})
+
+            self.assertEqual(dream["kind"], "scheduled_item")
+            self.assertEqual(dream["version"], "mnemo.dream_schedule.v1")
+            self.assertEqual(dream["item"]["kind"], "dream")
+            self.assertEqual(dream["item"]["source"], "unit-test")
+            self.assertEqual(dream["item"]["metadata"]["source"], "mcp")
+            self.assertEqual(dream["item"]["metadata"]["dream"]["limit"], 10)
+            self.assertEqual(tick["processed"][0]["status"], "dream_completed")
+            self.assertEqual(tick["processed"][0]["dream_report"]["promoted"], 1)
+            self.assertEqual(tick["queue"]["total"], 0)
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "promoted")
+            self.assertEqual(status["scheduled"]["counts"]["dream"]["completed"], 1)
 
     def test_json_rpc_initialize_list_call_errors_and_jsonl_serve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

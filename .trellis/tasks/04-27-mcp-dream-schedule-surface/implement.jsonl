@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "MCP tool descriptor and call_tool contract for Dream schedule surface"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "scheduled_items and ScheduleService contracts for dream kind"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Dream scheduled maintenance contract and compact report requirements"}
