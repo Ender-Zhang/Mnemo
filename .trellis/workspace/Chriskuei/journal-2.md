@@ -1801,3 +1801,37 @@ Added harmful memory tombstone routing into compact memory-core eval cases acros
 ### Next Steps
 
 - None - task complete
+
+
+## Session 110: Memory Dream maintenance actions
+
+**Date**: 2026-04-27
+**Task**: Memory Dream maintenance actions
+**Branch**: `main`
+
+### Summary
+
+Added compact DreamCycle model action execution for memory_tombstone and memory_decay_stale_pages, including native OpenAI/Anthropic-style tool-call shapes, CLI --actions-json, compact applied/skipped report persistence, tests, specs, design, and checklist updates. Verified full unittest suite, diff whitespace check, package build, and installed-wheel smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6f2e5d1` | (see git log) |
+| `de2fea6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
