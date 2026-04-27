@@ -1297,3 +1297,37 @@ Added a compact release gate report that aggregates personalization variant gate
 ### Next Steps
 
 - None - task complete
+
+
+## Session 95: Proactive watch feedback gates
+
+**Date**: 2026-04-27
+**Task**: Proactive watch feedback gates
+**Branch**: `main`
+
+### Summary
+
+Added model-supplied Watch feedback policy: ScheduleService records compact outcomes and applies keep/sparsify/pause/disable decisions, exposed through CLI schedule feedback, MCP mnemo_watch_feedback, provider-native watch_feedback tool, proactive-watch harness suite, and release gate/docs/spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `791deb2` | (see git log) |
+| `3a7fb09` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
