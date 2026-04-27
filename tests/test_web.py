@@ -724,9 +724,12 @@ print(json.dumps({
                 self.assertIn("以后这样", script)
                 self.assertIn("这次而已", script)
                 self.assertIn("撤销", script)
+                self.assertIn("确认记住", script)
+                self.assertIn("requires_confirmation", script)
                 self.assertIn('action === "undo"', script)
                 self.assertIn("learning-button", css)
                 self.assertIn("event-card.learning", css)
+                self.assertIn("event-card.learning.confirmation", css)
 
     def test_web_client_asset_renders_recall_cards_inline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

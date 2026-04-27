@@ -509,8 +509,10 @@ function isPatchArtifact(kind) {
 
 function renderLearning(item) {
   if (!item) return;
+  const needsConfirmation = Boolean(item.requires_confirmation) || String(item.status || "").startsWith("needs_review");
   const node = document.createElement("div");
   node.className = "event-card learning";
+  if (needsConfirmation) node.classList.add("confirmation");
 
   const titleRow = document.createElement("div");
   titleRow.className = "event-title";
@@ -523,14 +525,14 @@ function renderLearning(item) {
 
   const body = document.createElement("div");
   body.className = "event-body";
-  body.textContent = item.summary || "可能学到一个偏好或事实。";
+  body.textContent = item.summary || (needsConfirmation ? "这条学习需要你确认后才会长期记住。" : "可能学到一个偏好或事实。");
 
   const actions = document.createElement("div");
   actions.className = "learning-actions";
   const itemId = item.item_id;
   if (item.kind === "memory") {
     actions.append(
-      learningButton("以后这样", "accept", itemId, chip),
+      learningButton(needsConfirmation ? "确认记住" : "以后这样", "accept", itemId, chip),
       learningButton("这次而已", "this_time", itemId, chip),
       learningButton("忽略", "reject", itemId, chip),
     );

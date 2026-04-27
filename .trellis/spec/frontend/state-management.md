@@ -19,6 +19,7 @@
 - Runtime state: `state.artifactRelated: Map<string, object[]>`
 - Runtime state: `state.settings: object | null`
 - UI event: `recall.card` with `{ recall: { query: string, scope: string, count: number, items: RecallItem[] } }`
+- UI event: `learning.chip` with `{ item: { item_id: string, kind: string, status: string, summary: string, requires_confirmation?: boolean, risk?: string, confirmation_reason?: string } }`
 - API: `GET /api/events?run_id=<run_id>&chat=1`
 - API: `GET /api/events?run_id=<run_id>&chat=1&sinceEventId=<event_id>`
 - API: `GET /api/artifacts?artifact_id=<artifact_id>` returns `{ "artifact": ArtifactWithBody, "related": ArtifactMetadata[] }`
@@ -49,6 +50,7 @@
 - Decision cards resolve persisted Inbox items by id and keep status local to the card.
 - Tool approval cards use the same decision resolution path and render any returned compact `tool_result` as an inline action/error card without adding browser persistence keys.
 - Learning chips resolve or undo persisted memory candidates by id and keep status local to the card.
+- Review-gated learning chips use `requires_confirmation` only for local presentation; they do not add browser persistence keys or a separate workflow.
 - Settings drawer state is fetched on open through `/api/settings`; it is not persisted in browser storage.
 - Settings drawer can update quiet hours through `/api/settings` and otherwise prefill the single composer for user-facing actions.
 - `/api/settings` payloads must summarize learned preferences and data counts without raw artifact bodies, raw memory dumps, or provider secrets.
@@ -71,7 +73,7 @@
 | Recall card asset | Handles `recall.card`, compact item rendering, artifact open, decision resolve, and composer prefill hooks | `tests/test_web.py` |
 | Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Tool approval card | Uses the same decision resolution path, renders compact approval results, and adds no browser state keys | `tests/test_web.py`, `tests/test_runtime.py` |
-| Learning memory action | Promotes, rejects, or undoes a persisted memory candidate and returns JSON errors for missing/invalid input | `tests/test_web.py` |
+| Learning memory action | Promotes, rejects, or undoes a persisted memory candidate and renders review-gated candidates as confirmation chips | `tests/test_web.py`, `tests/test_runtime.py` |
 | Settings summary | Returns compact connected app, permission, quiet-hours, preference, and data-control data without secrets | `tests/test_web.py` |
 | Settings update | Saves valid quiet-hours settings and rejects invalid time payloads with JSON errors | `tests/test_web.py` |
 | Settings asset | Opens a drawer from chat and preloads settings through `/api/settings` | `tests/test_web.py` |
@@ -86,6 +88,7 @@
 - Good: keep recall result bodies compact and fetch/open only the selected artifact body.
 - Good: resolve decision cards by item id through `/api/inbox/resolve`, leaving conversation replay keys untouched.
 - Good: resolve or undo learning chips by candidate id through `/api/learning/memory`, leaving conversation replay keys untouched.
+- Good: keep `requires_confirmation` as streamed card-local presentation metadata.
 - Good: fetch settings only when the drawer opens and keep ordinary user actions in composer prefill.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
 - Good: clear `activeRunId` before each new turn so a stale replay id cannot be cancelled.
@@ -111,7 +114,7 @@
 - Inbox API covers listing and resolution, including missing and invalid resolution errors.
 - Frontend asset includes inline decision resolution hooks.
 - Learning memory API covers accept, this-turn-only, reject, undo, missing candidate, and invalid action errors.
-- Frontend asset includes inline learning resolution hooks.
+- Frontend asset includes inline learning resolution hooks and review-gated confirmation wording.
 - Settings API covers summary, quiet-hours update, invalid time errors, and no secret leakage.
 - Frontend asset includes settings drawer hooks and composer-prefill actions.
 - Run cancel API covers success, missing id, unknown id, and frontend stop-control asset hooks.

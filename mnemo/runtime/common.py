@@ -157,17 +157,7 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
             },
         )
     elif result.name == "memory_write_candidate":
-        yield emit(
-            "learning.chip",
-            {
-                "item": {
-                    "item_id": result.result["candidate_id"],
-                    "kind": "memory",
-                    "status": result.result.get("status") or "draft",
-                    "summary": "可能学到一个偏好或事实。",
-                }
-            },
-        )
+        yield emit("learning.chip", {"item": _memory_learning_item(result)})
     elif result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
         item = _learning_candidate_item(result)
         if item:
@@ -212,6 +202,24 @@ def _learning_candidate_item(result: ToolResult) -> dict[str, Any] | None:
             "summary": "可能沉淀一个回放评测用例。",
         }
     return None
+
+
+def _memory_learning_item(result: ToolResult) -> dict[str, Any]:
+    status = str(result.result.get("status") or "draft")
+    safety = result.result.get("safety") if isinstance(result.result.get("safety"), dict) else {}
+    requires_confirmation = status.startswith("needs_review") or bool(safety.get("requires_review"))
+    item: dict[str, Any] = {
+        "item_id": result.result["candidate_id"],
+        "kind": "memory",
+        "status": status,
+        "summary": "这条学习需要你确认后才会长期记住。" if requires_confirmation else "可能学到一个偏好或事实。",
+        "requires_confirmation": requires_confirmation,
+    }
+    if safety.get("risk"):
+        item["risk"] = safety["risk"]
+    if safety.get("review_reason"):
+        item["confirmation_reason"] = safety["review_reason"]
+    return item
 
 
 def _decision_payload(result: ToolResult) -> dict[str, Any] | None:

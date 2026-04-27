@@ -65,6 +65,7 @@
 - `memory_write_candidate` must call `MemoryEngine.write_candidate()` so taint scanning and prompt-injection review gates apply consistently.
 - `memory_write_candidate` returns `candidate_id`, candidate `status`, and compact `safety` metadata.
 - Compact `memory_write_candidate` evidence includes candidate id, status, and compact safety metadata, never raw external evidence text.
+- Review-gated `memory_write_candidate` results project `learning.chip.item.requires_confirmation=true` with compact risk/reason metadata and no raw evidence text.
 - `skill_propose_candidate`, `tool_propose_candidate`, and `eval_propose_case` return compact candidate evidence and can project unified `learning.chip` events.
 - `ask_user` is `write` risk because it persists an Inbox decision item.
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
@@ -117,6 +118,7 @@
 | Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
 | Memory write safety scan | External prompt-injection evidence is stored as `needs_review:prompt_injection` with compact safety evidence | `tests/test_tools.py` |
+| Review memory learning chip | Review-gated memory candidates stream a `learning.chip` that requires confirmation and omits raw evidence | `tests/test_runtime.py` |
 | After-turn mixed learning | Provider reflection can propose memory/skill/tool/eval candidates from one compact packet | `tests/test_runtime.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
@@ -163,6 +165,7 @@
 - Recall search: assert compact cards include `kind`, `item_id`, `title`, `summary`, provenance ids, and action hints while omitting full bodies/transcripts.
 - Working note retention metadata: assert stored metadata and compact result remain small.
 - Memory write safety scan: assert status, safety risk, review flag, and compact evidence shape.
+- Review memory learning chip: assert `requires_confirmation`, risk/reason metadata, and omission of raw evidence text.
 - Skill review: assert status is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.
 - Skill patch: assert draft status is persisted and compact result omits full skill body.

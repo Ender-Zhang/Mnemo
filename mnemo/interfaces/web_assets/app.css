@@ -154,6 +154,10 @@ textarea {
   border-left: 4px solid var(--accent);
 }
 
+.event-card.learning.confirmation {
+  border-left-color: var(--accent-2);
+}
+
 .event-card.recall {
   background: #ffffff;
   border-left: 4px solid #3c6d9c;

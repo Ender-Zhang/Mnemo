@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "runtime learning chip projection from tool results"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "memory safety review status contract"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "inline learning chip rendering"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "learning chip local state"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "web asset quality checks"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "tool result to UI data flow"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "reuse existing safety/status signals"}
