@@ -1631,3 +1631,37 @@ Implemented metadata-driven memory page decay/stale marking, exposed memory_deca
 ### Next Steps
 
 - None - task complete
+
+
+## Session 105: Tombstone aware session recall
+
+**Date**: 2026-04-27
+**Task**: Tombstone aware session recall
+**Branch**: `main`
+
+### Summary
+
+Implemented tombstone-aware L4 session recall suppression, added explicit include_tombstoned historical lookup for engine/CLI/tool surfaces, updated memory design/spec/checklist, and validated with full tests plus package install smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `45e940f` | (see git log) |
+| `b597da8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

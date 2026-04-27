@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 104
+- **Total Sessions**: 105
 - **Last Active**: 2026-04-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1633 | Active |
+| `journal-2.md` | ~1667 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 105 | 2026-04-27 | Tombstone aware session recall | `45e940f`, `b597da8` | `main` |
 | 104 | 2026-04-27 | Memory decay stale foundation | `a355579`, `83898ce` | `main` |
 | 103 | 2026-04-27 | Replay harness diff modes | `e953fe3`, `538b3ef` | `main` |
 | 102 | 2026-04-27 | Daemon W0 pending recovery | `dddf792`, `eaad03e` | `main` |
