@@ -1733,3 +1733,37 @@ Added private-delete memory redaction across MemoryEngine, SQLite storage, CLI, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 108: Memory selective forgetting archival
+
+**Date**: 2026-04-27
+**Task**: Memory selective forgetting archival
+**Branch**: `main`
+
+### Summary
+
+Added low-usefulness archival and optional replacement links to the existing memory tombstone curation path across MemoryEngine, CLI, ToolHarness, tests, specs, and design checklist.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8de898c` | (see git log) |
+| `119240e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
