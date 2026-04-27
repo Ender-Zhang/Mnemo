@@ -1529,3 +1529,37 @@ Projected memory safety review signals into learning chips, rendered review-gate
 ### Next Steps
 
 - None - task complete
+
+
+## Session 102: Daemon W0 pending recovery
+
+**Date**: 2026-04-27
+**Task**: Daemon W0 pending recovery
+**Branch**: `main`
+
+### Summary
+
+Added daemon status/recover/run handling for model-marked W0 working notes, keeping ephemeral notes untouched; updated backend specs and checklist; verified daemon/CLI/memory/scheduler tests, full unittest suite, compileall, diff check, and isolated package install smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dddf792` | (see git log) |
+| `eaad03e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
