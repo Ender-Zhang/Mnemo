@@ -1563,3 +1563,37 @@ Added daemon status/recover/run handling for model-marked W0 working notes, keep
 ### Next Steps
 
 - None - task complete
+
+
+## Session 103: Replay harness diff modes
+
+**Date**: 2026-04-27
+**Task**: Replay harness diff modes
+**Branch**: `main`
+
+### Summary
+
+Added compact replay modes for deterministic trace/store checks, dry-run prompt/tool approval reconstruction, safe read-only live-tools drift checks, and run-to-run category diffs; updated CLI, specs, checklist, and tests; verified focused suites, full unittest, compileall, diff check, build, and isolated install smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e953fe3` | (see git log) |
+| `538b3ef` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
