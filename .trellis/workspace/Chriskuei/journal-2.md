@@ -1397,3 +1397,36 @@ Added dependency-free HTTP JSON endpoints for MnemoCore schema, OpenAPI 3.1 disc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 98: MCP config packaging foundation
+
+**Date**: 2026-04-27
+**Task**: MCP config packaging foundation
+**Branch**: `main`
+
+### Summary
+
+Added compact MCP server config packaging through mnemo.mcp.mcp_server_config and mnemo mcp config, covered by MCP/CLI/package smoke tests and synced design/checklist/spec docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `821f9c2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

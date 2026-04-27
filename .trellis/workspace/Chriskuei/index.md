@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 97
+- **Total Sessions**: 98
 - **Last Active**: 2026-04-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1399 | Active |
+| `journal-2.md` | ~1432 | Active |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 98 | 2026-04-27 | MCP config packaging foundation | `821f9c2` | `main` |
 | 97 | 2026-04-27 | HTTP core API foundation | `71b5618` | `main` |
 | 96 | 2026-04-27 | External command RuntimeAdapter foundation | `8599257` | `main` |
 | 95 | 2026-04-27 | Proactive watch feedback gates | `791deb2`, `3a7fb09` | `main` |
