@@ -50,7 +50,8 @@
 - `memory_read` includes durable tombstone metadata for the requested id and still requires explicit read intent.
 - `memory_health_report(limit=20)` is read-only and returns compact counts, scores, configured-dimension coverage, and bounded review cards.
 - `memory_decay_stale_pages(limit=50, stale_confidence=0.35)` is write risk and applies bounded metadata-driven decay/expiry to active memory pages.
-- `memory_tombstone(id, reason, target_type="auto")` is write risk and records a durable tombstone while updating candidate/page status.
+- `memory_tombstone(id, reason, target_type="auto", replacement_id?)` is write risk and records durable curation while updating candidate/page status.
+- `memory_tombstone` uses `archived:low_usefulness` for low-usefulness curation and records optional replacement metadata/link evidence compactly.
 - `memory_private_delete(id, reason="private_delete", target_type="auto")` is write risk and redacts stored memory text while returning compact tombstone evidence.
 - `recall_search(query, scope="all", limit=8)` returns compact actionable cards across knowledge, past work, artifacts, and decisions.
 - `recall_search.scope` is one of `all`, `knowledge`, `past_work`, `artifacts`, or `decisions`.
@@ -139,7 +140,7 @@
 | Tombstone-aware session search | `memory_search` suppresses tombstoned session snippets by default and honors explicit historical opt-in | `tests/test_tools.py` |
 | Memory query plan | `memory_search` result includes compact query plan metadata | `tests/test_tools.py` |
 | Memory health report | Return compact health evidence without raw page bodies beyond review summaries | `tests/test_tools.py` |
-| Memory tombstone | Write policy records durable tombstone and compact evidence | `tests/test_tools.py` |
+| Memory tombstone | Write policy records durable tombstone, optional replacement link, and compact evidence | `tests/test_tools.py` |
 | Memory private delete | Write policy redacts candidate/page text and returns compact evidence without deleted content | `tests/test_tools.py` |
 | Recall search | Return compact actionable cards for memory/session/artifact/decision matches without raw bodies | `tests/test_tools.py`, `tests/test_runtime.py`, `tests/test_web.py` |
 

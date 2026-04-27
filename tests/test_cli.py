@@ -483,6 +483,76 @@ class CliTests(unittest.TestCase):
             self.assertEqual(forget_plain.returncode, 0, forget_plain.stderr)
             self.assertIn("private-deleted page", forget_plain.stdout)
 
+    def test_memory_tombstone_low_usefulness_replacement_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            old_id = store.upsert_memory_page(
+                "preferences: old cli memory",
+                "User once preferred the old CLI memory view",
+                confidence=0.5,
+            )
+            replacement_id = store.upsert_memory_page(
+                "preferences: current cli memory",
+                "User now prefers the current CLI memory view",
+                confidence=0.88,
+            )
+
+            archived = _run_cli(
+                [
+                    "memory",
+                    "tombstone",
+                    old_id,
+                    "--reason",
+                    "low usefulness",
+                    "--target-type",
+                    "page",
+                    "--replacement-id",
+                    replacement_id,
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            plain = _run_cli(
+                [
+                    "memory",
+                    "tombstone",
+                    replacement_id,
+                    "--reason",
+                    "low usefulness",
+                    "--target-type",
+                    "page",
+                    "--state-dir",
+                    tmp,
+                ]
+            )
+            missing_replacement = _run_cli(
+                [
+                    "memory",
+                    "tombstone",
+                    old_id,
+                    "--reason",
+                    "superseded",
+                    "--replacement-id",
+                    "mem_missing",
+                    "--state-dir",
+                    tmp,
+                ]
+            )
+
+            self.assertEqual(archived.returncode, 0, archived.stderr)
+            payload = json.loads(archived.stdout)
+            self.assertEqual(payload["status"], "archived:low_usefulness")
+            self.assertEqual(payload["replacement"]["id"], replacement_id)
+            self.assertEqual(store.get_memory_page(old_id)["status"], "archived:low_usefulness")
+            self.assertEqual(store.list_memory_links(old_id)[0]["relation"], "superseded_by")
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn("archived page", plain.stdout)
+            self.assertEqual(missing_replacement.returncode, 1)
+            self.assertIn("mnemo: Replacement memory item not found: mem_missing", missing_replacement.stderr)
+            self.assertNotIn("Traceback", missing_replacement.stderr)
+
     def test_memory_decay_command_marks_expired_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

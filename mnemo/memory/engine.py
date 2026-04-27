@@ -405,61 +405,76 @@ class MemoryEngine:
         reason: str,
         *,
         target_type: str = "auto",
+        replacement_id: str | None = None,
     ) -> dict[str, Any]:
         normalized_target_type = _normalize_tombstone_target_type(target_type)
         reason_text = _normalize_space(reason) or "unspecified"
         reason_slug = _status_reason(reason_text)
+        status = _curation_status(reason_text)
+        replacement = self._resolve_replacement(replacement_id)
+        if replacement and str(replacement["id"]) == str(memory_id):
+            raise ValueError(f"Replacement memory item must differ from curated item: {memory_id}")
         if normalized_target_type in {"auto", "page"}:
             page = self._get_page(memory_id)
             if page:
-                status = f"tombstoned:{reason_slug}"
                 update_page_status = getattr(self.store, "update_memory_page_status", None)
                 if not update_page_status:
                     raise ValueError("memory page tombstone is not supported by this store")
                 update_page_status(memory_id, status)
+                replacement_link_id = self._link_replacement(memory_id, replacement)
                 tombstone_id = self.store.add_memory_tombstone(
                     memory_id,
                     "page",
                     reason_text,
                     summary=_truncate(page.get("content", ""), limit=180),
-                    metadata={
-                        "title": page.get("title"),
-                        "scope": page.get("scope"),
-                        "previous_status": page.get("status"),
-                    },
+                    metadata=_curation_metadata(
+                        title=page.get("title"),
+                        scope=page.get("scope"),
+                        previous_status=page.get("status"),
+                        replacement=replacement,
+                        replacement_link_id=replacement_link_id,
+                    ),
                 )
                 return {
                     "memory_id": memory_id,
                     "target_type": "page",
                     "status": status,
                     "reason": reason_text,
+                    "reason_slug": reason_slug,
                     "tombstone_id": tombstone_id,
+                    "replacement": replacement,
+                    "replacement_link_id": replacement_link_id,
                     "memory": self._get_page(memory_id),
                 }
 
         if normalized_target_type in {"auto", "candidate"}:
             candidate = self._get_candidate(memory_id)
             if candidate:
-                status = f"tombstoned:{reason_slug}"
                 self.store.update_memory_candidate_status(memory_id, status)
+                replacement_link_id = self._link_replacement(memory_id, replacement)
                 tombstone_id = self.store.add_memory_tombstone(
                     memory_id,
                     "candidate",
                     reason_text,
                     summary=_truncate(candidate.get("claim", ""), limit=180),
                     evidence_run_id=candidate.get("run_id"),
-                    metadata={
-                        "dimension": candidate.get("dimension"),
-                        "scope": candidate.get("scope"),
-                        "previous_status": candidate.get("status"),
-                    },
+                    metadata=_curation_metadata(
+                        dimension=candidate.get("dimension"),
+                        scope=candidate.get("scope"),
+                        previous_status=candidate.get("status"),
+                        replacement=replacement,
+                        replacement_link_id=replacement_link_id,
+                    ),
                 )
                 return {
                     "memory_id": memory_id,
                     "target_type": "candidate",
                     "status": status,
                     "reason": reason_text,
+                    "reason_slug": reason_slug,
                     "tombstone_id": tombstone_id,
+                    "replacement": replacement,
+                    "replacement_link_id": replacement_link_id,
                     "memory": self._get_candidate(memory_id),
                 }
 
@@ -954,6 +969,26 @@ class MemoryEngine:
                     page_ids.append(page_id)
         return page_ids
 
+    def _resolve_replacement(self, replacement_id: str | None) -> dict[str, Any] | None:
+        replacement_value = _normalize_space(str(replacement_id or ""))
+        if not replacement_value:
+            return None
+        if self._get_page(replacement_value):
+            return {"id": replacement_value, "target_type": "page"}
+        if self._get_candidate(replacement_value):
+            return {"id": replacement_value, "target_type": "candidate"}
+        raise ValueError(f"Replacement memory item not found: {replacement_value}")
+
+    def _link_replacement(self, memory_id: str, replacement: dict[str, Any] | None) -> str | None:
+        if not replacement:
+            return None
+        if str(replacement["id"]) == str(memory_id):
+            raise ValueError(f"Replacement memory item must differ from curated item: {memory_id}")
+        add_link = getattr(self.store, "add_memory_link", None)
+        if not add_link:
+            return None
+        return add_link(memory_id, str(replacement["id"]), "superseded_by", weight=1.0)
+
     def _private_delete_page(
         self,
         page: dict[str, Any],
@@ -1285,7 +1320,8 @@ def _compact_page(page: dict[str, Any]) -> dict[str, Any]:
 
 
 def _compact_tombstone(tombstone: dict[str, Any]) -> dict[str, Any]:
-    return {
+    metadata = tombstone.get("metadata") if isinstance(tombstone.get("metadata"), dict) else {}
+    compact = {
         "id": tombstone.get("id"),
         "target_id": tombstone.get("target_id"),
         "target_type": tombstone.get("target_type"),
@@ -1293,6 +1329,10 @@ def _compact_tombstone(tombstone: dict[str, Any]) -> dict[str, Any]:
         "summary": _truncate(tombstone.get("summary", ""), limit=180),
         "created_at": tombstone.get("created_at"),
     }
+    if metadata.get("replacement_id"):
+        compact["replacement_id"] = metadata.get("replacement_id")
+        compact["replacement_type"] = metadata.get("replacement_type")
+    return compact
 
 
 def _session_suppression_tombstones(store: Any, *, limit: int = 100) -> list[dict[str, Any]]:
@@ -1698,6 +1738,28 @@ def _normalize_tombstone_target_type(value: str) -> str:
     if normalized not in {"auto", "candidate", "page"}:
         raise ValueError(f"invalid memory tombstone target type: {value}")
     return normalized
+
+
+def _curation_status(reason: str) -> str:
+    slug = _status_reason(reason)
+    if slug == "low_usefulness":
+        return "archived:low_usefulness"
+    return f"tombstoned:{slug}"
+
+
+def _curation_metadata(
+    *,
+    replacement: dict[str, Any] | None,
+    replacement_link_id: str | None,
+    **values: Any,
+) -> dict[str, Any]:
+    metadata = {key: value for key, value in values.items() if value is not None}
+    if replacement:
+        metadata["replacement_id"] = replacement["id"]
+        metadata["replacement_type"] = replacement["target_type"]
+        if replacement_link_id:
+            metadata["replacement_link_id"] = replacement_link_id
+    return metadata
 
 
 def _compact_safety_scan(scan: dict[str, Any]) -> dict[str, Any]:

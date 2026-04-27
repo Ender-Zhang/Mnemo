@@ -1,0 +1,6 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Verify selective forgetting contracts and compact memory outputs"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Verify provider tool schema/evidence stays compact"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Verify CLI outputs/errors remain normalized"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Package smoke and full test gate"}

@@ -16,7 +16,7 @@
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
 - `MemoryEngine.undo_candidate(candidate_id: str, reason: str = "user undo") -> dict[str, Any]`
-- `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto") -> dict[str, Any]`
+- `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto", replacement_id: str | None = None) -> dict[str, Any]`
 - `MemoryEngine.private_delete_memory(memory_id: str, reason: str = "private_delete", *, target_type: str = "auto") -> dict[str, Any]`
 - `MemoryEngine.health_report(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.decay_stale_pages(limit: int = 50, *, now: float | None = None, stale_confidence: float = 0.35) -> dict[str, Any]`
@@ -55,7 +55,7 @@
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
-- CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory forget <memory_id> [--reason REASON] [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream run [--limit N] [--min-confidence FLOAT] [--state-dir DIR] [--json]`
@@ -141,6 +141,8 @@
 - `mnemo memory snapshot` must report `exists=false` for missing or invalid snapshot files without failing.
 - `mnemo memory health` must inspect memory state without mutating it.
 - `mnemo memory tombstone` must update the candidate/page status and create a durable tombstone record.
+- `reason=low_usefulness` archives a candidate/page with `archived:low_usefulness`; active page search and L1 snapshots must omit archived pages.
+- `replacement_id`, when supplied, must resolve to an existing candidate/page, persist compact replacement metadata, and create a `superseded_by` memory link from the curated item to the replacement.
 - `mnemo memory tombstones` must expose durable tombstone records without loading raw page/candidate bodies beyond compact summaries.
 - The `memory-safety` eval suite must remain deterministic and local.
 - The `memory-safety` eval suite covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
@@ -183,6 +185,8 @@
 | Tombstone annotation | Rejected/tombstoned candidates are marked advisory tombstones | `tests/test_memory.py` |
 | Candidate rejection tombstone | Rejected candidates get durable tombstone rows | `tests/test_memory.py` |
 | Page tombstone | Page status becomes `tombstoned:<reason>` and active recall omits it | `tests/test_memory.py` |
+| Low-usefulness archive | Candidate/page status becomes `archived:low_usefulness`, pages leave active recall/L1, and tombstone provenance remains | `tests/test_memory.py`, `tests/test_cli.py` |
+| Replacement curation | Optional replacement id creates compact metadata and a `superseded_by` memory link | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |
 | Private delete redaction | Page/candidate content is redacted, minimal tombstones remain, and source-run session snippets are suppressed | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |
 | Memory health report | Counts, coverage, score, and review cards stay compact | `tests/test_memory.py` |
 | Metadata-driven decay | Expired pages become `stale:expired`, overdue low-confidence pages become `stale:decay`, fresh pages remain active | `tests/test_memory.py` |
@@ -229,6 +233,7 @@
 - Tombstone-aware L4 recall covers default suppression, `search_scope="all"` suppression, CLI/tool opt-in, and compact suppression metadata.
 - QueryPlanner covers lexical/dimension/temporal route generation, fused retrieval annotations, and CLI debug output.
 - Durable tombstones cover candidate rejection, explicit page tombstone, filtered tombstone listing, and compact read payloads.
+- Selective forgetting covers `low_usefulness` archival and replacement links through MemoryEngine, CLI, and ToolHarness.
 - Private delete covers page/candidate redaction, source candidate/page redaction, source-run L4 suppression, CLI output, and compact tool evidence.
 - Memory health covers counts, coverage, review cards, compact tool evidence, and CLI output.
 - Memory decay covers page metadata round-trip, expired/stale status changes, L1 active filtering, CLI output, and tool evidence.

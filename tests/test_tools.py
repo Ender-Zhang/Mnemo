@@ -378,11 +378,21 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
                 "User prefers an obsolete tool",
                 confidence=0.8,
             )
+            replacement_id = store.upsert_memory_page(
+                "preferences: current tool",
+                "User prefers the current tool",
+                confidence=0.9,
+            )
 
             result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
                 ToolCallEnvelope(
                     name="memory_tombstone",
-                    arguments={"id": page_id, "reason": "superseded", "target_type": "page"},
+                    arguments={
+                        "id": page_id,
+                        "reason": "superseded",
+                        "target_type": "page",
+                        "replacement_id": replacement_id,
+                    },
                     call_id="call_memory_tombstone",
                     risk="write",
                 ),
@@ -395,7 +405,9 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(result.result["target_type"], "page")
             self.assertEqual(store.get_memory_page(page_id)["status"], "tombstoned:superseded")
             self.assertEqual(store.list_memory_tombstones(target_id=page_id)[0]["reason"], "superseded")
+            self.assertEqual(store.list_memory_links(page_id)[0]["target_id"], replacement_id)
             self.assertEqual(compact["evidence"][0]["kind"], "memory_tombstone")
+            self.assertEqual(compact["evidence"][0]["replacement_id"], replacement_id)
 
     def test_memory_private_delete_tool_redacts_and_returns_compact_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -172,6 +172,7 @@ CORE_TOOL_SPECS = [
                     "enum": ["auto", "candidate", "page"],
                     "default": "auto",
                 },
+                "replacement_id": {"type": "string"},
             },
         ),
     ),
@@ -700,7 +701,13 @@ class ToolRegistry:
         memory_id = _require_str(args, "id")
         reason = _require_str(args, "reason")
         target_type = _memory_tombstone_target_type(args)
-        return MemoryEngine(context.store).tombstone_memory(memory_id, reason, target_type=target_type)
+        replacement_id = str(args.get("replacement_id") or "") or None
+        return MemoryEngine(context.store).tombstone_memory(
+            memory_id,
+            reason,
+            target_type=target_type,
+            replacement_id=replacement_id,
+        )
 
     def _memory_private_delete(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         memory_id = _require_str(args, "id")
@@ -1429,15 +1436,19 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
             }
         ]
     if result.name == "memory_tombstone":
-        return [
-            {
-                "kind": "memory_tombstone",
-                "id": str(result.result.get("tombstone_id") or ""),
-                "target_id": result.result.get("memory_id"),
-                "target_type": result.result.get("target_type"),
-                "reason": result.result.get("reason"),
-            }
-        ]
+        evidence = {
+            "kind": "memory_tombstone",
+            "id": str(result.result.get("tombstone_id") or ""),
+            "target_id": result.result.get("memory_id"),
+            "target_type": result.result.get("target_type"),
+            "status": result.result.get("status"),
+            "reason": result.result.get("reason"),
+        }
+        replacement = result.result.get("replacement") or {}
+        if replacement.get("id"):
+            evidence["replacement_id"] = replacement.get("id")
+            evidence["replacement_type"] = replacement.get("target_type")
+        return [evidence]
     if result.name == "memory_private_delete":
         return [
             {

@@ -136,6 +136,61 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(store.list_memory_tombstones(target_id=page_id)[0]["reason"], "superseded")
             self.assertEqual(MemoryEngine(store).search("OldEdit", limit=5), [])
 
+    def test_low_usefulness_archives_page_with_replacement_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            old_id = store.upsert_memory_page(
+                "preferences: old note app",
+                "User once used OldNote for project notes",
+                confidence=0.6,
+            )
+            replacement_id = store.upsert_memory_page(
+                "preferences: current note app",
+                "User now uses NewNote for project notes",
+                confidence=0.86,
+            )
+
+            result = MemoryEngine(store).tombstone_memory(
+                old_id,
+                "low usefulness",
+                target_type="page",
+                replacement_id=replacement_id,
+            )
+            snapshot = MemoryEngine(store).compile_l1_snapshot(limit=10)
+            tombstone = store.list_memory_tombstones(target_id=old_id)[0]
+            links = store.list_memory_links(old_id)
+
+            self.assertEqual(result["status"], "archived:low_usefulness")
+            self.assertEqual(result["replacement"]["id"], replacement_id)
+            self.assertEqual(store.get_memory_page(old_id)["status"], "archived:low_usefulness")
+            self.assertEqual(tombstone["reason"], "low usefulness")
+            self.assertEqual(tombstone["metadata"]["replacement_id"], replacement_id)
+            self.assertEqual(links[0]["relation"], "superseded_by")
+            self.assertEqual(links[0]["target_id"], replacement_id)
+            self.assertNotIn(old_id, {item["id"] for item in snapshot["items"]})
+            self.assertIn(replacement_id, {item["id"] for item in snapshot["items"]})
+            self.assertEqual(MemoryEngine(store).search("OldNote", limit=5), [])
+
+    def test_low_usefulness_archives_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User once preferred a transient scratch color",
+                dimension="preferences",
+                confidence=0.4,
+            )
+
+            result = MemoryEngine(store).tombstone_memory(
+                candidate_id,
+                "low_usefulness",
+                target_type="candidate",
+            )
+
+            self.assertEqual(result["status"], "archived:low_usefulness")
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "archived:low_usefulness")
+            self.assertEqual(store.list_memory_tombstones(target_id=candidate_id)[0]["reason"], "low_usefulness")
+
     def test_private_delete_page_redacts_page_source_candidate_and_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)
