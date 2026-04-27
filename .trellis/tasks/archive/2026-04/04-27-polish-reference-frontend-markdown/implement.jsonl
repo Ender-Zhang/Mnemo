@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "stdlib no-build frontend"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "DOM rendering, cards, composer"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "replay, last event, cancellation state"}

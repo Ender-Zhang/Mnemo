@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "verify card and markdown asset behavior"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "verify replay/user history and activity state"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test and package smoke gates"}
