@@ -1699,3 +1699,37 @@ Added deterministic memory-health harness gate covering tombstone wrong-memory s
 ### Next Steps
 
 - None - task complete
+
+
+## Session 107: Memory private delete redaction
+
+**Date**: 2026-04-27
+**Task**: Memory private delete redaction
+**Branch**: `main`
+
+### Summary
+
+Added private-delete memory redaction across MemoryEngine, SQLite storage, CLI, ToolHarness, source-run L4 suppression, tests, and design/spec/checklist alignment.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e8d44fd` | (see git log) |
+| `41f282f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
