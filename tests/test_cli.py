@@ -1513,6 +1513,7 @@ class CliTests(unittest.TestCase):
     def test_api_schema_command_exposes_core_contract(self) -> None:
         json_result = _run_cli(["api", "schema", "--json"])
         text_result = _run_cli(["api", "schema"])
+        serve_help = _run_cli(["api", "serve", "--help"])
 
         self.assertEqual(json_result.returncode, 0, json_result.stderr)
         payload = json.loads(json_result.stdout)["api_schema"]
@@ -1526,6 +1527,9 @@ class CliTests(unittest.TestCase):
         self.assertIn("- context:", text_result.stdout)
         self.assertIn("- capsule:", text_result.stdout)
         self.assertIn("- external_run:", text_result.stdout)
+        self.assertEqual(serve_help.returncode, 0, serve_help.stderr)
+        self.assertIn("Serve MnemoCore HTTP JSON API", serve_help.stdout)
+        self.assertIn("--host", serve_help.stdout)
 
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

@@ -13,10 +13,11 @@ _SCHEMA: dict[str, Any] = {
             "python:in_process",
             "cli:schema",
             "runtime_adapter:command",
+            "http:core_json",
             "mcp:stdio_content_length",
             "mcp:json_rpc_jsonl",
         ],
-        "planned": ["http", "runtime_adapter:openclaw", "runtime_adapter:acp"],
+        "planned": ["http:generated_clients", "runtime_adapter:openclaw", "runtime_adapter:acp"],
     },
     "methods": {
         "context": {

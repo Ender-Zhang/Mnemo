@@ -150,7 +150,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Config file and env override model.
 - [x] Daemon status command.
 - [x] Backup/export/import.
-- [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient`, `mnemo.core_api.v1` schema, and proposal-only command `external_run` exist; HTTP/OpenAPI server bindings and non-Python generated clients are not complete.
+- [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient`, `mnemo.core_api.v1` schema, proposal-only command `external_run`, stdlib HTTP JSON API, and compact OpenAPI discovery exist; non-Python generated clients are not complete.
 - [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC over standard Content-Length stdio, JSONL debug mode, and CLI list/call/serve exist for context/capsule/external-run/update/recall/search/watch/watch-feedback/skills/tools/cron/run/replay/eval/status; external packaging remains incomplete.
 - [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
 - [~] Watch/Cron persistence and scheduled event processing: durable scheduled items, simple schedule grammar, CLI/MCP registration, runtime status, queue enqueue tick, and model-supplied Watch feedback policy exist; full cron expressions, quiet hours, delivery channels, Sense triggers, and richer Watch self-learning remain.
@@ -224,3 +224,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-27-harness-release-gate-report`: Harness now aggregates personalization variant gates plus memory-safety, skill-evolution, and external-harness suites into a compact release report across CLI, SDK, and MCP.
 - [x] `04-27-proactive-watch-feedback-gates`: Watch feedback now records compact outcomes and applies explicit model/user policy decisions through ScheduleService, exposed via CLI/MCP/provider tools and covered by the proactive-watch harness suite.
 - [x] `04-27-external-command-runtime-adapter`: Mnemo now executes explicit external command runtimes through fresh context capsules, records proposal-only RunLedger events, ignores unsupported direct-write fields as boundary violations, and exposes the foundation through SDK/CLI/MCP plus external-harness coverage.
+- [x] `04-27-http-core-api-foundation`: Mnemo now serves the core SDK contract over dependency-free HTTP JSON routes with compact OpenAPI discovery and CLI `mnemo api serve`, covered by web/CLI/package smoke tests.

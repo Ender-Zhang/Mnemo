@@ -136,6 +136,9 @@ mnemo api external-run "Ask Codex to inspect this repo" \
   --runtime codex \
   --command-json '["python3","external_adapter.py"]' \
   --json
+mnemo api serve --state-dir .mnemo --host 127.0.0.1 --port 8765
+curl http://127.0.0.1:8765/api/core/schema
+curl http://127.0.0.1:8765/api/core/openapi.json
 mnemo mcp tools --state-dir .mnemo --json
 mnemo mcp call mnemo_context --state-dir .mnemo --arguments-json '{"intent":"status update"}' --json
 mnemo mcp call mnemo_external_run --state-dir .mnemo --arguments-json '{"task":"inspect","command":["python3","external_adapter.py"]}' --json
@@ -143,7 +146,7 @@ mnemo mcp serve --state-dir .mnemo
 mnemo mcp serve --state-dir .mnemo --transport jsonl
 ```
 
-The MCP-style server exposes compact context, external-runtime capsule, proposal-only external command runs, update, recall, search, skills, tools, watch, watch feedback, cron, run, replay, eval, and status surfaces. `serve` defaults to standard MCP stdio `Content-Length` framing; JSONL is kept for local debugging. Watch and cron register durable scheduled items; due items enqueue normal daemon runs so the existing runtime/model decides what to do. Watch feedback lets the model record outcomes and explicitly sparse, pause, or disable noisy proactive checks.
+The HTTP core API exposes the same compact SDK methods at `/api/core/*` plus `/api/core/openapi.json` for discovery. The MCP-style server exposes compact context, external-runtime capsule, proposal-only external command runs, update, recall, search, skills, tools, watch, watch feedback, cron, run, replay, eval, and status surfaces. `serve` defaults to standard MCP stdio `Content-Length` framing; JSONL is kept for local debugging. Watch and cron register durable scheduled items; due items enqueue normal daemon runs so the existing runtime/model decides what to do. Watch feedback lets the model record outcomes and explicitly sparse, pause, or disable noisy proactive checks.
 
 ## Backup And Validation
 

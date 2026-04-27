@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import sys
 import tempfile
 import threading
 import unittest
@@ -110,6 +111,113 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 unknown_events = json.loads(unknown_body)["events"]
                 self.assertEqual(unknown_events[0]["event_id"], replay_events[0]["event_id"])
+
+    def test_core_http_api_exposes_schema_openapi_and_sdk_methods(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            page_id = store.upsert_memory_page(
+                "preferences: http api",
+                "HTTP API results should stay compact. FULL_PRIVATE_BODY_SECRET_TOKEN",
+                confidence=0.9,
+            )
+            script = Path(tmp) / "adapter.py"
+            script.write_text(
+                """
+import json
+import sys
+
+payload = json.loads(sys.stdin.read())
+print(json.dumps({
+    "summary": "http adapter " + payload["capsule"]["capsule_id"],
+    "memory_writes": [{"claim": "must not persist"}]
+}))
+""".strip(),
+                encoding="utf-8",
+            )
+
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                schema_status, _, schema_body = server.request("GET", "/api/core/schema")
+                openapi_status, _, openapi_body = server.request("GET", "/api/core/openapi.json")
+                context_status, _, context_body = server.request(
+                    "POST",
+                    "/api/core/context",
+                    {"intent": "HTTP API", "agent_role": "integrator", "prompt_mode": "minimal"},
+                )
+                capsule_status, _, capsule_body = server.request(
+                    "POST",
+                    "/api/core/capsule",
+                    {
+                        "task": "HTTP capsule",
+                        "runtime": "codex",
+                        "requested_pages": [page_id],
+                        "allowed_pages": [page_id],
+                    },
+                )
+                external_status, _, external_body = server.request(
+                    "POST",
+                    "/api/core/external-run",
+                    {
+                        "task": "HTTP external runtime",
+                        "command": [sys.executable, str(script)],
+                        "timeout_s": 5.0,
+                    },
+                )
+                run_status, _, run_body = server.request(
+                    "POST",
+                    "/api/core/run",
+                    {"message": "remember: HTTP core API should reuse SDK"},
+                )
+
+            schema = json.loads(schema_body)["api_schema"]
+            openapi = json.loads(openapi_body)
+            context = json.loads(context_body)
+            capsule = json.loads(capsule_body)
+            external = json.loads(external_body)
+            run = json.loads(run_body)
+
+            self.assertEqual(schema_status, 200)
+            self.assertEqual(schema["schema_version"], "mnemo.core_api.v1")
+            self.assertEqual(openapi_status, 200)
+            self.assertEqual(openapi["openapi"], "3.1.0")
+            self.assertIn("/api/core/external-run", openapi["paths"])
+            self.assertEqual(context_status, 200)
+            self.assertEqual(context["method"], "context")
+            self.assertEqual(context["result"]["kind"], "context_block")
+            self.assertEqual(capsule_status, 200)
+            self.assertEqual(capsule["result"]["kind"], "context_capsule")
+            self.assertNotIn("FULL_PRIVATE_BODY_SECRET_TOKEN", json.dumps(capsule))
+            self.assertEqual(external_status, 200)
+            self.assertEqual(external["method"], "external_run")
+            self.assertIn("http adapter capsule_", external["result"]["proposal"]["summary"])
+            self.assertIn("memory_writes", external["result"]["ignored_fields"])
+            self.assertEqual(run_status, 200)
+            self.assertTrue(run["result"]["run_id"].startswith("run_"))
+
+    def test_core_http_api_normalizes_request_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                missing_status, _, missing_body = server.request("POST", "/api/core/recall", {})
+                unknown_status, _, unknown_body = server.request("POST", "/api/core/not-a-method", {})
+
+                host, port = server.server.server_address
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/core/context",
+                    body="{not json",
+                    headers={"Content-Type": "application/json"},
+                )
+                invalid_response = conn.getresponse()
+                invalid_body = invalid_response.read().decode("utf-8")
+                conn.close()
+
+            self.assertEqual(missing_status, 400)
+            self.assertEqual(json.loads(missing_body)["error"], "seed is required")
+            self.assertEqual(unknown_status, 404)
+            self.assertIn("unknown core API method", json.loads(unknown_body)["error"])
+            self.assertEqual(invalid_response.status, 400)
+            self.assertEqual(json.loads(invalid_body)["error"], "request body must be JSON")
 
     def test_web_client_asset_persists_last_event_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

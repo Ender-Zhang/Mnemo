@@ -141,6 +141,33 @@ class MnemoClient:
         """
 ```
 
+### 8.1.1 HTTP Core API（语言无关传输）
+
+HTTP 入口只是 `MnemoClient` 的轻量 transport，不定义独立 workflow：
+
+```text
+GET  /api/core/schema
+GET  /api/core/openapi.json
+POST /api/core/context
+POST /api/core/recall
+POST /api/core/capsule
+POST /api/core/external-run
+POST /api/core/run
+POST /api/core/replay
+POST /api/core/evaluate
+```
+
+返回结构统一为：
+
+```json
+{
+  "method": "context",
+  "result": {}
+}
+```
+
+`external-run` 仍然只接受显式 `command: string[]`，不接受 shell 字符串；输出继续遵守 proposal-only 边界。
+
 ### 8.2 MCP Server（Agent 生态互联）
 
 Mnemo 内置 MCP Server，任何支持 MCP 的 Agent（包括 Claude Code、Cursor、自定义 Agent）无需任何 SDK 即可接入：

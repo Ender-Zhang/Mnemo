@@ -31,7 +31,7 @@ from ..sdk import MnemoClient, mnemo_core_api_schema
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
 from ..tools import ToolEvolutionService, ToolRegistry, tool_specs_as_json_schema
-from .web import WebServerConfig, serve_web
+from .web import WebServerConfig, serve_api, serve_web
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -633,6 +633,14 @@ def build_parser() -> argparse.ArgumentParser:
     api_external_parser.add_argument("--mission-id")
     api_external_parser.add_argument("--timeout-s", type=float, default=30.0)
     api_external_parser.add_argument("--json", action="store_true")
+    api_serve_parser = api_subparsers.add_parser(
+        "serve",
+        help="Serve MnemoCore HTTP JSON API",
+        description="Serve MnemoCore HTTP JSON API",
+    )
+    _add_state_dir(api_serve_parser)
+    api_serve_parser.add_argument("--host", default="127.0.0.1")
+    api_serve_parser.add_argument("--port", type=int, default=8765)
 
     mcp_parser = subparsers.add_parser("mcp", help="Expose Mnemo MCP-style tools")
     mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
@@ -671,6 +679,16 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 
 def _cmd_api(args: argparse.Namespace) -> int:
+    if args.api_command == "serve":
+        serve_api(
+            WebServerConfig(
+                state_dir=args.state_dir,
+                host=args.host,
+                port=args.port,
+                workspace_root=os.getcwd(),
+            )
+        )
+        return 0
     if args.api_command == "external-run":
         try:
             command = _command_json(args.command_json)

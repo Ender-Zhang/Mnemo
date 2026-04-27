@@ -19,6 +19,7 @@
 - CLI: `mnemo api schema [--json]`
 - CLI: `mnemo api capsule TASK... [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo api external-run TASK... --command-json '[...]' [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--timeout-s S] [--state-dir DIR] [--json]`
+- CLI: `mnemo api serve [--host HOST] [--port PORT] [--state-dir DIR]`
 
 ### 3. Contracts
 - The SDK is a reference in-process binding; it must not introduce a second runtime loop.
@@ -43,6 +44,7 @@
 - The `evaluate` API schema exposes an optional `variants` array with the public harness variant enum.
 - The `evaluate` API schema exposes `release_gate` as an optional boolean.
 - `mnemo api schema --json` wraps the schema as `{ "api_schema": ... }`; text mode prints readable method summaries.
+- `mnemo api serve` runs the stdlib HTTP server and exposes the same core API through `/api/core/*`.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -56,6 +58,7 @@
 | Replay/evaluate request | Existing harness services return compact suite, variant, and release-gate reports | `tests/test_sdk.py` |
 | CLI schema JSON | Returns `api_schema` with all core methods | `tests/test_cli.py` |
 | CLI schema text | Prints readable method summaries | `tests/test_cli.py` |
+| CLI HTTP serve help | Documents host/port/state-dir controls without starting a server | `tests/test_cli.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add future MCP/HTTP adapters as thin transports over `MnemoClient` or the same service functions.
@@ -78,6 +81,64 @@
 #### Correct
 - Route SDK/CLI/MCP execution through `MnemoClient.external_run()` / `run_external()` so capsule building, proposal filtering, RunLedger events, and error normalization stay in one service.
 - Return `external_runtime_result` with `capsule` summary, `proposal`, `ignored_fields`, ids, and exit code only.
+
+## Scenario: MnemoCore HTTP JSON API
+
+### 1. Scope / Trigger
+- Trigger: changes to `mnemo/interfaces/web.py`, `mnemo api serve`, or HTTP transport paths under `/api/core/*`.
+- Goal: provide a language-neutral HTTP binding over `MnemoClient` without creating a separate runtime workflow.
+
+### 2. Signatures
+- `build_http_server(WebServerConfig(...)) -> ThreadingHTTPServer`
+- `serve_api(WebServerConfig(...)) -> None`
+- `GET /api/core/schema -> { "api_schema": mnemo_core_api_schema() }`
+- `GET /api/core/openapi.json -> OpenAPI 3.1.0 document`
+- `POST /api/core/context`
+- `POST /api/core/recall`
+- `POST /api/core/capsule`
+- `POST /api/core/external-run`
+- `POST /api/core/run`
+- `POST /api/core/replay`
+- `POST /api/core/evaluate`
+- CLI: `mnemo api serve [--host HOST] [--port PORT] [--state-dir DIR]`
+
+### 3. Contracts
+- HTTP core routes are thin transports over `MnemoClient`; they must not duplicate memory search, prompt assembly, runtime execution, eval, or external command adapter logic.
+- HTTP core responses wrap SDK results as `{ "method": "<method>", "result": <sdk payload> }`.
+- Hyphenated paths map to snake-case API methods, for example `/api/core/external-run` maps to `external_run`.
+- `/api/core/openapi.json` is compact discovery for current core methods; it is not generated client code.
+- `run` mirrors SDK/local behavior; provider-backed streaming chat remains `/api/chat`.
+- `external-run` requires `command` as a JSON array of non-empty strings and preserves the same proposal-only boundary as SDK/CLI/MCP.
+
+### 4. Validation & Error Matrix
+| Case | Expected Behavior | Test Point |
+| --- | --- | --- |
+| Core schema | `GET /api/core/schema` returns `mnemo.core_api.v1` | `tests/test_web.py` |
+| OpenAPI discovery | `GET /api/core/openapi.json` lists `/api/core/external-run` and method schemas | `tests/test_web.py` |
+| Core method dispatch | Context/capsule/run/external-run route to SDK and return compact results | `tests/test_web.py` |
+| Invalid JSON | Returns HTTP 400 JSON `{ "error": ... }` | `tests/test_web.py` |
+| Missing required field | Returns HTTP 400 JSON without traceback | `tests/test_web.py` |
+| Unknown method | Returns HTTP 404 JSON without traceback | `tests/test_web.py` |
+| Package smoke | Installed wheel exposes web HTTP server builder | `tests/package_install_smoke.py` |
+
+### 5. Good/Base/Bad Cases
+- Good: add HTTP routes by extending the core method dispatcher and SDK schema together.
+- Good: keep HTTP payloads compact and aligned with SDK/MCP output shapes.
+- Base: stdlib HTTP server is enough for local and lightweight remote deployments.
+- Bad: adding route-specific memory/runtime behavior that bypasses `MnemoClient`.
+- Bad: returning raw provider tool schemas, full transcripts, or external command stdout bodies through HTTP.
+
+### 6. Tests Required
+- Web tests for schema, OpenAPI discovery, method dispatch, compactness, and JSON error handling.
+- CLI tests for `mnemo api serve --help`.
+- Package install smoke coverage for `mnemo.interfaces.web`.
+
+### 7. Wrong vs Correct
+#### Wrong
+- Implement `/api/core/run` by manually creating runs and tool calls in the web handler.
+
+#### Correct
+- Parse JSON, validate transport-level types, call `MnemoClient.run()`, and return the SDK payload under `result`.
 
 ## Scenario: MCP-Style Tool Server
 

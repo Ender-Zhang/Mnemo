@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from ..core.events import chat_event_as_dict
+from ..core.errors import MnemoError
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
 from ..core.settings import load_user_settings, save_user_settings
@@ -19,6 +20,7 @@ from ..runtime import stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..memory import MemoryEngine
+from ..sdk import MnemoClient, mnemo_core_api_schema
 from ..storage import StateStore
 
 
@@ -69,6 +71,18 @@ def serve_web(config: WebServerConfig) -> None:
         server.server_close()
 
 
+def serve_api(config: WebServerConfig) -> None:
+    server = build_http_server(config)
+    host, port = server.server_address
+    print(f"Mnemo core API listening on http://{host}:{port}/api/core")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
 def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         server_version = "MnemoWeb/0.1"
@@ -83,6 +97,10 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._send_asset("app.js", "application/javascript; charset=utf-8")
             elif parsed.path == "/api/health":
                 self._send_json({"ok": True, "provider": config.provider})
+            elif parsed.path == "/api/core/schema":
+                self._send_json({"api_schema": mnemo_core_api_schema()})
+            elif parsed.path == "/api/core/openapi.json":
+                self._send_json(_core_openapi_schema())
             elif parsed.path == "/api/events":
                 self._handle_events(parsed.query)
             elif parsed.path == "/api/artifacts":
@@ -98,6 +116,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
             parsed = urlparse(self.path)
             if parsed.path == "/api/chat":
                 self._handle_chat()
+            elif parsed.path.startswith("/api/core/"):
+                self._handle_core_api(parsed.path)
             elif parsed.path == "/api/runs/cancel":
                 self._handle_run_cancel()
             elif parsed.path == "/api/inbox/resolve":
@@ -316,6 +336,24 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 }
             )
 
+        def _handle_core_api(self, path: str) -> None:
+            raw_method = path.removeprefix("/api/core/").strip("/")
+            method = _core_method_name(raw_method)
+            if not method:
+                self._send_json({"error": f"unknown core API method: {raw_method}"}, status=HTTPStatus.NOT_FOUND)
+                return
+            try:
+                body = self._read_json_body()
+                result = _dispatch_core_api(config, method, body)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            except MnemoError as exc:
+                status = HTTPStatus.NOT_FOUND if "not found" in str(exc).casefold() else HTTPStatus.BAD_REQUEST
+                self._send_json({"error": str(exc)}, status=status)
+                return
+            self._send_json({"method": method, "result": result})
+
         def _send_asset(self, name: str, content_type: str) -> None:
             try:
                 content = resources.files("mnemo.interfaces").joinpath("web_assets", name).read_bytes()
@@ -398,6 +436,131 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
         yield from stream_provider(request, provider)
         return
     raise ValueError(f"unsupported provider: {config.provider}")
+
+
+def _dispatch_core_api(config: WebServerConfig, method: str, body: dict[str, Any]) -> dict[str, Any]:
+    client = MnemoClient(state_dir=config.state_dir, workspace_root=config.workspace_root)
+    if method == "context":
+        return client.context(
+            _string_field(body, "intent", default=""),
+            agent_role=_string_field(body, "agent_role", default="general"),
+            budget_tokens=_int_field(body, "budget_tokens", default=4000),
+            include_associations=_bool_field(body, "include_associations", default=True),
+            prompt_mode=_string_field(body, "prompt_mode", default="full"),
+        )
+    if method == "recall":
+        return client.recall(
+            _required_string(body, "seed"),
+            depth=_int_field(body, "depth", default=2),
+            context=_string_field(body, "context", default=""),
+            limit=_int_field(body, "limit", default=8),
+        )
+    if method == "capsule":
+        return client.capsule(
+            _required_string(body, "task"),
+            runtime=_string_field(body, "runtime", default="external"),
+            agent_type=_string_field(body, "agent_type", default="general"),
+            requested_pages=_string_list_field(body, "requested_pages"),
+            allowed_pages=_string_list_field(body, "allowed_pages"),
+            conversation_id=_optional_string(body.get("conversation_id")),
+            mission_id=_optional_string(body.get("mission_id")),
+            limit=_int_field(body, "limit", default=8),
+        )
+    if method == "external_run":
+        return client.external_run(
+            _required_string(body, "task"),
+            command=_required_string_list_field(body, "command"),
+            runtime=_string_field(body, "runtime", default="external-command"),
+            agent_type=_string_field(body, "agent_type", default="general"),
+            requested_pages=_string_list_field(body, "requested_pages"),
+            allowed_pages=_string_list_field(body, "allowed_pages"),
+            conversation_id=_optional_string(body.get("conversation_id")),
+            mission_id=_optional_string(body.get("mission_id")),
+            timeout_s=_float_field(body, "timeout_s", default=30.0),
+        )
+    if method == "run":
+        return client.run(
+            _required_string(body, "message"),
+            conversation_id=_optional_string(body.get("conversation_id")),
+            mission_id=_optional_string(body.get("mission_id")),
+            prompt_mode=_string_field(body, "prompt_mode", default="full"),
+        )
+    if method == "replay":
+        return client.replay(_required_string(body, "run_id"))
+    if method == "evaluate":
+        return client.evaluate(
+            _string_field(body, "suite", default="smoke"),
+            variants=_string_list_field(body, "variants") or None,
+            release_gate=_bool_field(body, "release_gate", default=False),
+        )
+    raise ValueError(f"unsupported core API method: {method}")
+
+
+def _core_method_name(value: str) -> str | None:
+    method = value.replace("-", "_")
+    if method in mnemo_core_api_schema()["methods"]:
+        return method
+    return None
+
+
+def _core_openapi_schema() -> dict[str, Any]:
+    core_schema = mnemo_core_api_schema()
+    paths: dict[str, Any] = {
+        "/api/core/schema": {
+            "get": {
+                "operationId": "schema",
+                "summary": "Return the MnemoCore API schema.",
+                "responses": {"200": {"description": "MnemoCore API schema"}},
+            }
+        },
+        "/api/core/openapi.json": {
+            "get": {
+                "operationId": "openapi",
+                "summary": "Return this compact OpenAPI document.",
+                "responses": {"200": {"description": "OpenAPI document"}},
+            }
+        },
+    }
+    for name, method in core_schema["methods"].items():
+        path_name = name.replace("_", "-")
+        paths[f"/api/core/{path_name}"] = {
+            "post": {
+                "operationId": name,
+                "summary": method["description"],
+                "requestBody": {
+                    "required": True,
+                    "content": {"application/json": {"schema": method["input_schema"]}},
+                },
+                "responses": {
+                    "200": {
+                        "description": "Core API result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "method": {"const": name},
+                                        "result": method["output_schema"],
+                                    },
+                                    "required": ["method", "result"],
+                                }
+                            }
+                        },
+                    },
+                    "400": {"description": "Invalid request"},
+                    "404": {"description": "Unknown method or missing resource"},
+                },
+            }
+        }
+    return {
+        "openapi": "3.1.0",
+        "info": {
+            "title": core_schema["title"],
+            "version": core_schema["schema_version"],
+            "description": core_schema["description"],
+        },
+        "paths": paths,
+    }
 
 
 def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
@@ -509,6 +672,61 @@ def _required_string(payload: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} is required")
     return value.strip()
+
+
+def _string_field(payload: dict[str, Any], key: str, *, default: str) -> str:
+    if key not in payload or payload.get(key) is None:
+        return default
+    value = payload.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{key} must be a string")
+    return value.strip()
+
+
+def _int_field(payload: dict[str, Any], key: str, *, default: int) -> int:
+    if key not in payload or payload.get(key) is None:
+        return default
+    value = payload.get(key)
+    if isinstance(value, bool):
+        raise ValueError(f"{key} must be an integer")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be an integer") from exc
+
+
+def _float_field(payload: dict[str, Any], key: str, *, default: float) -> float:
+    if key not in payload or payload.get(key) is None:
+        return default
+    value = payload.get(key)
+    if isinstance(value, bool):
+        raise ValueError(f"{key} must be a number")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be a number") from exc
+
+
+def _bool_field(payload: dict[str, Any], key: str, *, default: bool) -> bool:
+    if key not in payload or payload.get(key) is None:
+        return default
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key} must be a boolean")
+    return value
+
+
+def _string_list_field(payload: dict[str, Any], key: str) -> list[str]:
+    if key not in payload or payload.get(key) is None:
+        return []
+    return _required_string_list_field(payload, key)
+
+
+def _required_string_list_field(payload: dict[str, Any], key: str) -> list[str]:
+    value = payload.get(key)
+    if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+        raise ValueError(f"{key} must be an array of non-empty strings")
+    return [item.strip() for item in value]
 
 
 def _optional_string(value: Any) -> str | None:

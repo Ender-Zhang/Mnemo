@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "HTTP routes live in web interface"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "HTTP API must reuse MnemoClient contract"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP request errors need normalized JSON responses"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "SDK CLI HTTP tests cross-layer flow"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "unittest and package smoke expectations"}
