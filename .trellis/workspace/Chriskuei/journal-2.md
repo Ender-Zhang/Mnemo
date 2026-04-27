@@ -1869,3 +1869,37 @@ Added first-class dream scheduled items that run bounded MemoryEngine.dream_main
 ### Next Steps
 
 - None - task complete
+
+
+## Session 112: MCP Dream schedule surface
+
+**Date**: 2026-04-27
+**Task**: MCP Dream schedule surface
+**Branch**: `main`
+
+### Summary
+
+Exposed Dream scheduled maintenance through the MCP tool surface with mnemo_dream_schedule, wired it to ScheduleService.add_dream, added direct MCP and CLI mcp call coverage, verified due one-shot Dream ticks through the existing scheduler, and synced integration/memory specs plus design/checklist docs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2987ad4` | (see git log) |
+| `4078587` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
