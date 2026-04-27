@@ -49,6 +49,7 @@ class MnemoMcpTests(unittest.TestCase):
                 "mnemo_recall",
                 "mnemo_search",
                 "mnemo_watch",
+                "mnemo_watch_feedback",
                 "mnemo_skills",
                 "mnemo_tools",
                 "mnemo_cron",
@@ -148,6 +149,19 @@ class MnemoMcpTests(unittest.TestCase):
                 "mnemo_watch",
                 {"target": "calendar", "instruction": "Check calendar risk", "schedule": "once", "next_run_at": 0},
             )
+            feedback = server.call_tool(
+                "mnemo_watch_feedback",
+                {
+                    "item_id": watch["item"]["id"],
+                    "outcome": "no_feedback",
+                    "decision": {
+                        "action": "sparsify",
+                        "schedule": "weekly",
+                        "reason": "No user response to the last proactive check.",
+                        "source": "model",
+                    },
+                },
+            )
             cron = server.call_tool(
                 "mnemo_cron",
                 {"schedule": "once", "message": "remember: MCP cron", "next_run_at": 0},
@@ -165,10 +179,13 @@ class MnemoMcpTests(unittest.TestCase):
             self.assertTrue(release["passed"])
             self.assertEqual(watch["kind"], "scheduled_item")
             self.assertEqual(watch["item"]["kind"], "watch")
+            self.assertEqual(feedback["kind"], "watch_feedback")
+            self.assertEqual(feedback["item"]["schedule"], "weekly")
+            self.assertEqual(feedback["decision"]["source"], "model")
             self.assertEqual(cron["item"]["kind"], "cron")
             self.assertEqual(status["kind"], "runtime_status")
             self.assertGreaterEqual(len(status["recent_runs"]), 1)
-            self.assertEqual(status["scheduled"]["due"], 2)
+            self.assertEqual(status["scheduled"]["due"], 1)
 
     def test_json_rpc_initialize_list_call_errors_and_jsonl_serve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

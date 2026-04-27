@@ -32,7 +32,7 @@
 - `replay()` reuses `replay_summary()`.
 - `evaluate()` reuses `EvalHarness`; without variants it returns the normal suite report.
 - `evaluate(..., variants=[...])` returns the harness variant report for `no_memory`, `skills_only`, and/or `full_mnemo`.
-- `evaluate(release_gate=True)` returns the fixed core release gate report across personalization, memory-safety, skill-evolution, and external-harness gates; it cannot be combined with `variants`.
+- `evaluate(release_gate=True)` returns the fixed core release gate report across personalization, memory-safety, skill-evolution, proactive-watch, and external-harness gates; it cannot be combined with `variants`.
 - `mnemo_core_api_schema()` returns a JSON-serializable language-neutral contract for `context`, `recall`, `capsule`, `run`, `replay`, and `evaluate`.
 - The `evaluate` API schema exposes an optional `variants` array with the public harness variant enum.
 - The `evaluate` API schema exposes `release_gate` as an optional boolean.
@@ -92,6 +92,7 @@
 - `mnemo_skills` returns compact skill cards; full skill bodies remain behind existing skill-specific surfaces.
 - `mnemo_tools` returns compact tool cards and ToolBundle metadata; it must not return raw provider input schemas by default.
 - `mnemo_watch` and `mnemo_cron` create durable scheduled items through `ScheduleService`; due processing still runs through the normal daemon queue.
+- `mnemo_watch_feedback` records compact Watch outcomes and applies an explicit model/user policy decision through `ScheduleService`.
 - `mnemo_runtime_status` includes compact scheduled-item status.
 - JSON-RPC support covers `initialize`, `tools/list`, and `tools/call` with structured error responses.
 - `mnemo mcp serve` defaults to MCP stdio `Content-Length` framing; JSONL stdio remains an explicit debug transport.
@@ -102,7 +103,7 @@
 | Tool descriptors | Core tool names, `inputSchema`, and read/write annotations are present | `tests/test_mcp.py` |
 | Compact reads | Context/capsule/search/recall/skills/tools do not expose raw evidence, full state, or raw input schemas | `tests/test_mcp.py` |
 | Update writes | External facts become memory candidates and observations become W0 notes | `tests/test_mcp.py` |
-| Watch/Cron calls | MCP calls create scheduled watch/cron items and runtime status reports due count | `tests/test_mcp.py` |
+| Watch/Cron calls | MCP calls create scheduled watch/cron items, record Watch feedback policy, and runtime status reports due count | `tests/test_mcp.py` |
 | Runtime calls | Run/replay/eval/variant-eval/release-gate/status reuse existing services and compact results | `tests/test_mcp.py` |
 | JSON-RPC | Initialize, list, call, unknown-method, JSONL serving, and Content-Length framing behave predictably | `tests/test_mcp.py` |
 | CLI | `mnemo mcp tools`, `mnemo mcp call`, and both serve transports support JSON and normalized errors | `tests/test_cli.py` |
@@ -111,12 +112,12 @@
 ### 5. Good/Base/Bad Cases
 - Good: add new MCP tools as thin wrappers over SDK/domain services with compact outputs.
 - Good: keep tool outputs model-actionable and small enough for external context capsules.
-- Base: watch/cron tools register scheduled work; model-led execution happens when the daemon queue drains the due item.
+- Base: watch/cron tools register scheduled work; model-led execution happens when the daemon queue drains the due item, then the model may record feedback policy through `mnemo_watch_feedback`.
 - Bad: adding provider-specific workflow routing inside the MCP server.
 - Bad: returning full traces, full artifacts, raw provider schemas, or stable-memory mutations from generic update calls.
 
 ### 6. Tests Required
-- Direct MCP server tests for descriptors, calls, capsule compactness, variant-eval, release-gate, and scheduled watch/cron surfaces.
+- Direct MCP server tests for descriptors, calls, capsule compactness, variant-eval, release-gate, scheduled watch/cron, and Watch feedback surfaces.
 - JSON-RPC tests for success, Content-Length framing, JSONL debug serving, and structured errors.
 - CLI tests for JSON output, serve transport selection, and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.

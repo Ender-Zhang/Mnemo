@@ -55,6 +55,7 @@
 - `StateStore.due_scheduled_items(*, now: float | None = None, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_scheduled_item_status(item_id: str, status: str) -> dict[str, Any]`
 - `StateStore.record_scheduled_item_tick(item_id: str, *, next_run_at: float | None, queue_id: str | None = None, status: str | None = None, error: str | None = None, now: float | None = None) -> dict[str, Any]`
+- `StateStore.update_scheduled_item_policy(item_id: str, *, schedule: str | None = None, status: str | None = None, next_run_at: float | None = None, update_next_run_at: bool = False, metadata: dict[str, Any] | None = None) -> dict[str, Any]`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
@@ -131,6 +132,8 @@
 - `due_scheduled_items()` returns only active rows with `next_run_at <= now`, ordered by due time then creation time.
 - Scheduled items do not execute work directly; due processing must enqueue existing `run_queue` requests with `metadata.source="scheduler"`.
 - One-shot schedules become `completed` after a successful tick; recurring schedules stay `active` with an advanced `next_run_at`.
+- Watch feedback is stored in `scheduled_items.metadata.watch_feedback` as compact counts, streaks, recent bounded outcomes, and the last explicit model/user decision.
+- `update_scheduled_item_policy()` is the only storage API for applying Watch policy changes such as sparse schedule, paused, or disabled status.
 - CLI scheduled-item commands must use storage/service APIs and not read raw SQLite rows directly.
 - `working_notes` stores W0 notes with mission/run provenance, metadata, processing status, and result payloads.
 - CLI W0 inspection must use the read API and remain read-only: `mnemo memory notes`.
@@ -175,8 +178,8 @@
 | Tool approval Inbox item | Denied high-risk tools create compact `tool_approval` action data | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Accepted tool approval resolve | Returns compact `tool_result` once and records approval execution events | `tests/test_cli.py`, `tests/test_web.py` |
 | Inbox repeated resolve | Resolved item returns unchanged instead of mutating resolution again | `tests/test_storage.py` |
-| Scheduled item storage | Add/list/read/status/tick metadata round-trip and invalid input normalization | `tests/test_storage.py` |
-| Scheduled processing | Due watch/cron items enqueue normal daemon queue work and advance/complete schedule | `tests/test_scheduler.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
+| Scheduled item storage | Add/list/read/status/tick/policy metadata round-trip and invalid input normalization | `tests/test_storage.py` |
+| Scheduled processing | Due watch/cron items enqueue normal daemon queue work, advance/complete schedule, and apply model-supplied Watch feedback policy | `tests/test_scheduler.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
@@ -194,6 +197,7 @@
 - Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
 - Good: store user decisions as Inbox items and return item ids in chat events.
 - Good: process proactive work by enqueueing `run_queue` items so scheduled runs reuse the same runtime harness as user turns.
+- Good: record Watch learning as compact metadata and apply explicit model/user decisions through `ScheduleService`.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Good: expose L4 session recall as bounded snippets with provenance ids, not full transcripts.
 - Good: keep tombstones compact and structured so deleted/rejected memory is not reintroduced through raw historical content.
@@ -226,7 +230,7 @@
 - Artifact metadata list/filter behavior is covered without duplicating body text.
 - Inbox storage round-trip, filters, and resolution lifecycle are covered.
 - Scheduled item storage, due lookup, status changes, and tick metadata are covered.
-- Scheduler enqueue behavior and CLI schedule commands are covered.
+- Scheduler enqueue behavior, Watch feedback policy, and CLI schedule commands are covered.
 - Memory tombstone schema and read/write/filter APIs are covered.
 - Web event replay by `sinceEventId` is covered.
 - Existing storage round-trips still pass after migration changes.

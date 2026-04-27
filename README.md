@@ -79,6 +79,7 @@ mnemo daemon status --state-dir .mnemo
 
 mnemo schedule add --kind cron --message "Run memory maintenance" --schedule daily --state-dir .mnemo
 mnemo schedule add --kind watch --target "Rust progress" --instruction "Check blockers and decide whether to notify me" --schedule weekly --state-dir .mnemo
+mnemo schedule feedback <watch_id> --outcome no_feedback --action sparsify --policy-schedule weekly --state-dir .mnemo
 mnemo schedule list --state-dir .mnemo
 mnemo schedule tick --state-dir .mnemo
 
@@ -137,7 +138,7 @@ mnemo mcp serve --state-dir .mnemo
 mnemo mcp serve --state-dir .mnemo --transport jsonl
 ```
 
-The MCP-style server exposes compact context, external-runtime capsule, update, recall, search, skills, tools, watch, cron, run, replay, eval, and status surfaces. `serve` defaults to standard MCP stdio `Content-Length` framing; JSONL is kept for local debugging. Watch and cron register durable scheduled items; due items enqueue normal daemon runs so the existing runtime/model decides what to do.
+The MCP-style server exposes compact context, external-runtime capsule, update, recall, search, skills, tools, watch, watch feedback, cron, run, replay, eval, and status surfaces. `serve` defaults to standard MCP stdio `Content-Length` framing; JSONL is kept for local debugging. Watch and cron register durable scheduled items; due items enqueue normal daemon runs so the existing runtime/model decides what to do. Watch feedback lets the model record outcomes and explicitly sparse, pause, or disable noisy proactive checks.
 
 ## Backup And Validation
 
@@ -149,6 +150,7 @@ python -m unittest discover -s tests
 mnemo harness smoke
 mnemo harness variants personalization-core --json
 mnemo harness release --json
+mnemo harness eval proactive-watch --json
 mnemo harness eval external-harness --json
 mnemo harness list
 ```

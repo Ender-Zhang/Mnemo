@@ -152,6 +152,14 @@ class StateStoreTests(unittest.TestCase):
             self.assertEqual([item["id"] for item in store.due_scheduled_items(now=10.0)], [cron_id, watch_id])
             paused = store.update_scheduled_item_status(watch_id, "paused")
             repeated = store.update_scheduled_item_status(watch_id, "paused")
+            policy = store.update_scheduled_item_policy(
+                watch_id,
+                schedule="weekly",
+                status="active",
+                next_run_at=1000.0,
+                update_next_run_at=True,
+                metadata={"watch_feedback": {"counts": {"no_feedback": 3}}},
+            )
             completed = store.record_scheduled_item_tick(
                 cron_id,
                 next_run_at=None,
@@ -162,7 +170,11 @@ class StateStoreTests(unittest.TestCase):
 
             self.assertTrue(paused["changed"])
             self.assertFalse(repeated["changed"])
-            self.assertEqual(store.list_scheduled_items(kind="watch", status="paused")[0]["id"], watch_id)
+            self.assertEqual(policy["schedule"], "weekly")
+            self.assertEqual(policy["status"], "active")
+            self.assertEqual(policy["next_run_at"], 1000.0)
+            self.assertEqual(policy["metadata"]["watch_feedback"]["counts"]["no_feedback"], 3)
+            self.assertEqual(store.list_scheduled_items(kind="watch", status="active")[0]["id"], watch_id)
             self.assertEqual(completed["last_queue_id"], "queue_test")
             self.assertEqual(completed["last_run_at"], 12.0)
             self.assertEqual(completed["status"], "completed")

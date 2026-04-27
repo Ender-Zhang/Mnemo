@@ -7,14 +7,20 @@ from typing import Any
 
 from ..core.models import PromptMode, RunRequest
 from ..memory import MemoryEngine
-from ..runtime import stream_local
+from ..runtime import ScheduleService, stream_local
 from ..runtime.capsule import ContextCapsuleBuilder
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService
 from ..storage import StateStore
 
 HARNESS_VARIANTS = ("no_memory", "skills_only", "full_mnemo")
-RELEASE_GATE_SUITES = ("personalization-core", "memory-safety", "skill-evolution", "external-harness")
+RELEASE_GATE_SUITES = (
+    "personalization-core",
+    "memory-safety",
+    "skill-evolution",
+    "proactive-watch",
+    "external-harness",
+)
 VARIANT_PROFILES: dict[str, dict[str, Any]] = {
     "no_memory": {
         "prompt_mode": "capsule",
@@ -160,6 +166,8 @@ class EvalHarness:
             return self._run_memory_safety_suite()
         if suite == "skill-evolution":
             return self._run_skill_evolution_suite()
+        if suite == "proactive-watch":
+            return self._run_proactive_watch_suite()
         if suite == "external-harness":
             return self._run_external_harness_suite()
 
@@ -340,6 +348,20 @@ class EvalHarness:
         passed_count = sum(1 for report in case_reports if report.passed)
         return SuiteReport(
             suite="external-harness",
+            passed=passed_count == len(case_reports),
+            case_count=len(case_reports),
+            passed_count=passed_count,
+            failed_count=len(case_reports) - passed_count,
+            cases=case_reports,
+        )
+
+    def _run_proactive_watch_suite(self) -> SuiteReport:
+        case_reports = [
+            self._watch_feedback_sparsify_case(),
+        ]
+        passed_count = sum(1 for report in case_reports if report.passed)
+        return SuiteReport(
+            suite="proactive-watch",
             passed=passed_count == len(case_reports),
             case_count=len(case_reports),
             passed_count=passed_count,
@@ -758,6 +780,56 @@ class EvalHarness:
                 ),
             )
 
+    def _watch_feedback_sparsify_case(self) -> CaseReport:
+        case_id = "watch-feedback-sparsify"
+        with self._case_state_dir(case_id) as state_dir:
+            store, run_id, conversation_id, mission_id = _store_with_run(state_dir, case_id)
+            service = ScheduleService(state_dir)
+            item = service.add_watch(
+                target="Rust progress",
+                instruction="Notify only when there is a meaningful blocker or milestone.",
+                schedule="every:60",
+                next_run_at=0,
+            )
+            service.record_watch_feedback(item["id"], outcome="no_feedback", note="No user reaction.", now=1)
+            service.record_watch_feedback(item["id"], outcome="no_feedback", note="No user reaction.", now=2)
+            result = service.record_watch_feedback(
+                item["id"],
+                outcome="no_feedback",
+                note="Third consecutive no-feedback push.",
+                decision={
+                    "action": "sparsify",
+                    "schedule": "weekly",
+                    "reason": "Three consecutive Watch notifications had no user feedback.",
+                    "source": "model",
+                },
+                now=3,
+            )
+            updated = store.get_scheduled_item(item["id"]) or {}
+            due_items = store.due_scheduled_items(now=3600, limit=10)
+            feedback = updated.get("metadata", {}).get("watch_feedback", {})
+            assertions = [
+                _assertion("watch_feedback_counts_no_feedback", feedback.get("counts", {}).get("no_feedback") == 3, str(feedback)),
+                _assertion("watch_feedback_tracks_streak", feedback.get("streaks", {}).get("no_feedback") == 3, str(feedback)),
+                _assertion("model_decision_recorded", feedback.get("last_decision", {}).get("source") == "model", str(feedback)),
+                _assertion("watch_sparsified_schedule", updated.get("schedule") == "weekly", str(updated)),
+                _assertion("watch_remains_active", updated.get("status") == "active", str(updated)),
+                _assertion("watch_next_due_delayed", float(updated.get("next_run_at") or 0) > 3600, str(updated)),
+                _assertion("watch_not_due_after_sparsify", all(item["id"] != updated.get("id") for item in due_items), str(due_items)),
+                _assertion("feedback_recent_bounded", len(result.get("feedback", {}).get("recent", [])) <= 5, str(result)),
+            ]
+            return _single_step_case_report(
+                case_id,
+                "Watch Feedback Sparsify",
+                _synthetic_step_report(
+                    case_id,
+                    run_id=run_id,
+                    conversation_id=conversation_id,
+                    mission_id=mission_id,
+                    assertions=assertions,
+                ),
+            )
+
     def _external_context_capsule_case(self) -> CaseReport:
         case_id = "external-context-capsule-boundary"
         with self._case_state_dir(case_id) as state_dir:
@@ -823,7 +895,7 @@ class EvalHarness:
 
 
 def list_suites() -> list[str]:
-    return sorted([*_BUILTIN_SUITES, "external-harness", "memory-safety", "skill-evolution"])
+    return sorted([*_BUILTIN_SUITES, "external-harness", "memory-safety", "proactive-watch", "skill-evolution"])
 
 
 def list_variants() -> list[str]:

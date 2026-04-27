@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from mnemo.core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolSpec
+from mnemo.runtime import ScheduleService
 from mnemo.runtime.ledger import RunLedger
 from mnemo.storage import StateStore
 from mnemo.tools import ToolHarness, ToolRegistry, compact_tool_result
@@ -64,6 +65,45 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(expanded.result["expanded_tool_names"], ["memory_write_candidate"])
             self.assertEqual(expanded.result["missing_tool_names"], ["missing_tool"])
             self.assertIn("tool schemas", compact_tool_result(expanded)["summary"])
+
+    def test_watch_feedback_tool_applies_model_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            watch = ScheduleService(tmp).add_watch(
+                target="Calendar risk",
+                instruction="Notify only when risk is meaningful.",
+                schedule="every:60",
+                next_run_at=0,
+            )
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="watch_feedback",
+                    arguments={
+                        "item_id": watch["id"],
+                        "outcome": "no_feedback",
+                        "decision": {
+                            "action": "sparsify",
+                            "schedule": "weekly",
+                            "reason": "No user response after repeated notifications.",
+                            "source": "model",
+                        },
+                    },
+                    call_id="call_watch_feedback",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            updated = store.get_scheduled_item(watch["id"])
+            compact = compact_tool_result(result)
+            self.assertTrue(result.ok)
+            self.assertEqual(updated["schedule"], "weekly")
+            self.assertEqual(updated["metadata"]["watch_feedback"]["last_decision"]["source"], "model")
+            self.assertIn("Watch feedback recorded", compact["summary"])
+            self.assertEqual(compact["evidence"][0]["kind"], "watch_feedback")
 
     def test_harness_blocks_disallowed_risk_without_calling_handler(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

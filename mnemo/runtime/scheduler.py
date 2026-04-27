@@ -9,6 +9,10 @@ from typing import Any
 from ..storage import StateStore
 
 
+WATCH_FEEDBACK_OUTCOMES = ("notified", "silent", "no_feedback", "useful", "not_useful", "dismissed")
+WATCH_POLICY_ACTIONS = ("keep", "sparsify", "pause", "disable")
+
+
 class ScheduleService:
     """Lightweight scheduled-item service backed by the existing daemon queue."""
 
@@ -78,6 +82,51 @@ class ScheduleService:
     def update_status(self, item_id: str, status: str) -> dict[str, Any]:
         self.store.initialize()
         return self.store.update_scheduled_item_status(item_id, status)
+
+    def record_watch_feedback(
+        self,
+        item_id: str,
+        *,
+        outcome: str,
+        note: str = "",
+        decision: dict[str, Any] | None = None,
+        now: float | str | None = None,
+    ) -> dict[str, Any]:
+        self.store.initialize()
+        feedback_at = parse_schedule_time(now) if now is not None else time.time()
+        item = self.store.get_scheduled_item(item_id)
+        if not item:
+            raise ValueError(f"scheduled item not found: {item_id}")
+        if item["kind"] != "watch":
+            raise ValueError(f"scheduled item is not a watch: {item_id}")
+
+        clean_outcome = _normalize_watch_feedback_outcome(outcome)
+        clean_decision = _normalize_watch_policy_decision(decision)
+        metadata = dict(item.get("metadata") or {})
+        feedback = _updated_watch_feedback_metadata(
+            metadata.get("watch_feedback"),
+            outcome=clean_outcome,
+            note=note,
+            decision=clean_decision,
+            now=feedback_at,
+        )
+        metadata["watch_feedback"] = feedback
+        schedule, status, next_run_at = _watch_policy_update(item, clean_decision, now=feedback_at)
+        updated = self.store.update_scheduled_item_policy(
+            item_id,
+            schedule=schedule,
+            status=status,
+            next_run_at=next_run_at,
+            update_next_run_at=schedule is not None or status in {"paused", "disabled"},
+            metadata=metadata,
+        )
+        return {
+            "kind": "watch_feedback",
+            "version": "mnemo.watch_feedback.v1",
+            "item": updated,
+            "feedback": feedback,
+            "decision": clean_decision,
+        }
 
     def tick(self, *, now: float | str | None = None, limit: int = 50) -> dict[str, Any]:
         self.store.initialize()
@@ -224,6 +273,95 @@ def _normalize_schedule(schedule: str) -> str:
     if normalized.startswith("at:"):
         return f"at:{normalized.split(':', 1)[1].strip()}"
     return normalized
+
+
+def _normalize_watch_feedback_outcome(value: str) -> str:
+    normalized = str(value or "").strip().casefold()
+    if normalized not in WATCH_FEEDBACK_OUTCOMES:
+        known = ", ".join(WATCH_FEEDBACK_OUTCOMES)
+        raise ValueError(f"invalid watch feedback outcome: {value}. Known outcomes: {known}")
+    return normalized
+
+
+def _normalize_watch_policy_decision(decision: dict[str, Any] | None) -> dict[str, Any]:
+    if not decision:
+        return {"action": "keep", "source": "none"}
+    action = str(decision.get("action") or "keep").strip().casefold()
+    if action not in WATCH_POLICY_ACTIONS:
+        known = ", ".join(WATCH_POLICY_ACTIONS)
+        raise ValueError(f"invalid watch policy action: {action}. Known actions: {known}")
+    result = {
+        "action": action,
+        "source": str(decision.get("source") or "model").strip() or "model",
+    }
+    reason = str(decision.get("reason") or "").strip()
+    if reason:
+        result["reason"] = _preview(reason, limit=240)
+    schedule = str(decision.get("schedule") or "").strip()
+    if schedule:
+        result["schedule"] = _normalize_schedule(schedule)
+        if next_due_time(result["schedule"], after=0) is None:
+            raise ValueError("watch policy schedule must be recurring")
+    if action == "sparsify" and "schedule" not in result:
+        raise ValueError("watch policy action sparsify requires schedule")
+    return result
+
+
+def _updated_watch_feedback_metadata(
+    existing: Any,
+    *,
+    outcome: str,
+    note: str,
+    decision: dict[str, Any],
+    now: float,
+) -> dict[str, Any]:
+    feedback = existing if isinstance(existing, dict) else {}
+    counts = feedback.get("counts") if isinstance(feedback.get("counts"), dict) else {}
+    streaks = feedback.get("streaks") if isinstance(feedback.get("streaks"), dict) else {}
+    counts[outcome] = int(counts.get(outcome, 0)) + 1
+    last_outcome = str(feedback.get("last_outcome") or "")
+    if outcome == last_outcome:
+        streaks[outcome] = int(streaks.get(outcome, 0)) + 1
+    else:
+        streaks = {outcome: 1}
+    history = feedback.get("recent") if isinstance(feedback.get("recent"), list) else []
+    history = [
+        *history[-4:],
+        {
+            "outcome": outcome,
+            "note": _preview(note, limit=160) if note else "",
+            "decision_action": decision["action"],
+            "at": now,
+        },
+    ]
+    return {
+        "counts": counts,
+        "streaks": streaks,
+        "last_outcome": outcome,
+        "last_decision": decision,
+        "recent": history,
+        "updated_at": now,
+    }
+
+
+def _watch_policy_update(
+    item: dict[str, Any],
+    decision: dict[str, Any],
+    *,
+    now: float,
+) -> tuple[str | None, str | None, float | None]:
+    action = decision["action"]
+    if action == "keep":
+        schedule = decision.get("schedule")
+        return schedule, None, next_due_time(schedule, after=now) if schedule else None
+    if action == "sparsify":
+        schedule = str(decision["schedule"])
+        return schedule, "active", next_due_time(schedule, after=now)
+    if action == "pause":
+        return None, "paused", None
+    if action == "disable":
+        return None, "disabled", None
+    return None, None, None
 
 
 def _run_message(item: dict[str, Any]) -> str:

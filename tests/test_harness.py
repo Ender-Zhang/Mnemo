@@ -70,6 +70,23 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertIn("omits_raw_session_transcript", assertion_names)
         self.assertIn("boundary_is_proposals_only", assertion_names)
 
+    def test_proactive_watch_suite_passes(self) -> None:
+        report = EvalHarness().run_suite("proactive-watch")
+
+        self.assertTrue(report.passed)
+        self.assertEqual(report.case_count, 1)
+        self.assertEqual(report.failed_count, 0)
+        self.assertIn("proactive-watch", list_suites())
+        assertion_names = {
+            assertion.name
+            for case in report.cases
+            for step in case.steps
+            for assertion in step.assertions
+        }
+        self.assertIn("watch_feedback_counts_no_feedback", assertion_names)
+        self.assertIn("watch_sparsified_schedule", assertion_names)
+        self.assertIn("model_decision_recorded", assertion_names)
+
     def test_variant_report_compares_core_variants(self) -> None:
         report = EvalHarness().run_variant_report("personalization-core")
         payload = report.as_dict()
@@ -105,7 +122,7 @@ class EvalHarnessTests(unittest.TestCase):
         self.assertEqual(payload["kind"], "harness_release_report")
         self.assertEqual(
             payload["suites"],
-            ["personalization-core", "memory-safety", "skill-evolution", "external-harness"],
+            ["personalization-core", "memory-safety", "skill-evolution", "proactive-watch", "external-harness"],
         )
         self.assertEqual(payload["variant_report"]["kind"], "harness_variant_report")
         self.assertTrue(payload["variant_report"]["passed"])

@@ -235,6 +235,32 @@ CORE_TOOL_SPECS = [
             },
         ),
     ),
+    ToolSpec(
+        name="watch_feedback",
+        description="Record compact feedback for a Watch and apply an explicit model policy decision such as sparsify, pause, or disable.",
+        risk="write",
+        input_schema=_schema(
+            ["item_id", "outcome"],
+            {
+                "item_id": {"type": "string"},
+                "outcome": {
+                    "type": "string",
+                    "enum": ["notified", "silent", "no_feedback", "useful", "not_useful", "dismissed"],
+                },
+                "note": {"type": "string"},
+                "decision": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["keep", "sparsify", "pause", "disable"]},
+                        "schedule": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            },
+        ),
+    ),
 ]
 
 
@@ -437,6 +463,7 @@ class ToolRegistry:
             "skill_view": self._skill_view,
             "artifact_update": self._artifact_update,
             "ask_user": self._ask_user,
+            "watch_feedback": self._watch_feedback,
             **standard_tool_handlers(),
             "memory_write_candidate": self._memory_write_candidate,
             "skill_propose_candidate": self._skill_propose_candidate,
@@ -725,6 +752,19 @@ class ToolRegistry:
                 "options": ["accepted", "rejected", "ignored"],
             }
         }
+
+    def _watch_feedback(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        decision = args.get("decision")
+        if decision is not None and not isinstance(decision, dict):
+            raise ToolError("decision must be an object")
+        from ..runtime.scheduler import ScheduleService
+
+        return ScheduleService(context.store.state_dir).record_watch_feedback(
+            _require_str(args, "item_id"),
+            outcome=_require_str(args, "outcome"),
+            note=str(args.get("note") or ""),
+            decision=decision,
+        )
 
     def _memory_write_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         claim = _require_str(args, "claim")
@@ -1149,6 +1189,14 @@ def _tool_summary(result: ToolResult) -> str:
         return "Artifact updated."
     if result.name == "ask_user":
         return "User decision requested."
+    if result.name == "watch_feedback":
+        item = result.result.get("item") or {}
+        feedback = result.result.get("feedback") or {}
+        decision = result.result.get("decision") or {}
+        return (
+            f"Watch feedback recorded: {feedback.get('last_outcome', 'unknown')} "
+            f"action={decision.get('action', 'keep')} status={item.get('status', 'unknown')}."
+        )
     standard_summary = standard_tool_summary(result)
     if standard_summary:
         return standard_summary
@@ -1256,6 +1304,21 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
     if result.name == "memory_read":
         memory = result.result.get("memory") or {}
         return [_evidence("memory", memory.get("id"), str(memory.get("claim") or memory.get("title") or "Memory"))]
+    if result.name == "watch_feedback":
+        item = result.result.get("item") or {}
+        feedback = result.result.get("feedback") or {}
+        decision = result.result.get("decision") or {}
+        return [
+            {
+                "kind": "watch_feedback",
+                "id": item.get("id"),
+                "title": item.get("title"),
+                "outcome": feedback.get("last_outcome"),
+                "decision_action": decision.get("action"),
+                "status": item.get("status"),
+                "schedule": item.get("schedule"),
+            }
+        ]
     if result.name == "memory_health_report":
         counts = result.result.get("counts") or {}
         score = result.result.get("score") or {}

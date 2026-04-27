@@ -1200,6 +1200,61 @@ class StateStore:
             ).fetchone()
         return _scheduled_item_from_row(row)
 
+    def update_scheduled_item_policy(
+        self,
+        item_id: str,
+        *,
+        schedule: str | None = None,
+        status: str | None = None,
+        next_run_at: float | None = None,
+        update_next_run_at: bool = False,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        clean_schedule = _require_text(schedule, "scheduled item schedule") if schedule is not None else None
+        normalized_status = _normalize_scheduled_item_status(status) if status is not None else None
+        now = time.time()
+        with self.connect() as conn:
+            existing = conn.execute(
+                """
+                SELECT id, kind, title, instruction, schedule, source, status,
+                       next_run_at, last_run_at, last_queue_id, last_error,
+                       metadata_json, created_at, updated_at
+                FROM scheduled_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+            if not existing:
+                raise ValueError(f"scheduled item not found: {item_id}")
+            current = _scheduled_item_from_row(existing)
+            next_due = _optional_float(next_run_at) if update_next_run_at else current["next_run_at"]
+            conn.execute(
+                """
+                UPDATE scheduled_items
+                SET schedule = ?, status = ?, next_run_at = ?, metadata_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    clean_schedule or current["schedule"],
+                    normalized_status or current["status"],
+                    next_due,
+                    dumps(metadata if metadata is not None else current["metadata"]),
+                    now,
+                    item_id,
+                ),
+            )
+            row = conn.execute(
+                """
+                SELECT id, kind, title, instruction, schedule, source, status,
+                       next_run_at, last_run_at, last_queue_id, last_error,
+                       metadata_json, created_at, updated_at
+                FROM scheduled_items
+                WHERE id = ?
+                """,
+                (item_id,),
+            ).fetchone()
+        return _scheduled_item_from_row(row)
+
     def record_tool_call(
         self,
         *,

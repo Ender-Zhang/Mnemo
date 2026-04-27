@@ -68,6 +68,9 @@
 - `skill_propose_candidate`, `tool_propose_candidate`, and `eval_propose_case` return compact candidate evidence and can project unified `learning.chip` events.
 - `ask_user` is `write` risk because it persists an Inbox decision item.
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
+- `watch_feedback(item_id, outcome, decision?)` is `write` risk because it mutates scheduled Watch metadata and may alter schedule/status.
+- `watch_feedback` records compact outcome counts/streaks and applies only explicit model/user policy decisions such as `keep`, `sparsify`, `pause`, or `disable`.
+- Compact `watch_feedback` results include item id/title, outcome, decision action, status, and schedule, not raw notification bodies or full run traces.
 - Denied `external` and `admin` tool calls create persisted Inbox `tool_approval` Decision Cards and must not execute the denied handler.
 - Denied high-risk tool results include compact decision metadata and evidence; raw tool schemas and large arguments must not be exposed in streamed cards.
 - Accepted open `tool_approval` Inbox decisions execute the stored tool call once through `ToolHarness` with an approval policy limited to the approved tool name.
@@ -102,6 +105,7 @@
 | Browser connector | External policy gates URL open; dry-run validates HTTP/HTTPS URL without launching browser | `tests/test_standard_tools.py` |
 | App connector | Admin policy gates OS app open; path traversal is rejected before opener execution | `tests/test_standard_tools.py` |
 | Ask user decision | Creates a persistent Inbox item and returns compact decision evidence | `tests/test_tools.py`, `tests/test_web.py` |
+| Watch feedback decision | Applies explicit Watch policy and returns compact evidence | `tests/test_tools.py`, `tests/test_scheduler.py` |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
 | Prompt metadata | Records compact tool schema count/names/estimate without raw schema payloads | `tests/test_prompt.py`, `tests/test_cli.py` |
 | Stable ToolBundle | Recompiling the same profile/provider produces the same `bundle_id` and content-free metadata | `tests/test_tools.py` |
@@ -137,6 +141,7 @@
 - Good: expose L4 recall through `memory_search` scope instead of adding a separate session workflow tool.
 - Good: expose memory maintenance through ordinary read/write tools so the model decides when to call them.
 - Good: expose user-facing cross-surface recall through one read-only `recall_search` tool instead of separate dashboard workflows.
+- Good: expose Watch self-learning as a normal write tool so the model decides when to sparse, pause, or disable.
 - Good: expose large or rare tool surfaces through `tool_search` and `tool_expand_schema` rather than dumping every schema into every reduced prompt mode.
 - Good: represent user approvals as Inbox decision item ids, not transient-only chat text.
 - Good: turn blocked external/admin actions into compact Decision Cards instead of executing them.
@@ -168,6 +173,7 @@
 - File patch: assert admin gating, exact edit success, path traversal rejection, and ambiguous replacement handling.
 - Connector tools: assert default policy denial, dry-run success, compact evidence, URL validation, and workspace path traversal rejection.
 - Ask-user decisions: assert persistent Inbox item id appears in compact evidence and `decision.card` payload.
+- Watch feedback: assert model policy updates schedule/status and compact evidence omits raw notification bodies.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - ToolBundle tests: assert stable ids, compact metadata, profile filtering, and lazy expansion epochs.
 - After-turn learning tests: assert compact packet reflection uses `learning.v1`, persists lifecycle events, and can produce mixed candidate chips.

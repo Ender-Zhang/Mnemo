@@ -138,7 +138,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider fake server tests.
 - [x] Standard tool edge regression tests for binary file reads and shell timeouts.
 - [x] CLI and package install tests in CI.
-- [~] Harness gates exist as built-in smoke suites with core variant comparison (`no_memory`, `skills_only`, `full_mnemo`), quantitative thresholds, an external-harness capsule boundary suite, and a compact release gate report; proactive-watch suite remains incomplete.
+- [~] Harness gates exist as built-in smoke suites with core variant comparison (`no_memory`, `skills_only`, `full_mnemo`), quantitative thresholds, external-harness/proactive-watch suites, and a compact release gate report; broader red-team and multi-profile harnesses remain incomplete.
 
 ## Persistence And Operations
 
@@ -151,9 +151,9 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Daemon status command.
 - [x] Backup/export/import.
 - [~] Core SDK / OpenAPI or IDL contract for language-neutral integrations: Python reference `MnemoClient` and `mnemo.core_api.v1` schema exist; HTTP/OpenAPI server bindings and non-Python generated clients are not complete.
-- [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC over standard Content-Length stdio, JSONL debug mode, and CLI list/call/serve exist for context/update/recall/search/watch/skills/tools/cron/run/replay/eval/status; external packaging remains incomplete.
+- [~] MCP server foundation: dependency-free MCP-style descriptors, direct calls, JSON-RPC over standard Content-Length stdio, JSONL debug mode, and CLI list/call/serve exist for context/update/recall/search/watch/watch-feedback/skills/tools/cron/run/replay/eval/status; external packaging remains incomplete.
 - [x] Minimal Inbox/Decision persistence tables and CLI/Web API inspection.
-- [~] Watch/Cron persistence and scheduled event processing: durable scheduled items, simple schedule grammar, CLI/MCP registration, runtime status, and queue enqueue tick exist; full cron expressions, quiet hours, delivery channels, Sense triggers, and Watch self-learning remain.
+- [~] Watch/Cron persistence and scheduled event processing: durable scheduled items, simple schedule grammar, CLI/MCP registration, runtime status, queue enqueue tick, and model-supplied Watch feedback policy exist; full cron expressions, quiet hours, delivery channels, Sense triggers, and richer Watch self-learning remain.
 - [x] Sessions/messages/L4 search tables and FTS5 indexes for persisted run messages.
 
 ## Remaining Trellis Focus
@@ -222,3 +222,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-harness-variant-report`: Harness now compares `no_memory`/`skills_only`/`full_mnemo` variants with compact metrics and gates, exposed through CLI, SDK, and MCP eval surfaces.
 - [x] `04-25-external-runtime-context-capsule`: SDK/CLI/MCP now build minimal-disclosure external runtime context capsules, and the external-harness eval verifies capsule boundaries.
 - [x] `04-27-harness-release-gate-report`: Harness now aggregates personalization variant gates plus memory-safety, skill-evolution, and external-harness suites into a compact release report across CLI, SDK, and MCP.
+- [x] `04-27-proactive-watch-feedback-gates`: Watch feedback now records compact outcomes and applies explicit model/user policy decisions through ScheduleService, exposed via CLI/MCP/provider tools and covered by the proactive-watch harness suite.

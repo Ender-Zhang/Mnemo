@@ -1082,6 +1082,12 @@ class CliTests(unittest.TestCase):
         self.assertTrue(skill_evolution_payload["passed"])
         self.assertEqual(skill_evolution_payload["case_count"], 4)
 
+        proactive_watch = _run_cli(["harness", "eval", "proactive-watch", "--json"])
+        self.assertEqual(proactive_watch.returncode, 0, proactive_watch.stderr)
+        proactive_watch_payload = json.loads(proactive_watch.stdout)
+        self.assertTrue(proactive_watch_payload["passed"])
+        self.assertEqual(proactive_watch_payload["case_count"], 1)
+
         variants = _run_cli(["harness", "variants", "personalization-core", "--json"])
         self.assertEqual(variants.returncode, 0, variants.stderr)
         variant_payload = json.loads(variants.stdout)
@@ -1101,6 +1107,7 @@ class CliTests(unittest.TestCase):
         release_payload = json.loads(release.stdout)
         self.assertEqual(release_payload["kind"], "harness_release_report")
         self.assertTrue(release_payload["passed"])
+        self.assertIn("proactive-watch", release_payload["suites"])
         self.assertIn("external-harness", release_payload["suites"])
 
         bad_variant = _run_cli(["harness", "variants", "personalization-core", "--variant", "missing", "--json"])
@@ -1112,6 +1119,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(suite_list.returncode, 0, suite_list.stderr)
         suite_payload = json.loads(suite_list.stdout)
         self.assertIn("memory-safety", suite_payload["suites"])
+        self.assertIn("proactive-watch", suite_payload["suites"])
         self.assertIn("skill-evolution", suite_payload["suites"])
         self.assertIn("full_mnemo", suite_payload["variants"])
 
@@ -1703,6 +1711,77 @@ class CliTests(unittest.TestCase):
             self.assertEqual(json.loads(status.stdout)["scheduled"]["counts"]["cron"]["completed"], 1)
             self.assertEqual(pause.returncode, 0, pause.stderr)
             self.assertEqual(json.loads(pause.stdout)["item"]["status"], "paused")
+            self.assertEqual(missing.returncode, 1)
+            self.assertIn("mnemo: scheduled item not found", missing.stderr)
+            self.assertNotIn("Traceback", missing.stderr)
+
+    def test_schedule_feedback_command_updates_watch_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            add = _run_cli(
+                [
+                    "schedule",
+                    "add",
+                    "--kind",
+                    "watch",
+                    "--target",
+                    "Calendar risk",
+                    "--instruction",
+                    "Notify only when calendar risk is meaningful.",
+                    "--schedule",
+                    "every:60",
+                    "--next-run-at",
+                    "0",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            self.assertEqual(add.returncode, 0, add.stderr)
+            item_id = json.loads(add.stdout)["item"]["id"]
+
+            for now in ["1", "2"]:
+                feedback = _run_cli(
+                    [
+                        "schedule",
+                        "feedback",
+                        item_id,
+                        "--outcome",
+                        "no_feedback",
+                        "--now",
+                        now,
+                        "--state-dir",
+                        tmp,
+                        "--json",
+                    ]
+                )
+                self.assertEqual(feedback.returncode, 0, feedback.stderr)
+            sparse = _run_cli(
+                [
+                    "schedule",
+                    "feedback",
+                    item_id,
+                    "--outcome",
+                    "no_feedback",
+                    "--action",
+                    "sparsify",
+                    "--policy-schedule",
+                    "weekly",
+                    "--reason",
+                    "No response after three pushes",
+                    "--now",
+                    "3",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            missing = _run_cli(["schedule", "feedback", "sched_missing", "--outcome", "no_feedback", "--state-dir", tmp])
+
+            self.assertEqual(sparse.returncode, 0, sparse.stderr)
+            payload = json.loads(sparse.stdout)
+            self.assertEqual(payload["item"]["schedule"], "weekly")
+            self.assertEqual(payload["item"]["metadata"]["watch_feedback"]["counts"]["no_feedback"], 3)
+            self.assertEqual(payload["decision"]["action"], "sparsify")
             self.assertEqual(missing.returncode, 1)
             self.assertIn("mnemo: scheduled item not found", missing.stderr)
             self.assertNotIn("Traceback", missing.stderr)

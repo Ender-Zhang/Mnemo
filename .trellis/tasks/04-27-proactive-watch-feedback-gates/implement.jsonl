@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "scheduled item metadata update contract"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "schedule feedback CLI error boundary"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "MCP/tool surface contract"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "provider-native watch feedback tool"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test and package smoke expectations"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "schedule feedback data crosses storage service CLI MCP tool harness"}

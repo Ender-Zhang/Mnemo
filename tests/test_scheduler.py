@@ -52,6 +52,53 @@ class ScheduleServiceTests(unittest.TestCase):
             self.assertEqual(updated["status"], "active")
             self.assertEqual(updated["next_run_at"], 70.0)
 
+    def test_watch_feedback_records_model_sparsify_decision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = ScheduleService(tmp)
+            item = service.add_watch(
+                target="Rust progress",
+                instruction="Notify only for meaningful blockers.",
+                schedule="every:60",
+                next_run_at=0,
+            )
+
+            service.record_watch_feedback(item["id"], outcome="no_feedback", now=1)
+            service.record_watch_feedback(item["id"], outcome="no_feedback", now=2)
+            result = service.record_watch_feedback(
+                item["id"],
+                outcome="no_feedback",
+                decision={
+                    "action": "sparsify",
+                    "schedule": "weekly",
+                    "reason": "No response after three pushes.",
+                    "source": "model",
+                },
+                now=3,
+            )
+
+            updated = StateStore(tmp).get_scheduled_item(item["id"])
+            feedback = updated["metadata"]["watch_feedback"]
+            self.assertEqual(result["kind"], "watch_feedback")
+            self.assertEqual(feedback["counts"]["no_feedback"], 3)
+            self.assertEqual(feedback["streaks"]["no_feedback"], 3)
+            self.assertEqual(feedback["last_decision"]["source"], "model")
+            self.assertEqual(updated["schedule"], "weekly")
+            self.assertEqual(updated["status"], "active")
+            self.assertEqual(updated["next_run_at"], 604803.0)
+
+    def test_watch_feedback_rejects_non_watch_and_invalid_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = ScheduleService(tmp)
+            cron = service.add_cron(message="remember: cron", schedule="once")
+            watch = service.add_watch(target="Calendar", instruction="Check calendar", schedule="daily")
+
+            with self.assertRaisesRegex(ValueError, "not a watch"):
+                service.record_watch_feedback(cron["id"], outcome="no_feedback")
+            with self.assertRaisesRegex(ValueError, "invalid watch feedback outcome"):
+                service.record_watch_feedback(watch["id"], outcome="bad")
+            with self.assertRaisesRegex(ValueError, "sparsify requires schedule"):
+                service.record_watch_feedback(watch["id"], outcome="no_feedback", decision={"action": "sparsify"})
+
     def test_daemon_can_drain_scheduler_queue_through_existing_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             service = ScheduleService(tmp)

@@ -510,6 +510,25 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_tick_parser.add_argument("--now", help="Override current time for deterministic checks")
     schedule_tick_parser.add_argument("--limit", type=int, default=50)
     schedule_tick_parser.add_argument("--json", action="store_true")
+    schedule_feedback_parser = schedule_subparsers.add_parser("feedback", help="Record Watch feedback and optional policy decision")
+    _add_state_dir(schedule_feedback_parser)
+    schedule_feedback_parser.add_argument("item_id")
+    schedule_feedback_parser.add_argument(
+        "--outcome",
+        required=True,
+        choices=["notified", "silent", "no_feedback", "useful", "not_useful", "dismissed"],
+    )
+    schedule_feedback_parser.add_argument("--note", default="")
+    schedule_feedback_parser.add_argument(
+        "--action",
+        choices=["keep", "sparsify", "pause", "disable"],
+        default="keep",
+        help="Model/user policy decision to apply after recording feedback",
+    )
+    schedule_feedback_parser.add_argument("--policy-schedule", help="Recurring schedule for keep/sparsify decisions")
+    schedule_feedback_parser.add_argument("--reason", default="")
+    schedule_feedback_parser.add_argument("--now", help="Override feedback time for deterministic checks")
+    schedule_feedback_parser.add_argument("--json", action="store_true")
     for command, help_text in {
         "pause": "Pause a scheduled item",
         "resume": "Resume a scheduled item",
@@ -1894,6 +1913,19 @@ def _cmd_schedule(args: argparse.Namespace) -> int:
             result = {"items": service.list_items(kind=kind, status=status, limit=args.limit)}
         elif args.schedule_command == "tick":
             result = service.tick(now=args.now, limit=args.limit)
+        elif args.schedule_command == "feedback":
+            result = service.record_watch_feedback(
+                args.item_id,
+                outcome=args.outcome,
+                note=args.note,
+                decision={
+                    "action": args.action,
+                    "schedule": args.policy_schedule,
+                    "reason": args.reason,
+                    "source": "cli",
+                },
+                now=args.now,
+            )
         elif args.schedule_command in {"pause", "resume", "disable"}:
             status = "active" if args.schedule_command == "resume" else args.schedule_command + "d"
             if args.schedule_command == "pause":
@@ -1939,6 +1971,14 @@ def _print_schedule_result(command: str, result: dict[str, Any]) -> None:
         print(
             f"Scheduled processed={len(result['processed'])} "
             f"pending={result['queue']['counts']['pending']} due={result['scheduled']['due']}"
+        )
+        return
+    if command == "feedback":
+        item = result["item"]
+        feedback = result["feedback"]
+        print(
+            f"Watch feedback {item['id']} outcome={feedback['last_outcome']} "
+            f"action={feedback['last_decision']['action']} status={item['status']} schedule={item['schedule']}"
         )
         return
     if command in {"pause", "resume", "disable"}:

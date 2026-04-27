@@ -154,6 +154,9 @@ mnemo_search(query, limit)
 mnemo_watch(name, description, schedule, keywords)
   → 返回: Watch
 
+mnemo_watch_feedback(item_id, outcome, decision?)
+  → 记录 Watch 反馈；按模型显式 decision 稀疏、暂停或禁用 Watch
+
 mnemo_skills(query)
   → 返回: [{name, summary, priority}]
 
@@ -187,6 +190,7 @@ mnemo update goals/learn-rust "完成了 tokio 基础，下一步 channels" --co
 
 # 添加关注点
 mnemo watch add "rust-progress" --schedule "每周一早上" --keywords "rust,lifetime,async"
+mnemo schedule feedback <watch_id> --outcome no_feedback --action sparsify --policy-schedule weekly
 
 # 联想召回
 mnemo recall "deadline pressure" --depth 2

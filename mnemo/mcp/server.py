@@ -47,6 +47,7 @@ class MnemoMcpServer:
             "mnemo_skills": self._skills,
             "mnemo_tools": self._tools,
             "mnemo_watch": self._watch,
+            "mnemo_watch_feedback": self._watch_feedback,
             "mnemo_cron": self._cron,
             "mnemo_run": self._run,
             "mnemo_replay": self._replay,
@@ -289,6 +290,18 @@ class MnemoMcpServer:
             metadata={"source": "mcp"},
         )
         return {"kind": "scheduled_item", "version": "mnemo.watch.v1", "item": item}
+
+    def _watch_feedback(self, args: dict[str, Any]) -> dict[str, Any]:
+        decision = args.get("decision")
+        if decision is not None and not isinstance(decision, dict):
+            raise ValueError("decision must be an object")
+        return ScheduleService(self.state_dir).record_watch_feedback(
+            _required_string(args.get("item_id"), "item_id"),
+            outcome=_required_string(args.get("outcome"), "outcome"),
+            note=_string(args.get("note"), default=""),
+            decision=decision,
+            now=args.get("now"),
+        )
 
     def _cron(self, args: dict[str, Any]) -> dict[str, Any]:
         item = ScheduleService(self.state_dir).add_cron(
@@ -572,6 +585,34 @@ _TOOL_DESCRIPTORS = [
                 "source": {"type": "string", "default": "mcp"},
             },
             required=["target"],
+        ),
+        risk="write",
+        read_only=False,
+    ),
+    _descriptor(
+        "mnemo_watch_feedback",
+        "Record compact Watch feedback and apply an explicit model policy decision.",
+        _schema(
+            {
+                "item_id": {"type": "string"},
+                "outcome": {
+                    "type": "string",
+                    "enum": ["notified", "silent", "no_feedback", "useful", "not_useful", "dismissed"],
+                },
+                "note": {"type": "string", "default": ""},
+                "decision": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["keep", "sparsify", "pause", "disable"]},
+                        "schedule": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "source": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+                "now": {"type": ["string", "number", "null"]},
+            },
+            required=["item_id", "outcome"],
         ),
         risk="write",
         read_only=False,
