@@ -107,3 +107,36 @@ Polished the single-chat frontend toward the generated reference with labeled ra
 ### Next Steps
 
 - None - task complete
+
+
+## Session 118: Gate low-signal learning reflection
+
+**Date**: 2026-04-27
+**Task**: Gate low-signal learning reflection
+**Branch**: `main`
+
+### Summary
+
+Added a structure-only evidence gate before after-turn provider learning reflection, skipping zero/low-tool turns without a second model call, hiding internal learning housekeeping in Web Activity, updating frontend/backend specs, and covering the runtime and web asset behavior with tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `664e6a7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
