@@ -61,6 +61,8 @@ class MnemoMcpTests(unittest.TestCase):
         self.assertTrue(all("inputSchema" in tool for tool in tools))
         self.assertTrue(all("annotations" in tool for tool in tools))
         self.assertNotIn("input_schema", str(tools))
+        eval_descriptor = next(tool for tool in tools if tool["name"] == "mnemo_eval")
+        self.assertIn("release_gate", eval_descriptor["inputSchema"]["properties"])
 
     def test_context_search_recall_skills_and_tools_are_compact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -141,6 +143,7 @@ class MnemoMcpTests(unittest.TestCase):
                 "mnemo_eval",
                 {"suite": "personalization-core", "variants": ["no_memory", "full_mnemo"]},
             )
+            release = server.call_tool("mnemo_eval", {"release_gate": True})
             watch = server.call_tool(
                 "mnemo_watch",
                 {"target": "calendar", "instruction": "Check calendar risk", "schedule": "once", "next_run_at": 0},
@@ -158,6 +161,8 @@ class MnemoMcpTests(unittest.TestCase):
             self.assertEqual(variants["kind"], "harness_variant_report")
             self.assertEqual(variants["variants"], ["no_memory", "full_mnemo"])
             self.assertTrue(variants["passed"])
+            self.assertEqual(release["kind"], "harness_release_report")
+            self.assertTrue(release["passed"])
             self.assertEqual(watch["kind"], "scheduled_item")
             self.assertEqual(watch["item"]["kind"], "watch")
             self.assertEqual(cron["item"]["kind"], "cron")

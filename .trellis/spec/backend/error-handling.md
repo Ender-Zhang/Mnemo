@@ -34,6 +34,7 @@
 - CLI: `mnemo replay <run_id> [--json]`
 - CLI: `mnemo harness eval <suite> [--json]`
 - CLI: `mnemo harness variants <suite> [--variant VARIANT] [--json]`
+- CLI: `mnemo harness release [--json]`
 - CLI: `mnemo harness replay <run_id> [--json]`
 
 ### 3. Contracts
@@ -55,6 +56,7 @@
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
 - `mnemo harness eval` and `mnemo harness variants` normalize unknown suites or variants this way.
+- `mnemo harness release` exits non-zero when any release gate fails and keeps the report compact.
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
 - `mnemo memory search --debug-query` remains read-only and returns compact query metadata without raw transcripts.
 - `mnemo memory read` normalizes missing candidate/page ids this way.
@@ -142,7 +144,7 @@
 - Web settings endpoint test for summary, quiet-hours update, invalid time errors, and secret redaction.
 - CLI conversation/mission show tests for missing ids without tracebacks.
 - CLI run trace/show/cancel tests for missing run ids without tracebacks.
-- CLI harness eval/variant tests for unknown suites or variants without tracebacks.
+- CLI harness eval/variant/release tests for unknown suites or variants without tracebacks.
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI memory read tests for missing ids without tracebacks.
 - CLI memory health/tombstone tests for compact output and missing ids without tracebacks.

@@ -159,8 +159,13 @@ class MnemoClient:
         suite: str = "smoke",
         *,
         variants: list[str] | tuple[str, ...] | None = None,
+        release_gate: bool = False,
     ) -> dict[str, Any]:
         harness = EvalHarness(state_dir=self.state_dir)
+        if release_gate:
+            if variants:
+                raise ValueError("release_gate cannot be combined with variants")
+            return harness.run_release_report().as_dict()
         if variants:
             return harness.run_variant_report(suite, variants=variants).as_dict()
         return harness.run_suite(suite).as_dict()

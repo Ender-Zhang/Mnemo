@@ -97,6 +97,26 @@ class EvalHarnessTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unknown harness variant"):
             EvalHarness().run_variant_report("personalization-core", variants=["missing"])
 
+    def test_release_report_aggregates_core_gates(self) -> None:
+        report = EvalHarness().run_release_report()
+        payload = report.as_dict()
+
+        self.assertTrue(report.passed)
+        self.assertEqual(payload["kind"], "harness_release_report")
+        self.assertEqual(
+            payload["suites"],
+            ["personalization-core", "memory-safety", "skill-evolution", "external-harness"],
+        )
+        self.assertEqual(payload["variant_report"]["kind"], "harness_variant_report")
+        self.assertTrue(payload["variant_report"]["passed"])
+        self.assertEqual(payload["reports"][0]["suite"], "personalization-core")
+        self.assertEqual(payload["reports"][0]["gate_source"], "variant:full_mnemo")
+        self.assertEqual({report["suite"] for report in payload["reports"]}, set(payload["suites"]))
+        self.assertTrue(payload["gates"]["passed"])
+        self.assertTrue(all(check["passed"] for check in payload["gates"]["checks"]))
+        self.assertNotIn("detail", str(payload["reports"]))
+        self.assertNotIn("steps", str(payload["reports"]))
+
     def test_replay_summary_reads_jsonl_trace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             events = list(stream_local(RunRequest(message="remember: harness replay", state_dir=tmp)))

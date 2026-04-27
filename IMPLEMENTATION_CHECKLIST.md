@@ -138,7 +138,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Provider fake server tests.
 - [x] Standard tool edge regression tests for binary file reads and shell timeouts.
 - [x] CLI and package install tests in CI.
-- [~] Harness gates exist as built-in smoke suites with core variant comparison (`no_memory`, `skills_only`, `full_mnemo`), quantitative thresholds, and an external-harness capsule boundary suite; proactive-watch suite and full release gate reports are not complete.
+- [~] Harness gates exist as built-in smoke suites with core variant comparison (`no_memory`, `skills_only`, `full_mnemo`), quantitative thresholds, an external-harness capsule boundary suite, and a compact release gate report; proactive-watch suite remains incomplete.
 
 ## Persistence And Operations
 
@@ -221,3 +221,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-25-dream-maintenance-interface`: DreamCycle now exposes compact delta collection, model-facing maintenance plans, persisted reports, `dream status/report`, and delta-limited local fallback consolidation.
 - [x] `04-25-harness-variant-report`: Harness now compares `no_memory`/`skills_only`/`full_mnemo` variants with compact metrics and gates, exposed through CLI, SDK, and MCP eval surfaces.
 - [x] `04-25-external-runtime-context-capsule`: SDK/CLI/MCP now build minimal-disclosure external runtime context capsules, and the external-harness eval verifies capsule boundaries.
+- [x] `04-27-harness-release-gate-report`: Harness now aggregates personalization variant gates plus memory-safety, skill-evolution, and external-harness suites into a compact release report across CLI, SDK, and MCP.

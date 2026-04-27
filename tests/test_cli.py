@@ -1096,6 +1096,13 @@ class CliTests(unittest.TestCase):
         self.assertEqual(selected_variants.returncode, 0, selected_variants.stderr)
         self.assertEqual(json.loads(selected_variants.stdout)["variants"], ["no_memory", "full_mnemo"])
 
+        release = _run_cli(["harness", "release", "--json"])
+        self.assertEqual(release.returncode, 0, release.stderr)
+        release_payload = json.loads(release.stdout)
+        self.assertEqual(release_payload["kind"], "harness_release_report")
+        self.assertTrue(release_payload["passed"])
+        self.assertIn("external-harness", release_payload["suites"])
+
         bad_variant = _run_cli(["harness", "variants", "personalization-core", "--variant", "missing", "--json"])
         self.assertEqual(bad_variant.returncode, 1)
         self.assertIn("mnemo: unknown harness variant", bad_variant.stderr)
@@ -1503,6 +1510,7 @@ class CliTests(unittest.TestCase):
         payload = json.loads(json_result.stdout)["api_schema"]
         self.assertEqual(payload["schema_version"], "mnemo.core_api.v1")
         self.assertEqual(set(payload["methods"]), {"context", "recall", "capsule", "run", "replay", "evaluate"})
+        self.assertIn("release_gate", payload["methods"]["evaluate"]["input_schema"]["properties"])
         self.assertNotIn("input_schema", str(payload["methods"]["run"]["output_schema"]))
         self.assertEqual(text_result.returncode, 0, text_result.stderr)
         self.assertIn("MnemoCore mnemo.core_api.v1", text_result.stdout)

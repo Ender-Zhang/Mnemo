@@ -416,6 +416,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Variant to include; may be repeated or comma-separated",
     )
     harness_variants_parser.add_argument("--json", action="store_true")
+    harness_release_parser = harness_subparsers.add_parser("release", help="Run the core release gate report")
+    harness_release_parser.add_argument("--state-dir", default=None, help="Optional state root for temporary eval runs")
+    harness_release_parser.add_argument("--json", action="store_true")
     harness_smoke_parser = harness_subparsers.add_parser("smoke", help="Run the smoke eval suite")
     harness_smoke_parser.add_argument("--state-dir", default=None, help="Optional state root for temporary eval runs")
     harness_smoke_parser.add_argument("--json", action="store_true")
@@ -1634,6 +1637,9 @@ def _cmd_harness(args: argparse.Namespace) -> int:
         except ValueError as exc:
             raise MnemoError(str(exc)) from exc
         return _print_harness_report(report.as_dict(), json_output=args.json)
+    if args.harness_command == "release":
+        report = EvalHarness(state_dir=args.state_dir).run_release_report()
+        return _print_harness_report(report.as_dict(), json_output=args.json)
     if args.harness_command == "smoke":
         report = EvalHarness(state_dir=args.state_dir).run_suite("smoke")
         return _print_harness_report(report.as_dict(), json_output=args.json)
@@ -2014,6 +2020,13 @@ def _print_harness_report(report: dict, *, json_output: bool) -> int:
                     f"preference={metrics['preference_adherence']} "
                     f"wrong_memory={metrics['wrong_memory_rate']}"
                 )
+        elif report.get("kind") == "harness_release_report":
+            checks = report["gates"]["checks"]
+            passed_checks = sum(1 for check in checks if check["passed"])
+            print(f"release gate: {status} ({passed_checks}/{len(checks)} checks)")
+            for check in checks:
+                marker = "ok" if check["passed"] else "fail"
+                print(f"- {marker} {check['name']}: {check['detail']}")
         else:
             print(
                 f"{report['suite']}: {status} "

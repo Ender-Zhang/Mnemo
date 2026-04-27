@@ -13,7 +13,7 @@
 - `MnemoClient.capsule(task: str, *, runtime="external", agent_type="general", requested_pages=None, allowed_pages=None, conversation_id=None, mission_id=None, limit=8) -> dict[str, Any]`
 - `MnemoClient.run(message: str, *, conversation_id=None, mission_id=None, prompt_mode="full") -> dict[str, Any]`
 - `MnemoClient.replay(run_id: str) -> dict[str, Any]`
-- `MnemoClient.evaluate(suite="smoke", *, variants: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]`
+- `MnemoClient.evaluate(suite="smoke", *, variants: list[str] | tuple[str, ...] | None = None, release_gate: bool = False) -> dict[str, Any]`
 - `mnemo.sdk.mnemo_core_api_schema() -> dict[str, Any]`
 - CLI: `mnemo api schema [--json]`
 - CLI: `mnemo api capsule TASK... [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--state-dir DIR] [--json]`
@@ -32,8 +32,10 @@
 - `replay()` reuses `replay_summary()`.
 - `evaluate()` reuses `EvalHarness`; without variants it returns the normal suite report.
 - `evaluate(..., variants=[...])` returns the harness variant report for `no_memory`, `skills_only`, and/or `full_mnemo`.
+- `evaluate(release_gate=True)` returns the fixed core release gate report across personalization, memory-safety, skill-evolution, and external-harness gates; it cannot be combined with `variants`.
 - `mnemo_core_api_schema()` returns a JSON-serializable language-neutral contract for `context`, `recall`, `capsule`, `run`, `replay`, and `evaluate`.
 - The `evaluate` API schema exposes an optional `variants` array with the public harness variant enum.
+- The `evaluate` API schema exposes `release_gate` as an optional boolean.
 - `mnemo api schema --json` wraps the schema as `{ "api_schema": ... }`; text mode prints readable method summaries.
 
 ### 4. Validation & Error Matrix
@@ -44,7 +46,7 @@
 | Recall request | Compact associative cards with query plan and no raw evidence | `tests/test_sdk.py` |
 | Capsule request | Compact external-runtime capsule with pointer-only blocked pages and no raw state | `tests/test_sdk.py` |
 | Run request | Existing runtime creates run ledger and compact tool summary | `tests/test_sdk.py` |
-| Replay/evaluate request | Existing harness services return compact suite and variant reports | `tests/test_sdk.py` |
+| Replay/evaluate request | Existing harness services return compact suite, variant, and release-gate reports | `tests/test_sdk.py` |
 | CLI schema JSON | Returns `api_schema` with all core methods | `tests/test_cli.py` |
 | CLI schema text | Prints readable method summaries | `tests/test_cli.py` |
 
@@ -56,7 +58,7 @@
 - Bad: exposing raw tool schemas, full session transcripts, or full artifact bodies in SDK summaries.
 
 ### 6. Tests Required
-- SDK context, recall, capsule, run/replay/evaluate, variant-report, and schema shape tests.
+- SDK context, recall, capsule, run/replay/evaluate, variant-report, release-gate, and schema shape tests.
 - CLI schema command tests for JSON and readable output.
 - Package install smoke import coverage for `mnemo.sdk`.
 
@@ -84,6 +86,7 @@
 - `mnemo_context`, `mnemo_capsule`, `mnemo_recall`, `mnemo_run`, `mnemo_replay`, and `mnemo_eval` route through `MnemoClient`.
 - `mnemo_capsule` is read-only and returns the same minimal-disclosure `context_capsule` shape as the SDK.
 - `mnemo_eval` accepts optional `variants`; when present it returns the same compact harness variant report as the SDK.
+- `mnemo_eval` accepts `release_gate: true`; when present it returns the same compact release-gate report as the SDK.
 - `mnemo_update` writes memory candidates and W0 working notes only; it must not mutate stable memory pages directly.
 - `mnemo_search` returns compact memory cards and query-plan metadata without raw evidence blobs.
 - `mnemo_skills` returns compact skill cards; full skill bodies remain behind existing skill-specific surfaces.
@@ -100,7 +103,7 @@
 | Compact reads | Context/capsule/search/recall/skills/tools do not expose raw evidence, full state, or raw input schemas | `tests/test_mcp.py` |
 | Update writes | External facts become memory candidates and observations become W0 notes | `tests/test_mcp.py` |
 | Watch/Cron calls | MCP calls create scheduled watch/cron items and runtime status reports due count | `tests/test_mcp.py` |
-| Runtime calls | Run/replay/eval/variant-eval/status reuse existing services and compact results | `tests/test_mcp.py` |
+| Runtime calls | Run/replay/eval/variant-eval/release-gate/status reuse existing services and compact results | `tests/test_mcp.py` |
 | JSON-RPC | Initialize, list, call, unknown-method, JSONL serving, and Content-Length framing behave predictably | `tests/test_mcp.py` |
 | CLI | `mnemo mcp tools`, `mnemo mcp call`, and both serve transports support JSON and normalized errors | `tests/test_cli.py` |
 | Package install | Installed wheel exposes `mnemo.mcp.MnemoMcpServer` | `tests/package_install_smoke.py` |
@@ -113,7 +116,7 @@
 - Bad: returning full traces, full artifacts, raw provider schemas, or stable-memory mutations from generic update calls.
 
 ### 6. Tests Required
-- Direct MCP server tests for descriptors, calls, capsule compactness, variant-eval, and scheduled watch/cron surfaces.
+- Direct MCP server tests for descriptors, calls, capsule compactness, variant-eval, release-gate, and scheduled watch/cron surfaces.
 - JSON-RPC tests for success, Content-Length framing, JSONL debug serving, and structured errors.
 - CLI tests for JSON output, serve transport selection, and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.

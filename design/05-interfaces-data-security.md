@@ -121,9 +121,10 @@ class MnemoClient:
         self,
         suite: str,
         variants: list[str] | None = None,
+        release_gate: bool = False,
     ) -> EvalReport:
         """
-        运行 harness eval。
+        运行 harness eval、变体对比或固定 release gate。
         默认 variants: no_memory, skills_only, full_mnemo。
         """
 ```
@@ -168,8 +169,8 @@ mnemo_run(request, runtime)
 mnemo_replay(run_id, mode)
   → 返回: {original, replayed, diff, determinism_score}
 
-mnemo_eval(suite, variants?)
-  → 返回: 紧凑 SuiteReport 或 HarnessVariantReport（cases/metrics/gates）
+mnemo_eval(suite, variants?, release_gate?)
+  → 返回: 紧凑 SuiteReport、HarnessVariantReport 或 HarnessReleaseReport（cases/metrics/gates）
 
 mnemo_runtime_status()
   → 返回: {daemon, queues, active_runs, pending_inbox, watch_lag_seconds}
@@ -225,6 +226,7 @@ mnemo harness replay <run_id> --mode deterministic
 mnemo harness eval personalization-core
 mnemo harness eval external-harness
 mnemo harness smoke
+mnemo harness release
 mnemo harness report <report_id>
 ```
 

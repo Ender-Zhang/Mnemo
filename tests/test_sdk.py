@@ -91,6 +91,7 @@ class MnemoSdkTests(unittest.TestCase):
             replay = client.replay(result["run_id"])
             report = client.evaluate("smoke")
             variant_report = client.evaluate("personalization-core", variants=["no_memory", "full_mnemo"])
+            release_report = client.evaluate(release_gate=True)
 
             self.assertTrue(result["run_id"].startswith("run_"))
             self.assertEqual(result["tool_summary"][0]["tool"], "memory_write_candidate")
@@ -102,6 +103,10 @@ class MnemoSdkTests(unittest.TestCase):
             self.assertEqual(variant_report["kind"], "harness_variant_report")
             self.assertEqual(variant_report["variants"], ["no_memory", "full_mnemo"])
             self.assertTrue(variant_report["passed"])
+            self.assertEqual(release_report["kind"], "harness_release_report")
+            self.assertTrue(release_report["passed"])
+            with self.assertRaisesRegex(ValueError, "release_gate cannot be combined"):
+                client.evaluate(release_gate=True, variants=["full_mnemo"])
 
     def test_api_schema_exposes_core_methods(self) -> None:
         schema = mnemo_core_api_schema()
@@ -112,6 +117,7 @@ class MnemoSdkTests(unittest.TestCase):
         self.assertIn("prompt_mode", schema["methods"]["context"]["input_schema"]["properties"])
         self.assertIn("requested_pages", schema["methods"]["capsule"]["input_schema"]["properties"])
         self.assertIn("variants", schema["methods"]["evaluate"]["input_schema"]["properties"])
+        self.assertIn("release_gate", schema["methods"]["evaluate"]["input_schema"]["properties"])
 
 
 if __name__ == "__main__":

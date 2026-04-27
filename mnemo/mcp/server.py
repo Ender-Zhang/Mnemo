@@ -317,6 +317,7 @@ class MnemoMcpServer:
         return self.client.evaluate(
             _string(args.get("suite"), default="smoke"),
             variants=variants or None,
+            release_gate=_bool(args.get("release_gate"), default=False),
         )
 
     def _runtime_status(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -615,10 +616,11 @@ _TOOL_DESCRIPTORS = [
     ),
     _descriptor(
         "mnemo_eval",
-        "Run a deterministic Mnemo eval suite or variant comparison and return a compact report.",
+        "Run a deterministic Mnemo eval suite, variant comparison, or release gate and return a compact report.",
         _schema(
             {
                 "suite": {"type": "string", "default": "smoke"},
+                "release_gate": {"type": "boolean", "default": False},
                 "variants": {
                     "type": "array",
                     "items": {"type": "string", "enum": ["no_memory", "skills_only", "full_mnemo"]},

@@ -14,6 +14,7 @@ from ..skills import SkillService
 from ..storage import StateStore
 
 HARNESS_VARIANTS = ("no_memory", "skills_only", "full_mnemo")
+RELEASE_GATE_SUITES = ("personalization-core", "memory-safety", "skill-evolution", "external-harness")
 VARIANT_PROFILES: dict[str, dict[str, Any]] = {
     "no_memory": {
         "prompt_mode": "capsule",
@@ -137,6 +138,19 @@ class HarnessVariantReport:
         return asdict(self)
 
 
+@dataclass
+class HarnessReleaseReport:
+    kind: str
+    suites: list[str]
+    passed: bool
+    gates: dict[str, Any]
+    reports: list[dict[str, Any]]
+    variant_report: dict[str, Any]
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 class EvalHarness:
     def __init__(self, *, state_dir: str | Path | None = None):
         self.state_dir = Path(state_dir).expanduser().resolve() if state_dir else None
@@ -199,6 +213,28 @@ class EvalHarness:
             passed=bool(gates["passed"]),
             gates=gates,
             reports=reports,
+        )
+
+    def run_release_report(self) -> HarnessReleaseReport:
+        variant_report = self.run_variant_report("personalization-core")
+        target_suite = _target_variant_suite(variant_report)
+        suite_reports = [
+            {
+                **target_suite,
+                "gate_source": f"variant:{variant_report.target_variant}",
+            }
+        ]
+        for suite in RELEASE_GATE_SUITES[1:]:
+            suite_reports.append(_compact_suite_report(self.run_suite(suite)))
+
+        gates = _release_gates(variant_report, suite_reports)
+        return HarnessReleaseReport(
+            kind="harness_release_report",
+            suites=list(RELEASE_GATE_SUITES),
+            passed=bool(gates["passed"]),
+            gates=gates,
+            reports=suite_reports,
+            variant_report=variant_report.as_dict(),
         )
 
     def run_case(self, case: EvalCase, *, prompt_mode: PromptMode = "full") -> CaseReport:
@@ -925,6 +961,45 @@ def _variant_gates(suite: str, *, target_variant: str, metrics: dict[str, float]
         "checks": checks,
         "passed": all(check["passed"] for check in checks),
     }
+
+
+def _target_variant_suite(report: HarnessVariantReport) -> dict[str, Any]:
+    for variant_report in report.reports:
+        if variant_report.variant == report.target_variant:
+            return dict(variant_report.suite)
+    raise ValueError(f"target variant report not found: {report.target_variant}")
+
+
+def _release_gates(
+    variant_report: HarnessVariantReport,
+    suite_reports: list[dict[str, Any]],
+) -> dict[str, Any]:
+    checks = [
+        {
+            "name": f"variant:{variant_report.suite}:{variant_report.target_variant}",
+            "passed": variant_report.passed,
+            "detail": _gate_detail(variant_report.gates),
+        }
+    ]
+    for report in suite_reports:
+        checks.append(
+            {
+                "name": f"suite:{report['suite']}",
+                "passed": bool(report["passed"]),
+                "detail": f"{report['passed_count']}/{report['case_count']} cases passed",
+            }
+        )
+    return {
+        "checks": checks,
+        "passed": all(check["passed"] for check in checks),
+    }
+
+
+def _gate_detail(gates: dict[str, Any]) -> str:
+    failed = [check["metric"] for check in gates.get("checks", []) if not check.get("passed")]
+    if failed:
+        return "failed metrics: " + ", ".join(failed)
+    return "all variant thresholds passed"
 
 
 def _gate_check(metric: str, value: float, operator: str, threshold: float) -> dict[str, Any]:

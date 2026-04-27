@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "SDK/API/MCP evaluate contract changes"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI harness release command boundary"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test and package smoke expectations"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "CLI SDK MCP report payload crossing layers"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "reuse existing harness aggregation patterns"}
