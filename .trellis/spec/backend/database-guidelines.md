@@ -152,6 +152,7 @@
 - CLI graph inspection must use these read APIs and remain read-only: `mnemo memory links <memory_id>`.
 - `memory_tombstones` stores compact do-not-resurrect records with target id/type, target hash, reason, summary, optional evidence run id, rule, metadata, and created time.
 - Selective forgetting may store compact `replacement_id`, `replacement_type`, and `replacement_link_id` in tombstone metadata while the relationship itself lives in `memory_links` as `superseded_by`.
+- Dream reports may persist `execution.result.actions` with compact applied/skipped model maintenance action metadata; action results must reference memory/tombstone/eval/link ids and counts instead of duplicating memory bodies.
 - Tombstone APIs validate target type as `candidate` or `page` and never require callers to read raw SQLite rows.
 - `list_memory_tombstones()` orders by newest first and supports target id/type filters.
 - `update_memory_page_status()` updates `updated_at` with the status change.

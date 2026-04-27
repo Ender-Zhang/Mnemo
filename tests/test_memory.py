@@ -5,6 +5,7 @@ import time
 import unittest
 from typing import Any
 
+from mnemo.core.jsonutil import dumps
 from mnemo.memory import MemoryEngine
 from mnemo.storage import StateStore
 
@@ -719,6 +720,112 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(latest["id"], report["id"])
             self.assertEqual(status["latest"]["id"], report["id"])
             self.assertIn("health_after", latest)
+
+    def test_dream_maintenance_applies_model_memory_actions_compactly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            replacement_id = store.upsert_memory_page(
+                "preferences: current safe memory",
+                "User prefers current safe memory",
+                confidence=0.9,
+            )
+            low_id = store.add_memory_candidate(
+                run_id,
+                "User had an obsolete low-value preference that should be archived " + ("z" * 240),
+                confidence=0.95,
+            )
+            harmful_id = store.add_memory_candidate(
+                run_id,
+                "User mistakenly prefers unsafe memory advice " + ("x" * 240),
+                confidence=0.95,
+            )
+
+            report = MemoryEngine(store).dream_maintenance(
+                limit=10,
+                min_confidence=0.7,
+                actions=[
+                    {
+                        "tool": "memory_tombstone",
+                        "arguments": {
+                            "memory_id": low_id,
+                            "reason": "low_usefulness",
+                            "target_type": "candidate",
+                            "replacement_id": replacement_id,
+                        },
+                    },
+                    {
+                        "id": "harmful_memory",
+                        "tool": "memory_tombstone",
+                        "memory_id": harmful_id,
+                        "reason": "harmful",
+                        "target_type": "candidate",
+                    },
+                    {"tool": "memory_tombstone", "memory_id": "mem_missing", "reason": "low_usefulness"},
+                    {"tool": "unsupported_memory_tool", "arguments": {}},
+                ],
+            )
+            actions = report["execution"]["result"]["actions"]
+            applied = {item["memory_id"]: item for item in actions["applied"]}
+            skipped_reasons = {item["reason"] for item in actions["skipped"]}
+
+            self.assertEqual(report["execution"]["mode"], "model_actions+local_fallback")
+            self.assertEqual(actions["counts"], {"requested": 4, "applied": 2, "skipped": 2})
+            self.assertEqual(store.get_memory_candidate(low_id)["status"], "archived:low_usefulness")
+            self.assertEqual(store.get_memory_candidate(harmful_id)["status"], "tombstoned:harmful")
+            self.assertEqual(applied[low_id]["replacement_id"], replacement_id)
+            self.assertEqual(store.list_memory_links(low_id)[0]["relation"], "superseded_by")
+            self.assertEqual(applied[harmful_id]["eval_case_status"], "draft")
+            self.assertEqual(store.get_eval_case(applied[harmful_id]["eval_case_id"])["case"]["memory_id"], harmful_id)
+            self.assertIn("unsupported_tool", skipped_reasons)
+            self.assertTrue(any("not found" in reason for reason in skipped_reasons))
+            self.assertNotIn("x" * 160, str(actions))
+            self.assertNotIn("z" * 160, str(actions))
+            self.assertEqual(report["plan"]["proposed_actions"][1]["id"], "harmful_memory")
+
+    def test_dream_maintenance_accepts_native_tool_call_actions_and_decay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: expiring memory",
+                "User had a time-bounded memory",
+                confidence=0.7,
+                metadata={"expires_at": time.time() - 60},
+            )
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User has a low-value native tool-use memory",
+                confidence=0.8,
+            )
+
+            report = MemoryEngine(store).dream_maintenance(
+                limit=5,
+                actions=[
+                    {
+                        "id": "call_decay",
+                        "function": {
+                            "name": "memory_decay_stale_pages",
+                            "arguments": dumps({"limit": 5, "stale_confidence": 0.35}),
+                        },
+                    },
+                    {
+                        "id": "call_archive",
+                        "type": "tool_use",
+                        "name": "memory_tombstone",
+                        "input": {
+                            "memory_id": candidate_id,
+                            "reason": "low_usefulness",
+                            "target_type": "candidate",
+                        },
+                    },
+                ],
+            )
+            actions = report["execution"]["result"]["actions"]
+
+            self.assertEqual(actions["counts"]["applied"], 2)
+            self.assertEqual(actions["applied"][0]["tool"], "memory_decay_stale_pages")
+            self.assertEqual(actions["applied"][0]["staled"][0]["page_id"], page_id)
+            self.assertEqual(store.get_memory_page(page_id)["status"], "stale:expired")
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "archived:low_usefulness")
 
     def test_dream_consolidate_ingests_model_marked_working_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

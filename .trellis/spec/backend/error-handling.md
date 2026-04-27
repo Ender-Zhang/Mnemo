@@ -27,6 +27,8 @@
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory forget <memory_id> [--reason REASON] [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream run [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream --now [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
 - CLI: `mnemo artifacts read <artifact_id> [--json]`
 - CLI: `mnemo inbox show <item_id> [--json]`
@@ -75,6 +77,7 @@
 - `mnemo memory forget` normalizes missing candidate/page ids this way and never prints deleted memory text after redaction.
 - `mnemo memory health` and `mnemo memory tombstones` are read-only inspection commands and do not require raw SQLite access.
 - `mnemo memory decay` mutates active memory pages through `MemoryEngine.decay_stale_pages()` and returns compact reports without raw evidence or full page bodies.
+- `mnemo dream run --actions-json` and `mnemo dream --now --actions-json` accept only valid JSON arrays of action objects; action-level service errors are reported inside the Dream report as compact skipped actions.
 - `mnemo dream report <missing_id>` normalizes missing report ids this way.
 - `mnemo artifacts read` normalizes missing artifact ids this way.
 - `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
@@ -124,6 +127,7 @@
 | Missing memory id, replacement id, or eval run id in CLI tombstone | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory id in CLI forget | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Memory health/decay/tombstone listing | CLI exits zero with compact JSON or row output | `tests/test_cli.py` |
+| Dream actions JSON | Valid action arrays produce compact report action counts; invalid JSON or non-array input returns `mnemo:` errors | `tests/test_cli.py` |
 | Missing Dream report id | CLI exits non-zero with `mnemo:` error and no traceback | CLI behavior |
 | Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing Inbox item in CLI show/resolve | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -170,6 +174,7 @@
 - CLI memory forget tests for compact private-delete output and missing ids without tracebacks.
 - CLI MCP config tests for compact JSON and readable client config output.
 - CLI Dream report tests for missing ids without tracebacks.
+- CLI Dream action tests for valid action reports and invalid `--actions-json` without tracebacks.
 - CLI artifact read tests for missing ids without tracebacks.
 - CLI Inbox show/resolve tests for missing item ids without tracebacks.
 - CLI schedule feedback/pause/resume/disable tests for missing item ids without tracebacks.

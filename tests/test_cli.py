@@ -263,6 +263,73 @@ class CliTests(unittest.TestCase):
             after_types = {item["type"] for item in json.loads(search_after.stdout)["matches"]}
             self.assertIn("page", after_types)
 
+    def test_dream_actions_json_applies_model_memory_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("dream actions")
+            mission_id = store.create_mission(conversation_id, "dream actions")
+            run_id = store.create_run(conversation_id, mission_id, "curate dream memory")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User has a low-value dream memory",
+                confidence=0.95,
+            )
+            actions_json = json.dumps(
+                [
+                    {
+                        "tool": "memory_tombstone",
+                        "arguments": {
+                            "memory_id": candidate_id,
+                            "reason": "low_usefulness",
+                            "target_type": "candidate",
+                        },
+                    }
+                ]
+            )
+
+            dream = _run_cli(
+                [
+                    "dream",
+                    "run",
+                    "--state-dir",
+                    tmp,
+                    "--actions-json",
+                    actions_json,
+                    "--json",
+                ]
+            )
+            plain = _run_cli(
+                [
+                    "dream",
+                    "run",
+                    "--state-dir",
+                    tmp,
+                    "--actions-json",
+                    actions_json,
+                ]
+            )
+            invalid = _run_cli(
+                [
+                    "dream",
+                    "run",
+                    "--state-dir",
+                    tmp,
+                    "--actions-json",
+                    "{}",
+                ]
+            )
+
+            self.assertEqual(dream.returncode, 0, dream.stderr)
+            payload = json.loads(dream.stdout)
+            self.assertEqual(payload["execution"]["mode"], "model_actions+local_fallback")
+            self.assertEqual(payload["execution"]["result"]["actions"]["counts"]["applied"], 1)
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "archived:low_usefulness")
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn("actions_applied=1", plain.stdout)
+            self.assertEqual(invalid.returncode, 1)
+            self.assertIn("mnemo: --actions-json must be a JSON array", invalid.stderr)
+
     def test_memory_notes_command_lists_open_and_processed_w0_notes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

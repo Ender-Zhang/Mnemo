@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "DreamCycle memory action contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Dream reports and eval cases use existing StateStore JSON"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI dream report and maintenance errors"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Dream actions span provider plan, engine, storage, CLI, tests"}

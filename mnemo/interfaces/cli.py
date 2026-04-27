@@ -318,12 +318,14 @@ def build_parser() -> argparse.ArgumentParser:
     dream_parser.add_argument("--now", action="store_true", help="Run Dream maintenance now")
     dream_parser.add_argument("--limit", type=int, default=20)
     dream_parser.add_argument("--min-confidence", type=float, default=0.7)
+    dream_parser.add_argument("--actions-json", help="JSON array of model-proposed Dream maintenance tool calls")
     dream_parser.add_argument("--json", action="store_true")
     dream_subparsers = dream_parser.add_subparsers(dest="dream_command")
     dream_run_parser = dream_subparsers.add_parser("run", help="Run Dream maintenance")
     _add_state_dir(dream_run_parser)
     dream_run_parser.add_argument("--limit", type=int, default=20)
     dream_run_parser.add_argument("--min-confidence", type=float, default=0.7)
+    dream_run_parser.add_argument("--actions-json", help="JSON array of model-proposed Dream maintenance tool calls")
     dream_run_parser.add_argument("--json", action="store_true")
     dream_status_parser = dream_subparsers.add_parser("status", help="Inspect Dream maintenance backlog")
     _add_state_dir(dream_status_parser)
@@ -1339,7 +1341,8 @@ def _cmd_dream(args: argparse.Namespace) -> int:
     store.initialize()
     engine = MemoryEngine(store)
     if args.now or args.dream_command == "run":
-        result = engine.dream_maintenance(limit=args.limit, min_confidence=args.min_confidence)
+        actions = _parse_json_array_arg(args.actions_json, "--actions-json") if args.actions_json else None
+        result = engine.dream_maintenance(limit=args.limit, min_confidence=args.min_confidence, actions=actions)
     elif args.dream_command == "status":
         result = engine.dream_status(limit=args.limit)
     elif args.dream_command == "report":
@@ -1376,6 +1379,8 @@ def _print_dream_result(result: dict[str, Any]) -> None:
         execution_result = execution.get("result") if isinstance(execution.get("result"), dict) else {}
         w0 = execution_result.get("w0") if isinstance(execution_result.get("w0"), dict) else {}
         snapshot = execution_result.get("snapshot") if isinstance(execution_result.get("snapshot"), dict) else {}
+        actions = execution_result.get("actions") if isinstance(execution_result.get("actions"), dict) else {}
+        action_counts = actions.get("counts") if isinstance(actions.get("counts"), dict) else {}
         print(
             "Dream report: "
             f"id={result.get('id')} "
@@ -1385,6 +1390,8 @@ def _print_dream_result(result: dict[str, Any]) -> None:
             f"rejected={len(execution_result.get('rejected', []))} "
             f"skipped={len(execution_result.get('skipped', []))} "
             f"conflicts={len(execution_result.get('conflicts', []))} "
+            f"actions_applied={action_counts.get('applied', 0)} "
+            f"actions_skipped={action_counts.get('skipped', 0)} "
             f"snapshot_items={snapshot.get('page_count', 0)}"
         )
         return
@@ -1966,6 +1973,18 @@ def _parse_json_object_arg(value: str, flag: str) -> dict[str, Any]:
         raise MnemoError(f"{flag} must be valid JSON") from exc
     if not isinstance(parsed, dict):
         raise MnemoError(f"{flag} must be a JSON object")
+    return parsed
+
+
+def _parse_json_array_arg(value: str, flag: str) -> list[dict[str, Any]]:
+    try:
+        parsed = loads(value, default=[])
+    except ValueError as exc:
+        raise MnemoError(f"{flag} must be valid JSON") from exc
+    if not isinstance(parsed, list):
+        raise MnemoError(f"{flag} must be a JSON array")
+    if not all(isinstance(item, dict) for item in parsed):
+        raise MnemoError(f"{flag} must be a JSON array of objects")
     return parsed
 
 

@@ -814,19 +814,30 @@ class MemoryEngine:
         *,
         since: float | None = None,
         persist: bool = True,
+        actions: list[dict[str, Any]] | None = None,
+        plan: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         started_at = time.time()
         if since is None:
             latest = self.load_latest_dream_report()
             since = _report_completed_at(latest)
         delta = self.collect_dream_delta(limit=limit, since=since)
-        plan = self.build_dream_plan(delta, limit=limit)
+        dream_plan = self.build_dream_plan(delta, limit=limit)
+        dream_actions = _dream_actions_from_inputs(actions=actions, plan=plan)
+        if dream_actions:
+            dream_plan["proposed_actions"] = [
+                _compact_dream_action_request(action, index)
+                for index, action in enumerate(dream_actions[: max(1, int(limit))])
+            ]
+        action_execution = self.apply_dream_actions(dream_actions, limit=limit) if dream_actions else None
         execution = self.dream_consolidate(
             limit=limit,
             min_confidence=min_confidence,
             candidate_ids=delta.get("candidate_ids", []),
             note_ids=delta.get("note_ids", []),
         )
+        if action_execution:
+            execution["actions"] = action_execution
         completed_at = time.time()
         report = {
             "kind": "dream_report",
@@ -836,9 +847,9 @@ class MemoryEngine:
             "since": since,
             "duration_s": round(completed_at - started_at, 3),
             "delta": delta,
-            "plan": plan,
+            "plan": dream_plan,
             "execution": {
-                "mode": "local_fallback",
+                "mode": "model_actions+local_fallback" if action_execution else "local_fallback",
                 "result": execution,
             },
             "health_after": self.health_report(limit=min(10, max(1, int(limit)))),
@@ -846,6 +857,43 @@ class MemoryEngine:
         if persist:
             self.save_dream_report(report)
         return report
+
+    def apply_dream_actions(self, actions: list[dict[str, Any]], *, limit: int = 20) -> dict[str, Any]:
+        bounded_limit = max(0, int(limit))
+        requested = list(actions or [])[:bounded_limit]
+        applied: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+
+        for index, raw_action in enumerate(requested):
+            action = _normalize_dream_action(raw_action, index)
+            action_id = action.get("id") or f"dream_action_{index + 1}"
+            if action.get("error"):
+                skipped.append(_dream_action_skip(action_id, action.get("tool"), action["error"]))
+                continue
+
+            tool = action.get("tool")
+            arguments = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+            try:
+                if tool == "memory_tombstone":
+                    applied.append(self._apply_dream_tombstone_action(action_id, arguments))
+                    continue
+                if tool == "memory_decay_stale_pages":
+                    applied.append(self._apply_dream_decay_action(action_id, arguments, limit=bounded_limit))
+                    continue
+                skipped.append(_dream_action_skip(action_id, tool, "unsupported_tool"))
+            except (TypeError, ValueError) as exc:
+                skipped.append(_dream_action_skip(action_id, tool, str(exc)))
+
+        return {
+            "kind": "dream_memory_action_result",
+            "counts": {
+                "requested": len(requested),
+                "applied": len(applied),
+                "skipped": len(skipped),
+            },
+            "applied": applied,
+            "skipped": skipped,
+        }
 
     def dream_status(self, limit: int = 20) -> dict[str, Any]:
         latest = self.load_latest_dream_report()
@@ -1020,6 +1068,36 @@ class MemoryEngine:
         if not add_link:
             return None
         return add_link(memory_id, str(replacement["id"]), "superseded_by", weight=1.0)
+
+    def _apply_dream_tombstone_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        memory_id = _normalize_space(
+            str(arguments.get("memory_id") or arguments.get("id") or arguments.get("target_id") or "")
+        )
+        reason = _normalize_space(str(arguments.get("reason") or ""))
+        if not memory_id:
+            raise ValueError("missing memory_id")
+        if not reason:
+            raise ValueError("missing reason")
+        result = self.tombstone_memory(
+            memory_id,
+            reason,
+            target_type=str(arguments.get("target_type") or "auto"),
+            replacement_id=arguments.get("replacement_id"),
+            eval_run_id=arguments.get("eval_run_id") or arguments.get("run_id"),
+        )
+        return _compact_dream_tombstone_result(action_id, result)
+
+    def _apply_dream_decay_action(
+        self,
+        action_id: str,
+        arguments: dict[str, Any],
+        *,
+        limit: int,
+    ) -> dict[str, Any]:
+        action_limit = _bounded_action_limit(arguments.get("limit"), default=max(1, limit))
+        stale_confidence = _bounded_confidence(arguments.get("stale_confidence"), 0.35)
+        result = self.decay_stale_pages(limit=action_limit, stale_confidence=stale_confidence)
+        return _compact_dream_decay_result(action_id, result)
 
     def _page_source_run_id(self, page: dict[str, Any]) -> str | None:
         source_candidate_id = page.get("source_candidate_id")
@@ -1560,6 +1638,8 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
     execution = report.get("execution") if isinstance(report.get("execution"), dict) else {}
     result = execution.get("result") if isinstance(execution.get("result"), dict) else {}
     delta = report.get("delta") if isinstance(report.get("delta"), dict) else {}
+    actions = result.get("actions") if isinstance(result.get("actions"), dict) else {}
+    action_counts = actions.get("counts") if isinstance(actions.get("counts"), dict) else {}
     return {
         "id": report.get("id"),
         "started_at": report.get("started_at"),
@@ -1574,8 +1654,152 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
             "rejected": len(result.get("rejected", [])),
             "skipped": len(result.get("skipped", [])),
             "conflicts": len(result.get("conflicts", [])),
+            "actions_applied": action_counts.get("applied", 0),
+            "actions_skipped": action_counts.get("skipped", 0),
         },
     }
+
+
+def _dream_actions_from_inputs(
+    *,
+    actions: list[dict[str, Any]] | None,
+    plan: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    collected: list[dict[str, Any]] = []
+    if isinstance(plan, dict):
+        for key in ("actions", "maintenance_actions", "tool_calls"):
+            value = plan.get(key)
+            if isinstance(value, list):
+                collected.extend(item for item in value if isinstance(item, dict))
+    if isinstance(actions, list):
+        collected.extend(item for item in actions if isinstance(item, dict))
+    return collected
+
+
+def _normalize_dream_action(raw_action: dict[str, Any], index: int) -> dict[str, Any]:
+    action_id = str(raw_action.get("id") or raw_action.get("call_id") or f"dream_action_{index + 1}")
+    tool: Any = raw_action.get("tool") or raw_action.get("name") or raw_action.get("action") or raw_action.get("type")
+    arguments: Any = raw_action.get("arguments")
+    if arguments is None and "input" in raw_action:
+        arguments = raw_action.get("input")
+
+    function = raw_action.get("function")
+    if isinstance(function, dict):
+        tool = function.get("name") or tool
+        arguments = function.get("arguments", arguments)
+
+    if isinstance(arguments, str):
+        try:
+            parsed = loads(arguments, {})
+        except ValueError:
+            return {"id": action_id, "tool": tool, "error": "invalid_arguments_json"}
+        arguments = parsed
+
+    if arguments is None:
+        arguments = {
+            key: value
+            for key, value in raw_action.items()
+            if key not in {"id", "call_id", "tool", "name", "action", "type", "function", "input"}
+        }
+    if not isinstance(arguments, dict):
+        return {"id": action_id, "tool": tool, "error": "arguments_not_object"}
+    tool_name = _normalize_space(str(tool or ""))
+    if not tool_name:
+        return {"id": action_id, "tool": None, "error": "missing_tool"}
+    return {
+        "id": action_id,
+        "tool": tool_name,
+        "arguments": arguments,
+    }
+
+
+def _compact_dream_action_request(raw_action: dict[str, Any], index: int) -> dict[str, Any]:
+    action = _normalize_dream_action(raw_action, index)
+    arguments = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
+    compact = {
+        "id": action.get("id"),
+        "tool": action.get("tool"),
+    }
+    if action.get("error"):
+        compact["error"] = action.get("error")
+        return compact
+    for key in ("memory_id", "id", "target_id", "target_type", "reason", "replacement_id", "eval_run_id"):
+        value = arguments.get(key)
+        if value is not None:
+            output_key = "memory_id" if key == "id" else key
+            if output_key == "memory_id" and compact.get("memory_id"):
+                continue
+            compact[output_key] = _truncate(str(value), limit=120)
+    if action.get("tool") == "memory_decay_stale_pages":
+        if arguments.get("limit") is not None:
+            compact["limit"] = _bounded_action_limit(arguments.get("limit"), default=20)
+        if arguments.get("stale_confidence") is not None:
+            compact["stale_confidence"] = _bounded_confidence(arguments.get("stale_confidence"), 0.35)
+    return compact
+
+
+def _dream_action_skip(action_id: str, tool: Any, reason: Any) -> dict[str, Any]:
+    return {
+        "action_id": action_id,
+        "tool": tool,
+        "status": "skipped",
+        "reason": _truncate(str(reason or "unknown"), limit=160),
+    }
+
+
+def _compact_dream_tombstone_result(action_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    replacement = result.get("replacement") if isinstance(result.get("replacement"), dict) else {}
+    eval_case = result.get("eval_case") if isinstance(result.get("eval_case"), dict) else {}
+    compact = {
+        "action_id": action_id,
+        "tool": "memory_tombstone",
+        "memory_id": result.get("memory_id"),
+        "target_type": result.get("target_type"),
+        "status": result.get("status"),
+        "tombstone_id": result.get("tombstone_id"),
+    }
+    if replacement.get("id"):
+        compact["replacement_id"] = replacement.get("id")
+        compact["replacement_type"] = replacement.get("target_type")
+    if eval_case.get("id"):
+        compact["eval_case_id"] = eval_case.get("id")
+        compact["eval_case_status"] = eval_case.get("status")
+    return compact
+
+
+def _compact_dream_decay_result(action_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action_id": action_id,
+        "tool": "memory_decay_stale_pages",
+        "status": "applied",
+        "counts": result.get("counts", {}),
+        "staled": [
+            {
+                "page_id": item.get("page_id"),
+                "status": item.get("status"),
+                "reasons": item.get("reasons", []),
+            }
+            for item in result.get("staled", [])
+            if isinstance(item, dict)
+        ][:10],
+        "decayed": [
+            {
+                "page_id": item.get("page_id"),
+                "reasons": item.get("reasons", []),
+                "confidence": item.get("confidence"),
+            }
+            for item in result.get("decayed", [])
+            if isinstance(item, dict)
+        ][:10],
+    }
+
+
+def _bounded_action_limit(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return min(100, max(1, parsed))
 
 
 def _report_completed_at(report: dict[str, Any] | None) -> float | None:

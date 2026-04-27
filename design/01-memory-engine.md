@@ -734,6 +734,18 @@ Dream 的 less-is-more 分工：
 
 当 health cards 显示存在过期或衰减候选时，Dream plan 可以把 `memory_decay_stale_pages` 作为可选工具暴露给模型。模型可以选择执行、先读取证据、请求用户确认，或跳过并记录原因。
 
+Dream report 可以携带模型显式提出的 maintenance actions，形态兼容原生 tool call：
+
+```json
+[
+  {"tool": "memory_tombstone", "arguments": {"memory_id": "mem_x", "reason": "low_usefulness"}},
+  {"function": {"name": "memory_decay_stale_pages", "arguments": "{\"limit\": 20}"}},
+  {"type": "tool_use", "name": "memory_tombstone", "input": {"memory_id": "mem_y", "reason": "harmful"}}
+]
+```
+
+运行时只负责执行白名单内的记忆维护工具：`memory_tombstone` 和 `memory_decay_stale_pages`。无效、缺字段、找不到目标或不支持的 action 会进入 `execution.result.actions.skipped`，不会中断 Dream。这样模型可以同时提出多个候选动作，系统只提供能力边界和审计结果，不把 Dream 固化成固定流程。
+
 ```text
 Dream maintenance run
   1. daemon.collect_delta          # 收集增量，不读全库

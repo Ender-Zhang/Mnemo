@@ -22,7 +22,8 @@
 - `MemoryEngine.decay_stale_pages(limit: int = 50, *, now: float | None = None, stale_confidence: float = 0.35) -> dict[str, Any]`
 - `MemoryEngine.collect_dream_delta(limit: int = 20, *, since: float | None = None) -> dict[str, Any]`
 - `MemoryEngine.build_dream_plan(delta: dict[str, Any], *, limit: int = 20) -> dict[str, Any]`
-- `MemoryEngine.dream_maintenance(limit: int = 20, min_confidence: float = 0.7, *, since: float | None = None, persist: bool = True) -> dict[str, Any]`
+- `MemoryEngine.dream_maintenance(limit: int = 20, min_confidence: float = 0.7, *, since: float | None = None, persist: bool = True, actions: list[dict[str, Any]] | None = None, plan: dict[str, Any] | None = None) -> dict[str, Any]`
+- `MemoryEngine.apply_dream_actions(actions: list[dict[str, Any]], *, limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.dream_status(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.save_dream_report(report: dict[str, Any]) -> Path`
 - `MemoryEngine.load_latest_dream_report() -> dict[str, Any] | None`
@@ -58,8 +59,8 @@
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory forget <memory_id> [--reason REASON] [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
-- CLI: `mnemo dream run [--limit N] [--min-confidence FLOAT] [--state-dir DIR] [--json]`
-- CLI: `mnemo dream --now [--limit N] [--min-confidence FLOAT] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream run [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream --now [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream status [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
 
@@ -89,6 +90,13 @@
 - Dream delta collection returns only bounded W0 notes, draft/review candidates, changed pages, tombstones, recent runs, and health cards since the last persisted Dream report when available.
 - Dream plans are model-facing decision surfaces with `decision_owner="model"` and allowed candidate tools; they are advisory and must not encode a mandatory maintenance workflow.
 - Dream maintenance may use local deterministic consolidation as fallback, but fallback processing is restricted to collected draft candidate ids and W0 note ids when a delta set is provided.
+- Dream maintenance may accept explicit model-proposed action objects through `actions` or `plan.actions` / `plan.maintenance_actions` / native-style `plan.tool_calls`.
+- Dream action objects support provider-native shapes (`{"function": {"name": ..., "arguments": ...}}`, `{"type": "tool_use", "name": ..., "input": {...}}`) and compact direct shapes (`{"tool": ..., "arguments": {...}}`).
+- `MemoryEngine.apply_dream_actions()` is a bounded executor for safe memory maintenance tools only: `memory_tombstone` and `memory_decay_stale_pages`.
+- Dream action execution must call existing MemoryEngine primitives and must not implement a separate workflow router.
+- Unsupported, malformed, missing-id, or service-error Dream actions are recorded under `execution.result.actions.skipped` with compact error metadata and must not abort the Dream report.
+- Dream `memory_tombstone` actions support low-usefulness archival, harmful tombstone eval routing, and replacement links through `tombstone_memory()`.
+- Dream action result payloads must contain ids, statuses, counts, and compact eval/replacement metadata only; they must not copy full memory bodies or raw transcripts.
 - Dream reports are compact JSON documents persisted under `runs/dream-reports/` with `delta`, `plan`, `execution`, and `health_after`.
 - `mnemo dream status` must be read-only and return latest report metadata plus current backlog counts.
 - `mnemo dream report --latest` must load the latest persisted report without recomputing memory maintenance.
@@ -197,6 +205,8 @@
 | CLI memory decay | `mnemo memory decay` emits compact JSON/plain reports and marks stale pages | `tests/test_cli.py` |
 | Tool memory decay | `memory_decay_stale_pages` mutates through ToolHarness and returns compact evidence | `tests/test_tools.py` |
 | Dream delta-limited maintenance | Old candidates before `since` remain draft while delta candidates are processed | `tests/test_memory.py` |
+| Dream model actions | Explicit model-proposed memory actions are applied before local fallback and report compact applied/skipped results | `tests/test_memory.py`, `tests/test_cli.py` |
+| Dream native tool-call action | Native-style function/tool-call actions can run safe memory maintenance tools | `tests/test_memory.py` |
 | Dream report persistence | Latest report reloads with delta, plan, execution, and health payloads | `tests/test_memory.py`, `tests/test_cli.py` |
 | CLI Dream status/report | `dream status`, `dream report --latest`, and `dream --now` use compact persisted reports | `tests/test_cli.py` |
 | CLI query debug | `--debug-query` includes query plan metadata while default JSON omits it | `tests/test_cli.py` |
@@ -211,6 +221,7 @@
 - Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
 - Good: expose health cards as compact model input so the model chooses whether to verify, link, archive, or ignore.
 - Good: expose decay as a bounded tool the model may call after seeing health cards, not as an always-on workflow.
+- Good: apply explicit Dream maintenance actions through existing MemoryEngine tools and record skipped action reasons compactly.
 - Good: persist Dream reports as compact managed-state JSON so status/report inspection does not require another schema surface.
 - Base: deterministic dream fallback may execute the current delta while provider-led Dream runs are not yet wired.
 - Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
@@ -220,6 +231,7 @@
 - Bad: treat advisory tombstone annotations as durable deletion records.
 - Bad: let tombstoned stable pages remain in active recall or L1 snapshots.
 - Bad: let Dream fallback scan every draft candidate after a delta set is available.
+- Bad: encode Dream as a fixed daily workflow that archives/promotes/links every category in a predetermined order.
 
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
@@ -247,6 +259,7 @@
 - CLI `memory snapshot` covers missing snapshots, loaded snapshots, and compact non-JSON rows.
 - L1 snapshot compile/load behavior is covered, including invalid files.
 - Dream maintenance report persistence, status, latest-report CLI, and delta-limited candidate processing are covered.
+- Dream maintenance action execution covers low-usefulness tombstone, harmful eval routing, native-style tool-call decay, compact action results, and invalid action skips.
 - Harness suite for memory safety covers candidate-first writes, conflict guardrails, compact prompt payloads, duplicate reinforcement, and prompt-injection scanner gating.
 - Harness suite for memory health covers wrong-memory tombstone suppression, low-confidence over-personalization no-promotion, conflict health cards, and compact report payloads.
 
