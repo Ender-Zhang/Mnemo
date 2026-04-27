@@ -30,6 +30,7 @@
 
 ### 3. Contracts
 - The SDK is a reference in-process binding; it must not introduce a second runtime loop.
+- `workspace_root=None` resolves to `<state_dir>/workspace` and creates it before file tools or external runtimes use it as cwd.
 - `context()` reuses `PromptAssembler`, `MemoryEngine`, `SkillService`, `ToolRegistry`, and ToolBundle metadata.
 - `context()` returns prompt-ready `messages` plus `text`, compact metadata, tool bundle metadata, and compact memory/skill cards.
 - `context()` must not expose raw provider-native tool schemas in metadata or tool bundle payloads.

@@ -702,6 +702,17 @@ print(json.dumps({
             self.assertEqual(invalid_status, 400)
             self.assertIn("quiet_hours start", json.loads(invalid_body)["error"])
 
+    def test_web_defaults_workspace_to_state_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request("GET", "/api/settings")
+
+            payload = json.loads(body)
+            workspace = next(item for item in payload["connected_apps"] if item["id"] == "workspace")
+            self.assertEqual(status, 200)
+            self.assertEqual(workspace["status"], "connected")
+            self.assertEqual(workspace["detail"], "workspace")
+
     def test_web_memory_ontology_api_returns_compact_ten_dimension_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

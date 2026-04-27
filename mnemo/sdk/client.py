@@ -5,6 +5,7 @@ from typing import Any
 
 from ..core.config import DEFAULT_STATE_DIR
 from ..core.models import PromptMode, RunRequest, ToolResult
+from ..core.workspace import resolve_workspace_root
 from ..evals import EvalHarness, replay_summary
 from ..memory import MemoryEngine
 from ..providers import provider_capabilities
@@ -34,7 +35,9 @@ class MnemoClient:
         workspace_root: str | Path | None = None,
     ) -> None:
         self.state_dir = str(state_dir)
-        self.workspace_root = str(workspace_root) if workspace_root is not None else None
+        resolved_workspace = resolve_workspace_root(workspace_root, self.state_dir)
+        resolved_workspace.mkdir(parents=True, exist_ok=True)
+        self.workspace_root = str(resolved_workspace)
 
     def context(
         self,

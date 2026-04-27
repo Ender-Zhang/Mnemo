@@ -140,6 +140,8 @@ class CliTests(unittest.TestCase):
                         server.base_url,
                         "--model",
                         "fake-model",
+                        "--workspace-root",
+                        str(workspace),
                         "--json",
                     ],
                     cwd=workspace,

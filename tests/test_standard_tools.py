@@ -53,6 +53,31 @@ class StandardToolTests(unittest.TestCase):
             self.assertTrue(read.ok)
             self.assertEqual(read.result["text"], "alpha\nneedle line\n")
 
+    def test_file_write_defaults_to_state_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            store, run_id, mission_id = _store_with_run(state_dir)
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                policy=ToolExecutionPolicy(allowed_risks=("read", "write", "external", "admin")),
+            )
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="file_write",
+                    arguments={"path": "snake.html", "content": "game", "mode": "create"},
+                    call_id="call_default_workspace",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(result.ok)
+            self.assertEqual((state_dir / "workspace" / "snake.html").read_text(encoding="utf-8"), "game")
+            self.assertFalse((root / "snake.html").exists())
+
     def test_file_read_blocks_path_traversal(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -108,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run one local agent turn")
     _add_state_dir(run_parser)
+    _add_workspace_root(run_parser)
     run_parser.add_argument("message", nargs="+", help="User message")
     run_parser.add_argument("--conversation-id")
     run_parser.add_argument("--mission-id")
@@ -414,6 +415,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     web_parser = subparsers.add_parser("web", help="Run the Mnemo single-chat web UI")
     _add_state_dir(web_parser)
+    _add_workspace_root(web_parser)
     web_parser.add_argument("--host", default="127.0.0.1")
     web_parser.add_argument("--port", type=int, default=8765)
     web_parser.add_argument(
@@ -644,6 +646,7 @@ def build_parser() -> argparse.ArgumentParser:
     api_schema_parser.add_argument("--json", action="store_true")
     api_capsule_parser = api_subparsers.add_parser("capsule", help="Build an external runtime context capsule")
     _add_state_dir(api_capsule_parser)
+    _add_workspace_root(api_capsule_parser)
     api_capsule_parser.add_argument("task", nargs="+")
     api_capsule_parser.add_argument("--runtime", default="external")
     api_capsule_parser.add_argument("--agent-type", default="general")
@@ -658,6 +661,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run an explicit command runtime with a context capsule",
     )
     _add_state_dir(api_external_parser)
+    _add_workspace_root(api_external_parser)
     api_external_parser.add_argument("task", nargs="+")
     api_external_parser.add_argument(
         "--command-json",
@@ -678,6 +682,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Serve MnemoCore HTTP JSON API",
     )
     _add_state_dir(api_serve_parser)
+    _add_workspace_root(api_serve_parser)
     api_serve_parser.add_argument("--host", default="127.0.0.1")
     api_serve_parser.add_argument("--port", type=int, default=8765)
 
@@ -685,6 +690,7 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
     mcp_tools_parser = mcp_subparsers.add_parser("tools", help="List MCP-style Mnemo tools")
     _add_state_dir(mcp_tools_parser)
+    _add_workspace_root(mcp_tools_parser)
     mcp_tools_parser.add_argument("--json", action="store_true")
     mcp_config_parser = mcp_subparsers.add_parser("config", help="Print MCP client configuration")
     _add_state_dir(mcp_config_parser)
@@ -699,11 +705,13 @@ def build_parser() -> argparse.ArgumentParser:
     mcp_config_parser.add_argument("--json", action="store_true")
     mcp_call_parser = mcp_subparsers.add_parser("call", help="Call one MCP-style Mnemo tool")
     _add_state_dir(mcp_call_parser)
+    _add_workspace_root(mcp_call_parser)
     mcp_call_parser.add_argument("tool_name")
     mcp_call_parser.add_argument("--arguments-json", default="{}", help="Tool arguments as a JSON object")
     mcp_call_parser.add_argument("--json", action="store_true")
     mcp_serve_parser = mcp_subparsers.add_parser("serve", help="Serve MCP-style JSON-RPC over stdio")
     _add_state_dir(mcp_serve_parser)
+    _add_workspace_root(mcp_serve_parser)
     mcp_serve_parser.add_argument(
         "--transport",
         choices=["content-length", "jsonl"],
@@ -721,6 +729,13 @@ def _add_state_dir(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_workspace_root(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--workspace-root",
+        help="User workspace for local file tools and workspace bootstrap (default: <state-dir>/workspace)",
+    )
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     store.initialize()
@@ -735,14 +750,14 @@ def _cmd_api(args: argparse.Namespace) -> int:
                 state_dir=args.state_dir,
                 host=args.host,
                 port=args.port,
-                workspace_root=os.getcwd(),
+                workspace_root=args.workspace_root,
             )
         )
         return 0
     if args.api_command == "external-run":
         try:
             command = _command_json(args.command_json)
-            result = MnemoClient(state_dir=args.state_dir, workspace_root=Path.cwd()).external_run(
+            result = MnemoClient(state_dir=args.state_dir, workspace_root=args.workspace_root).external_run(
                 " ".join(args.task),
                 command=command,
                 runtime=args.runtime,
@@ -767,7 +782,7 @@ def _cmd_api(args: argparse.Namespace) -> int:
         return 0
     if args.api_command == "capsule":
         try:
-            capsule = MnemoClient(state_dir=args.state_dir, workspace_root=Path.cwd()).capsule(
+            capsule = MnemoClient(state_dir=args.state_dir, workspace_root=args.workspace_root).capsule(
                 " ".join(args.task),
                 runtime=args.runtime,
                 agent_type=args.agent_type,
@@ -823,7 +838,7 @@ def _cmd_mcp(args: argparse.Namespace) -> int:
         print(dumps(config["client_config"]))
         return 0
 
-    server = MnemoMcpServer(state_dir=args.state_dir, workspace_root=Path.cwd())
+    server = MnemoMcpServer(state_dir=args.state_dir, workspace_root=getattr(args, "workspace_root", None))
 
     if args.mcp_command == "tools":
         tools = server.tools()
@@ -870,7 +885,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         state_dir=config.state_dir,
         conversation_id=args.conversation_id,
         mission_id=args.mission_id,
-        workspace_root=os.getcwd(),
+        workspace_root=args.workspace_root,
         prompt_mode=args.prompt_mode,
     )
     if args.stream:
@@ -1845,7 +1860,7 @@ def _cmd_web(args: argparse.Namespace) -> int:
             state_dir=config.state_dir,
             host=args.host,
             port=args.port,
-            workspace_root=os.getcwd(),
+            workspace_root=args.workspace_root,
             provider=config.provider,
             base_url=config.base_url,
             model=config.model,

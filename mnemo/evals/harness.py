@@ -9,6 +9,7 @@ from typing import Any
 
 from ..core.jsonutil import dumps
 from ..core.models import PromptMode, RunRequest, ToolCallEnvelope
+from ..core.workspace import resolve_workspace_root
 from ..memory import MemoryEngine
 from ..runtime import ExternalRunRequest, ScheduleService, run_external, stream_local
 from ..runtime.capsule import ContextCapsuleBuilder
@@ -1535,7 +1536,7 @@ def _live_tool_replay(store: StateStore, run_id: str, trace: list[dict[str, Any]
         ledger=_ReplayNullLedger(),
         run_id=run_id,
         mission_id=mission_id,
-        workspace_root=Path.cwd(),
+        workspace_root=resolve_workspace_root(None, store.state_dir),
     )
     items: list[dict[str, Any]] = []
     for event in _tool_call_events(trace):

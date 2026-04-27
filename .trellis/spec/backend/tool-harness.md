@@ -13,6 +13,8 @@
 - `ToolRegistry.tool_bundle(profile="full.v1", provider_adapter_version="local", schema_serializer_version="mnemo.tool_schema.v1", selected_tool_names=None, epoch=1, cache_bust_reason="initial") -> ToolBundle`
 - `ToolBundle.metadata() -> dict[str, Any]`
 - `ToolRegistry.execute(call: ToolCallEnvelope, context: ToolContext) -> ToolResult`
+- `mnemo.core.workspace.default_workspace_root(state_dir=DEFAULT_STATE_DIR) -> Path`
+- `mnemo.core.workspace.resolve_workspace_root(workspace_root, state_dir=DEFAULT_STATE_DIR) -> Path`
 - `ToolHarness.execute(call: ToolCallEnvelope, *, run_id: str, mission_id: str) -> ToolResult`
 - `ToolExecutionPolicy.check(spec: ToolSpec) -> ToolPermission`
 - `tool_specs_as_json_schema(specs: list[ToolSpec]) -> list[dict[str, Any]]`
@@ -27,7 +29,8 @@
 - `ToolCallEnvelope.arguments`: already parsed dict from the provider-native tool call.
 - `ToolResult.result`: full persisted payload for ledger and replay.
 - `ToolResult.summary` and `ToolResult.evidence`: compact model/UI payloads.
-- `ToolContext.workspace_root`: resolved root for local file and shell tools.
+- `ToolContext.workspace_root`: resolved user workspace root for local file and shell tools.
+- If no workspace is explicitly supplied, local file/shell tools must use `<state_dir>/workspace`, not the process current directory or source repository root.
 - Provider-native tool schemas are sent through adapter requests, not embedded as raw prompt blocks or prompt metadata.
 - Provider-native tool schemas are grouped into deterministic `ToolBundle` objects with a stable `bundle_id`, `epoch`, `profile`, `provider_adapter_version`, `schema_serializer_version`, ordered `tool_names`, and compact `schema_token_estimate`.
 - Runtime ToolBundles use `ProviderCapabilities.adapter_version` for `provider_adapter_version`.
@@ -106,6 +109,7 @@
 | Rejected or repeated tool approval | Resolve the Inbox item without executing the stored call | `tests/test_web.py`, `tests/test_cli.py` |
 | Invalid approval tool | Raise before resolving the Inbox item or executing any handler | `tests/test_approvals.py` |
 | Path outside workspace | Return failed tool result with boundary error | `tests/test_standard_tools.py` |
+| Missing workspace override | File writes land under `<state_dir>/workspace` | `tests/test_standard_tools.py`, `tests/test_web.py` |
 | File patch exact edit | Admin policy applies exact replacement and returns compact patch evidence | `tests/test_standard_tools.py` |
 | File patch ambiguity | Reject duplicate old text unless `replace_all=true` | `tests/test_standard_tools.py` |
 | Binary file read | Return failed tool result, no decoded payload | `tests/test_standard_tools.py` |

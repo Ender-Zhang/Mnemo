@@ -11,6 +11,7 @@ from ..core.errors import NotFoundError, ToolError
 from ..core.jsonutil import dumps
 from ..core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolPermission, ToolResult, ToolSpec
 from ..core.text_patch import optional_bool
+from ..core.workspace import resolve_workspace_root
 from ..memory import MemoryEngine
 from ..skills import SkillService
 from ..storage import StateStore
@@ -991,7 +992,7 @@ class ToolHarness:
         self.ledger = ledger
         self.registry = registry or ToolRegistry.from_store(store)
         self.policy = policy or ToolExecutionPolicy()
-        self.workspace_root = Path(workspace_root or Path.cwd()).resolve()
+        self.workspace_root = resolve_workspace_root(workspace_root, store.state_dir)
 
     def execute(self, call: ToolCallEnvelope, *, run_id: str, mission_id: str) -> ToolResult:
         spec = self.registry.spec(call.name)

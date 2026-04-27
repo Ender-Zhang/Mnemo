@@ -52,6 +52,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
 - [~] Lightweight permission gate for read/write/external/admin exists; denied external/admin calls now create compact `tool_approval` Decision Cards and accepted approvals execute once through ToolHarness; side-effect flags, standing authority, and sandbox profile enforcement are not complete.
 - [x] Tool result compression and evidence cards.
+- [x] User file operations default to a per-state user workspace at `<state-dir>/workspace` instead of the process cwd or source repository root.
 - [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, safe alias installation, and explicit rollback exist; shadow dry-run, extension packaging, and richer eval gates are not complete.
 
 ## Memory
@@ -173,6 +174,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-28-default-user-workspace`: Local file/shell tools, Web, SDK, MCP, and live replay now resolve missing workspace roots to `<state-dir>/workspace`, preventing user-generated files from landing in the source repo by default.
 - [x] `04-27-polish-chat-interactions-memory-view`: Web chat now sends on Enter, shows a pending assistant indicator, consolidates tool call/result details into one card, suppresses duplicate tool-result source cards, compacts recall duplication, and exposes ten-dimensional memory inspection from settings.
 - [x] `04-27-skip-low-signal-learning-reflection`: Provider after-turn learning now uses a structure-only evidence gate, skips zero/low-tool turns without a second model call, and hides internal learning housekeeping from Web Activity.
 - [x] `04-27-polish-reference-frontend-markdown`: Web UI now more closely follows the generated reference with labeled rail navigation, compact user context, de-duplicated activity rows, replayed user prompts, and safe DOM-built Markdown rendering for assistant messages.

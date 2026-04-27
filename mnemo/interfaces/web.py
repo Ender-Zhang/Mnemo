@@ -15,6 +15,7 @@ from ..core.errors import MnemoError
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
 from ..core.settings import load_user_settings, save_user_settings
+from ..core.workspace import resolve_workspace_root
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
 from ..runtime import stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
@@ -44,6 +45,7 @@ _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 
 def build_http_server(config: WebServerConfig) -> ThreadingHTTPServer:
     StateStore(config.state_dir).initialize()
+    config = _resolved_web_config(config)
     handler = _handler_for(config)
     return MnemoHTTPServer((config.host, config.port), handler)
 
@@ -81,6 +83,24 @@ def serve_api(config: WebServerConfig) -> None:
         pass
     finally:
         server.server_close()
+
+
+def _resolved_web_config(config: WebServerConfig) -> WebServerConfig:
+    workspace_root = resolve_workspace_root(config.workspace_root, config.state_dir)
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    return WebServerConfig(
+        state_dir=config.state_dir,
+        host=config.host,
+        port=config.port,
+        workspace_root=str(workspace_root),
+        provider=config.provider,
+        base_url=config.base_url,
+        model=config.model,
+        api_key=config.api_key,
+        timeout_s=config.timeout_s,
+        retry_count=config.retry_count,
+        retry_backoff_s=config.retry_backoff_s,
+    )
 
 
 def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
