@@ -1463,3 +1463,36 @@ Added explicit generated tool rollback through ToolEvolutionService, provider-na
 ### Next Steps
 
 - None - task complete
+
+
+## Session 100: Learning chip undo foundation
+
+**Date**: 2026-04-27
+**Task**: Learning chip undo foundation
+**Branch**: `main`
+
+### Summary
+
+Added a compact learning-chip undo path that tombstones accepted memory candidates and their promoted pages, exposes the undo action through the Web API and inline chat UI, updates Trellis contracts/checklist, and verifies with focused tests, full unittest, compileall, and package install smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8673d87` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
