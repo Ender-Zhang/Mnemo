@@ -122,6 +122,7 @@
 - `generated_tools` stores installed generated tool manifests with candidate provenance, provider-facing schema, implementation descriptor, and active/disabled/rolled_back status.
 - Generated tool implementations are data, not executable code.
 - `eval_cases` stores draft/passed/failed cases with source run provenance and structured `case` / `result` JSON payloads.
+- Harmful memory curation may add draft eval cases with `case.kind="memory_harmful_regression"` and `case.suite="memory-core"`; payloads reference compact memory/tombstone ids and summaries, not full memory bodies.
 - `artifacts` stores full artifact bodies with mission/run provenance; streamed UI events should reference artifact ids instead of carrying body text.
 - `get_artifact()` returns `None` for unknown ids and a plain JSON-serializable dict for known ids.
 - `list_artifacts()` returns artifact metadata ordered by recency, supports mission/run filters, and omits body text.

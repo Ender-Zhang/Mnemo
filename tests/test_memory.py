@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import time
 import unittest
+from typing import Any
 
 from mnemo.memory import MemoryEngine
 from mnemo.storage import StateStore
@@ -190,6 +191,59 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(result["status"], "archived:low_usefulness")
             self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "archived:low_usefulness")
             self.assertEqual(store.list_memory_tombstones(target_id=candidate_id)[0]["reason"], "low_usefulness")
+            self.assertEqual(store.list_eval_cases(), [])
+
+    def test_harmful_tombstone_creates_compact_memory_eval_case(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            harmful_body = "User mistakenly prefers unsafe memory advice " + ("x" * 300)
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                harmful_body,
+                dimension="preferences",
+                scope="global",
+                confidence=0.8,
+            )
+
+            result = MemoryEngine(store).tombstone_memory(candidate_id, "harmful", target_type="candidate")
+            eval_case = store.get_eval_case(result["eval_case"]["id"])
+
+            self.assertEqual(result["status"], "tombstoned:harmful")
+            self.assertEqual(result["eval_case"]["suite"], "memory-core")
+            self.assertEqual(eval_case["run_id"], run_id)
+            self.assertEqual(eval_case["status"], "draft")
+            self.assertEqual(eval_case["case"]["kind"], "memory_harmful_regression")
+            self.assertEqual(eval_case["case"]["memory_id"], candidate_id)
+            self.assertEqual(eval_case["case"]["tombstone_id"], result["tombstone_id"])
+            self.assertLessEqual(len(eval_case["case"]["summary"]), 180)
+            self.assertNotIn("x" * 220, str(eval_case["case"]))
+
+    def test_harmful_tombstone_skips_eval_case_for_orphan_source_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User mistakenly prefers unsafe memory advice",
+                dimension="preferences",
+                confidence=0.8,
+            )
+
+            class MissingRunStore:
+                def __getattr__(self, name: str) -> Any:
+                    return getattr(store, name)
+
+                def get_run(self, run_id: str) -> None:
+                    return None
+
+            result = MemoryEngine(MissingRunStore()).tombstone_memory(
+                candidate_id,
+                "harmful",
+                target_type="candidate",
+            )
+
+            self.assertEqual(result["status"], "tombstoned:harmful")
+            self.assertIsNone(result["eval_case"])
+            self.assertEqual(store.list_eval_cases(), [])
 
     def test_private_delete_page_redacts_page_source_candidate_and_outputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

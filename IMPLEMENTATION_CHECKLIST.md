@@ -61,14 +61,14 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Stable memory is not directly mutated by normal task tools.
 - [x] Memory engine pages/indexes beyond candidates.
 - [x] Associative recall / LLM Wiki style memory graph.
-- [~] Conflict detection, confidence updates, durable tombstones, private-delete redaction, low-usefulness archival, replacement links, compact memory health review cards, and metadata-driven decay/stale marking exist; broader selective-forgetting policies such as harmful eval routing remain incomplete.
+- [x] Conflict detection, confidence updates, durable tombstones, private-delete redaction, low-usefulness archival, replacement links, harmful eval routing, compact memory health review cards, and metadata-driven decay/stale marking exist.
 - [x] W0 working memory to long-term candidate pipeline.
 - [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, persists reports, and limits local fallback to delta candidates; provider-led idle scheduling and broader memory maintenance actions remain incomplete.
 - [~] L1 cache-friendly memory snapshot compile/load exists; daily scheduling and Dream-managed cache invalidation are not complete.
 - [x] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, injection-scan, wrong-memory tombstone suppression, low-confidence over-personalization no-promotion, and compact Memory Health gates.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
 - [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, tombstone-aware session suppression, and CLI debug output exist; vector semantic retrieval and true MMR remain.
-- [~] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, private-delete redaction, compact health scores/cards, metadata-driven decay/stale marking, tool calls, and CLI inspection exist; broader selective forgetting remains.
+- [x] Memory tombstone and health foundation: explicit candidate/page tombstones, rejection tombstones, private-delete redaction, low-usefulness archive, replacement links, harmful eval routing, compact health scores/cards, metadata-driven decay/stale marking, tool calls, and CLI inspection exist.
 - [~] Memory write taint tracking and prompt-injection scanner foundation: `memory_write_candidate` and W0 candidate writes append safety evidence, detect prompt override/secret/tool-call injection, and route suspicious writes to review; deeper source-boundary enforcement across MCP/external runtimes remains.
 
 ## Skills And Evolution
@@ -166,6 +166,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-27-memory-harmful-eval-routing`: Harmful memory tombstones now create compact draft memory-core eval cases through MemoryEngine, CLI, and ToolHarness when run provenance is available.
 - [x] `04-27-memory-selective-forgetting-policy`: `memory_tombstone` now supports low-usefulness archival plus optional replacement links/metadata across MemoryEngine, CLI, ToolHarness, and tests.
 - [x] `04-27-replay-harness-diff-modes`: replay reports now expose deterministic, dry-run, and safe live-tools modes with compact prompt/tool/memory/skill/output diffs.
 - [x] `04-27-daemon-w0-pending-recovery`: daemon status now reports model-marked W0 backlog, and daemon recover/run flush those notes through MemoryEngine without mutating ephemeral notes.

@@ -409,6 +409,36 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact["evidence"][0]["kind"], "memory_tombstone")
             self.assertEqual(compact["evidence"][0]["replacement_id"], replacement_id)
 
+    def test_memory_tombstone_tool_routes_harmful_memory_to_eval_case(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: harmful tool memory",
+                "User harmful tool memory should become an eval regression.",
+                confidence=0.6,
+            )
+
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="memory_tombstone",
+                    arguments={"id": page_id, "reason": "harmful", "target_type": "page"},
+                    call_id="call_memory_tombstone_harmful",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            compact = compact_tool_result(result)
+            eval_case = store.get_eval_case(result.result["eval_case"]["id"])
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["status"], "tombstoned:harmful")
+            self.assertEqual(eval_case["run_id"], run_id)
+            self.assertEqual(eval_case["case"]["suite"], "memory-core")
+            self.assertEqual(eval_case["case"]["memory_id"], page_id)
+            self.assertEqual(compact["evidence"][0]["eval_case_id"], eval_case["id"])
+            self.assertEqual(compact["evidence"][0]["eval_case_status"], "draft")
+
     def test_memory_private_delete_tool_redacts_and_returns_compact_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

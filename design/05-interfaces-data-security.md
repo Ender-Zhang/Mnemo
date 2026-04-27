@@ -245,6 +245,7 @@ mnemo schedule feedback <watch_id> --outcome no_feedback --action sparsify --pol
 mnemo recall "deadline pressure" --depth 2
 mnemo memory search "apple" --debug-query  # 展示 QueryPlanner 多路 query 和召回来源
 mnemo memory tombstone <memory_id> --reason low_usefulness --replacement-id <new_id>
+mnemo memory tombstone <memory_id> --reason harmful --eval-run-id <run_id>
 mnemo memory forget <memory_id>          # private-delete：redact 原文，只保留最小 tombstone hash
 
 # 记忆养成与健康度

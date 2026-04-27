@@ -1,0 +1,5 @@
+{"file": ".agents/skills/finish-work/SKILL.md", "reason": "Finish work checklist"}
+{"file": ".agents/skills/check/SKILL.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Verify harmful eval routing and compact payloads"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Verify provider tool schema/evidence"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Package smoke and full test gate"}

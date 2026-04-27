@@ -24,7 +24,7 @@
 - CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
-- CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--state-dir DIR] [--json]`
+- CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory forget <memory_id> [--reason REASON] [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
@@ -71,7 +71,7 @@
 - `mnemo memory search --debug-query` remains read-only and returns compact query and recall-policy metadata without raw transcripts.
 - `mnemo memory search --include-tombstoned` is an explicit historical lookup opt-in; it still returns bounded session snippets, not raw message content.
 - `mnemo memory read` normalizes missing candidate/page ids this way.
-- `mnemo memory tombstone` normalizes missing candidate/page ids and missing replacement ids this way.
+- `mnemo memory tombstone` normalizes missing candidate/page ids, missing replacement ids, and missing eval run ids this way.
 - `mnemo memory forget` normalizes missing candidate/page ids this way and never prints deleted memory text after redaction.
 - `mnemo memory health` and `mnemo memory tombstones` are read-only inspection commands and do not require raw SQLite access.
 - `mnemo memory decay` mutates active memory pages through `MemoryEngine.decay_stale_pages()` and returns compact reports without raw evidence or full page bodies.
@@ -121,7 +121,7 @@
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Memory query debug | CLI emits compact query plan and recall-policy metadata without changing default JSON shape | `tests/test_cli.py` |
 | Missing memory id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
-| Missing memory id or replacement id in CLI tombstone | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing memory id, replacement id, or eval run id in CLI tombstone | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory id in CLI forget | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Memory health/decay/tombstone listing | CLI exits zero with compact JSON or row output | `tests/test_cli.py` |
 | Missing Dream report id | CLI exits non-zero with `mnemo:` error and no traceback | CLI behavior |
@@ -166,7 +166,7 @@
 - CLI harness eval/variant/release tests for unknown suites or variants without tracebacks.
 - CLI memory curation tests for missing candidate errors without tracebacks.
 - CLI memory read tests for missing ids without tracebacks.
-- CLI memory health/decay/tombstone tests for compact output, replacement links, and missing ids without tracebacks.
+- CLI memory health/decay/tombstone tests for compact output, replacement links, harmful eval routing, and missing ids without tracebacks.
 - CLI memory forget tests for compact private-delete output and missing ids without tracebacks.
 - CLI MCP config tests for compact JSON and readable client config output.
 - CLI Dream report tests for missing ids without tracebacks.

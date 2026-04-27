@@ -553,6 +553,77 @@ class CliTests(unittest.TestCase):
             self.assertIn("mnemo: Replacement memory item not found: mem_missing", missing_replacement.stderr)
             self.assertNotIn("Traceback", missing_replacement.stderr)
 
+    def test_memory_tombstone_harmful_routes_compact_eval_case_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("harmful memory cli")
+            mission_id = store.create_mission(conversation_id, "harmful memory cli")
+            run_id = store.create_run(conversation_id, mission_id, "curate harmful memory")
+            page_id = store.upsert_memory_page(
+                "preferences: harmful cli",
+                "User had a harmful stale preference that should become an eval case.",
+                confidence=0.5,
+            )
+
+            harmful = _run_cli(
+                [
+                    "memory",
+                    "tombstone",
+                    page_id,
+                    "--reason",
+                    "harmful",
+                    "--target-type",
+                    "page",
+                    "--eval-run-id",
+                    run_id,
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            plain = _run_cli(
+                [
+                    "memory",
+                    "tombstone",
+                    page_id,
+                    "--reason",
+                    "harmful",
+                    "--target-type",
+                    "page",
+                    "--eval-run-id",
+                    run_id,
+                    "--state-dir",
+                    tmp,
+                ]
+            )
+            missing_run = _run_cli(
+                [
+                    "memory",
+                    "tombstone",
+                    page_id,
+                    "--reason",
+                    "harmful",
+                    "--eval-run-id",
+                    "run_missing",
+                    "--state-dir",
+                    tmp,
+                ]
+            )
+
+            self.assertEqual(harmful.returncode, 0, harmful.stderr)
+            payload = json.loads(harmful.stdout)
+            self.assertEqual(payload["status"], "tombstoned:harmful")
+            self.assertEqual(payload["eval_case"]["suite"], "memory-core")
+            eval_case = store.get_eval_case(payload["eval_case"]["id"])
+            self.assertEqual(eval_case["case"]["memory_id"], page_id)
+            self.assertEqual(eval_case["case"]["kind"], "memory_harmful_regression")
+            self.assertEqual(plain.returncode, 0, plain.stderr)
+            self.assertIn("eval_case", plain.stdout)
+            self.assertEqual(missing_run.returncode, 1)
+            self.assertIn("mnemo: run not found: run_missing", missing_run.stderr)
+            self.assertNotIn("Traceback", missing_run.stderr)
+
     def test_memory_decay_command_marks_expired_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

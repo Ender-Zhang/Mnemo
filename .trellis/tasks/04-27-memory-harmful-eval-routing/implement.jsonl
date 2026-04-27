@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Memory tombstone and harmful selective forgetting contracts"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Eval case storage and tombstone metadata contracts"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Provider-native memory_tombstone schema and compact evidence"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI memory tombstone and eval run errors"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change spans MemoryEngine, tool harness, CLI, storage, tests"}

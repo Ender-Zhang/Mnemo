@@ -707,6 +707,7 @@ class ToolRegistry:
             reason,
             target_type=target_type,
             replacement_id=replacement_id,
+            eval_run_id=context.run_id,
         )
 
     def _memory_private_delete(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
@@ -1448,6 +1449,10 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
         if replacement.get("id"):
             evidence["replacement_id"] = replacement.get("id")
             evidence["replacement_type"] = replacement.get("target_type")
+        eval_case = result.result.get("eval_case") or {}
+        if eval_case.get("id"):
+            evidence["eval_case_id"] = eval_case.get("id")
+            evidence["eval_case_status"] = eval_case.get("status")
         return [evidence]
     if result.name == "memory_private_delete":
         return [

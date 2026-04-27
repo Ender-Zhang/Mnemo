@@ -381,6 +381,7 @@ Tombstone 只存最小必要信息，避免把用户要求删除的敏感内容�
 - 对由 candidate promoted 出来的 page，private delete 会同步 redact source candidate；对 candidate，会同步 redact promoted pages。
 - L4 session search 默认用 private-delete tombstone 的 `evidence_run_id` 抑制源 run snippets；不为了抑制召回而重新保存被删除文本。
 - `MemoryEngine.tombstone_memory(id, reason, target_type, replacement_id?)`：统一承载非隐私选择性遗忘；`low_usefulness` 归档为 `archived:low_usefulness`，可选 `replacement_id` 写入 `superseded_by` link 和 compact tombstone metadata。
+- `reason=harmful`：在已有 source run 或显式 `eval_run_id` 可用时，写入 compact `memory_harmful_regression` eval case，用于后续 memory-core 回归，不保存完整记忆正文或原始 transcript。
 
 ### 3.8 记忆信息决策树
 

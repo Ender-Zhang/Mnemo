@@ -295,6 +295,7 @@ def build_parser() -> argparse.ArgumentParser:
     memory_tombstone_parser.add_argument("--reason", required=True)
     memory_tombstone_parser.add_argument("--target-type", choices=["auto", "candidate", "page"], default="auto")
     memory_tombstone_parser.add_argument("--replacement-id")
+    memory_tombstone_parser.add_argument("--eval-run-id")
     memory_tombstone_parser.add_argument("--json", action="store_true")
     memory_forget_parser = memory_subparsers.add_parser("forget", help="Private-delete and redact a memory candidate or page")
     _add_state_dir(memory_forget_parser)
@@ -1306,11 +1307,14 @@ def _cmd_memory(args: argparse.Namespace) -> int:
                 ),
             }
         elif args.memory_command == "tombstone":
+            if args.eval_run_id:
+                _require_run(store, args.eval_run_id)
             result = engine.tombstone_memory(
                 args.memory_id,
                 args.reason,
                 target_type=args.target_type,
                 replacement_id=args.replacement_id,
+                eval_run_id=args.eval_run_id,
             )
         elif args.memory_command == "forget":
             result = engine.private_delete_memory(args.memory_id, args.reason, target_type=args.target_type)
@@ -1491,6 +1495,9 @@ def _print_memory_result(result: dict) -> None:
         replacement = result.get("replacement") or {}
         if replacement.get("id"):
             print(f"  replacement {replacement.get('target_type')}:{replacement.get('id')}")
+        eval_case = result.get("eval_case") or {}
+        if eval_case.get("id"):
+            print(f"  eval_case {eval_case.get('id')} [{eval_case.get('status')}]")
         return
     if "memory_id" in result and ("outgoing" in result or "incoming" in result):
         for link in result.get("outgoing", []):

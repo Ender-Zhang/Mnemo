@@ -406,6 +406,7 @@ class MemoryEngine:
         *,
         target_type: str = "auto",
         replacement_id: str | None = None,
+        eval_run_id: str | None = None,
     ) -> dict[str, Any]:
         normalized_target_type = _normalize_tombstone_target_type(target_type)
         reason_text = _normalize_space(reason) or "unspecified"
@@ -417,6 +418,8 @@ class MemoryEngine:
         if normalized_target_type in {"auto", "page"}:
             page = self._get_page(memory_id)
             if page:
+                summary = _truncate(page.get("content", ""), limit=180)
+                source_run_id = self._page_source_run_id(page)
                 update_page_status = getattr(self.store, "update_memory_page_status", None)
                 if not update_page_status:
                     raise ValueError("memory page tombstone is not supported by this store")
@@ -426,7 +429,7 @@ class MemoryEngine:
                     memory_id,
                     "page",
                     reason_text,
-                    summary=_truncate(page.get("content", ""), limit=180),
+                    summary=summary,
                     metadata=_curation_metadata(
                         title=page.get("title"),
                         scope=page.get("scope"),
@@ -434,6 +437,18 @@ class MemoryEngine:
                         replacement=replacement,
                         replacement_link_id=replacement_link_id,
                     ),
+                )
+                eval_case = self._create_harmful_eval_case(
+                    memory_id,
+                    "page",
+                    reason_text,
+                    status=status,
+                    tombstone_id=tombstone_id,
+                    summary=summary,
+                    eval_run_id=eval_run_id,
+                    source_run_id=source_run_id,
+                    scope=page.get("scope"),
+                    replacement=replacement,
                 )
                 return {
                     "memory_id": memory_id,
@@ -444,20 +459,23 @@ class MemoryEngine:
                     "tombstone_id": tombstone_id,
                     "replacement": replacement,
                     "replacement_link_id": replacement_link_id,
+                    "eval_case": eval_case,
                     "memory": self._get_page(memory_id),
                 }
 
         if normalized_target_type in {"auto", "candidate"}:
             candidate = self._get_candidate(memory_id)
             if candidate:
+                summary = _truncate(candidate.get("claim", ""), limit=180)
+                source_run_id = candidate.get("run_id")
                 self.store.update_memory_candidate_status(memory_id, status)
                 replacement_link_id = self._link_replacement(memory_id, replacement)
                 tombstone_id = self.store.add_memory_tombstone(
                     memory_id,
                     "candidate",
                     reason_text,
-                    summary=_truncate(candidate.get("claim", ""), limit=180),
-                    evidence_run_id=candidate.get("run_id"),
+                    summary=summary,
+                    evidence_run_id=source_run_id,
                     metadata=_curation_metadata(
                         dimension=candidate.get("dimension"),
                         scope=candidate.get("scope"),
@@ -465,6 +483,19 @@ class MemoryEngine:
                         replacement=replacement,
                         replacement_link_id=replacement_link_id,
                     ),
+                )
+                eval_case = self._create_harmful_eval_case(
+                    memory_id,
+                    "candidate",
+                    reason_text,
+                    status=status,
+                    tombstone_id=tombstone_id,
+                    summary=summary,
+                    eval_run_id=eval_run_id,
+                    source_run_id=source_run_id,
+                    dimension=candidate.get("dimension"),
+                    scope=candidate.get("scope"),
+                    replacement=replacement,
                 )
                 return {
                     "memory_id": memory_id,
@@ -475,6 +506,7 @@ class MemoryEngine:
                     "tombstone_id": tombstone_id,
                     "replacement": replacement,
                     "replacement_link_id": replacement_link_id,
+                    "eval_case": eval_case,
                     "memory": self._get_candidate(memory_id),
                 }
 
@@ -988,6 +1020,69 @@ class MemoryEngine:
         if not add_link:
             return None
         return add_link(memory_id, str(replacement["id"]), "superseded_by", weight=1.0)
+
+    def _page_source_run_id(self, page: dict[str, Any]) -> str | None:
+        source_candidate_id = page.get("source_candidate_id")
+        if not source_candidate_id:
+            return None
+        source_candidate = self._get_candidate(str(source_candidate_id))
+        return source_candidate.get("run_id") if source_candidate else None
+
+    def _create_harmful_eval_case(
+        self,
+        memory_id: str,
+        target_type: str,
+        reason_text: str,
+        *,
+        status: str,
+        tombstone_id: str,
+        summary: str,
+        eval_run_id: str | None,
+        source_run_id: str | None,
+        replacement: dict[str, Any] | None,
+        dimension: Any = None,
+        scope: Any = None,
+    ) -> dict[str, Any] | None:
+        if not _is_harmful_reason(reason_text):
+            return None
+        add_eval_case = getattr(self.store, "add_eval_case", None)
+        if not add_eval_case:
+            return None
+        run_id = self._resolve_eval_run_id(eval_run_id, fallback=source_run_id)
+        if not run_id:
+            return None
+        case = _harmful_memory_eval_case(
+            memory_id,
+            target_type,
+            reason_text,
+            status=status,
+            tombstone_id=tombstone_id,
+            summary=summary,
+            source_run_id=source_run_id,
+            dimension=dimension,
+            scope=scope,
+            replacement=replacement,
+        )
+        case_id = add_eval_case(
+            run_id,
+            f"memory harmful regression: {target_type}:{memory_id}",
+            case,
+        )
+        get_eval_case = getattr(self.store, "get_eval_case", None)
+        return _compact_eval_case(get_eval_case(case_id) if get_eval_case else None, case_id=case_id, run_id=run_id)
+
+    def _resolve_eval_run_id(self, eval_run_id: str | None, *, fallback: str | None) -> str | None:
+        explicit_run_id = _normalize_space(str(eval_run_id or ""))
+        fallback_run_id = _normalize_space(str(fallback or ""))
+        run_id = explicit_run_id or fallback_run_id
+        if not run_id:
+            return None
+        get_run = getattr(self.store, "get_run", None)
+        if get_run and not get_run(run_id):
+            if not explicit_run_id:
+                return None
+            raise ValueError(f"Eval run not found for harmful memory tombstone: {run_id}")
+        return run_id
 
     def _private_delete_page(
         self,
@@ -1745,6 +1840,66 @@ def _curation_status(reason: str) -> str:
     if slug == "low_usefulness":
         return "archived:low_usefulness"
     return f"tombstoned:{slug}"
+
+
+def _is_harmful_reason(reason: str) -> bool:
+    return _status_reason(reason) == "harmful"
+
+
+def _harmful_memory_eval_case(
+    memory_id: str,
+    target_type: str,
+    reason: str,
+    *,
+    status: str,
+    tombstone_id: str,
+    summary: str,
+    source_run_id: str | None,
+    dimension: Any,
+    scope: Any,
+    replacement: dict[str, Any] | None,
+) -> dict[str, Any]:
+    case = {
+        "kind": "memory_harmful_regression",
+        "suite": "memory-core",
+        "memory_id": memory_id,
+        "target_type": target_type,
+        "tombstone_id": tombstone_id,
+        "reason": _normalize_space(reason) or "harmful",
+        "status": status,
+        "summary": _truncate(summary, limit=178),
+        "source_run_id": source_run_id,
+        "expected": {
+            "active_recall_excludes_target": True,
+            "tombstone_respected": True,
+            "do_not_resurrect_without_user_restatement": True,
+        },
+    }
+    if dimension:
+        case["dimension"] = dimension
+    if scope:
+        case["scope"] = scope
+    if replacement:
+        case["replacement_id"] = replacement.get("id")
+        case["replacement_type"] = replacement.get("target_type")
+    return case
+
+
+def _compact_eval_case(
+    eval_case: dict[str, Any] | None,
+    *,
+    case_id: str,
+    run_id: str,
+) -> dict[str, Any]:
+    payload = eval_case.get("case") if isinstance(eval_case, dict) else {}
+    return {
+        "id": eval_case.get("id") if isinstance(eval_case, dict) else case_id,
+        "run_id": eval_case.get("run_id") if isinstance(eval_case, dict) else run_id,
+        "name": eval_case.get("name") if isinstance(eval_case, dict) else "memory harmful regression",
+        "status": eval_case.get("status") if isinstance(eval_case, dict) else "draft",
+        "kind": payload.get("kind") if isinstance(payload, dict) else "memory_harmful_regression",
+        "suite": payload.get("suite") if isinstance(payload, dict) else "memory-core",
+    }
 
 
 def _curation_metadata(
