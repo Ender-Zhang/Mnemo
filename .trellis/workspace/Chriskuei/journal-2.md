@@ -1665,3 +1665,37 @@ Implemented tombstone-aware L4 session recall suppression, added explicit includ
 ### Next Steps
 
 - None - task complete
+
+
+## Session 106: Memory health eval gates
+
+**Date**: 2026-04-27
+**Task**: Memory health eval gates
+**Branch**: `main`
+
+### Summary
+
+Added deterministic memory-health harness gate covering tombstone wrong-memory suppression, low-confidence over-personalization no-promotion, conflict health cards, compact health reports, release aggregation, tests, and design/checklist/spec alignment.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4cdfb0c` | (see git log) |
+| `0b578f0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
