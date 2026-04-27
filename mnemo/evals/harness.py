@@ -1,20 +1,36 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import hashlib
 from pathlib import Path
 import sys
 import tempfile
 from typing import Any
 
-from ..core.models import PromptMode, RunRequest
+from ..core.jsonutil import dumps
+from ..core.models import PromptMode, RunRequest, ToolCallEnvelope
 from ..memory import MemoryEngine
 from ..runtime import ExternalRunRequest, ScheduleService, run_external, stream_local
 from ..runtime.capsule import ContextCapsuleBuilder
 from ..runtime.ledger import RunLedger
 from ..skills import SkillService
 from ..storage import StateStore
+from ..tools import ToolRegistry
+from ..tools.registry import ToolContext
 
 HARNESS_VARIANTS = ("no_memory", "skills_only", "full_mnemo")
+REPLAY_MODES = ("deterministic", "dry_run", "live_tools")
+LIVE_REPLAY_READ_TOOL_NAMES = frozenset(
+    {
+        "memory_search",
+        "memory_read",
+        "memory_health_report",
+        "recall_search",
+        "skills_list",
+        "tool_search",
+        "tool_expand_schema",
+    }
+)
 RELEASE_GATE_SUITES = (
     "personalization-core",
     "memory-safety",
@@ -940,25 +956,425 @@ def list_variants() -> list[str]:
     return list(HARNESS_VARIANTS)
 
 
-def replay_summary(state_dir: str | Path, run_id: str) -> dict[str, Any]:
+def replay_summary(
+    state_dir: str | Path,
+    run_id: str,
+    *,
+    mode: str = "deterministic",
+    compare_run_id: str | None = None,
+) -> dict[str, Any]:
+    replay_mode = _normalize_replay_mode(mode)
     store = StateStore(state_dir)
     store.initialize()
     ledger = RunLedger(store)
     trace = ledger.load_trace(run_id)
+    stored_events = ledger.events(run_id)
     event_types = [event.get("event_type") for event in trace]
     chat_events = ledger.chat_events(run_id)
+    completed = any(
+        event.get("event_type") == "run.completed"
+        and event.get("payload", {}).get("status") == "completed"
+        for event in trace
+    )
+    fingerprint = _trace_fingerprint(trace)
+    compare_fingerprint = _trace_fingerprint(ledger.load_trace(compare_run_id)) if compare_run_id else fingerprint
+    diff = _fingerprint_diff(fingerprint, compare_fingerprint)
+    checks = _replay_checks(trace=trace, stored_events=stored_events, completed=completed)
+    dry_run = _dry_run_surface(trace) if replay_mode == "dry_run" else None
+    live_tools = _live_tool_replay(store, run_id, trace) if replay_mode == "live_tools" else None
+    if dry_run:
+        checks.extend(_dry_run_checks(dry_run))
+    if live_tools:
+        checks.extend(_live_tool_checks(live_tools))
+    if compare_run_id:
+        checks.append(
+            {
+                "name": "comparison_has_no_diff",
+                "passed": not diff["changed"],
+                "detail": ",".join(diff["changed_categories"]) if diff["changed_categories"] else "no diff",
+            }
+        )
+    passed = all(bool(check["passed"]) for check in checks)
     return {
         "run_id": run_id,
+        "mode": replay_mode,
         "event_count": len(trace),
         "chat_event_count": len(chat_events),
+        "tool_call_count": len(_tool_call_events(trace)),
         "event_types": event_types,
-        "completed": any(
-            event.get("event_type") == "run.completed"
-            and event.get("payload", {}).get("status") == "completed"
-            for event in trace
-        ),
+        "completed": completed,
+        "passed": passed,
+        "checks": checks,
+        "fingerprint": fingerprint,
+        "compare_run_id": compare_run_id,
+        "diff": diff,
+        **({"dry_run": dry_run} if dry_run else {}),
+        **({"live_tools": live_tools} if live_tools else {}),
         "trace_path": str(ledger.trace_path(run_id)),
     }
+
+
+def _normalize_replay_mode(value: str) -> str:
+    mode = str(value or "deterministic").replace("-", "_")
+    if mode not in REPLAY_MODES:
+        known = ", ".join(mode.replace("_", "-") for mode in REPLAY_MODES)
+        raise ValueError(f"unknown replay mode: {value}. Known modes: {known}")
+    return mode
+
+
+def _replay_checks(
+    *,
+    trace: list[dict[str, Any]],
+    stored_events: list[dict[str, Any]],
+    completed: bool,
+) -> list[dict[str, Any]]:
+    jsonl_signature = _event_stream_signature(trace)
+    stored_signature = _event_stream_signature(stored_events)
+    return [
+        {
+            "name": "jsonl_matches_store",
+            "passed": jsonl_signature == stored_signature,
+            "detail": f"jsonl={len(jsonl_signature)} store={len(stored_signature)}",
+        },
+        {
+            "name": "run_completed",
+            "passed": completed,
+            "detail": "completed" if completed else "not completed",
+        },
+        {
+            "name": "trace_has_events",
+            "passed": bool(trace),
+            "detail": str(len(trace)),
+        },
+    ]
+
+
+def _dry_run_checks(surface: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "prompt_surface_reconstructed",
+            "passed": bool(surface.get("prompt", {}).get("present")),
+            "detail": str(surface.get("prompt", {}).get("block_count", 0)),
+        },
+        {
+            "name": "tool_approval_path_reconstructed",
+            "passed": "tool_plan" in surface,
+            "detail": str(len(surface.get("tool_plan", []))),
+        },
+    ]
+
+
+def _live_tool_checks(live_tools: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "live_tools_no_mismatch",
+            "passed": int(live_tools["summary"]["mismatched"]) == 0 and int(live_tools["summary"]["failed"]) == 0,
+            "detail": f"replayed={live_tools['summary']['replayed']} skipped={live_tools['summary']['skipped']}",
+        }
+    ]
+
+
+def _event_stream_signature(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "seq": int(event.get("seq") or 0),
+            "event_type": event.get("event_type"),
+            "payload_hash": _payload_hash(event.get("payload") or {}),
+        }
+        for event in events
+    ]
+
+
+def _trace_fingerprint(trace: list[dict[str, Any]]) -> dict[str, Any]:
+    tool_calls = _tool_call_events(trace)
+    tool_results = _tool_result_by_call_id(trace)
+    return {
+        "prompt": _prompt_fingerprint(_latest_payload(trace, "prompt.assembled")),
+        "tools": _tool_fingerprint(tool_calls, tool_results),
+        "memory": _memory_fingerprint(tool_calls, tool_results),
+        "skills": _skill_fingerprint(tool_calls, tool_results),
+        "output": _output_fingerprint(trace),
+    }
+
+
+def _prompt_fingerprint(payload: dict[str, Any] | None) -> dict[str, Any]:
+    if not payload:
+        return {"present": False}
+    blocks = payload.get("blocks") if isinstance(payload.get("blocks"), list) else []
+    dropped = payload.get("dropped_blocks") if isinstance(payload.get("dropped_blocks"), list) else []
+    return {
+        "present": True,
+        "mode": payload.get("mode"),
+        "block_ids": [block.get("id") for block in blocks if isinstance(block, dict)],
+        "stable_prefix": payload.get("stable_prefix") or [],
+        "dynamic_tail": payload.get("dynamic_tail") or [],
+        "dropped_block_ids": [item.get("id") for item in dropped if isinstance(item, dict)],
+        "prompt_token_estimate": payload.get("prompt_token_estimate"),
+        "token_budget": payload.get("token_budget"),
+        "tool_count": payload.get("tool_count"),
+        "tool_bundle": (payload.get("tool_bundle") or {}).get("bundle_id")
+        if isinstance(payload.get("tool_bundle"), dict)
+        else None,
+    }
+
+
+def _tool_fingerprint(tool_calls: list[dict[str, Any]], tool_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    sequence: list[dict[str, Any]] = []
+    for event in tool_calls:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        result = tool_results.get(str(payload.get("call_id")))
+        sequence.append(
+            {
+                "tool_name": payload.get("tool_name"),
+                "risk": payload.get("risk"),
+                "permission_allowed": (payload.get("permission") or {}).get("allowed")
+                if isinstance(payload.get("permission"), dict)
+                else None,
+                "result_ok": result.get("ok") if result else None,
+                "error": _compact_error(result.get("error")) if result else None,
+            }
+        )
+    return {
+        "call_count": len(sequence),
+        "tool_names": [item["tool_name"] for item in sequence],
+        "sequence": sequence,
+    }
+
+
+def _memory_fingerprint(tool_calls: list[dict[str, Any]], tool_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for event in tool_calls:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        name = payload.get("tool_name")
+        if name not in {"memory_write_candidate", "working_note", "memory_tombstone"}:
+            continue
+        args = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+        result = tool_results.get(str(payload.get("call_id"))) or {}
+        result_payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+        items.append(
+            {
+                "tool_name": name,
+                "arguments": _compact_arguments(args, ("claim", "content", "dimension", "scope", "confidence", "reason")),
+                "result": _compact_arguments(result_payload, ("status", "candidate_id", "memory_id", "note_id")),
+            }
+        )
+    return {"items": items, "count": len(items)}
+
+
+def _skill_fingerprint(tool_calls: list[dict[str, Any]], tool_results: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for event in tool_calls:
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        name = str(payload.get("tool_name") or "")
+        if not name.startswith("skill_"):
+            continue
+        args = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+        result = tool_results.get(str(payload.get("call_id"))) or {}
+        result_payload = result.get("result") if isinstance(result.get("result"), dict) else {}
+        items.append(
+            {
+                "tool_name": name,
+                "arguments": _compact_arguments(args, ("name", "source_skill", "outcome", "case_id")),
+                "result": _compact_arguments(result_payload, ("status", "skill_id", "name", "event_id")),
+            }
+        )
+    return {"items": items, "count": len(items)}
+
+
+def _output_fingerprint(trace: list[dict[str, Any]]) -> dict[str, Any]:
+    final_messages = []
+    for event in trace:
+        if event.get("event_type") != "chat.event":
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        if payload.get("type") != "assistant.message":
+            continue
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        text = str(data.get("text") or "")
+        final_messages.append({"length": len(text), "hash": _payload_hash(text), "preview": _preview(text)})
+    return {
+        "assistant_messages": final_messages,
+        "completed_status": (_latest_payload(trace, "run.completed") or {}).get("status"),
+    }
+
+
+def _fingerprint_diff(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
+    categories: dict[str, Any] = {}
+    for category in ("prompt", "tools", "memory", "skills", "output"):
+        if left.get(category) != right.get(category):
+            categories[category] = {"left": left.get(category), "right": right.get(category)}
+    return {
+        "changed": bool(categories),
+        "changed_categories": list(categories),
+        "categories": categories,
+    }
+
+
+def _dry_run_surface(trace: list[dict[str, Any]]) -> dict[str, Any]:
+    prompt = _prompt_fingerprint(_latest_payload(trace, "prompt.assembled"))
+    tool_plan: list[dict[str, Any]] = []
+    for event in _tool_call_events(trace):
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        permission = payload.get("permission") if isinstance(payload.get("permission"), dict) else {}
+        tool_plan.append(
+            {
+                "tool_name": payload.get("tool_name"),
+                "risk": payload.get("risk"),
+                "permission_allowed": permission.get("allowed"),
+                "permission_reason": permission.get("reason"),
+                "argument_keys": sorted((payload.get("arguments") or {}).keys())
+                if isinstance(payload.get("arguments"), dict)
+                else [],
+            }
+        )
+    return {
+        "mode": "dry_run",
+        "model_called": False,
+        "tools_called": False,
+        "prompt": {
+            "present": prompt.get("present", False),
+            "mode": prompt.get("mode"),
+            "block_count": len(prompt.get("block_ids") or []),
+            "stable_prefix": prompt.get("stable_prefix") or [],
+            "dynamic_tail": prompt.get("dynamic_tail") or [],
+            "dropped_block_ids": prompt.get("dropped_block_ids") or [],
+            "prompt_token_estimate": prompt.get("prompt_token_estimate"),
+            "token_budget": prompt.get("token_budget"),
+        },
+        "tool_plan": tool_plan,
+    }
+
+
+def _live_tool_replay(store: StateStore, run_id: str, trace: list[dict[str, Any]]) -> dict[str, Any]:
+    registry = ToolRegistry.from_store(store)
+    tool_results = _tool_result_by_call_id(trace)
+    run = store.get_run(run_id) or {}
+    mission_id = str(run.get("mission_id") or _request_payload(trace).get("mission_id") or "")
+    context = ToolContext(
+        store=store,
+        ledger=_ReplayNullLedger(),
+        run_id=run_id,
+        mission_id=mission_id,
+        workspace_root=Path.cwd(),
+    )
+    items: list[dict[str, Any]] = []
+    for event in _tool_call_events(trace):
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        call_id = str(payload.get("call_id") or "")
+        tool_name = str(payload.get("tool_name") or "")
+        risk = payload.get("risk")
+        if risk != "read" or tool_name not in LIVE_REPLAY_READ_TOOL_NAMES:
+            items.append(
+                {
+                    "call_id": call_id,
+                    "tool_name": tool_name,
+                    "status": "skipped",
+                    "reason": "not_safe_for_live_replay",
+                }
+            )
+            continue
+        arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+        original = tool_results.get(call_id) or {}
+        try:
+            result = registry.execute(
+                ToolCallEnvelope(
+                    call_id=call_id,
+                    name=tool_name,
+                    arguments=arguments,
+                    risk="read",
+                    provider=str(payload.get("provider") or "replay"),
+                ),
+                context,
+            )
+            original_result = original.get("result") if isinstance(original.get("result"), dict) else {}
+            observed_hash = _payload_hash(result.result)
+            expected_hash = _payload_hash(original_result)
+            items.append(
+                {
+                    "call_id": call_id,
+                    "tool_name": tool_name,
+                    "status": "matched" if result.ok and observed_hash == expected_hash else "mismatched",
+                    "ok": result.ok,
+                    "expected_hash": expected_hash,
+                    "observed_hash": observed_hash,
+                }
+            )
+        except Exception as exc:
+            items.append(
+                {
+                    "call_id": call_id,
+                    "tool_name": tool_name,
+                    "status": "failed",
+                    "error": _compact_error(str(exc)),
+                }
+            )
+    summary = {
+        "total": len(items),
+        "replayed": sum(1 for item in items if item["status"] in {"matched", "mismatched", "failed"}),
+        "matched": sum(1 for item in items if item["status"] == "matched"),
+        "mismatched": sum(1 for item in items if item["status"] == "mismatched"),
+        "failed": sum(1 for item in items if item["status"] == "failed"),
+        "skipped": sum(1 for item in items if item["status"] == "skipped"),
+    }
+    return {"mode": "live_tools", "summary": summary, "items": items}
+
+
+class _ReplayNullLedger:
+    def append(self, run_id: str, event_type: str, payload: dict[str, Any]) -> int:
+        return 0
+
+
+def _tool_call_events(trace: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [event for event in trace if event.get("event_type") == "tool.called"]
+
+
+def _tool_result_by_call_id(trace: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    results: dict[str, dict[str, Any]] = {}
+    for event in trace:
+        if event.get("event_type") != "tool.result":
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        call_id = str(payload.get("call_id") or "")
+        if call_id:
+            results[call_id] = payload
+    return results
+
+
+def _latest_payload(trace: list[dict[str, Any]], event_type: str) -> dict[str, Any] | None:
+    for event in reversed(trace):
+        if event.get("event_type") == event_type and isinstance(event.get("payload"), dict):
+            return event["payload"]
+    return None
+
+
+def _request_payload(trace: list[dict[str, Any]]) -> dict[str, Any]:
+    return _latest_payload(trace, "request.received") or {}
+
+
+def _compact_arguments(values: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key in keys:
+        if key in values:
+            value = values[key]
+            compact[key] = _preview(value) if isinstance(value, str) else value
+    return compact
+
+
+def _compact_error(value: Any) -> str | None:
+    if value is None:
+        return None
+    return _preview(str(value), limit=120)
+
+
+def _preview(value: Any, *, limit: int = 96) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3] + "..."
+
+
+def _payload_hash(value: Any) -> str:
+    return hashlib.sha256(dumps(value).encode("utf-8")).hexdigest()[:16]
 
 
 def _normalize_variants(values: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:

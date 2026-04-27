@@ -229,6 +229,12 @@ def build_parser() -> argparse.ArgumentParser:
     replay_parser = subparsers.add_parser("replay", help="Summarize a run trace")
     _add_state_dir(replay_parser)
     replay_parser.add_argument("run_id")
+    replay_parser.add_argument(
+        "--mode",
+        default="deterministic",
+        help="Replay mode: deterministic, dry-run, or live-tools",
+    )
+    replay_parser.add_argument("--compare-run-id", help="Optional second run id for compact diff comparison")
     replay_parser.add_argument("--json", action="store_true")
 
     memory_parser = subparsers.add_parser("memory", help="Search and curate memory")
@@ -430,6 +436,12 @@ def build_parser() -> argparse.ArgumentParser:
     harness_replay_parser = harness_subparsers.add_parser("replay", help="Summarize a run replay trace")
     _add_state_dir(harness_replay_parser)
     harness_replay_parser.add_argument("run_id")
+    harness_replay_parser.add_argument(
+        "--mode",
+        default="deterministic",
+        help="Replay mode: deterministic, dry-run, or live-tools",
+    )
+    harness_replay_parser.add_argument("--compare-run-id", help="Optional second run id for compact diff comparison")
     harness_replay_parser.add_argument("--json", action="store_true")
     harness_list_parser = harness_subparsers.add_parser("list", help="List built-in eval suites")
     harness_list_parser.add_argument("--json", action="store_true")
@@ -1198,30 +1210,42 @@ def _cmd_replay(args: argparse.Namespace) -> int:
     store = StateStore(args.state_dir)
     store.initialize()
     _require_run(store, args.run_id)
-    ledger = RunLedger(store)
-    trace = ledger.load_trace(args.run_id)
-    summary = {
-        "run_id": args.run_id,
-        "event_count": len(trace),
-        "chat_event_count": sum(1 for event in trace if event.get("event_type") == "chat.event"),
-        "tool_call_count": sum(1 for event in trace if event.get("event_type") == "tool.called"),
-        "completed": any(
-            event.get("event_type") == "run.completed"
-            and event.get("payload", {}).get("status") == "completed"
-            for event in trace
-        ),
-        "trace_path": str(ledger.trace_path(args.run_id)),
-    }
+    if args.compare_run_id:
+        _require_run(store, args.compare_run_id)
+    try:
+        summary = replay_summary(
+            args.state_dir,
+            args.run_id,
+            mode=args.mode,
+            compare_run_id=args.compare_run_id,
+        )
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
     if args.json:
         print(dumps(summary))
     else:
+        _print_replay_summary(summary)
+    return 0 if summary["passed"] else 1
+
+
+def _print_replay_summary(summary: dict[str, Any]) -> None:
+    diff = summary.get("diff") if isinstance(summary.get("diff"), dict) else {}
+    changed = ",".join(diff.get("changed_categories") or []) or "none"
+    print(
+        f"run={summary['run_id']} mode={summary.get('mode', 'deterministic')} "
+        f"passed={summary.get('passed')} completed={summary.get('completed')} "
+        f"events={summary['event_count']} chat_events={summary['chat_event_count']} "
+        f"tool_calls={summary.get('tool_call_count', 0)} diff={changed}"
+    )
+    if summary.get("compare_run_id"):
+        print(f"compare_run={summary['compare_run_id']}")
+    if isinstance(summary.get("live_tools"), dict):
+        live_summary = summary["live_tools"].get("summary", {})
         print(
-            f"run={summary['run_id']} events={summary['event_count']} "
-            f"chat_events={summary['chat_event_count']} tool_calls={summary['tool_call_count']} "
-            f"completed={summary['completed']}"
+            f"live_tools replayed={live_summary.get('replayed', 0)} "
+            f"matched={live_summary.get('matched', 0)} skipped={live_summary.get('skipped', 0)}"
         )
-        print(summary["trace_path"])
-    return 0
+    print(summary["trace_path"])
 
 
 def _cmd_memory(args: argparse.Namespace) -> int:
@@ -1772,16 +1796,22 @@ def _cmd_harness(args: argparse.Namespace) -> int:
         store = StateStore(args.state_dir)
         store.initialize()
         _require_run(store, args.run_id)
-        result = replay_summary(args.state_dir, args.run_id)
+        if args.compare_run_id:
+            _require_run(store, args.compare_run_id)
+        try:
+            result = replay_summary(
+                args.state_dir,
+                args.run_id,
+                mode=args.mode,
+                compare_run_id=args.compare_run_id,
+            )
+        except ValueError as exc:
+            raise MnemoError(str(exc)) from exc
         if args.json:
             print(dumps(result))
-            return 0 if result["completed"] else 1
-        print(
-            f"run={result['run_id']} completed={result['completed']} "
-            f"events={result['event_count']} chat_events={result['chat_event_count']}"
-        )
-        print(result["trace_path"])
-        return 0 if result["completed"] else 1
+            return 0 if result["passed"] else 1
+        _print_replay_summary(result)
+        return 0 if result["passed"] else 1
     if args.harness_command == "list":
         suites = list_suites()
         if args.json:

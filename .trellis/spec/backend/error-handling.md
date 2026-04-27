@@ -35,11 +35,11 @@
 - CLI: `mnemo missions show <mission_id> [--json]`
 - CLI: `mnemo runs show <run_id> [--json]`
 - CLI: `mnemo events <run_id> [--json]`
-- CLI: `mnemo replay <run_id> [--json]`
+- CLI: `mnemo replay <run_id> [--mode deterministic|dry-run|live-tools] [--compare-run-id RUN_ID] [--json]`
 - CLI: `mnemo harness eval <suite> [--json]`
 - CLI: `mnemo harness variants <suite> [--variant VARIANT] [--json]`
 - CLI: `mnemo harness release [--json]`
-- CLI: `mnemo harness replay <run_id> [--json]`
+- CLI: `mnemo harness replay <run_id> [--mode deterministic|dry-run|live-tools] [--compare-run-id RUN_ID] [--json]`
 
 ### 3. Contracts
 - Provider adapters raise `ProviderStatusError` for non-2xx HTTP responses.
@@ -62,6 +62,7 @@
 - `mnemo mcp config` is read-only, validates a non-empty server command, and emits compact client config without credentials or raw tool schemas.
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
+- `mnemo replay` and `mnemo harness replay` normalize unknown replay modes this way.
 - `mnemo harness eval` and `mnemo harness variants` normalize unknown suites or variants this way.
 - `mnemo harness release` exits non-zero when any release gate fails and keeps the report compact.
 - `mnemo memory promote` and `mnemo memory reject` normalize missing memory candidates this way.
@@ -111,6 +112,7 @@
 | MCP config output | CLI returns compact generic/Claude stdio config without raw tool schemas | `tests/test_cli.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Unknown replay mode | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing memory candidate in CLI curation | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Memory query debug | CLI emits compact query plan metadata without changing default JSON shape | `tests/test_cli.py` |
 | Missing memory id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |

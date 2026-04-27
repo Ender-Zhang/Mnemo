@@ -142,8 +142,11 @@ class EvalHarnessTests(unittest.TestCase):
             summary = replay_summary(tmp, run_id)
 
             self.assertTrue(summary["completed"])
+            self.assertTrue(summary["passed"])
+            self.assertEqual(summary["mode"], "deterministic")
             self.assertGreater(summary["event_count"], 0)
             self.assertIn("chat.event", summary["event_types"])
+            self.assertFalse(summary["diff"]["changed"])
 
 
 if __name__ == "__main__":

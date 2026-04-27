@@ -40,7 +40,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] True streaming provider delta support.
 - [x] Timeout/retry/cancellation policy: provider timeout, non-streaming retry, and cooperative persisted cancellation exist.
 - [~] Daemon, queue, single-instance lock, stale queue recovery, scheduled watch/cron enqueue, and model-marked W0 pending recovery foundations exist; full Supervisor priority classes, Inbox recovery, Watch recovery, and child runtime cleanup are not complete.
-- [~] Replay harness exists as trace summary and smoke/eval support; full deterministic/live-tools/dry-run replay diff modes are not implemented.
+- [~] Replay harness supports deterministic trace/store checks, dry-run reconstruction, safe read-only live-tools drift checks, and compact run-to-run category diffs; full side-effecting live tool replay remains intentionally skipped.
 
 ## Tools
 
@@ -166,6 +166,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-27-replay-harness-diff-modes`: replay reports now expose deterministic, dry-run, and safe live-tools modes with compact prompt/tool/memory/skill/output diffs.
 - [x] `04-27-daemon-w0-pending-recovery`: daemon status now reports model-marked W0 backlog, and daemon recover/run flush those notes through MemoryEngine without mutating ephemeral notes.
 - [x] `04-25-scheduled-watch-cron-foundation`: Watch/Cron now persist as lightweight scheduled items, expose CLI/MCP registration, enqueue due runs through the existing daemon queue, and report compact scheduled status.
 - [x] `04-25-mcp-content-length-transport`: MCP serve now defaults to standard Content-Length stdio framing while retaining explicit JSONL debug transport, with direct server, CLI, and package smoke coverage.

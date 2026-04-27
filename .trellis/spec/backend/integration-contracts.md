@@ -14,11 +14,14 @@
 - `MnemoClient.external_run(task: str, *, command: list[str] | tuple[str, ...], runtime="external-command", agent_type="general", requested_pages=None, allowed_pages=None, conversation_id=None, mission_id=None, timeout_s=30.0) -> dict[str, Any]`
 - `MnemoClient.run(message: str, *, conversation_id=None, mission_id=None, prompt_mode="full") -> dict[str, Any]`
 - `MnemoClient.replay(run_id: str) -> dict[str, Any]`
+- `replay_summary(state_dir: str | Path, run_id: str, *, mode: str = "deterministic", compare_run_id: str | None = None) -> dict[str, Any]`
 - `MnemoClient.evaluate(suite="smoke", *, variants: list[str] | tuple[str, ...] | None = None, release_gate: bool = False) -> dict[str, Any]`
 - `mnemo.sdk.mnemo_core_api_schema() -> dict[str, Any]`
 - CLI: `mnemo api schema [--json]`
 - CLI: `mnemo api capsule TASK... [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo api external-run TASK... --command-json '[...]' [--runtime RUNTIME] [--agent-type TYPE] [--requested-page ID] [--allowed-page ID] [--timeout-s S] [--state-dir DIR] [--json]`
+- CLI: `mnemo replay RUN_ID [--mode deterministic|dry-run|live-tools] [--compare-run-id RUN_ID] [--json]`
+- CLI: `mnemo harness replay RUN_ID [--mode deterministic|dry-run|live-tools] [--compare-run-id RUN_ID] [--json]`
 - CLI: `mnemo api serve [--host HOST] [--port PORT] [--state-dir DIR]`
 
 ### 3. Contracts
@@ -37,6 +40,11 @@
 - `external_run()` records compact command lifecycle events without storing raw stdout/stderr bodies in the SDK result.
 - `run()` executes through `run_local()` and returns run ids, response, compact `tool_summary`, and chat `event_summary`.
 - `replay()` reuses `replay_summary()`.
+- `replay_summary(mode="deterministic")` compares JSONL trace records with persisted RunLedger events and returns compact prompt/tool/memory/skill/output fingerprints.
+- `replay_summary(mode="dry-run")` reconstructs prompt metadata and tool approval paths from the trace without calling models or tools.
+- `replay_summary(mode="live-tools")` only re-executes a conservative read-only tool safelist and skips write/external/admin or read tools with known state mutation side effects.
+- Replay reports include `passed`, `checks`, `fingerprint`, and `diff`; they must not include raw prompt bodies, full transcripts, or raw tool result blobs.
+- `compare_run_id` compares compact category fingerprints and fails the report when prompt/tool/memory/skill/output categories drift.
 - `evaluate()` reuses `EvalHarness`; without variants it returns the normal suite report.
 - `evaluate(..., variants=[...])` returns the harness variant report for `no_memory`, `skills_only`, and/or `full_mnemo`.
 - `evaluate(release_gate=True)` returns the fixed core release gate report across personalization, memory-safety, skill-evolution, proactive-watch, and external-harness gates; it cannot be combined with `variants`.
@@ -56,6 +64,7 @@
 | External runtime request | Explicit command receives capsule and returns proposals only; ignored fields become boundary violations | `tests/test_runtime_external.py`, `tests/test_sdk.py` |
 | Run request | Existing runtime creates run ledger and compact tool summary | `tests/test_sdk.py` |
 | Replay/evaluate request | Existing harness services return compact suite, variant, and release-gate reports | `tests/test_sdk.py` |
+| Replay modes | Deterministic, dry-run, live-tools, and compare reports stay compact and normalize invalid modes | `tests/test_replay.py`, `tests/test_harness.py`, `tests/test_cli.py` |
 | CLI schema JSON | Returns `api_schema` with all core methods | `tests/test_cli.py` |
 | CLI schema text | Prints readable method summaries | `tests/test_cli.py` |
 | CLI HTTP serve help | Documents host/port/state-dir controls without starting a server | `tests/test_cli.py` |
@@ -63,13 +72,16 @@
 ### 5. Good/Base/Bad Cases
 - Good: add future MCP/HTTP adapters as thin transports over `MnemoClient` or the same service functions.
 - Good: keep SDK return payloads compact enough for external agents to pass through context capsules.
+- Good: keep live tool replay limited to read-only, non-mutating tools so diagnostics do not rewrite user state.
 - Base: the first SDK implementation is local and dependency-free.
 - Bad: duplicating memory search, prompt assembly, run execution, or eval logic inside SDK methods.
 - Bad: letting external runtime stdout directly write memory pages, skills, generated tools, schedules, or artifact bodies.
 - Bad: exposing raw tool schemas, full session transcripts, or full artifact bodies in SDK summaries.
+- Bad: replaying write/external/admin tool calls while checking drift.
 
 ### 6. Tests Required
 - SDK context, recall, capsule, external_run, run/replay/evaluate, variant-report, release-gate, and schema shape tests.
+- Replay mode tests for deterministic mirror checks, dry-run reconstruction, safe live-tools replay, side-effect skips, and run-to-run diffs.
 - CLI schema command tests for JSON and readable output.
 - Package install smoke import coverage for `mnemo.sdk`.
 
