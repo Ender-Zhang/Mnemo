@@ -26,7 +26,7 @@
 - API: `GET /api/inbox?status=open|resolved|all&priority=critical|high|normal|low`
 - API: `POST /api/inbox/resolve` with JSON `{ "item_id": string, "resolution": "accepted"|"rejected"|"ignored", "notes"?: string }`
 - API response: accepted tool approvals may include compact `{ "tool_result": { "tool": string, "ok": boolean, "summary": string } }`.
-- API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject" }`
+- API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject"|"undo" }`
 - API: `GET /api/settings`
 - API: `POST /api/settings` with JSON `{ "quiet_hours": { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string } }`
 
@@ -48,7 +48,7 @@
 - Related artifact metadata is cached in `state.artifactRelated` for the current browser session.
 - Decision cards resolve persisted Inbox items by id and keep status local to the card.
 - Tool approval cards use the same decision resolution path and render any returned compact `tool_result` as an inline action/error card without adding browser persistence keys.
-- Learning chips resolve persisted memory candidates by id and keep status local to the card.
+- Learning chips resolve or undo persisted memory candidates by id and keep status local to the card.
 - Settings drawer state is fetched on open through `/api/settings`; it is not persisted in browser storage.
 - Settings drawer can update quiet hours through `/api/settings` and otherwise prefill the single composer for user-facing actions.
 - `/api/settings` payloads must summarize learned preferences and data counts without raw artifact bodies, raw memory dumps, or provider secrets.
@@ -71,7 +71,7 @@
 | Recall card asset | Handles `recall.card`, compact item rendering, artifact open, decision resolve, and composer prefill hooks | `tests/test_web.py` |
 | Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Tool approval card | Uses the same decision resolution path, renders compact approval results, and adds no browser state keys | `tests/test_web.py`, `tests/test_runtime.py` |
-| Learning memory action | Promotes or rejects a persisted memory candidate and returns JSON errors for missing/invalid input | `tests/test_web.py` |
+| Learning memory action | Promotes, rejects, or undoes a persisted memory candidate and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Settings summary | Returns compact connected app, permission, quiet-hours, preference, and data-control data without secrets | `tests/test_web.py` |
 | Settings update | Saves valid quiet-hours settings and rejects invalid time payloads with JSON errors | `tests/test_web.py` |
 | Settings asset | Opens a drawer from chat and preloads settings through `/api/settings` | `tests/test_web.py` |
@@ -85,7 +85,7 @@
 - Good: express side-effectful artifact operations as composer intent so the normal model/tool/permission loop decides.
 - Good: keep recall result bodies compact and fetch/open only the selected artifact body.
 - Good: resolve decision cards by item id through `/api/inbox/resolve`, leaving conversation replay keys untouched.
-- Good: resolve learning chips by candidate id through `/api/learning/memory`, leaving conversation replay keys untouched.
+- Good: resolve or undo learning chips by candidate id through `/api/learning/memory`, leaving conversation replay keys untouched.
 - Good: fetch settings only when the drawer opens and keep ordinary user actions in composer prefill.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
 - Good: clear `activeRunId` before each new turn so a stale replay id cannot be cancelled.
@@ -110,7 +110,7 @@
 - Recall card rendering covers compact items and actions without additional browser persistence keys.
 - Inbox API covers listing and resolution, including missing and invalid resolution errors.
 - Frontend asset includes inline decision resolution hooks.
-- Learning memory API covers accept, this-turn-only, reject, missing candidate, and invalid action errors.
+- Learning memory API covers accept, this-turn-only, reject, undo, missing candidate, and invalid action errors.
 - Frontend asset includes inline learning resolution hooks.
 - Settings API covers summary, quiet-hours update, invalid time errors, and no secret leakage.
 - Frontend asset includes settings drawer hooks and composer-prefill actions.

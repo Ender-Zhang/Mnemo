@@ -665,6 +665,7 @@ function learningButton(label, action, itemId, statusChip) {
 
 async function resolveLearningMemory(itemId, action, statusChip, actions) {
   if (!itemId || !actions) return;
+  const previousStatus = statusChip.textContent || "draft";
   for (const button of actions.querySelectorAll("button")) {
     button.disabled = true;
   }
@@ -678,8 +679,13 @@ async function resolveLearningMemory(itemId, action, statusChip, actions) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
     statusChip.textContent = payload.candidate?.status || action;
+    if (action === "undo") {
+      actions.replaceChildren();
+    } else {
+      actions.replaceChildren(learningButton("撤销", "undo", itemId, statusChip));
+    }
   } catch (error) {
-    statusChip.textContent = "draft";
+    statusChip.textContent = previousStatus;
     for (const button of actions.querySelectorAll("button")) {
       button.disabled = false;
     }

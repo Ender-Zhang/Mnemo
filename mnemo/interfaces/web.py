@@ -774,7 +774,7 @@ def _priority_lte(priority: str | None) -> int | None:
 
 def _learning_action(action: str) -> str:
     normalized = action.strip().casefold()
-    if normalized not in {"accept", "this_time", "reject"}:
+    if normalized not in {"accept", "this_time", "reject", "undo"}:
         raise ValueError(f"invalid learning action: {action}")
     return normalized
 
@@ -786,6 +786,8 @@ def _apply_learning_memory_action(engine: MemoryEngine, candidate_id: str, actio
         return engine.reject_candidate(candidate_id, "this time only")
     if action == "reject":
         return engine.reject_candidate(candidate_id, "user rejected")
+    if action == "undo":
+        return engine.undo_candidate(candidate_id)
     raise ValueError(f"invalid learning action: {action}")
 
 

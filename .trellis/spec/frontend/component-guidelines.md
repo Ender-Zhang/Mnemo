@@ -22,7 +22,7 @@
 - Decision cards should stay inline in the timeline and resolve through `/api/inbox/resolve`.
 - Tool approval cards reuse the same inline Decision Card renderer and should show only compact tool metadata plus compact execution results returned by the resolve API.
 - Recall cards should stay inline in the timeline, show compact result items, and use existing artifact/decision/composer actions.
-- Learning chips should stay inline in the timeline and resolve memory candidates through `/api/learning/memory`.
+- Learning chips should stay inline in the timeline and resolve or undo memory candidates through `/api/learning/memory`.
 - The settings drawer renders compact connected-app, permission, quiet-hours, preference, and data-control summaries from `/api/settings`.
 - Settings drawer actions should either save narrow settings or prefill the single composer for normal user intent.
 - Buttons must have clear text or `title` attributes when their action is not obvious.
@@ -37,7 +37,7 @@
 | Decision card | Shows compact decision text and approve/reject/ignore actions | `tests/test_web.py` |
 | Tool approval card | Denied external/admin tool calls project through the existing decision card path and accepted approvals show compact tool results | `tests/test_web.py`, `tests/test_runtime.py` |
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
-| Learning chip | Shows compact learning text and accept/this-turn/reject actions | `tests/test_web.py` |
+| Learning chip | Shows compact learning text plus accept/this-turn/reject and post-resolution undo actions | `tests/test_web.py` |
 | Settings drawer | Shows compact low-frequency settings, saves quiet hours, and reuses composer prefill actions | `tests/test_web.py` |
 | Duplicate replay event | Ignored by `renderedEventIds` | `tests/test_web.py` |
 | Stop control | Appears as a composer command while a run is busy | `tests/test_web.py` |
@@ -51,7 +51,7 @@
 - Good: resolve a Decision card with small inline buttons rather than opening a separate Inbox dashboard.
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
 - Good: render Recall results as inline item rows with buttons that open artifacts, resolve decisions, or prefill the composer.
-- Good: resolve a Learning chip with small inline buttons rather than opening a memory dashboard.
+- Good: resolve or undo a Learning chip with small inline buttons rather than opening a memory dashboard.
 - Good: let data-control actions prefill the single composer instead of adding a separate data-management screen.
 - Base: small helper functions can create DOM nodes directly.
 - Bad: `element.innerHTML = modelOutput`.
@@ -63,5 +63,5 @@
 - For artifact actions, assert the asset supports export, compare, continue/send, and patch apply/revert composer prefill.
 - For decision actions, assert the asset calls `/api/inbox/resolve` and disables buttons while resolving.
 - For recall cards, assert the asset handles `recall.card` and does not require a separate dashboard route.
-- For learning actions, assert the asset calls `/api/learning/memory` and disables buttons while resolving.
+- For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, and exposes post-resolution undo.
 - For settings, assert the asset calls `/api/settings`, renders the drawer, and reuses composer prefill for user actions.

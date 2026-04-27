@@ -112,7 +112,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Event replay/resume with `sinceEventId`.
 - [x] Streaming transport API.
 - [x] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
-- [~] Learning chips can resolve memory candidates with "以后这样", "这次而已", and reject actions; undo and high-risk confirmation are not implemented.
+- [~] Learning chips can resolve memory candidates with "以后这样", "这次而已", reject, and undo actions; high-risk confirmation is not implemented.
 - [x] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, and data controls.
 - [~] Artifact operations beyond open/view: web artifact cards now support continue edit, export, compare related artifacts, send draft, and diff apply/revert composer intents; direct apply/revert/send execution remains tool/model-led.
 
@@ -227,3 +227,4 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] `04-27-mcp-config-packaging-foundation`: MCP integration now exposes compact generic/Claude stdio client config snippets through `mnemo.mcp.mcp_server_config` and `mnemo mcp config`, with package smoke coverage.
 - [x] `04-27-http-core-api-foundation`: Mnemo now serves the core SDK contract over dependency-free HTTP JSON routes with compact OpenAPI discovery and CLI `mnemo api serve`, covered by web/CLI/package smoke tests.
 - [x] `04-27-generated-tool-rollback-foundation`: Generated tools now expose an explicit rollback lifecycle through `ToolEvolutionService`, provider-native `tool_rollback_generated`, and `mnemo tools rollback`, marking both generated tool and candidate as `rolled_back`.
+- [x] `04-27-learning-chip-undo-foundation`: Inline memory learning chips can undo accepted learning by tombstoning the promoted page and candidate through existing memory curation records.

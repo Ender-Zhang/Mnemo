@@ -15,6 +15,7 @@
 - `MemoryEngine.ingest_working_notes(limit: int = 20, *, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
+- `MemoryEngine.undo_candidate(candidate_id: str, reason: str = "user undo") -> dict[str, Any]`
 - `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto") -> dict[str, Any]`
 - `MemoryEngine.health_report(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.collect_dream_delta(limit: int = 20, *, since: float | None = None) -> dict[str, Any]`
@@ -64,6 +65,7 @@
 - Candidate claim/evidence text is scanned for prompt override, secret request, and tool-call injection markers through the shared injection warning helper.
 - Candidate writes with injection warnings are marked `needs_review:prompt_injection` and must not be promoted by Dream consolidation.
 - Stable memory pages are created through promotion or explicit curation.
+- User-facing learning undo uses `MemoryEngine.undo_candidate()` to tombstone the promoted page and candidate through existing curation records.
 - W0 working notes are mission-scoped scratchpad entries.
 - DreamCycle only turns W0 notes into memory candidates when the note metadata has `retention="memory_candidate"`.
 - W0 ingestion creates draft candidates and marks source notes as `candidate_created`; it never writes stable memory pages directly.
@@ -131,6 +133,7 @@
 | Obvious contradiction | Mark `needs_review:conflict`, add `conflicts_with` link, do not promote | `tests/test_memory.py` |
 | Low confidence non-conflict | Keep `draft`, return skipped entry | `tests/test_memory.py` |
 | High confidence non-conflict | Promote to active memory page | `tests/test_memory.py` |
+| Learning undo | Tombstone an accepted candidate and its linked stable page | `tests/test_memory.py`, `tests/test_web.py` |
 | W0 note with memory retention | Create candidate, mark note `candidate_created`, continue normal consolidation | `tests/test_memory.py` |
 | W0 note without memory retention | Mark note `skipped:ephemeral`, create no candidate | `tests/test_memory.py` |
 | CLI W0 note list | Open and processed working notes can be inspected without mutation | `tests/test_cli.py` |
@@ -178,6 +181,7 @@
 
 ### 6. Tests Required
 - Promotion creates page, updates candidate status, and creates `promoted_to`.
+- Learning undo tombstones promoted pages and candidates through existing tombstone APIs.
 - W0 ingestion creates candidates from model-marked working notes and skips ephemeral notes.
 - Candidate writes cover trusted/low-risk and injected/high-risk safety scans.
 - CLI `memory notes` covers default open notes, unfiltered notes, metadata/result payloads, and compact non-JSON rows.

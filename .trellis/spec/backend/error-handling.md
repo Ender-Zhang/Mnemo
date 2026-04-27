@@ -53,7 +53,7 @@
 - Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
 - Web artifact endpoint errors are JSON: missing `artifact_id` returns 400, unknown artifact id returns 404; related artifact metadata must omit bodies.
 - Web Inbox resolve endpoint errors are JSON: missing fields or invalid resolution return 400, unknown item id returns 404.
-- Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404.
+- Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404; valid actions are `accept`, `this_time`, `reject`, and `undo`.
 - Web settings endpoint errors are JSON: invalid quiet-hours payloads return 400 and settings summaries do not expose provider secrets.
 - HTTP core API errors are JSON: invalid JSON or bad fields return 400, unknown methods return 404, and expected `MnemoError` service failures map to 400 or 404 without traceback.
 - Expected local CLI service errors are converted to `MnemoError` at the command boundary so stderr is `mnemo: <message>` without a Python traceback.

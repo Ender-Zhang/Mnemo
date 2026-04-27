@@ -266,6 +266,57 @@ class MemoryEngine:
             )
         return result
 
+    def undo_candidate(self, candidate_id: str, reason: str = "user undo") -> dict[str, Any]:
+        candidate = self._get_candidate(candidate_id)
+        if not candidate:
+            raise ValueError(f"Memory candidate not found: {candidate_id}")
+
+        reason_text = _normalize_space(reason) or "user undo"
+        page_results = []
+        for page_id in self._promoted_page_ids(candidate_id):
+            page = self._get_page(page_id)
+            if not page:
+                continue
+            if _is_tombstone_status(page.get("status")):
+                page_results.append(
+                    {
+                        "page_id": page_id,
+                        "status": page.get("status"),
+                        "tombstone_id": None,
+                    }
+                )
+                continue
+            page_result = self.tombstone_memory(page_id, reason_text, target_type="page")
+            page_results.append(
+                {
+                    "page_id": page_id,
+                    "status": page_result.get("status"),
+                    "tombstone_id": page_result.get("tombstone_id"),
+                }
+            )
+
+        if _is_tombstone_status(candidate.get("status")):
+            candidate_result: dict[str, Any] = {
+                "candidate_id": candidate_id,
+                "status": candidate.get("status"),
+                "reason": reason_text,
+                "tombstone_id": None,
+            }
+        else:
+            candidate_result = self.tombstone_memory(candidate_id, reason_text, target_type="candidate")
+
+        updated = self._get_candidate(candidate_id) or candidate
+        page_ids = [item["page_id"] for item in page_results]
+        return {
+            "candidate_id": candidate_id,
+            "status": updated.get("status"),
+            "reason": reason_text,
+            "page_id": page_ids[0] if page_ids else None,
+            "page_ids": page_ids,
+            "pages": page_results,
+            "tombstone_id": candidate_result.get("tombstone_id"),
+        }
+
     def tombstone_memory(
         self,
         memory_id: str,
@@ -699,6 +750,25 @@ class MemoryEngine:
         if get_page:
             return get_page(page_id)
         return None
+
+    def _promoted_page_ids(self, candidate_id: str) -> list[str]:
+        page_ids: list[str] = []
+        list_links = getattr(self.store, "list_memory_links", None)
+        if list_links:
+            for link in list_links(candidate_id):
+                if link.get("relation") != "promoted_to":
+                    continue
+                page_id = str(link.get("target_id") or "")
+                if page_id and page_id not in page_ids:
+                    page_ids.append(page_id)
+
+        list_pages = getattr(self.store, "list_memory_pages", None)
+        if list_pages:
+            for page in list_pages(status=None, limit=1000):
+                page_id = str(page.get("id") or "")
+                if page.get("source_candidate_id") == candidate_id and page_id and page_id not in page_ids:
+                    page_ids.append(page_id)
+        return page_ids
 
     def _associated_pages(
         self,

@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "memory undo semantics and tombstone contracts"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "web JSON error contract"}
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "candidate page link and tombstone storage APIs"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "learning chip card-local state"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "learning chip UI pattern"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "web asset quality checks"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "cross-layer payload mapping"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "reuse existing memory curation code"}

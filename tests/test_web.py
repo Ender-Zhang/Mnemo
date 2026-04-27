@@ -487,6 +487,11 @@ print(json.dumps({
                     "/api/learning/memory",
                     {"candidate_id": accept_id, "action": "accept"},
                 )
+                undo_status, _, undo_body = server.request(
+                    "POST",
+                    "/api/learning/memory",
+                    {"candidate_id": accept_id, "action": "undo"},
+                )
                 this_time_status, _, this_time_body = server.request(
                     "POST",
                     "/api/learning/memory",
@@ -517,6 +522,13 @@ print(json.dumps({
             page = store.get_memory_page(payload["page_id"])
             self.assertEqual(page["content"], "User prefers inline learning chip actions")
 
+            undo_payload = json.loads(undo_body)
+            self.assertEqual(undo_status, 200)
+            self.assertEqual(undo_payload["action"], "undo")
+            self.assertEqual(undo_payload["candidate"]["status"], "tombstoned:user_undo")
+            self.assertEqual(undo_payload["page_id"], payload["page_id"])
+            self.assertEqual(store.get_memory_page(payload["page_id"])["status"], "tombstoned:user_undo")
+
             this_time_payload = json.loads(this_time_body)
             reject_payload = json.loads(reject_body)
             self.assertEqual(this_time_status, 200)
@@ -535,6 +547,12 @@ print(json.dumps({
             self.assertEqual(event["event_type"], "learning.memory_action")
             self.assertEqual(event["payload"]["candidate_id"], reject_id)
             self.assertEqual(event["payload"]["action"], "reject")
+            actions = [
+                event["payload"]["action"]
+                for event in store.get_run_events(run_id)
+                if event["event_type"] == "learning.memory_action"
+            ]
+            self.assertIn("undo", actions)
 
     def test_web_settings_api_returns_summary_and_updates_quiet_hours(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -705,6 +723,8 @@ print(json.dumps({
                 self.assertIn("candidate_id: itemId", script)
                 self.assertIn("以后这样", script)
                 self.assertIn("这次而已", script)
+                self.assertIn("撤销", script)
+                self.assertIn('action === "undo"', script)
                 self.assertIn("learning-button", css)
                 self.assertIn("event-card.learning", css)
 

@@ -30,6 +30,32 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(page["source_candidate_id"], candidate_id)
             self.assertEqual(links[0]["target_id"], result["page_id"])
 
+    def test_undo_candidate_tombstones_promoted_page_and_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers reversible learning chips",
+                dimension="preferences",
+                confidence=0.82,
+            )
+            engine = MemoryEngine(store)
+            promoted = engine.promote_candidate(candidate_id)
+
+            result = engine.undo_candidate(candidate_id)
+
+            candidate = store.get_memory_candidate(candidate_id)
+            page = store.get_memory_page(promoted["page_id"])
+            candidate_tombstones = store.list_memory_tombstones(target_id=candidate_id)
+            page_tombstones = store.list_memory_tombstones(target_id=promoted["page_id"])
+            self.assertEqual(result["status"], "tombstoned:user_undo")
+            self.assertEqual(result["page_id"], promoted["page_id"])
+            self.assertEqual(candidate["status"], "tombstoned:user_undo")
+            self.assertEqual(page["status"], "tombstoned:user_undo")
+            self.assertEqual(candidate_tombstones[0]["reason"], "user undo")
+            self.assertEqual(page_tombstones[0]["reason"], "user undo")
+            self.assertEqual(store.search_memory_pages("reversible learning", limit=5), [])
+
     def test_reject_candidate_records_reason_in_status(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)
