@@ -16,6 +16,14 @@ You may call 0..N provider-native tools. Candidates may be mixed: memory, skill,
 Use only evidence visible in the packet. Do not invent facts. Do not duplicate candidates already created in tool_results.
 Prefer no tool call when there is no durable learning signal."""
 
+LEARNING_CANDIDATE_TOOLS = {
+    "memory_write_candidate",
+    "skill_propose_candidate",
+    "tool_propose_candidate",
+    "eval_propose_case",
+}
+REFLECTION_MIN_STRUCTURED_TOOL_RESULTS = 3
+
 
 def build_learning_packet(
     store: StateStore,
@@ -35,8 +43,7 @@ def build_learning_packet(
     existing_candidates = [
         item
         for item in compact_tools
-        if item.get("tool")
-        in {"memory_write_candidate", "skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}
+        if _tool_result_has_learning_signal(item)
     ]
     return {
         "kind": "learning_packet",
@@ -64,6 +71,20 @@ def build_learning_packet(
             "Use compact evidence objects that reference this run or tool result index.",
         ],
     }
+
+
+def should_reflect_on_learning_packet(packet: dict[str, Any]) -> tuple[bool, str]:
+    """Return whether a packet is worth a provider learning-reflection call."""
+
+    if packet.get("existing_learning_candidates"):
+        return True, "existing_candidates"
+    tool_results = packet.get("tool_results")
+    if not isinstance(tool_results, list):
+        return False, "no_structured_signal"
+    structured_tool_count = sum(1 for item in tool_results if _is_main_turn_tool_result(item))
+    if structured_tool_count >= REFLECTION_MIN_STRUCTURED_TOOL_RESULTS:
+        return True, "structured_tool_threshold"
+    return False, "insufficient_structured_signal"
 
 
 def learning_reflection_messages(packet: dict[str, Any]) -> list[dict[str, str]]:
@@ -100,3 +121,17 @@ def _clip(value: str, limit: int) -> str:
         return compact
     head = max(0, limit - 80)
     return compact[:head].rstrip() + "\n...[truncated]...\n" + compact[-60:].lstrip()
+
+
+def _tool_result_has_learning_signal(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    tool_name = str(item.get("tool") or item.get("name") or "")
+    return tool_name in LEARNING_CANDIDATE_TOOLS
+
+
+def _is_main_turn_tool_result(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    tool_name = str(item.get("tool") or item.get("name") or "")
+    return bool(tool_name) and tool_name != "learning_discard"

@@ -225,7 +225,9 @@ function handleEvent(event) {
     state.lastEventId = event.event_id;
     localStorage.setItem("mnemo.last_event_id", state.lastEventId);
   }
-  renderActivity(event);
+  if (!isInternalLearningEvent(event)) {
+    renderActivity(event);
+  }
 
   switch (event.type) {
     case "turn.started":
@@ -245,7 +247,7 @@ function handleEvent(event) {
     case "action.queued":
     case "action.started":
     case "action.completed":
-      renderAction(event);
+      if (!isInternalLearningEvent(event)) renderAction(event);
       break;
     case "source.attached":
       renderSource(event.data?.source);
@@ -328,6 +330,16 @@ function compactId(value, fallback) {
   if (!text) return fallback;
   if (text.length <= 18) return text;
   return `${text.slice(0, 8)}...${text.slice(-4)}`;
+}
+
+function isInternalLearningEvent(event) {
+  if (event.type === "status.updated" && event.data?.tone === "learning") {
+    return true;
+  }
+  if (event.type?.startsWith("action.")) {
+    return (event.data?.tool_name || event.data?.action?.title) === "learning_discard";
+  }
+  return false;
 }
 
 function renderActivity(event) {

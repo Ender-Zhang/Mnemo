@@ -23,7 +23,12 @@ from .common import (
     run_result_from_dict,
     tool_result_summary,
 )
-from .learning import build_learning_packet, build_learning_tool_bundle, learning_reflection_messages
+from .learning import (
+    build_learning_packet,
+    build_learning_tool_bundle,
+    learning_reflection_messages,
+    should_reflect_on_learning_packet,
+)
 from .ledger import RunLedger
 from .local import _short_title
 from .state import resolve_conversation, resolve_mission
@@ -305,6 +310,10 @@ class ProviderAgentRuntime:
             return
         if request.prompt_mode != "full":
             ledger.append(run_id, "learning.reflection.skipped", {"reason": "prompt_mode", "mode": request.prompt_mode})
+            return
+        should_reflect, reason = should_reflect_on_learning_packet(packet)
+        if not should_reflect:
+            ledger.append(run_id, "learning.reflection.skipped", {"reason": reason})
             return
 
         bundle = build_learning_tool_bundle(

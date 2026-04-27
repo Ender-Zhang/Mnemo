@@ -95,13 +95,14 @@ class LocalRuntimeTests(unittest.TestCase):
     def test_provider_runtime_streams_text_response(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider([[ProviderEvent(type="text_delta", text="Hello from model"), ProviderEvent(type="completed")]])
-            events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="hello", state_dir=tmp)))
+            events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="你好", state_dir=tmp)))
 
             event_types = [event.type for event in events]
             self.assertIn("assistant.delta", event_types)
             self.assertEqual(events[-1].type, "run.completed")
             self.assertEqual(events[-1].data["result"]["response"], "Hello from model")
-            self.assertEqual(provider.requests[0].messages[-1]["content"], "hello")
+            self.assertEqual(provider.requests[0].messages[-1]["content"], "你好")
+            self.assertEqual(len(provider.requests), 1)
             self.assertEqual(
                 [message["role"] for message in provider.requests[0].messages],
                 ["system", "developer", "developer", "developer", "user"],
@@ -115,6 +116,11 @@ class LocalRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(prompt_event["payload"]["provider_capabilities"]["provider"], "fake")
             self.assertEqual(prompt_event["payload"]["cache_plan"]["tool_bundle"]["epoch"], 1)
+            ledger_events = store.get_run_events(events[-1].run_id)
+            skip_event = next(
+                event for event in ledger_events if event["event_type"] == "learning.reflection.skipped"
+            )
+            self.assertEqual(skip_event["payload"]["reason"], "insufficient_structured_signal")
 
     def test_runtime_rejects_none_prompt_mode_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -202,6 +208,39 @@ class LocalRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider(
                 [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="memory_search",
+                                arguments={"query": "concise implementation", "limit": 3},
+                                call_id="call_main_memory",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="skills_list",
+                                arguments={},
+                                call_id="call_main_skills",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="recall_search",
+                                arguments={"query": "implementation summary", "limit": 3},
+                                call_id="call_main_recall",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
                     [ProviderEvent(type="text_delta", text="Done."), ProviderEvent(type="completed")],
                     [
                         ProviderEvent(
@@ -285,11 +324,11 @@ class LocalRuntimeTests(unittest.TestCase):
                 for event in events
                 if event.type == "learning.chip" and event.data.get("item")
             ]
-            learning_tool_names = [tool.name for tool in provider.requests[1].tools]
+            learning_tool_names = [tool.name for tool in provider.requests[2].tools]
             ledger_event_types = [event["event_type"] for event in store.get_run_events(events[-1].run_id)]
 
-            self.assertEqual(provider.requests[1].metadata["stage"], "after_turn_learning")
-            self.assertIn("<learning_packet>", provider.requests[1].messages[-1]["content"])
+            self.assertEqual(provider.requests[2].metadata["stage"], "after_turn_learning")
+            self.assertIn("<learning_packet>", provider.requests[2].messages[-1]["content"])
             self.assertEqual(
                 set(learning_tool_names),
                 {"memory_write_candidate", "skill_propose_candidate", "tool_propose_candidate", "eval_propose_case", "learning_discard"},

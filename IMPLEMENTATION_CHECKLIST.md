@@ -79,7 +79,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Progressive skill index/summary/full load.
 - [x] Skill usage tracking and outcome scoring.
 - [~] Skill patch/proposal review lifecycle: proposal, exact patch candidate, eval, review, and promotion gates exist; import/export/update/enable/disable/rollback/doctor/why operations and external shadow-copy lifecycle are not complete.
-- [~] SOP crystallization from successful runs exists; provider runtime now builds after-turn learning packets and lets the model propose 0..N mixed memory/skill/tool/eval candidates through native tool calls; local runtime is record-only and background scheduling remains.
+- [~] SOP crystallization from successful runs exists; provider runtime now builds after-turn learning packets and lets the model propose 0..N mixed memory/skill/tool/eval candidates through native tool calls after a structure-only evidence gate; local runtime is record-only and background scheduling remains.
 - [~] Skill eval harness exists for built-in cases; full red-team, selection precision, rollback-rate, and cross-client compatibility suites are not complete.
 
 ## Prompt And Context
@@ -114,6 +114,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Web chat assistant output renders safe DOM-built Markdown after streaming/replay.
 - [x] Web chat replays historical user prompts from `turn.started` and shows compact browser continuity context.
 - [x] Web activity panel de-duplicates action lifecycle updates into stable rows.
+- [x] Web activity hides internal learning housekeeping such as `learning_discard` and learning-tone status updates.
 - [x] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
 - [x] Learning chips can resolve memory candidates with "以后这样", "这次而已", reject, undo, and review-gated confirmation actions.
 - [x] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, and data controls.
@@ -169,6 +170,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-27-skip-low-signal-learning-reflection`: Provider after-turn learning now uses a structure-only evidence gate, skips zero/low-tool turns without a second model call, and hides internal learning housekeeping from Web Activity.
 - [x] `04-27-polish-reference-frontend-markdown`: Web UI now more closely follows the generated reference with labeled rail navigation, compact user context, de-duplicated activity rows, replayed user prompts, and safe DOM-built Markdown rendering for assistant messages.
 - [x] `04-27-redesign-single-chat-frontend`: Web UI now uses a polished single-chat shell with rail navigation, contextual activity panel, refined composer affordances, and preserved inline action/decision/learning/artifact/recall rendering.
 - [x] `04-27-memory-harmful-eval-routing`: Harmful memory tombstones now create compact draft memory-core eval cases through MemoryEngine, CLI, and ToolHarness when run provenance is available.

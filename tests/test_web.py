@@ -858,6 +858,9 @@ print(json.dumps({
                 self.assertIn("state.activityRows.set(key, row)", script)
                 self.assertIn("activityList.prepend(row.node)", script)
                 self.assertIn("state.activityRows.clear()", script)
+                self.assertIn("isInternalLearningEvent", script)
+                self.assertIn('event.data?.tone === "learning"', script)
+                self.assertIn('"learning_discard"', script)
 
     def test_web_client_asset_resolves_decision_cards_inline(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
