@@ -39,12 +39,15 @@ body {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 16% 8%, rgba(11, 125, 120, 0.12), transparent 28%),
-    radial-gradient(circle at 88% 18%, rgba(166, 111, 31, 0.13), transparent 24%),
+    linear-gradient(135deg, rgba(228, 243, 240, 0.42), rgba(255, 253, 249, 0.22) 38%, rgba(255, 242, 220, 0.28)),
+    radial-gradient(circle at 16% 8%, rgba(11, 125, 120, 0.1), transparent 30%),
+    radial-gradient(circle at 88% 18%, rgba(166, 111, 31, 0.1), transparent 28%),
     var(--bg);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
 }
 
 button,
@@ -371,7 +374,7 @@ h1 {
   min-height: 0;
   overflow-y: auto;
   scroll-behavior: smooth;
-  padding: 14px 42px 24px;
+  padding: 10px 42px 22px;
 }
 
 .timeline > * {
@@ -384,7 +387,9 @@ h1 {
   display: grid;
   justify-items: center;
   gap: 18px;
-  padding: 88px 24px 40px;
+  align-content: center;
+  min-height: min(540px, 62vh);
+  padding: 34px 24px;
   text-align: center;
 }
 
@@ -394,8 +399,12 @@ h1 {
 
 .empty-state h2 {
   margin-bottom: 0;
-  font-size: 34px;
+  font-size: 32px;
   line-height: 1.12;
+}
+
+.empty-state p {
+  max-width: 560px;
 }
 
 .orbital-mark {
@@ -624,15 +633,16 @@ h1 {
 }
 
 .tool-call-card {
-  max-width: 680px;
+  max-width: 720px;
+  background: rgba(255, 253, 249, 0.82);
 }
 
 .tool-call-summary {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
-  min-height: 38px;
+  min-height: 36px;
   padding: 0 12px;
   cursor: pointer;
   list-style: none;
@@ -643,11 +653,20 @@ h1 {
 }
 
 .tool-pulse {
-  width: 9px;
-  height: 9px;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: rgba(11, 125, 120, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(11, 125, 120, 0.22);
+}
+
+.tool-pulse::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
   border-radius: 999px;
   background: var(--teal);
-  box-shadow: 0 0 0 5px rgba(11, 125, 120, 0.12);
 }
 
 .tool-call-title {
@@ -675,8 +694,12 @@ h1 {
 }
 
 .tool-call-card[data-state="done"] .tool-pulse {
+  background: rgba(166, 111, 31, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(166, 111, 31, 0.22);
+}
+
+.tool-call-card[data-state="done"] .tool-pulse::after {
   background: var(--gold);
-  box-shadow: 0 0 0 5px rgba(166, 111, 31, 0.1);
 }
 
 .tool-call-body {
@@ -874,7 +897,7 @@ h1 {
 
 .memory-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 42vw) minmax(0, 1fr);
+  grid-template-columns: minmax(520px, 1.08fr) minmax(360px, 0.92fr);
   gap: 24px;
   min-height: 0;
   padding: 0 42px 34px;
@@ -887,6 +910,27 @@ h1 {
   align-items: center;
   justify-items: center;
   overflow: hidden;
+  border: 1px solid rgba(222, 215, 204, 0.72);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 249, 0.72), rgba(228, 243, 240, 0.34)),
+    radial-gradient(circle at 50% 47%, rgba(228, 243, 240, 0.8), transparent 54%);
+  box-shadow: 0 18px 60px rgba(39, 33, 24, 0.06);
+}
+
+.avatar-panel::before,
+.avatar-panel::after {
+  content: "";
+  position: absolute;
+  inset: 11%;
+  border: 1px solid rgba(11, 125, 120, 0.13);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.avatar-panel::after {
+  inset: 21%;
+  border-color: rgba(98, 84, 199, 0.11);
 }
 
 .memory-avatar-canvas {
@@ -894,6 +938,63 @@ h1 {
   aspect-ratio: 1;
   height: auto;
   display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.memory-orbit {
+  position: absolute;
+  inset: 34px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.memory-orbit-button {
+  position: absolute;
+  left: calc(50% + var(--x, 0%) - 42px);
+  top: calc(50% + var(--y, 0%) - 30px);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 7px;
+  min-width: 84px;
+  max-width: 118px;
+  min-height: 58px;
+  padding: 8px 9px;
+  border: 1px solid rgba(222, 215, 204, 0.88);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 249, 0.78);
+  color: var(--ink);
+  text-align: left;
+  pointer-events: auto;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 26px rgba(39, 33, 24, 0.06);
+}
+
+.memory-orbit-button span {
+  grid-row: 1 / 3;
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.03em;
+}
+
+.memory-orbit-button strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.memory-orbit-button small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.memory-orbit-button.active {
+  border-color: rgba(98, 84, 199, 0.38);
+  background: rgba(235, 232, 255, 0.72);
+  box-shadow: 0 14px 34px rgba(98, 84, 199, 0.12);
 }
 
 .memory-stats {
@@ -903,6 +1004,7 @@ h1 {
   display: grid;
   grid-template-columns: repeat(3, auto);
   gap: 8px;
+  z-index: 3;
 }
 
 .memory-stats div {
@@ -955,11 +1057,11 @@ h1 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px 10px;
-  min-height: 118px;
+  min-height: 104px;
   padding: 12px;
   border: 1px solid rgba(222, 215, 204, 0.9);
   border-radius: var(--radius);
-  background: rgba(255, 253, 249, 0.74);
+  background: rgba(255, 253, 249, 0.78);
   text-align: left;
   overflow: hidden;
 }
@@ -1121,6 +1223,39 @@ h1 {
   outline: none;
   background: rgba(255, 253, 249, 0.9);
   color: var(--ink);
+}
+
+.settings-card input[type="checkbox"] {
+  appearance: none;
+  width: 46px;
+  min-width: 46px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(203, 193, 180, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(39, 33, 24, 0.04);
+}
+
+.settings-card input[type="checkbox"]::after {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: 2px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 2px 8px rgba(39, 33, 24, 0.16);
+  transition: transform 160ms ease;
+}
+
+.settings-card input[type="checkbox"]:checked {
+  border-color: rgba(11, 125, 120, 0.28);
+  background: var(--teal);
+}
+
+.settings-card input[type="checkbox"]:checked::after {
+  transform: translateX(20px);
 }
 
 .settings-card input:focus,
@@ -1384,8 +1519,11 @@ h1 {
     position: sticky;
     top: 0;
     z-index: 4;
-    grid-template-columns: auto 1fr auto;
-    grid-template-rows: auto;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    grid-template-areas:
+      "brand bottom"
+      "tabs tabs";
     align-items: center;
     gap: 12px;
     padding: 10px 12px;
@@ -1393,13 +1531,20 @@ h1 {
     border-bottom: 1px solid var(--line);
   }
 
+  .brand-button {
+    grid-area: brand;
+    width: auto;
+  }
+
   .brand-copy {
     display: none;
   }
 
   .nav-group {
+    grid-area: tabs;
     display: flex;
     overflow-x: auto;
+    padding-bottom: 2px;
   }
 
   .nav-item {
@@ -1408,29 +1553,44 @@ h1 {
   }
 
   .nav-bottom {
+    grid-area: bottom;
+    justify-self: end;
     display: flex;
     align-items: center;
+    min-width: 0;
+  }
+
+  .nav-bottom .status-pill {
+    max-width: 112px;
+  }
+
+  .brand-mark {
+    width: 38px;
+    height: 38px;
   }
 
   .workspace,
   .view {
     height: auto;
-    min-height: calc(100vh - 64px);
+    min-height: calc(100dvh - 112px);
   }
 
   .chat-header,
   .page-header {
-    padding: 22px 18px 14px;
+    padding: 20px 18px 12px;
     flex-direction: column;
+    gap: 12px;
   }
 
   .timeline {
-    padding: 12px 18px 22px;
+    padding: 8px 18px 16px;
   }
 
   .composer {
+    position: sticky;
+    bottom: 10px;
     width: calc(100% - 24px);
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
 
   .memory-layout,
@@ -1443,15 +1603,93 @@ h1 {
   .settings-summary {
     grid-template-columns: 1fr;
   }
+
+  .memory-orbit-button {
+    min-width: 72px;
+    max-width: 92px;
+    min-height: 50px;
+    padding: 7px;
+  }
 }
 
 @media (max-width: 640px) {
+  .app-nav {
+    gap: 9px;
+    padding: 8px 12px;
+  }
+
+  .quiet-button {
+    min-height: 32px;
+    padding: 0 10px;
+  }
+
   .nav-item span:last-child {
     display: none;
   }
 
+  .nav-item {
+    min-width: 44px;
+    padding: 0 7px;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .nav-icon {
+    width: 28px;
+    height: 28px;
+  }
+
   .chat-context {
     justify-content: flex-start;
+  }
+
+  .chat-view .chat-header {
+    display: none;
+  }
+
+  .chat-header h1,
+  .page-header h1 {
+    font-size: 26px;
+  }
+
+  .timeline {
+    padding: 12px 18px 108px;
+  }
+
+  .empty-state {
+    gap: 13px;
+    min-height: calc(100dvh - 244px);
+    padding: 10px 4px 16px;
+  }
+
+  .empty-state h2 {
+    font-size: 25px;
+    line-height: 1.15;
+  }
+
+  .empty-state p {
+    max-width: 330px;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  .orbital-mark {
+    width: 74px;
+    height: 74px;
+  }
+
+  .orbital-mark::before {
+    width: 42px;
+    height: 42px;
+  }
+
+  .suggestion-row button {
+    min-height: 34px;
+    padding: 0 10px;
+    font-size: 14px;
   }
 
   .message,
@@ -1472,6 +1710,64 @@ h1 {
   .memory-compass,
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .memory-layout,
+  .settings-layout {
+    padding: 0 12px 18px;
+  }
+
+  .avatar-panel {
+    min-height: 420px;
+  }
+
+  .memory-avatar-canvas {
+    width: min(100%, 420px);
+  }
+
+  .memory-orbit {
+    inset: 18px;
+  }
+
+  .memory-orbit-button {
+    transform: scale(0.86);
+  }
+
+  .memory-stats {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .memory-stats div {
+    min-width: 0;
+  }
+
+  .composer {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 6;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    width: auto;
+    margin: 0;
+    padding: 8px;
+  }
+
+  .composer textarea {
+    min-height: 40px;
+    max-height: 118px;
+    padding: 9px 2px;
+    font-size: 16px;
+  }
+
+  .stop-button:not([hidden]) {
+    grid-column: 1 / -1;
+    width: 100%;
+    height: 34px;
   }
 
   .recall-item {

@@ -68,7 +68,7 @@
 
           <form id="composer" class="composer">
             <button id="attachButton" class="composer-icon" type="button" title="添加文件" aria-label="添加文件">+</button>
-            <textarea id="message" name="message" rows="1" placeholder="给 Mnemo 派活。Enter 发送，Shift+Enter 换行"></textarea>
+            <textarea id="message" name="message" rows="1" placeholder="给 Mnemo 派活..." title="Enter 发送，Shift+Enter 换行"></textarea>
             <button id="stop" class="stop-button" type="button" hidden>停止</button>
             <button id="send" class="send-button" type="submit" title="发送" aria-label="发送">
               <span aria-hidden="true"></span>
@@ -89,6 +89,7 @@
           <div class="memory-layout">
             <section class="avatar-panel">
               <canvas id="memoryAvatar3d" class="memory-avatar-canvas" width="720" height="720" aria-label="三维记忆人物"></canvas>
+              <div id="memoryOrbit" class="memory-orbit" aria-label="十维记忆轨道"></div>
               <div id="memoryStats" class="memory-stats"></div>
             </section>
 

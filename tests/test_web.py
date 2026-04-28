@@ -968,6 +968,7 @@ print(json.dumps({
                 self.assertIn("记忆罗盘", html)
                 self.assertIn('id="contextUserPrompt"', html)
                 self.assertIn('id="memoryAvatar3d"', html)
+                self.assertIn('id="memoryOrbit"', html)
                 self.assertIn('id="memoryCompass"', html)
                 self.assertIn('id="memoryMarkdownModal"', html)
                 self.assertIn('id="settingsProviderForm"', html)
@@ -977,6 +978,8 @@ print(json.dumps({
                 self.assertIn("switchView", script)
                 self.assertIn("loadMemoryCompass", script)
                 self.assertIn("renderMemoryCompass", script)
+                self.assertIn("renderMemoryOrbit", script)
+                self.assertIn("memoryOrbitButton", script)
                 self.assertIn("initMemoryAvatar", script)
                 self.assertIn("renderThreeAvatar", script)
                 self.assertIn("renderCanvasAvatar", script)
@@ -993,6 +996,7 @@ print(json.dumps({
                 self.assertIn("status-pill", css)
                 self.assertIn("tool-call-card", css)
                 self.assertIn("memory-avatar-canvas", css)
+                self.assertIn("memory-orbit-button", css)
                 self.assertIn("memory-dimension-card", css)
                 self.assertIn("settings-card", css)
                 self.assertIn("markdown-modal", css)
@@ -1126,6 +1130,7 @@ print(json.dumps({
                 self.assertIn('id="settingApiKeyEnv"', html)
                 self.assertIn("记忆罗盘", html)
                 self.assertIn('id="memoryAvatar3d"', html)
+                self.assertIn('id="memoryOrbit"', html)
                 self.assertIn('id="memoryMarkdownModal"', html)
                 self.assertIn("/api/settings", script)
                 self.assertIn("renderSettings", script)
@@ -1137,6 +1142,7 @@ print(json.dumps({
                 self.assertIn("/api/memory/item", script)
                 self.assertIn("loadMemoryCompass", script)
                 self.assertIn("renderMemoryCompass", script)
+                self.assertIn("renderMemoryOrbit", script)
                 self.assertIn("memoryDimensionCard", script)
                 self.assertIn("loadMemoryDimension", script)
                 self.assertIn("renderMemoryDimensionDetail", script)
@@ -1153,6 +1159,7 @@ print(json.dumps({
                 self.assertIn("memory-item-panel", css)
                 self.assertIn("memory-detail-evidence", css)
                 self.assertIn("memory-avatar-canvas", css)
+                self.assertIn("memory-orbit", css)
 
     def test_web_client_asset_supports_enter_pending_and_tool_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

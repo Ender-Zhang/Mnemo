@@ -28,6 +28,7 @@
 - Learning chips with `requires_confirmation=true` should use explicit confirmation wording before durable memory promotion.
 - The settings view renders compact connected-app, permission, quiet-hours, runtime provider/model, preference, and data-control summaries from `/api/settings`.
 - Ten-dimensional memory inspection lives in the memory compass view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
+- The memory compass can mirror L1 dimensions as an orbit around the avatar, but orbit buttons must call the same L2 dimension loader and remain read-only.
 - Settings actions should save narrow settings only; ordinary user tasks still route through the single composer.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
 - Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.

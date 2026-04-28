@@ -73,6 +73,7 @@ const memoryLayerDetail = document.querySelector("#memoryLayerDetail");
 const memoryStats = document.querySelector("#memoryStats");
 const memoryCountBadge = document.querySelector("#memoryCountBadge");
 const memoryAvatar3d = document.querySelector("#memoryAvatar3d");
+const memoryOrbit = document.querySelector("#memoryOrbit");
 const settingsProviderForm = document.querySelector("#settingsProviderForm");
 const settingProvider = document.querySelector("#settingProvider");
 const settingModel = document.querySelector("#settingModel");
@@ -933,6 +934,7 @@ function renderMemoryCompass(payload) {
   const counts = payload.counts || {};
   memoryCountBadge.textContent = `${counts.pages || 0} 稳定 · ${counts.candidates || 0} 候选`;
   renderMemoryStats(counts);
+  renderMemoryOrbit(dimensions);
   const cards = dimensions.map((dimension) => memoryDimensionCard(dimension));
   memoryCompass.replaceChildren(...cards);
   const first = dimensions.find((item) => Number(item.pages || 0) + Number(item.candidates || 0) > 0) || dimensions[0];
@@ -976,10 +978,40 @@ function memoryDimensionCard(dimension) {
   return button;
 }
 
+function renderMemoryOrbit(dimensions) {
+  if (!memoryOrbit) return;
+  const cards = dimensions.map((dimension, index) => memoryOrbitButton(dimension, index, dimensions.length || 1));
+  memoryOrbit.replaceChildren(...cards);
+}
+
+function memoryOrbitButton(dimension, index, total) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "memory-orbit-button";
+  button.dataset.dimension = dimension.dimension;
+  const angle = (-90 + (360 / Math.max(total, 1)) * index) * (Math.PI / 180);
+  button.style.setProperty("--x", `${Math.cos(angle) * 42}%`);
+  button.style.setProperty("--y", `${Math.sin(angle) * 42}%`);
+  const order = document.createElement("span");
+  order.textContent = String(index + 1).padStart(2, "0");
+  const label = document.createElement("strong");
+  label.textContent = dimensionLabel(dimension.dimension);
+  const count = document.createElement("small");
+  count.textContent = `${Number(dimension.pages || 0) + Number(dimension.candidates || 0)} 条`;
+  button.append(order, label, count);
+  button.addEventListener("click", () => loadMemoryDimension(dimension.dimension));
+  return button;
+}
+
 async function loadMemoryDimension(dimensionName) {
   const key = String(dimensionName || "context");
   for (const card of memoryCompass.querySelectorAll(".memory-dimension-card")) {
     card.classList.toggle("active", card.dataset.dimension === key);
+  }
+  if (memoryOrbit) {
+    for (const card of memoryOrbit.querySelectorAll(".memory-orbit-button")) {
+      card.classList.toggle("active", card.dataset.dimension === key);
+    }
   }
   if (state.memoryDimensions.has(key)) {
     renderMemoryDimensionDetail(state.memoryDimensions.get(key));
@@ -1224,37 +1256,85 @@ function renderCanvasAvatar() {
     const width = canvas.width;
     const height = canvas.height;
     const centerX = width / 2;
-    const centerY = height / 2;
+    const centerY = height / 2 + 14;
     ctx.clearRect(0, 0, width, height);
-    const gradient = ctx.createRadialGradient(centerX, centerY, 40, centerX, centerY, width * 0.45);
-    gradient.addColorStop(0, "rgba(255,255,255,0.95)");
-    gradient.addColorStop(1, "rgba(33,166,160,0.06)");
+    const gradient = ctx.createRadialGradient(centerX, centerY - 30, 28, centerX, centerY, width * 0.48);
+    gradient.addColorStop(0, "rgba(255,255,255,0.98)");
+    gradient.addColorStop(0.55, "rgba(228,243,240,0.42)");
+    gradient.addColorStop(1, "rgba(33,166,160,0.04)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
-    ctx.strokeStyle = "rgba(33,166,160,0.35)";
-    ctx.lineWidth = 3;
-    for (let index = 0; index < 3; index += 1) {
+    drawAvatarGrid(ctx, width, height, centerX, centerY);
+    ctx.strokeStyle = "rgba(11,125,120,0.26)";
+    ctx.lineWidth = 2.2;
+    for (let index = 0; index < 4; index += 1) {
       ctx.save();
       ctx.translate(centerX, centerY);
-      ctx.rotate(time * 0.00025 + index * 1.04);
+      ctx.rotate(time * 0.00018 + index * 0.78);
       ctx.beginPath();
-      ctx.ellipse(0, 0, width * (0.22 + index * 0.06), height * 0.09, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, width * (0.21 + index * 0.045), height * 0.085, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
-    ctx.fillStyle = "#f0c7b8";
+    const avatarGradient = ctx.createLinearGradient(centerX, centerY - 170, centerX, centerY + 150);
+    avatarGradient.addColorStop(0, "rgba(255,255,255,0.88)");
+    avatarGradient.addColorStop(0.48, "rgba(118,139,174,0.34)");
+    avatarGradient.addColorStop(1, "rgba(11,125,120,0.11)");
+    ctx.fillStyle = avatarGradient;
+    ctx.strokeStyle = "rgba(98,84,199,0.24)";
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.arc(centerX, centerY - 90, 44, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY - 132, 35, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = "#1f2d3a";
-    roundRect(ctx, centerX - 55, centerY - 42, 110, 154, 34);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(centerX - 54, centerY - 82);
+    ctx.bezierCurveTo(centerX - 44, centerY - 124, centerX + 44, centerY - 124, centerX + 54, centerY - 82);
+    ctx.lineTo(centerX + 42, centerY + 58);
+    ctx.bezierCurveTo(centerX + 34, centerY + 106, centerX - 34, centerY + 106, centerX - 42, centerY + 58);
+    ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = "#21a6a0";
-    roundRect(ctx, centerX - 34, centerY + 2, 68, 18, 9);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.48)";
+    ctx.lineWidth = 1;
+    for (let y = -74; y <= 54; y += 24) {
+      ctx.beginPath();
+      ctx.moveTo(centerX - 38, centerY + y);
+      ctx.quadraticCurveTo(centerX, centerY + y + 8, centerX + 38, centerY + y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(11,125,120,0.42)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(centerX - 30, centerY - 35);
+    ctx.lineTo(centerX + 30, centerY - 35);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(11,125,120,0.12)";
+    roundRect(ctx, centerX - 86, centerY + 120, 172, 20, 10);
     ctx.fill();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+}
+
+function drawAvatarGrid(ctx, width, height, centerX, centerY) {
+  ctx.save();
+  ctx.translate(centerX, centerY + 114);
+  ctx.strokeStyle = "rgba(11,125,120,0.08)";
+  ctx.lineWidth = 1;
+  for (let index = 0; index < 6; index += 1) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, width * (0.08 + index * 0.052), height * (0.018 + index * 0.011), 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  for (let index = 0; index < 10; index += 1) {
+    const angle = (Math.PI * 2 * index) / 10;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * 24, Math.sin(angle) * 8);
+    ctx.lineTo(Math.cos(angle) * width * 0.36, Math.sin(angle) * height * 0.08);
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
