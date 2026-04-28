@@ -2558,10 +2558,16 @@ h1 {
   }
 
   .nav-bottom .quiet-button {
+    display: grid;
+    place-items: center;
     width: 40px;
     min-width: 40px;
     padding: 0;
+    border-color: rgba(11, 125, 120, 0.18);
+    background: rgba(255, 253, 249, 0.82);
+    color: #064d49;
     font-size: 0;
+    box-shadow: 0 8px 22px rgba(39, 33, 24, 0.08);
   }
 
   .nav-bottom .quiet-button::before {
