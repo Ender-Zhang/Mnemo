@@ -12,6 +12,7 @@
 - The primary screen is always the chat view: top status, timeline, and one composer.
 - Navigation state may live in the URL hash so refresh/back/deep links keep the selected view without adding a second task surface.
 - On mobile, the primary navigation should move to a compact bottom bar while the header stays focused on the Mnemo brand and lightweight commands.
+- Mobile bottom navigation must keep the primary chat, memory, and settings entries visible as equal-width items.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
 - Chat empty state may show read-only glance cards for current runtime, memory counts, and latest activity; these cards must not become a second task surface.
 - Desktop chat may show a read-only context rail for real-time activity, recent request, runtime, and memory summary; it must hide on smaller screens and must not expose Mission/Run internals beyond compact resume labels.
@@ -71,6 +72,7 @@
 - Good: use artifact card buttons to prefill composer intent for model/tool-led follow-up work.
 - Good: use a busy-state composer button for run cancellation instead of a separate operations area.
 - Good: keep the composer textarea editable during a running answer while disabling only send.
+- Good: use equal-width mobile bottom navigation so chat, memory, and settings remain one tap away.
 - Good: resolve a Decision card with small inline buttons rather than opening a separate Inbox dashboard.
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
 - Good: expose tool arguments/results in collapsible details on the same action card.
