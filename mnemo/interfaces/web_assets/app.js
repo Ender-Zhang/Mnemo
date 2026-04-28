@@ -961,8 +961,8 @@ async function loadMemoryCompass() {
     renderMemoryCompass(state.memoryOntology);
     return;
   }
-  memoryCompass.replaceChildren(loadingRow("加载十维记忆"));
-  memoryLayerDetail.replaceChildren(textRow("选择一个维度继续查看。"));
+  memoryCompass.replaceChildren(loadingRow("加载记忆罗盘"));
+  memoryLayerDetail.replaceChildren(textRow("选择一个维度继续查看摘要与证据。"));
   try {
     const response = await fetch("/api/memory/ontology");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1189,17 +1189,17 @@ function memoryPayloadMarkdown(payload) {
   const lines = [
     `# ${item.title || "Memory"}`,
     "",
-    `- Dimension: ${item.dimension || "context"}`,
-    `- Type: ${item.type || "memory"}`,
-    `- Status: ${item.status || "unknown"}`,
+    `- 维度: ${dimensionLabel(item.dimension || "context")}`,
+    `- 类型: ${item.type || "memory"}`,
+    `- 状态: ${item.status || "unknown"}`,
     "",
-    "## Summary",
+    "## 摘要",
     "",
     item.summary || "",
   ];
   const evidence = payload.evidence || [];
   if (evidence.length) {
-    lines.push("", "## Evidence", "");
+    lines.push("", "## 证据", "");
     for (const row of evidence) {
       lines.push(`- **${row.kind || "evidence"}**: ${row.summary || row.reason || ""}`);
     }
@@ -1458,7 +1458,7 @@ function renderSettings(payload) {
   renderProviderTiles(runtime);
 
   const blocks = [];
-  blocks.push(settingsSummaryBlock("当前 Provider", `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`));
+  blocks.push(settingsSummaryBlock("当前模型", `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`));
   blocks.push(settingsSummaryBlock("权限待处理", String(payload.permissions?.open_decisions || 0)));
   blocks.push(settingsSummaryBlock("记忆", `${payload.data_controls?.counts?.memory_pages || 0} 稳定 / ${payload.data_controls?.counts?.memory_candidates || 0} 候选`));
   blocks.push(settingsSummaryBlock("工作区", connectedDetail(payload.connected_apps, "workspace")));
@@ -1469,9 +1469,9 @@ function renderProviderTiles(runtime) {
   if (!providerTiles) return;
   const currentProvider = runtime.provider || "local";
   const providers = [
-    { id: "openai-compatible", title: "OpenAI /v1", detail: runtime.model || "Compatible model" },
-    { id: "anthropic", title: "Anthropic", detail: "Claude models" },
-    { id: "local", title: "Local", detail: "Offline deterministic runtime" },
+    { id: "openai-compatible", title: "OpenAI 兼容", detail: runtime.model || "任意 /v1 兼容模型" },
+    { id: "anthropic", title: "Anthropic", detail: "Claude 系列模型" },
+    { id: "local", title: "本地模式", detail: "离线确定性运行时" },
   ];
   const tiles = providers.map((provider) => providerTile(provider, currentProvider));
   providerTiles.replaceChildren(...tiles);
@@ -1492,7 +1492,7 @@ function providerTile(provider, currentProvider) {
   detail.textContent = provider.detail;
   copy.append(title, detail);
   const status = document.createElement("em");
-  status.textContent = provider.id === currentProvider ? "Active" : "Select";
+  status.textContent = provider.id === currentProvider ? "正在使用" : "选择";
   button.append(mark, copy, status);
   button.addEventListener("click", () => {
     settingProvider.value = provider.id;
@@ -1507,7 +1507,7 @@ function syncProviderTiles(currentProvider) {
     const active = tile.dataset.provider === currentProvider;
     tile.classList.toggle("active", active);
     const badge = tile.querySelector("em");
-    if (badge) badge.textContent = active ? "Active" : "Select";
+    if (badge) badge.textContent = active ? "正在使用" : "选择";
   }
 }
 

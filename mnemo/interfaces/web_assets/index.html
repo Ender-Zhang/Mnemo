@@ -77,7 +77,7 @@
                 <section>
                   <span>运行模型</span>
                   <strong id="glanceRuntime">加载中</strong>
-                  <small>Provider 可在设置中切换</small>
+                  <small>模型可在设置中切换</small>
                 </section>
               </div>
             </section>
@@ -130,7 +130,7 @@
                 <div>
                   <span>运行模型</span>
                   <strong id="railRuntime">加载中</strong>
-                  <small>Provider 可在设置中切换</small>
+                  <small>模型可在设置中切换</small>
                 </div>
                 <div>
                   <span>最近运行</span>
@@ -147,7 +147,7 @@
             <div>
               <p class="eyebrow">Memory Compass</p>
               <h1>记忆罗盘</h1>
-              <p>十维记忆以渐进式披露呈现：先看全局，再进入维度，最后查看单条记忆的 Markdown 详情。</p>
+              <p>先看全局，再进入维度，最后查看单条记忆的证据与详情。</p>
             </div>
             <button id="memoryRefresh" class="quiet-button" type="button">刷新</button>
           </header>
@@ -162,8 +162,8 @@
             <section class="memory-panel">
               <div class="panel-heading">
                 <div>
-                  <h2>十维星盘</h2>
-                  <p>点击维度查看 L2，再点记忆卡片查看 L3。</p>
+                  <h2>罗盘总览</h2>
+                  <p>点击维度查看摘要与证据，单条详情会在弹窗中打开。</p>
                 </div>
                 <span id="memoryCountBadge" class="context-chip">未加载</span>
               </div>
@@ -178,7 +178,7 @@
             <div>
               <p class="eyebrow">Settings</p>
               <h1>设置</h1>
-              <p>配置模型提供商、运行参数、免打扰时间和本地体验偏好。</p>
+              <p>配置模型连接、运行参数、安静时间和体验偏好。</p>
             </div>
             <span id="settingsStatus" class="status-pill">未加载</span>
           </header>
@@ -186,12 +186,12 @@
           <div class="settings-layout">
             <form id="settingsProviderForm" class="settings-card">
               <div class="settings-card-header">
-                <h2>模型与 Provider</h2>
-                <p>不在浏览器保存 API Key。需要密钥时只保存环境变量名。</p>
+                <h2>模型连接</h2>
+                <p>浏览器只保存连接方式和环境变量名，不保存 API Key。</p>
               </div>
-              <div id="providerTiles" class="provider-tiles" aria-label="Provider 快速选择"></div>
+              <div id="providerTiles" class="provider-tiles" aria-label="模型服务快速选择"></div>
               <label>
-                <span>Provider</span>
+                <span>模型服务</span>
                 <select id="settingProvider" name="provider">
                   <option value="local">local</option>
                   <option value="openai-compatible">openai-compatible</option>
@@ -224,7 +224,7 @@
                   <input id="settingRetryBackoff" name="retry_backoff_s" type="number" min="0" max="60" step="0.1" />
                 </label>
               </div>
-              <button class="primary-button" type="submit">保存 Provider 设置</button>
+              <button class="primary-button" type="submit">保存模型设置</button>
             </form>
 
             <section class="settings-card">

@@ -718,8 +718,9 @@ h1 {
   grid-column: 1;
   justify-self: end;
   max-width: min(720px, 88%);
-  background: #17201f;
-  color: #fff;
+  border-color: rgba(11, 125, 120, 0.2);
+  background: linear-gradient(135deg, rgba(228, 243, 240, 0.9), rgba(255, 253, 249, 0.9));
+  color: var(--ink);
 }
 
 .message-avatar {
@@ -1943,8 +1944,8 @@ h1 {
   .mnemo-shell,
   .workspace,
   .view {
-    width: min(100vw, 390px);
-    max-width: 390px;
+    width: 100%;
+    max-width: none;
   }
 
   .app-nav {
@@ -1953,8 +1954,8 @@ h1 {
     grid-template-areas: ". brand bottom";
     gap: 8px;
     padding: 9px 12px;
-    width: min(100vw, 390px);
-    max-width: 390px;
+    width: 100%;
+    max-width: none;
     background: rgba(255, 253, 249, 0.94);
     backdrop-filter: none;
   }
@@ -1992,10 +1993,10 @@ h1 {
   .nav-group {
     position: fixed;
     left: 0;
-    right: auto;
+    right: 0;
     bottom: 0;
     z-index: 7;
-    width: min(100vw, 390px);
+    width: auto;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px;
@@ -2137,7 +2138,18 @@ h1 {
 
   .memory-layout,
   .settings-layout {
-    padding: 0 12px 18px;
+    padding: 0 12px calc(112px + env(safe-area-inset-bottom));
+  }
+
+  .panel-heading {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .panel-heading .context-chip {
+    align-self: start;
+    white-space: normal;
   }
 
   .avatar-panel {
@@ -2170,12 +2182,12 @@ h1 {
   .composer {
     position: fixed;
     left: 12px;
-    right: auto;
+    right: 12px;
     bottom: calc(76px + env(safe-area-inset-bottom));
     z-index: 8;
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px;
-    width: calc(min(100vw, 390px) - 24px);
+    width: auto;
     margin: 0;
     padding: 8px;
   }
