@@ -1646,13 +1646,6 @@ function dimensionLabel(value) {
     history: "历史任务",
     patterns: "工具习惯",
     boundaries: "边界约束",
-    personal_profile: "个人资料",
-    user_profile: "用户资料",
-    profile: "个人资料",
-    finance: "财务偏好",
-    knowledge: "知识背景",
-    work_style: "工作方式",
-    workflow: "工作方式",
   };
   return labels[value] || value || "记忆";
 }

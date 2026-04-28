@@ -148,6 +148,7 @@
 - Prompt-facing context cards for `session_message` include compact `summary` and provenance ids, not full transcripts.
 - `memory_read` must read stable memory pages as well as memory candidates.
 - `/api/memory/ontology` must expose the configured ten-dimension memory coverage as compact counts and clipped page/candidate summaries for user inspection.
+- `/api/memory/ontology` must normalize non-standard historical dimension labels into the configured ten dimensions and must never return extra user-facing dimensions.
 - `/api/memory/ontology` must be read-only and must not expose provider secrets, raw evidence blobs, or unbounded memory bodies.
 - `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.
 - `mnemo memory list` defaults to draft candidates; page listing defaults to active pages.

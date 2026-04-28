@@ -726,7 +726,10 @@ print(json.dumps({
                 confidence=0.91,
             )
             store.upsert_memory_page("goals: mnemo", "Build a lightweight agentic system.", confidence=0.82)
+            store.upsert_memory_page("user_profile: Chen", "The user profile belongs under identity.", confidence=0.75)
             store.add_memory_candidate(run_id, "User may prefer calmer UI", dimension="preferences")
+            store.add_memory_candidate(run_id, "User has a monthly budget preference", dimension="finance")
+            store.add_memory_candidate(run_id, "User works through compact loops", dimension="work_style")
 
             with RunningServer(
                 WebServerConfig(
@@ -743,7 +746,7 @@ print(json.dumps({
             dimensions = {item["dimension"]: item for item in payload["dimensions"]}
             self.assertEqual(status, 200)
             self.assertEqual(payload["kind"], "memory_ontology")
-            self.assertEqual(len([name for name in dimensions if name in {
+            ontology_names = {
                 "identity",
                 "cognition",
                 "values",
@@ -754,12 +757,19 @@ print(json.dumps({
                 "history",
                 "patterns",
                 "boundaries",
-            }]), 10)
-            self.assertEqual(payload["counts"]["pages"], 2)
-            self.assertEqual(payload["counts"]["candidates"], 1)
-            self.assertGreaterEqual(payload["counts"]["covered_dimensions"], 2)
+            }
+            self.assertEqual(set(dimensions), ontology_names)
+            self.assertEqual(len(payload["dimensions"]), 10)
+            self.assertEqual(payload["counts"]["pages"], 3)
+            self.assertEqual(payload["counts"]["candidates"], 3)
+            self.assertGreaterEqual(payload["counts"]["covered_dimensions"], 4)
+            self.assertEqual(dimensions["identity"]["pages"], 1)
             self.assertEqual(dimensions["preferences"]["pages"], 1)
-            self.assertEqual(dimensions["preferences"]["candidates"], 1)
+            self.assertEqual(dimensions["preferences"]["candidates"], 2)
+            self.assertEqual(dimensions["patterns"]["candidates"], 1)
+            self.assertNotIn("user_profile", dimensions)
+            self.assertNotIn("finance", dimensions)
+            self.assertNotIn("work_style", dimensions)
             self.assertIn("...[truncated]", json.dumps(dimensions["preferences"]))
             self.assertNotIn("secret-ontology-key", body)
 

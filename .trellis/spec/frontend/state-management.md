@@ -35,6 +35,7 @@
 - API: `GET /api/settings`
 - API: `POST /api/settings` with JSON `{ "quiet_hours": { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string } }`
 - API: `GET /api/memory/ontology` returns compact ten-dimensional memory counts and clipped page/candidate summaries.
+- API: `GET /api/memory/ontology` returns exactly the configured ten user-facing dimensions; historical labels such as profile, finance, or work-style must already be normalized by the API.
 
 ### 3. Contracts
 - The browser stores durable conversation, mission, last run, and last processed chat event ids in `localStorage`.

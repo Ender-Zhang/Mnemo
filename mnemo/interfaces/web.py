@@ -676,6 +676,40 @@ MEMORY_ONTOLOGY_DIMENSIONS = [
 ]
 
 
+MEMORY_ONTOLOGY_DIMENSION_ALIASES = {
+    "profile": "identity",
+    "personal": "identity",
+    "personal_profile": "identity",
+    "user_profile": "identity",
+    "user_identity": "identity",
+    "preference": "preferences",
+    "user_preference": "preferences",
+    "finance": "preferences",
+    "financial": "preferences",
+    "money": "preferences",
+    "budget": "preferences",
+    "goal": "goals",
+    "objective": "goals",
+    "relationship": "relationships",
+    "relations": "relationships",
+    "current_context": "context",
+    "project": "context",
+    "knowledge": "context",
+    "background": "context",
+    "domain_knowledge": "context",
+    "past": "history",
+    "task_history": "history",
+    "habit": "patterns",
+    "habits": "patterns",
+    "workflow": "patterns",
+    "work_style": "patterns",
+    "tool_habit": "patterns",
+    "boundary": "boundaries",
+    "constraint": "boundaries",
+    "constraints": "boundaries",
+}
+
+
 def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
     store = StateStore(config.state_dir)
     store.initialize()
@@ -687,7 +721,7 @@ def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
     }
     for page in pages:
         dimension = _memory_dimension(page, fallback="context")
-        bucket = buckets.setdefault(dimension, {"dimension": dimension, "pages": 0, "candidates": 0, "items": []})
+        bucket = buckets[dimension]
         bucket["pages"] += 1
         if len(bucket["items"]) < 3:
             bucket["items"].append(
@@ -701,7 +735,7 @@ def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
             )
     for candidate in candidates:
         dimension = _memory_dimension(candidate, fallback="context")
-        bucket = buckets.setdefault(dimension, {"dimension": dimension, "pages": 0, "candidates": 0, "items": []})
+        bucket = buckets[dimension]
         bucket["candidates"] += 1
         if len(bucket["items"]) < 3:
             bucket["items"].append(
@@ -714,10 +748,9 @@ def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
                 }
             )
     dimensions = [buckets[dimension] for dimension in MEMORY_ONTOLOGY_DIMENSIONS]
-    extras = [item for key, item in buckets.items() if key not in MEMORY_ONTOLOGY_DIMENSIONS]
     return {
         "kind": "memory_ontology",
-        "dimensions": [*dimensions, *extras],
+        "dimensions": dimensions,
         "counts": {
             "pages": len(pages),
             "candidates": len(candidates),
@@ -729,12 +762,19 @@ def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
 
 
 def _memory_dimension(item: dict[str, Any], *, fallback: str) -> str:
-    value = str(item.get("dimension") or "").strip().lower()
+    value = _normalize_memory_dimension_name(str(item.get("dimension") or ""))
     if not value:
-        title = str(item.get("title") or "").strip().lower()
-        value = title.split(":", 1)[0].strip() if ":" in title else ""
-    aliases = {"preference": "preferences", "user_preference": "preferences", "current_context": "context"}
-    return aliases.get(value, value) if value else fallback
+        title = str(item.get("title") or "").strip()
+        value = _normalize_memory_dimension_name(title.split(":", 1)[0]) if ":" in title else ""
+    mapped = MEMORY_ONTOLOGY_DIMENSION_ALIASES.get(value, value)
+    if mapped in MEMORY_ONTOLOGY_DIMENSIONS:
+        return mapped
+    fallback_dimension = _normalize_memory_dimension_name(fallback)
+    return fallback_dimension if fallback_dimension in MEMORY_ONTOLOGY_DIMENSIONS else "context"
+
+
+def _normalize_memory_dimension_name(value: str) -> str:
+    return "_".join(str(value or "").strip().lower().replace("-", "_").split())
 
 
 def _clip_text(value: str, limit: int) -> str:
