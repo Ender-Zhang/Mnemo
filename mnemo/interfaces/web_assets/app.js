@@ -67,6 +67,10 @@ const statusText = document.querySelector("#status");
 const runBadge = document.querySelector("#runBadge");
 const contextUserPrompt = document.querySelector("#contextUserPrompt");
 const attachButton = document.querySelector("#attachButton");
+const glanceActivity = document.querySelector("#glanceActivity");
+const glanceMemory = document.querySelector("#glanceMemory");
+const glanceMemoryHint = document.querySelector("#glanceMemoryHint");
+const glanceRuntime = document.querySelector("#glanceRuntime");
 const memoryRefresh = document.querySelector("#memoryRefresh");
 const memoryCompass = document.querySelector("#memoryCompass");
 const memoryLayerDetail = document.querySelector("#memoryLayerDetail");
@@ -191,6 +195,7 @@ window.addEventListener("online", () => {
 switchView("chat");
 updateContextPanel();
 updateComposerState();
+loadHomeContext();
 resumeLastRun();
 
 function switchView(name) {
@@ -468,6 +473,7 @@ function renderAction(event) {
   row.status.textContent = toolStatusLabel(event);
   row.summary.textContent = action.summary || event.data?.summary || "工具调用";
   row.meta.textContent = [action.risk || "", action.provider || "", compactId(id)].filter(Boolean).join(" · ");
+  updateGlanceActivity(name, row.status.textContent);
   if (event.data?.action) {
     renderToolDetails(row.details, event.data.action, event.data);
   }
@@ -475,6 +481,12 @@ function renderAction(event) {
     renderToolResult(row.result, event.data);
   }
   timelineScroll();
+}
+
+function updateGlanceActivity(name, status) {
+  if (!glanceActivity) return;
+  const label = [name || "工具调用", status || ""].filter(Boolean).join(" · ");
+  glanceActivity.textContent = label;
 }
 
 function createToolCallCard(id, name) {
@@ -1359,6 +1371,35 @@ async function loadSettings() {
   } catch (error) {
     settingsStatus.textContent = "加载失败";
     settingsSummary.replaceChildren(textRow(error.message || String(error)));
+  }
+}
+
+async function loadHomeContext() {
+  if (!glanceMemory && !glanceRuntime) return;
+  try {
+    const response = await fetch("/api/settings");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    state.settings = payload;
+    renderHomeContext(payload);
+  } catch (_error) {
+    if (glanceMemory) glanceMemory.textContent = "暂不可用";
+    if (glanceRuntime) glanceRuntime.textContent = "未连接";
+  }
+}
+
+function renderHomeContext(payload) {
+  const runtime = payload.runtime || payload.settings?.runtime || {};
+  const counts = payload.data_controls?.counts || {};
+  const preference = (payload.learned_preferences?.items || [])[0];
+  if (glanceMemory) {
+    glanceMemory.textContent = `${counts.memory_pages || 0} 稳定 / ${counts.memory_candidates || 0} 候选`;
+  }
+  if (glanceMemoryHint) {
+    glanceMemoryHint.textContent = preference?.summary || "只显示摘要，不暴露原文";
+  }
+  if (glanceRuntime) {
+    glanceRuntime.textContent = `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`;
   }
 }
 

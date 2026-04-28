@@ -461,6 +461,43 @@ h1 {
   cursor: pointer;
 }
 
+.empty-glance {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: min(760px, 100%);
+  margin-top: 8px;
+}
+
+.empty-glance section {
+  display: grid;
+  gap: 4px;
+  min-height: 88px;
+  padding: 12px;
+  border: 1px solid rgba(222, 215, 204, 0.82);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 249, 0.62);
+  text-align: left;
+  box-shadow: 0 8px 24px rgba(39, 33, 24, 0.04);
+}
+
+.empty-glance span,
+.empty-glance small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.empty-glance strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
@@ -1614,7 +1651,9 @@ h1 {
 
 @media (max-width: 640px) {
   .app-nav {
-    gap: 9px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "brand tabs bottom";
+    gap: 10px;
     padding: 8px 12px;
   }
 
@@ -1630,6 +1669,28 @@ h1 {
   .nav-item {
     min-width: 44px;
     padding: 0 7px;
+  }
+
+  .nav-group {
+    justify-content: center;
+    padding-bottom: 0;
+  }
+
+  .nav-bottom .status-pill {
+    display: none;
+  }
+
+  .nav-bottom .quiet-button {
+    width: 40px;
+    min-width: 40px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .nav-bottom .quiet-button::before {
+    content: "+";
+    font-size: 22px;
+    line-height: 1;
   }
 
   .brand-mark {
@@ -1674,6 +1735,10 @@ h1 {
     max-width: 330px;
     font-size: 14px;
     line-height: 1.55;
+  }
+
+  .empty-glance {
+    display: none;
   }
 
   .orbital-mark {

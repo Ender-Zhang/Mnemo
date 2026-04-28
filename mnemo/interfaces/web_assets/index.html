@@ -63,6 +63,23 @@
                 <button type="button" data-prefill="帮我把这段内容整理成可执行计划：">整理行动计划</button>
                 <button type="button" data-prefill="回顾最近关于 Mnemo 的进展，告诉我下一步最该做什么。">回顾项目进展</button>
               </div>
+              <div class="empty-glance" aria-label="当前上下文摘要">
+                <section>
+                  <span>实时动作</span>
+                  <strong id="glanceActivity">等待派活</strong>
+                  <small>工具调用会在对话里轻量展示</small>
+                </section>
+                <section>
+                  <span>长期记忆</span>
+                  <strong id="glanceMemory">加载中</strong>
+                  <small id="glanceMemoryHint">只显示摘要，不暴露原文</small>
+                </section>
+                <section>
+                  <span>运行模型</span>
+                  <strong id="glanceRuntime">加载中</strong>
+                  <small>Provider 可在设置中切换</small>
+                </section>
+              </div>
             </section>
           </div>
 

@@ -62,7 +62,7 @@
 - Tool approval cards use the same decision resolution path and render any returned compact `tool_result` as an inline action/error card without adding browser persistence keys.
 - Learning chips resolve or undo persisted memory candidates by id and keep status local to the card.
 - Review-gated learning chips use `requires_confirmation` only for local presentation; they do not add browser persistence keys or a separate workflow.
-- Settings view state is fetched on open through `/api/settings`; it is not persisted in browser storage except lightweight local UI toggles.
+- `/api/settings` can seed read-only chat glance cards on page load and hydrate the settings view on open; it is not persisted in browser storage except lightweight local UI toggles.
 - Settings view can update quiet hours and runtime provider preferences through `/api/settings`; raw API keys must never be sent or stored, only an environment variable name.
 - Runtime settings are live overlays: unset fields must continue using process startup config, while saved provider/model/base URL, API key env, timeout, and retry fields override future web turns.
 - `/api/settings` payloads must summarize learned preferences, runtime preferences, and data counts without raw artifact bodies, raw memory dumps, or provider secrets.

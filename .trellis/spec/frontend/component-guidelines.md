@@ -11,6 +11,7 @@
 - Reusable visual units are CSS classes in `app.css`: `.message`, `.event-card`, `.event-title`, `.event-body`, `.composer`.
 - The primary screen is always the chat view: top status, timeline, and one composer.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
+- Chat empty state may show read-only glance cards for current runtime, memory counts, and latest activity; these cards must not become a second task surface.
 - Busy-state commands such as stop/cancel belong inside the existing composer.
 - Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
 
