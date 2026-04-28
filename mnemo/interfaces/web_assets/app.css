@@ -419,6 +419,10 @@ body.drawer-open .sheet-backdrop {
   grid-column: auto;
 }
 
+.drawer-active .provider-tiles {
+  grid-template-columns: 1fr;
+}
+
 .drawer-active .avatar-panel {
   min-height: 560px;
 }
@@ -550,6 +554,7 @@ h1 {
 
 .rail-card header,
 .rail-row,
+.rail-action-list,
 .rail-memory-summary > div {
   min-width: 0;
 }
@@ -591,6 +596,11 @@ h1 {
   gap: 10px;
 }
 
+.rail-action-list {
+  display: grid;
+  gap: 0;
+}
+
 .rail-row {
   display: grid;
   grid-template-columns: 18px minmax(0, 1fr);
@@ -619,6 +629,48 @@ h1 {
 .rail-dot.muted {
   background: var(--line-strong);
   box-shadow: 0 0 0 4px rgba(222, 215, 204, 0.32);
+}
+
+.rail-action-row[data-state="queued"] .rail-dot {
+  background: var(--gold);
+  box-shadow: 0 0 0 4px rgba(166, 111, 31, 0.12);
+}
+
+.rail-action-row[data-state="running"] .rail-dot {
+  animation: pulse-ring 1.4s ease-in-out infinite;
+}
+
+.rail-action-row[data-state="done"] .rail-dot {
+  background: var(--teal);
+}
+
+.rail-action-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rail-action-top em {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(240, 236, 229, 0.76);
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.rail-action-row[data-state="running"] .rail-action-top em {
+  background: rgba(228, 243, 240, 0.92);
+  color: #064d49;
+}
+
+.rail-action-row[data-state="queued"] .rail-action-top em {
+  background: rgba(255, 242, 220, 0.92);
+  color: #825717;
 }
 
 .rail-row strong,
@@ -2158,12 +2210,20 @@ h1 {
   }
 
   .sheet-active .page-header {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
     padding-top: 28px;
   }
 
-  .sheet-active .page-header p {
-    max-width: 100%;
-    overflow-wrap: anywhere;
+  .sheet-active .page-header > div > p:not(.eyebrow) {
+    display: none;
+  }
+
+  .sheet-active .page-actions {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
   }
 
   .sheet-close {
@@ -2353,7 +2413,15 @@ h1 {
     padding-bottom: 24px;
   }
 
+  .sheet-active .memory-layout {
+    display: flex;
+    flex-direction: column;
+  }
+
   .sheet-active .memory-panel {
+    order: 1;
+    flex: 0 0 auto;
+    min-height: auto;
     overflow: visible;
     padding-right: 0;
   }
@@ -2370,6 +2438,7 @@ h1 {
   }
 
   .sheet-active .avatar-panel {
+    order: 2;
     min-height: 270px;
     max-height: 300px;
     margin-bottom: 14px;

@@ -61,6 +61,7 @@ const state = {
   pendingAssistantNode: null,
   assistantNode: null,
   activityRows: new Map(),
+  railActionRows: new Map(),
   artifacts: new Map(),
   artifactRelated: new Map(),
   settings: null,
@@ -100,6 +101,7 @@ const glanceRuntime = document.querySelector("#glanceRuntime");
 const railStatus = document.querySelector("#railStatus");
 const railActivity = document.querySelector("#railActivity");
 const railActivityRow = document.querySelector("#railActivityRow");
+const railActionList = document.querySelector("#railActionList");
 const railRecentIntent = document.querySelector("#railRecentIntent");
 const railMemory = document.querySelector("#railMemory");
 const railMemoryHint = document.querySelector("#railMemoryHint");
@@ -179,6 +181,7 @@ reset.addEventListener("click", () => {
   state.lastUserIntent = "";
   state.renderedEventIds.clear();
   state.activityRows.clear();
+  state.railActionRows.clear();
   state.artifacts.clear();
   state.artifactRelated.clear();
   localStorage.removeItem("mnemo.conversation_id");
@@ -567,7 +570,9 @@ function renderAction(event) {
   row.status.textContent = toolStatusLabel(event);
   row.summary.textContent = action.summary || event.data?.summary || "工具调用";
   row.meta.textContent = [action.risk || "", action.provider || "", compactId(id)].filter(Boolean).join(" · ");
+  if (state.busy) setStatus("执行中");
   updateGlanceActivity(name, row.status.textContent);
+  upsertRailAction(key, name, row.status.textContent, row.summary.textContent, stateName);
   if (event.data?.action) {
     renderToolDetails(row.details, event.data.action, event.data);
   }
@@ -582,6 +587,50 @@ function updateGlanceActivity(name, status) {
   setText(glanceActivity, label);
   setText(railActivity, label);
   setRailActivityActive(true);
+}
+
+function upsertRailAction(key, name, status, summary, stateName) {
+  if (!railActionList) return;
+  let row = state.railActionRows.get(key);
+  if (!row) {
+    row = createRailActionRow(key);
+    state.railActionRows.set(key, row);
+  }
+  row.node.dataset.state = stateName;
+  row.title.textContent = name || "工具调用";
+  row.status.textContent = status || "排队";
+  row.summary.textContent = compactText(summary || "正在处理", 72);
+  railActionList.prepend(row.node);
+  trimRailActions();
+}
+
+function createRailActionRow(key) {
+  const node = document.createElement("div");
+  node.className = "rail-row rail-action-row";
+  node.dataset.railActionKey = key;
+  const dot = document.createElement("span");
+  dot.className = "rail-dot";
+  dot.setAttribute("aria-hidden", "true");
+  const body = document.createElement("div");
+  const top = document.createElement("span");
+  top.className = "rail-action-top";
+  const title = document.createElement("strong");
+  const status = document.createElement("em");
+  const summary = document.createElement("small");
+  top.append(title, status);
+  body.append(top, summary);
+  node.append(dot, body);
+  return { node, title, status, summary };
+}
+
+function trimRailActions() {
+  if (!railActionList) return;
+  while (railActionList.children.length > 4) {
+    const last = railActionList.lastElementChild;
+    if (!last) return;
+    state.railActionRows.delete(last.dataset.railActionKey || "");
+    last.remove();
+  }
 }
 
 function createToolCallCard(id, name) {
