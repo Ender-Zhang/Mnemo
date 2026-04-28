@@ -94,6 +94,8 @@ const statusText = document.querySelector("#status");
 const runBadge = document.querySelector("#runBadge");
 const contextUserPrompt = document.querySelector("#contextUserPrompt");
 const attachButton = document.querySelector("#attachButton");
+const mentionButton = document.querySelector("#mentionButton");
+const toolIntentButton = document.querySelector("#toolIntentButton");
 const glanceActivity = document.querySelector("#glanceActivity");
 const glanceMemory = document.querySelector("#glanceMemory");
 const glanceMemoryHint = document.querySelector("#glanceMemoryHint");
@@ -198,6 +200,14 @@ reset.addEventListener("click", () => {
 
 attachButton.addEventListener("click", () => {
   prefillMessage("请使用这个文件：");
+});
+
+mentionButton.addEventListener("click", () => {
+  insertComposerText("@");
+});
+
+toolIntentButton.addEventListener("click", () => {
+  insertComposerText("/");
 });
 
 for (const suggestion of document.querySelectorAll("[data-prefill]")) {
@@ -1993,6 +2003,18 @@ function setCardBusy(card, busy) {
 function prefillMessage(text) {
   switchView("chat", { updateLocation: true });
   input.value = text || "";
+  resizeInput();
+  input.focus();
+}
+
+function insertComposerText(text) {
+  switchView("chat", { updateLocation: true });
+  const value = input.value || "";
+  const start = input.selectionStart ?? value.length;
+  const end = input.selectionEnd ?? start;
+  input.value = `${value.slice(0, start)}${text}${value.slice(end)}`;
+  const caret = start + String(text || "").length;
+  input.setSelectionRange(caret, caret);
   resizeInput();
   input.focus();
 }

@@ -84,12 +84,20 @@
           </div>
 
           <form id="composer" class="composer">
-            <button id="attachButton" class="composer-icon" type="button" title="添加文件" aria-label="添加文件">+</button>
             <textarea id="message" name="message" rows="1" placeholder="给 Mnemo 派活..." title="Enter 发送，Shift+Enter 换行"></textarea>
-            <button id="stop" class="stop-button" type="button" hidden>停止</button>
-            <button id="send" class="send-button" type="submit" title="发送" aria-label="发送">
-              <span aria-hidden="true"></span>
-            </button>
+            <div class="composer-toolbar">
+              <div class="composer-tools" aria-label="输入辅助">
+                <button id="attachButton" class="composer-icon" type="button" title="添加文件" aria-label="添加文件">+</button>
+                <button id="mentionButton" class="composer-icon" type="button" title="提到对象" aria-label="提到对象">@</button>
+                <button id="toolIntentButton" class="composer-icon" type="button" title="调用工具或技能" aria-label="调用工具或技能">/</button>
+              </div>
+              <div class="composer-actions">
+                <button id="stop" class="stop-button" type="button" hidden>停止</button>
+                <button id="send" class="send-button" type="submit" title="发送" aria-label="发送">
+                  <span aria-hidden="true"></span>
+                </button>
+              </div>
+            </div>
           </form>
 
           <aside id="contextRail" class="context-rail" aria-label="当前上下文">
