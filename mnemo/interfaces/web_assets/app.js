@@ -536,10 +536,12 @@ function isInternalLearningEvent(event) {
   );
 }
 
-function actionState(type) {
+function actionState(eventOrType) {
+  const type = typeof eventOrType === "string" ? eventOrType : eventOrType?.type;
+  const outcome = typeof eventOrType === "string" ? "" : eventOrType?.data?.outcome;
   if (type === "action.queued") return "queued";
   if (type === "action.started") return "running";
-  if (type === "action.completed") return "done";
+  if (type === "action.completed") return outcome && outcome !== "success" ? "failed" : "done";
   return "queued";
 }
 
@@ -554,11 +556,12 @@ function activityActionId(event) {
 }
 
 function renderAction(event) {
+  emptyState.hidden = true;
   const action = event.data?.action || {};
   const id = activityActionId(event);
   const key = `action:${id}`;
   const name = event.data?.tool_name || action.title || "tool";
-  const stateName = actionState(event.type);
+  const stateName = actionState(event);
   let row = state.activityRows.get(key);
   if (!row) {
     row = createToolCallCard(id, name);
@@ -569,6 +572,7 @@ function renderAction(event) {
   row.title.textContent = name;
   row.status.textContent = toolStatusLabel(event);
   row.summary.textContent = action.summary || event.data?.summary || "工具调用";
+  row.preview.textContent = row.summary.textContent;
   row.meta.textContent = [action.risk || "", action.provider || "", compactId(id)].filter(Boolean).join(" · ");
   if (state.busy) setStatus("执行中");
   updateGlanceActivity(name, row.status.textContent);
@@ -650,11 +654,18 @@ function createToolCallCard(id, name) {
   text.className = "tool-call-title";
   text.textContent = name;
 
+  const copy = document.createElement("span");
+  copy.className = "tool-call-copy";
+  const preview = document.createElement("span");
+  preview.className = "tool-call-preview";
+  preview.textContent = "准备调用工具";
+  copy.append(text, preview);
+
   const status = document.createElement("span");
   status.className = "tool-status";
   status.textContent = "排队";
 
-  summary.append(icon, text, status);
+  summary.append(icon, copy, status);
 
   const body = document.createElement("div");
   body.className = "tool-call-body";
@@ -669,12 +680,14 @@ function createToolCallCard(id, name) {
   body.append(meta, description, details, result);
   node.append(summary, body);
 
-  return { node, title: text, status, meta, summary: description, details, result };
+  return { node, title: text, preview, status, meta, summary: description, details, result };
 }
 
 function toolStatusLabel(event) {
   if (event.type === "action.completed") {
-    return event.data?.outcome === "success" ? "完成" : "失败";
+    if (event.data?.outcome === "success") return "完成";
+    if (event.data?.outcome === "skipped") return "跳过";
+    return "失败";
   }
   if (event.type === "action.started") return "运行中";
   return "排队";
