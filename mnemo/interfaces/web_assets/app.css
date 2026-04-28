@@ -1419,6 +1419,12 @@ h1 {
   gap: 8px;
 }
 
+.memory-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .memory-detail-evidence {
   display: grid;
   gap: 4px;
@@ -2241,6 +2247,11 @@ h1 {
   .sheet-active .settings-layout {
     overflow: auto;
     padding-bottom: 24px;
+  }
+
+  .sheet-active .memory-panel {
+    overflow: visible;
+    padding-right: 0;
   }
 
   .panel-heading {

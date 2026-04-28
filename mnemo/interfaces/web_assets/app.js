@@ -1159,7 +1159,9 @@ async function loadMemoryItem(kind, id) {
     renderMemoryItemDetail(state.memoryItems.get(key));
     return;
   }
-  memoryLayerDetail.appendChild(loadingRow("加载记忆详情"));
+  const loading = loadingRow("加载记忆详情");
+  loading.dataset.memoryItemLoading = "true";
+  memoryLayerDetail.appendChild(loading);
   try {
     const response = await fetch(`/api/memory/item?type=${encodeURIComponent(itemType)}&id=${encodeURIComponent(id)}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1167,11 +1169,15 @@ async function loadMemoryItem(kind, id) {
     state.memoryItems.set(key, payload);
     renderMemoryItemDetail(payload);
   } catch (error) {
+    loading.remove();
     memoryLayerDetail.appendChild(textRow(error.message || String(error)));
   }
 }
 
 function renderMemoryItemDetail(payload) {
+  for (const row of memoryLayerDetail.querySelectorAll("[data-memory-item-loading]")) {
+    row.remove();
+  }
   const item = payload.item || {};
   const panel = document.createElement("section");
   panel.className = "memory-item-panel";
@@ -1186,11 +1192,25 @@ function renderMemoryItemDetail(payload) {
   for (const row of payload.evidence || []) {
     evidence.appendChild(memoryDetailEvidence(row));
   }
-  const markdown = actionButton("查看 Markdown", () => openMemoryMarkdown(payload), "primary-button small");
-  panel.append(title, summary, meta, evidence, markdown);
+  const actions = document.createElement("div");
+  actions.className = "memory-item-actions";
+  actions.append(
+    actionButton("引用到当前任务", () => prefillMemoryAction("use", payload), "primary-button small"),
+    actionButton("更新", () => prefillMemoryAction("update", payload), "secondary-button small"),
+    actionButton("忘记", () => prefillMemoryAction("forget", payload), "secondary-button small"),
+    actionButton("查看详情", () => openMemoryMarkdown(payload), "secondary-button small"),
+  );
+  panel.append(title, summary, meta, evidence, actions);
   const existing = memoryLayerDetail.querySelector(".memory-item-panel");
   if (existing) existing.replaceWith(panel);
   else memoryLayerDetail.appendChild(panel);
+  revealMemoryItemPanel(panel);
+}
+
+function revealMemoryItemPanel(panel) {
+  window.requestAnimationFrame(() => {
+    panel.scrollIntoView({ block: document.body.classList.contains("mobile-sheet-open") ? "center" : "nearest" });
+  });
 }
 
 function memoryDetailEvidence(item) {
@@ -1236,6 +1256,22 @@ function memoryPayloadMarkdown(payload) {
     }
   }
   return lines.join("\n");
+}
+
+function prefillMemoryAction(intent, payload) {
+  const item = payload.item || {};
+  const title = item.title || "这条记忆";
+  const summary = item.summary || "";
+  const dimension = dimensionLabel(item.dimension || "context");
+  if (intent === "forget") {
+    prefillMessage(`请评估并忘记这条记忆：${title}。维度：${dimension}。摘要：${summary}`);
+    return;
+  }
+  if (intent === "update") {
+    prefillMessage(`请基于当前任务更新这条记忆：${title}。维度：${dimension}。现有摘要：${summary}`);
+    return;
+  }
+  prefillMessage(`请把这条记忆引用到当前任务中：${title}。维度：${dimension}。摘要：${summary}`);
 }
 
 async function initMemoryAvatar() {
@@ -1806,7 +1842,7 @@ function setCardBusy(card, busy) {
 }
 
 function prefillMessage(text) {
-  switchView("chat");
+  switchView("chat", { updateLocation: true });
   input.value = text || "";
   resizeInput();
   input.focus();
