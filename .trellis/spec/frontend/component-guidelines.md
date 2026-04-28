@@ -11,6 +11,7 @@
 - Reusable visual units are CSS classes in `app.css`: `.message`, `.event-card`, `.event-title`, `.event-body`, `.composer`.
 - The primary screen is always the chat view: top status, timeline, and one composer.
 - Navigation state may live in the URL hash so refresh/back/deep links keep the selected view without adding a second task surface.
+- On mobile, the primary navigation should move to a compact bottom bar while the header stays focused on the Mnemo brand and lightweight commands.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
 - Chat empty state may show read-only glance cards for current runtime, memory counts, and latest activity; these cards must not become a second task surface.
 - Desktop chat may show a read-only context rail for real-time activity, recent request, runtime, and memory summary; it must hide on smaller screens and must not expose Mission/Run internals beyond compact resume labels.
