@@ -18,15 +18,15 @@
         </button>
 
         <div class="nav-group" role="tablist" aria-label="主要页面">
-          <button id="navChat" class="nav-item active" type="button" data-view="chat">
+          <button id="navChat" class="nav-item active" type="button" data-view="chat" title="对话" aria-label="对话">
             <span class="nav-icon nav-chat" aria-hidden="true"></span>
             <span>对话</span>
           </button>
-          <button id="memoryOpen" class="nav-item" type="button" data-view="memory">
+          <button id="memoryOpen" class="nav-item" type="button" data-view="memory" title="记忆罗盘" aria-label="记忆罗盘">
             <span class="nav-icon nav-memory" aria-hidden="true"></span>
             <span>记忆罗盘</span>
           </button>
-          <button id="settingsOpen" class="nav-item" type="button" data-view="settings">
+          <button id="settingsOpen" class="nav-item" type="button" data-view="settings" title="设置" aria-label="设置">
             <span class="nav-icon nav-settings" aria-hidden="true"></span>
             <span>设置</span>
           </button>
@@ -34,7 +34,7 @@
 
         <div class="nav-bottom">
           <span id="status" class="status-pill">空闲</span>
-          <button id="reset" class="quiet-button" type="button">新对话</button>
+          <button id="reset" class="quiet-button" type="button" title="新对话" aria-label="新对话">新对话</button>
         </div>
       </nav>
 
@@ -140,6 +140,7 @@
                 <h2>模型与 Provider</h2>
                 <p>不在浏览器保存 API Key。需要密钥时只保存环境变量名。</p>
               </div>
+              <div id="providerTiles" class="provider-tiles" aria-label="Provider 快速选择"></div>
               <label>
                 <span>Provider</span>
                 <select id="settingProvider" name="provider">

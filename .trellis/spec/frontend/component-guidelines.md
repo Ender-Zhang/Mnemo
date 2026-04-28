@@ -10,6 +10,7 @@
 - Components are DOM builder/render functions in `mnemo/interfaces/web_assets/app.js`.
 - Reusable visual units are CSS classes in `app.css`: `.message`, `.event-card`, `.event-title`, `.event-body`, `.composer`.
 - The primary screen is always the chat view: top status, timeline, and one composer.
+- Navigation state may live in the URL hash so refresh/back/deep links keep the selected view without adding a second task surface.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
 - Chat empty state may show read-only glance cards for current runtime, memory counts, and latest activity; these cards must not become a second task surface.
 - Busy-state commands such as stop/cancel belong inside the existing composer.
@@ -28,6 +29,8 @@
 - Learning chips should stay inline in the timeline and resolve or undo memory candidates through `/api/learning/memory`.
 - Learning chips with `requires_confirmation=true` should use explicit confirmation wording before durable memory promotion.
 - The settings view renders compact connected-app, permission, quiet-hours, runtime provider/model, preference, and data-control summaries from `/api/settings`.
+- Settings provider tiles may prefill the Provider form, but they must not save runtime changes until the normal settings submit path runs.
+- Settings provider tiles and the Provider select must stay visually synchronized before save.
 - Ten-dimensional memory inspection lives in the memory compass view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
 - The memory compass can mirror L1 dimensions as an orbit around the avatar, but orbit buttons must call the same L2 dimension loader and remain read-only.
 - Settings actions should save narrow settings only; ordinary user tasks still route through the single composer.

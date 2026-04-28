@@ -388,9 +388,11 @@ h1 {
   justify-items: center;
   gap: 18px;
   align-content: center;
+  width: 100%;
   min-height: min(540px, 62vh);
   padding: 34px 24px;
   text-align: center;
+  box-sizing: border-box;
 }
 
 .empty-state[hidden] {
@@ -449,6 +451,7 @@ h1 {
   flex-wrap: wrap;
   justify-content: center;
   gap: 10px;
+  width: min(100%, 520px);
 }
 
 .suggestion-row button {
@@ -459,6 +462,7 @@ h1 {
   background: rgba(255, 253, 249, 0.72);
   color: #3d4541;
   cursor: pointer;
+  max-width: 100%;
 }
 
 .empty-glance {
@@ -1242,6 +1246,79 @@ h1 {
   font-size: 18px;
 }
 
+.provider-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.provider-tile {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 84px;
+  padding: 11px;
+  border: 1px solid rgba(222, 215, 204, 0.9);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 249, 0.72);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.provider-tile > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius);
+  background: #17201f;
+  color: #fff;
+  font-weight: 850;
+}
+
+.provider-tile > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.provider-tile strong,
+.provider-tile small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-tile small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.provider-tile em {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(240, 236, 229, 0.8);
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.provider-tile.active {
+  border-color: rgba(11, 125, 120, 0.34);
+  background: linear-gradient(135deg, rgba(228, 243, 240, 0.82), rgba(255, 253, 249, 0.84));
+  box-shadow: var(--shadow-small);
+}
+
+.provider-tile.active em {
+  background: rgba(11, 125, 120, 0.12);
+  color: #064d49;
+}
+
 .settings-card label {
   display: grid;
   gap: 7px;
@@ -1652,9 +1729,15 @@ h1 {
 @media (max-width: 640px) {
   .app-nav {
     grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto;
     grid-template-areas: "brand tabs bottom";
     gap: 10px;
     padding: 8px 12px;
+  }
+
+  .workspace,
+  .view {
+    min-height: calc(100dvh - 58px);
   }
 
   .quiet-button {
@@ -1717,13 +1800,14 @@ h1 {
   }
 
   .timeline {
-    padding: 12px 18px 108px;
+    padding: 10px 16px 104px;
   }
 
   .empty-state {
     gap: 13px;
-    min-height: calc(100dvh - 244px);
+    min-height: calc(100dvh - 188px);
     padding: 10px 4px 16px;
+    overflow-x: hidden;
   }
 
   .empty-state h2 {
@@ -1732,7 +1816,7 @@ h1 {
   }
 
   .empty-state p {
-    max-width: 330px;
+    max-width: 300px;
     font-size: 14px;
     line-height: 1.55;
   }
@@ -1757,6 +1841,10 @@ h1 {
     font-size: 14px;
   }
 
+  .suggestion-row {
+    width: min(100%, 300px);
+  }
+
   .message,
   .message.user {
     grid-template-columns: 30px minmax(0, 1fr);
@@ -1773,7 +1861,8 @@ h1 {
   }
 
   .memory-compass,
-  .settings-grid {
+  .settings-grid,
+  .provider-tiles {
     grid-template-columns: 1fr;
   }
 

@@ -79,6 +79,7 @@ const memoryCountBadge = document.querySelector("#memoryCountBadge");
 const memoryAvatar3d = document.querySelector("#memoryAvatar3d");
 const memoryOrbit = document.querySelector("#memoryOrbit");
 const settingsProviderForm = document.querySelector("#settingsProviderForm");
+const providerTiles = document.querySelector("#providerTiles");
 const settingProvider = document.querySelector("#settingProvider");
 const settingModel = document.querySelector("#settingModel");
 const settingBaseUrl = document.querySelector("#settingBaseUrl");
@@ -104,7 +105,7 @@ document.body.classList.toggle("compact-tools", state.compactTools);
 
 for (const item of navItems) {
   item.addEventListener("click", () => {
-    switchView(item.dataset.view || "chat");
+    switchView(item.dataset.view || "chat", { updateLocation: true });
   });
 }
 
@@ -174,6 +175,10 @@ settingsProviderForm.addEventListener("submit", (event) => {
   saveSettings();
 });
 
+settingProvider.addEventListener("change", () => {
+  syncProviderTiles(settingProvider.value || "local");
+});
+
 saveExperience.addEventListener("click", () => {
   state.compactTools = Boolean(compactTools.checked);
   state.streamMarkdown = Boolean(streamMarkdown.checked);
@@ -192,19 +197,33 @@ window.addEventListener("online", () => {
   resumeLastRun();
 });
 
-switchView("chat");
+window.addEventListener("hashchange", () => {
+  switchView(viewFromLocation());
+});
+
+window.addEventListener("popstate", () => {
+  switchView(viewFromLocation());
+});
+
+switchView(viewFromLocation());
 updateContextPanel();
 updateComposerState();
 loadHomeContext();
 resumeLastRun();
 
-function switchView(name) {
+function switchView(name, options = {}) {
   const target = views[name] ? name : "chat";
   for (const [viewName, view] of Object.entries(views)) {
     view.classList.toggle("active", viewName === target);
   }
   for (const item of navItems) {
     item.classList.toggle("active", item.dataset.view === target);
+  }
+  if (options.updateLocation) {
+    const nextHash = `#${target}`;
+    if (window.location.hash !== nextHash) {
+      history.pushState(null, "", nextHash);
+    }
   }
   if (target === "memory") {
     initMemoryAvatar();
@@ -216,6 +235,11 @@ function switchView(name) {
   if (target === "chat") {
     input.focus();
   }
+}
+
+function viewFromLocation() {
+  const hash = window.location.hash.replace("#", "");
+  return views[hash] ? hash : "chat";
 }
 
 async function runTurn(message) {
@@ -1420,6 +1444,7 @@ function renderSettings(payload) {
   quietTimezone.value = quiet.timezone || "local";
   compactTools.checked = state.compactTools;
   streamMarkdown.checked = state.streamMarkdown;
+  renderProviderTiles(runtime);
 
   const blocks = [];
   blocks.push(settingsSummaryBlock("当前 Provider", `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`));
@@ -1427,6 +1452,52 @@ function renderSettings(payload) {
   blocks.push(settingsSummaryBlock("记忆", `${payload.data_controls?.counts?.memory_pages || 0} 稳定 / ${payload.data_controls?.counts?.memory_candidates || 0} 候选`));
   blocks.push(settingsSummaryBlock("工作区", connectedDetail(payload.connected_apps, "workspace")));
   settingsSummary.replaceChildren(...blocks);
+}
+
+function renderProviderTiles(runtime) {
+  if (!providerTiles) return;
+  const currentProvider = runtime.provider || "local";
+  const providers = [
+    { id: "openai-compatible", title: "OpenAI /v1", detail: runtime.model || "Compatible model" },
+    { id: "anthropic", title: "Anthropic", detail: "Claude models" },
+    { id: "local", title: "Local", detail: "Offline deterministic runtime" },
+  ];
+  const tiles = providers.map((provider) => providerTile(provider, currentProvider));
+  providerTiles.replaceChildren(...tiles);
+}
+
+function providerTile(provider, currentProvider) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "provider-tile";
+  button.dataset.provider = provider.id;
+  button.classList.toggle("active", provider.id === currentProvider);
+  const mark = document.createElement("span");
+  mark.textContent = provider.id === "anthropic" ? "A" : provider.id === "local" ? "L" : "O";
+  const copy = document.createElement("span");
+  const title = document.createElement("strong");
+  title.textContent = provider.title;
+  const detail = document.createElement("small");
+  detail.textContent = provider.detail;
+  copy.append(title, detail);
+  const status = document.createElement("em");
+  status.textContent = provider.id === currentProvider ? "Active" : "Select";
+  button.append(mark, copy, status);
+  button.addEventListener("click", () => {
+    settingProvider.value = provider.id;
+    syncProviderTiles(provider.id);
+  });
+  return button;
+}
+
+function syncProviderTiles(currentProvider) {
+  if (!providerTiles) return;
+  for (const tile of providerTiles.querySelectorAll(".provider-tile")) {
+    const active = tile.dataset.provider === currentProvider;
+    tile.classList.toggle("active", active);
+    const badge = tile.querySelector("em");
+    if (badge) badge.textContent = active ? "Active" : "Select";
+  }
 }
 
 function settingsSummaryBlock(label, value) {
