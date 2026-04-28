@@ -13,6 +13,7 @@
 - Navigation state may live in the URL hash so refresh/back/deep links keep the selected view without adding a second task surface.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
 - Chat empty state may show read-only glance cards for current runtime, memory counts, and latest activity; these cards must not become a second task surface.
+- Desktop chat may show a read-only context rail for real-time activity, recent request, runtime, and memory summary; it must hide on smaller screens and must not expose Mission/Run internals beyond compact resume labels.
 - Busy-state commands such as stop/cancel belong inside the existing composer.
 - Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
 

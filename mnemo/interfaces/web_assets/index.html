@@ -56,7 +56,7 @@
               <div class="orbital-mark" aria-hidden="true">
                 <span></span><span></span><span></span>
               </div>
-              <h2>今天想让 Mnemo 做什么？</h2>
+              <h2>今天想完成什么？</h2>
               <p>直接派活。Mnemo 会调用工具、展示动作，并在合适的时候沉淀你的长期偏好。</p>
               <div class="suggestion-row" aria-label="快捷任务">
                 <button type="button" data-prefill="帮我梳理今天最重要的三件事，并给出执行顺序。">梳理今日任务</button>
@@ -91,6 +91,55 @@
               <span aria-hidden="true"></span>
             </button>
           </form>
+
+          <aside id="contextRail" class="context-rail" aria-label="当前上下文">
+            <section class="rail-card">
+              <header>
+                <h2>实时活动</h2>
+                <span id="railStatus" class="rail-state">空闲</span>
+              </header>
+              <div class="rail-timeline">
+                <div id="railActivityRow" class="rail-row">
+                  <span class="rail-dot" aria-hidden="true"></span>
+                  <div>
+                    <strong id="railActivity">等待派活</strong>
+                    <small>工具调用会在对话里轻量展示</small>
+                  </div>
+                </div>
+                <div class="rail-row">
+                  <span class="rail-dot muted" aria-hidden="true"></span>
+                  <div>
+                    <strong>最近请求</strong>
+                    <small id="railRecentIntent">暂无最近请求</small>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="rail-card memory-card">
+              <header>
+                <h2>偏好与长期记忆</h2>
+                <button class="rail-link" type="button" data-view="memory">查看</button>
+              </header>
+              <div class="rail-memory-summary">
+                <div>
+                  <span>记忆罗盘</span>
+                  <strong id="railMemory">加载中</strong>
+                  <small id="railMemoryHint">只显示摘要，不暴露原文</small>
+                </div>
+                <div>
+                  <span>运行模型</span>
+                  <strong id="railRuntime">加载中</strong>
+                  <small>Provider 可在设置中切换</small>
+                </div>
+                <div>
+                  <span>最近运行</span>
+                  <strong id="railRun">未执行</strong>
+                  <small>刷新后会继续从这里恢复</small>
+                </div>
+              </div>
+            </section>
+          </aside>
         </section>
 
         <section id="memoryView" class="view memory-view" aria-label="记忆罗盘">

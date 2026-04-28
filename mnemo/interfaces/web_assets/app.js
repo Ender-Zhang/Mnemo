@@ -71,6 +71,14 @@ const glanceActivity = document.querySelector("#glanceActivity");
 const glanceMemory = document.querySelector("#glanceMemory");
 const glanceMemoryHint = document.querySelector("#glanceMemoryHint");
 const glanceRuntime = document.querySelector("#glanceRuntime");
+const railStatus = document.querySelector("#railStatus");
+const railActivity = document.querySelector("#railActivity");
+const railActivityRow = document.querySelector("#railActivityRow");
+const railRecentIntent = document.querySelector("#railRecentIntent");
+const railMemory = document.querySelector("#railMemory");
+const railMemoryHint = document.querySelector("#railMemoryHint");
+const railRuntime = document.querySelector("#railRuntime");
+const railRun = document.querySelector("#railRun");
 const memoryRefresh = document.querySelector("#memoryRefresh");
 const memoryCompass = document.querySelector("#memoryCompass");
 const memoryLayerDetail = document.querySelector("#memoryLayerDetail");
@@ -508,9 +516,10 @@ function renderAction(event) {
 }
 
 function updateGlanceActivity(name, status) {
-  if (!glanceActivity) return;
   const label = [name || "工具调用", status || ""].filter(Boolean).join(" · ");
-  glanceActivity.textContent = label;
+  setText(glanceActivity, label);
+  setText(railActivity, label);
+  setRailActivityActive(true);
 }
 
 function createToolCallCard(id, name) {
@@ -1399,7 +1408,7 @@ async function loadSettings() {
 }
 
 async function loadHomeContext() {
-  if (!glanceMemory && !glanceRuntime) return;
+  if (!glanceMemory && !glanceRuntime && !railMemory && !railRuntime) return;
   try {
     const response = await fetch("/api/settings");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1407,8 +1416,10 @@ async function loadHomeContext() {
     state.settings = payload;
     renderHomeContext(payload);
   } catch (_error) {
-    if (glanceMemory) glanceMemory.textContent = "暂不可用";
-    if (glanceRuntime) glanceRuntime.textContent = "未连接";
+    setText(glanceMemory, "暂不可用");
+    setText(railMemory, "暂不可用");
+    setText(glanceRuntime, "未连接");
+    setText(railRuntime, "未连接");
   }
 }
 
@@ -1416,15 +1427,15 @@ function renderHomeContext(payload) {
   const runtime = payload.runtime || payload.settings?.runtime || {};
   const counts = payload.data_controls?.counts || {};
   const preference = (payload.learned_preferences?.items || [])[0];
-  if (glanceMemory) {
-    glanceMemory.textContent = `${counts.memory_pages || 0} 稳定 / ${counts.memory_candidates || 0} 候选`;
-  }
-  if (glanceMemoryHint) {
-    glanceMemoryHint.textContent = preference?.summary || "只显示摘要，不暴露原文";
-  }
-  if (glanceRuntime) {
-    glanceRuntime.textContent = `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`;
-  }
+  const memoryText = `${counts.memory_pages || 0} 稳定 / ${counts.memory_candidates || 0} 候选`;
+  const hintText = preference?.summary || "只显示摘要，不暴露原文";
+  const runtimeText = `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`;
+  setText(glanceMemory, memoryText);
+  setText(railMemory, memoryText);
+  setText(glanceMemoryHint, hintText);
+  setText(railMemoryHint, hintText);
+  setText(glanceRuntime, runtimeText);
+  setText(railRuntime, runtimeText);
 }
 
 function renderSettings(payload) {
@@ -1777,8 +1788,12 @@ function rememberUserIntent(message) {
 }
 
 function updateContextPanel() {
-  contextUserPrompt.textContent = state.lastUserIntent || "暂无最近请求";
-  runBadge.textContent = state.activeRunId ? compactId(state.activeRunId) : state.lastRunId ? compactId(state.lastRunId) : "未执行";
+  const recentIntent = state.lastUserIntent || "暂无最近请求";
+  const runLabel = state.activeRunId ? compactId(state.activeRunId) : state.lastRunId ? compactId(state.lastRunId) : "未执行";
+  contextUserPrompt.textContent = recentIntent;
+  runBadge.textContent = runLabel;
+  setText(railRecentIntent, recentIntent);
+  setText(railRun, runLabel);
 }
 
 function updateComposerState() {
@@ -1796,6 +1811,16 @@ function resizeInput() {
 
 function setStatus(text) {
   statusText.textContent = text;
+  setText(railStatus, text);
+  setRailActivityActive(text !== "空闲");
+}
+
+function setText(node, text) {
+  if (node) node.textContent = text;
+}
+
+function setRailActivityActive(active) {
+  if (railActivityRow) railActivityRow.classList.toggle("active", active);
 }
 
 function timelineScroll() {
