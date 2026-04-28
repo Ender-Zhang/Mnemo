@@ -2046,6 +2046,7 @@ function prefillMessage(text) {
   switchView("chat", { updateLocation: true });
   input.value = text || "";
   resizeInput();
+  updateComposerState();
   input.focus();
 }
 
@@ -2058,6 +2059,7 @@ function insertComposerText(text) {
   const caret = start + String(text || "").length;
   input.setSelectionRange(caret, caret);
   resizeInput();
+  updateComposerState();
   input.focus();
 }
 

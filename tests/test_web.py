@@ -1302,6 +1302,7 @@ print(json.dumps({
                 self.assertIn("mentionButton.addEventListener", script)
                 self.assertIn("toolIntentButton.addEventListener", script)
                 self.assertIn("input.setSelectionRange(caret, caret)", script)
+                self.assertGreaterEqual(script.count("resizeInput();\n  updateComposerState();\n  input.focus();"), 2)
                 self.assertIn('event.key !== "Enter"', script)
                 self.assertIn("event.shiftKey", script)
                 self.assertIn("form.requestSubmit()", script)

@@ -18,6 +18,7 @@
 - Desktop chat may show a read-only context rail for real-time activity, recent request, runtime, and memory summary; it must hide on smaller screens and must not expose Mission/Run internals beyond compact resume labels.
 - Busy-state commands such as stop/cancel belong inside the existing composer.
 - The composer input remains editable while a run is busy so the user can draft the next turn; sending is disabled until the current run finishes.
+- Programmatic composer writes from suggestions, recall rows, artifacts, memory actions, and toolbar buttons must refresh composer state immediately.
 - Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
 
 ### 3. Contracts
@@ -72,6 +73,7 @@
 - Good: use artifact card buttons to prefill composer intent for model/tool-led follow-up work.
 - Good: use a busy-state composer button for run cancellation instead of a separate operations area.
 - Good: keep the composer textarea editable during a running answer while disabling only send.
+- Good: call `updateComposerState()` after `prefillMessage()` or `insertComposerText()` changes the textarea.
 - Good: use equal-width mobile bottom navigation so chat, memory, and settings remain one tap away.
 - Good: resolve a Decision card with small inline buttons rather than opening a separate Inbox dashboard.
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
