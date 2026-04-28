@@ -196,9 +196,15 @@ reset.addEventListener("click", () => {
   localStorage.removeItem("mnemo.last_user_intent");
   timeline.replaceChildren(emptyState);
   emptyState.hidden = false;
+  input.value = "";
+  resizeInput();
+  if (railActionList) railActionList.replaceChildren();
+  setText(glanceActivity, "等待派活");
+  setText(railActivity, "等待派活");
   setStatus("空闲");
   updateContextPanel();
   updateComposerState();
+  input.focus();
 });
 
 attachButton.addEventListener("click", () => {

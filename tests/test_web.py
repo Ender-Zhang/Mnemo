@@ -955,6 +955,9 @@ print(json.dumps({
                 self.assertIn('input.setAttribute("aria-busy", String(state.busy))', script)
                 self.assertIn("if (state.busy) return;", script)
                 self.assertIn("reset.disabled = state.busy", script)
+                self.assertIn("railActionList.replaceChildren()", script)
+                self.assertIn('setText(glanceActivity, "等待派活")', script)
+                self.assertIn('setText(railActivity, "等待派活")', script)
                 self.assertIn("composer-scan", css)
 
     def test_web_client_asset_uses_polished_single_chat_shell(self) -> None:

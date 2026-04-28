@@ -19,6 +19,7 @@
 - Busy-state commands such as stop/cancel belong inside the existing composer.
 - The composer input remains editable while a run is busy so the user can draft the next turn; sending is disabled until the current run finishes.
 - Programmatic composer writes from suggestions, recall rows, artifacts, memory actions, and toolbar buttons must refresh composer state immediately.
+- New conversation reset must clear the composer draft and visible activity rows so the user sees a clean chat surface.
 - Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
 
 ### 3. Contracts
@@ -74,6 +75,7 @@
 - Good: use a busy-state composer button for run cancellation instead of a separate operations area.
 - Good: keep the composer textarea editable during a running answer while disabling only send.
 - Good: call `updateComposerState()` after `prefillMessage()` or `insertComposerText()` changes the textarea.
+- Good: reset visible rail activity and composer draft when starting a new conversation.
 - Good: use equal-width mobile bottom navigation so chat, memory, and settings remain one tap away.
 - Good: resolve a Decision card with small inline buttons rather than opening a separate Inbox dashboard.
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
