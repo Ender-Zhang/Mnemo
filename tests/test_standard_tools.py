@@ -126,13 +126,18 @@ class StandardToolTests(unittest.TestCase):
             self.assertIn("file appears to be binary", result.error or "")
             self.assertEqual(result.evidence[0]["kind"], "tool_error")
 
-    def test_risky_tools_are_denied_by_default_policy(self) -> None:
+    def test_risky_tools_are_denied_by_explicit_strict_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             workspace = root / "workspace"
             workspace.mkdir()
             store, run_id, mission_id = _store_with_run(root / "state")
-            harness = ToolHarness(store=store, ledger=RunLedger(store), workspace_root=workspace)
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "write")),
+            )
 
             for tool_name, arguments in [
                 ("file_write", {"path": "out.txt", "content": "hello"}),

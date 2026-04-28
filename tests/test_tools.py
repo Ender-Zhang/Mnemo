@@ -155,6 +155,12 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             denied = next(event for event in events if event["event_type"] == "tool.denied")
             self.assertEqual(denied["payload"]["decision"]["item_id"], result.result["decision"]["item_id"])
 
+    def test_default_policy_allows_external_and_admin_risks(self) -> None:
+        registry = ToolRegistry()
+        self.assertTrue(ToolExecutionPolicy().check(registry.spec("web_fetch")).allowed)
+        self.assertTrue(ToolExecutionPolicy().check(registry.spec("file_write")).allowed)
+        self.assertTrue(ToolExecutionPolicy().check(registry.spec("shell_exec")).allowed)
+
     def test_non_high_risk_denial_does_not_create_decision_item(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

@@ -55,7 +55,7 @@ class ToolPermission:
 
 @dataclass(frozen=True)
 class ToolExecutionPolicy:
-    allowed_risks: tuple[RiskLevel, ...] = ("read", "write")
+    allowed_risks: tuple[RiskLevel, ...] = ("read", "write", "external", "admin")
     allowed_tools: tuple[str, ...] = ()
     denied_tools: tuple[str, ...] = ()
 

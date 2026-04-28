@@ -30,6 +30,8 @@
 - `ToolResult.result`: full persisted payload for ledger and replay.
 - `ToolResult.summary` and `ToolResult.evidence`: compact model/UI payloads.
 - `ToolContext.workspace_root`: resolved user workspace root for local file and shell tools.
+- Default runtime policy allows `read`, `write`, `external`, and `admin` risks so the normal single-chat user experience does not stall on approval cards.
+- Approval cards are still created when a caller explicitly supplies a stricter `ToolExecutionPolicy` that denies `external` or `admin` risks.
 - If no workspace is explicitly supplied, local file/shell tools must use `<state_dir>/workspace`, not the process current directory or source repository root.
 - Provider-native tool schemas are sent through adapter requests, not embedded as raw prompt blocks or prompt metadata.
 - Provider-native tool schemas are grouped into deterministic `ToolBundle` objects with a stable `bundle_id`, `epoch`, `profile`, `provider_adapter_version`, `schema_serializer_version`, ordered `tool_names`, and compact `schema_token_estimate`.
@@ -106,7 +108,8 @@
 | --- | --- | --- |
 | Unknown tool name | Raise `ToolError` before handler execution | Registry unit test |
 | Disallowed risk | Return `ToolResult(ok=False)`, persist `tool.denied`, do not call handler | `tests/test_tools.py` |
-| Disallowed external/admin risk | Persist `tool_approval` Inbox decision, emit compact decision evidence/card, do not call handler | `tests/test_tools.py`, `tests/test_runtime.py` |
+| Default runtime policy | Allows external/admin tools unless a stricter policy is explicitly supplied | `tests/test_tools.py` |
+| Explicitly disallowed external/admin risk | Persist `tool_approval` Inbox decision, emit compact decision evidence/card, do not call handler | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Disallowed non-high-risk tool | Return normal denial without creating a decision item | `tests/test_tools.py` |
 | Accepted tool approval | Execute the stored call once through `ToolHarness` and return compact result metadata | `tests/test_web.py`, `tests/test_cli.py` |
 | Rejected or repeated tool approval | Resolve the Inbox item without executing the stored call | `tests/test_web.py`, `tests/test_cli.py` |
@@ -178,7 +181,8 @@
 
 ### 6. Tests Required
 - Tool policy denial: assert handler is not called and `tool.denied` is recorded.
-- High-risk denial: assert `tool_approval` Inbox item is persisted and `decision.card` is emitted without executing the handler.
+- Default policy: assert external/admin tools are allowed by default.
+- High-risk denial: assert stricter policies still persist `tool_approval` Inbox items and emit `decision.card` without executing the handler.
 - High-risk approval: assert an accepted open `tool_approval` item executes once through `ToolHarness`, while rejected and repeated resolutions do not execute.
 - Tool success: assert `tool.called`, `tool.result`, `tool_calls` persistence, and compact result shape.
 - Memory search session scope: assert session snippets include provenance ids and omit raw content.

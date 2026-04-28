@@ -50,7 +50,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
 - [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
-- [~] Lightweight permission gate for read/write/external/admin exists; denied external/admin calls now create compact `tool_approval` Decision Cards and accepted approvals execute once through ToolHarness; side-effect flags, standing authority, and sandbox profile enforcement are not complete.
+- [~] Lightweight permission gate for read/write/external/admin exists; default runtime policy allows all built-in risk levels for smoother single-chat execution, while explicitly stricter policies can still create compact `tool_approval` Decision Cards and accepted approvals execute once through ToolHarness; side-effect flags and sandbox profile enforcement are not complete.
 - [x] Tool result compression and evidence cards.
 - [x] User file operations default to a per-state user workspace at `<state-dir>/workspace` instead of the process cwd or source repository root.
 - [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, safe alias installation, and explicit rollback exist; shadow dry-run, extension packaging, and richer eval gates are not complete.
@@ -174,6 +174,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-28-default-open-tool-policy`: Default ToolExecutionPolicy now allows read/write/external/admin risks so normal Web runs do not stall on approval cards; explicit stricter policies still exercise the tool approval path.
 - [x] `04-28-learning-debt-review`: Provider learning now reviews compact recent-turn packets after several completed turns without learning candidates, using the existing `learning.v1` tools and a debt-review barrier to avoid repeated low-signal reflection.
 - [x] `04-28-redesign-polished-chat-shell`: Web UI now uses a darker product shell, calmer light chat surface, responsive composer, compact context/activity panels, and desktop/mobile-validated layouts while preserving the single-chat interaction model.
 - [x] `04-28-default-user-workspace`: Local file/shell tools, Web, SDK, MCP, and live replay now resolve missing workspace roots to `<state-dir>/workspace`, preventing user-generated files from landing in the source repo by default.

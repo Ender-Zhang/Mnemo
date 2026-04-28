@@ -663,7 +663,7 @@ class LocalRuntimeTests(unittest.TestCase):
             tool_names = [tool.name for tool in provider.requests[0].tools]
             self.assertIn("lookup_memory", tool_names)
 
-    def test_provider_runtime_projects_denied_external_tool_as_decision_card(self) -> None:
+    def test_provider_runtime_executes_external_tool_by_default_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider(
                 [
@@ -680,25 +680,21 @@ class LocalRuntimeTests(unittest.TestCase):
                         ),
                         ProviderEvent(type="completed"),
                     ],
-                    [ProviderEvent(type="text_delta", text="I need approval."), ProviderEvent(type="completed")],
+                    [ProviderEvent(type="text_delta", text="Opened."), ProviderEvent(type="completed")],
                     [ProviderEvent(type="completed")],
                 ]
             )
 
             events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="open site", state_dir=tmp)))
 
-            decision_event = next(event for event in events if event.type == "decision.card")
-            decision = decision_event.data["decision"]
             store = StateStore(tmp)
-            inbox_item = store.get_inbox_item(decision["item_id"])
             tool_result = events[-1].data["result"]["tool_results"][0]
 
-            self.assertEqual(decision["action_type"], "tool_approval")
-            self.assertEqual(decision["tool_name"], "browser_open")
-            self.assertEqual(decision["risk"], "external")
-            self.assertFalse(tool_result["ok"])
-            self.assertEqual(inbox_item["action_type"], "tool_approval")
-            self.assertEqual(inbox_item["action_data"]["tool_call"]["arguments"]["url"], "https://example.com")
+            self.assertNotIn("decision.card", [event.type for event in events])
+            self.assertTrue(tool_result["ok"])
+            self.assertEqual(tool_result["name"], "browser_open")
+            self.assertEqual(tool_result["result"]["url"], "https://example.com")
+            self.assertEqual(store.list_inbox_items(status=None), [])
 
     def test_provider_runtime_completes_cancelled_when_signal_is_observed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
