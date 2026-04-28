@@ -174,6 +174,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-28-redesign-polished-chat-shell`: Web UI now uses a darker product shell, calmer light chat surface, responsive composer, compact context/activity panels, and desktop/mobile-validated layouts while preserving the single-chat interaction model.
 - [x] `04-28-default-user-workspace`: Local file/shell tools, Web, SDK, MCP, and live replay now resolve missing workspace roots to `<state-dir>/workspace`, preventing user-generated files from landing in the source repo by default.
 - [x] `04-27-polish-chat-interactions-memory-view`: Web chat now sends on Enter, shows a pending assistant indicator, consolidates tool call/result details into one card, suppresses duplicate tool-result source cards, compacts recall duplication, and exposes ten-dimensional memory inspection from settings.
 - [x] `04-27-skip-low-signal-learning-reflection`: Provider after-turn learning now uses a structure-only evidence gate, skips zero/low-tool turns without a second model call, and hides internal learning housekeeping from Web Activity.

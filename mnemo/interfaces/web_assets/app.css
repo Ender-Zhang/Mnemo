@@ -1,22 +1,28 @@
 :root {
   color-scheme: light;
-  --bg: #f4f1ea;
-  --surface: #fffdf8;
-  --panel: #ffffff;
-  --panel-soft: #f7f8f4;
-  --ink: #202521;
-  --muted: #68726c;
-  --faint: #8d968f;
-  --line: #dde2dc;
-  --line-strong: #c5ccc5;
-  --teal: #1d7565;
-  --teal-soft: #e5f2ef;
-  --amber: #b66b12;
-  --amber-soft: #fff3df;
-  --rust: #a94737;
-  --blue: #3b6590;
-  --graphite: #28312d;
-  --shadow: 0 18px 48px rgba(38, 45, 41, 0.1);
+  --bg: #101312;
+  --shell: #151917;
+  --shell-raised: #1b211e;
+  --surface: #fbfaf5;
+  --surface-soft: #f3f1e9;
+  --surface-raised: #ffffff;
+  --ink: #1d211f;
+  --muted: #68706b;
+  --faint: #9aa29d;
+  --line: #dedbd0;
+  --line-strong: #c9c6bb;
+  --teal: #0f766e;
+  --teal-deep: #0c5752;
+  --teal-soft: #dff3ef;
+  --gold: #b88917;
+  --gold-soft: #fff4d6;
+  --red: #b0443e;
+  --red-soft: #fff0ed;
+  --violet: #5d5a9f;
+  --violet-soft: #eceafd;
+  --shadow-soft: 0 18px 50px rgba(8, 10, 9, 0.18);
+  --shadow-tight: 0 10px 28px rgba(24, 29, 26, 0.1);
+  --radius: 8px;
 }
 
 * {
@@ -31,7 +37,11 @@ body {
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg);
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    var(--bg);
+  background-size: 44px 44px;
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
@@ -49,24 +59,24 @@ button {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 108px minmax(0, 1fr) minmax(320px, 380px);
-  gap: 18px;
+  grid-template-columns: 82px minmax(0, 1fr) minmax(304px, 360px);
+  gap: 14px;
   height: 100vh;
-  padding: 18px;
+  padding: 14px;
   overflow: hidden;
 }
 
 .rail {
   display: grid;
   grid-template-rows: auto auto auto auto 1fr;
-  gap: 10px;
+  gap: 8px;
   align-items: start;
   justify-items: stretch;
-  padding: 10px 8px;
-  background: rgba(255, 253, 248, 0.86);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  background: rgba(21, 25, 23, 0.94);
+  box-shadow: var(--shadow-soft);
 }
 
 .rail-mark,
@@ -76,8 +86,7 @@ button {
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: var(--radius);
   line-height: 1;
 }
 
@@ -86,16 +95,17 @@ button {
   justify-items: center;
   gap: 8px;
   width: 100%;
-  padding: 3px 0 10px;
-  color: var(--graphite);
-  font-size: 12px;
+  padding: 2px 0 12px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
   font-weight: 760;
 }
 
 .rail-mark {
-  background: var(--graphite);
-  color: #ffffff;
-  font-weight: 800;
+  background: #f5efe1;
+  color: #121614;
+  font-weight: 840;
+  box-shadow: inset 0 0 0 1px rgba(18, 22, 20, 0.08);
 }
 
 .rail-button {
@@ -105,15 +115,17 @@ button {
   width: 100%;
   min-height: 58px;
   padding: 8px 4px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 680;
+  border-radius: var(--radius);
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 11px;
+  font-weight: 700;
   line-height: 1.1;
 }
 
 .rail-icon {
-  background: var(--panel-soft);
-  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 12px;
 }
 
 .rail-button,
@@ -125,11 +137,10 @@ button {
 .recall-button,
 .settings-action,
 .settings-header button {
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, opacity 140ms ease;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease, transform 150ms ease, opacity 150ms ease;
 }
 
 .rail-button:hover,
@@ -141,19 +152,23 @@ button {
 .recall-button:hover,
 .settings-action:hover,
 .settings-header button:hover {
-  background: var(--panel-soft);
-  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.rail-button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .rail-button.active {
-  background: var(--teal-soft);
-  border-color: rgba(29, 117, 101, 0.35);
-  color: var(--teal);
+  background: rgba(223, 243, 239, 0.12);
+  border-color: rgba(69, 198, 178, 0.34);
+  color: #f2fffc;
 }
 
 .rail-button.active .rail-icon {
-  background: #ffffff;
-  color: var(--teal);
+  background: var(--teal);
+  color: #ffffff;
 }
 
 .chat-shell {
@@ -161,10 +176,10 @@ button {
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   height: 100%;
-  background: rgba(255, 253, 248, 0.9);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
@@ -173,10 +188,10 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 72px;
-  padding: 14px 18px;
+  min-height: 70px;
+  padding: 15px 20px;
   border-bottom: 1px solid var(--line);
-  background: rgba(255, 253, 248, 0.96);
+  background: rgba(251, 250, 245, 0.96);
 }
 
 .topbar-copy {
@@ -185,8 +200,9 @@ button {
 
 .topbar h1 {
   margin: 0;
+  color: var(--ink);
   font-size: 18px;
-  font-weight: 760;
+  font-weight: 800;
 }
 
 .topbar p,
@@ -200,9 +216,9 @@ button {
 .topbar-actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .status-pill,
@@ -212,45 +228,67 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 24px;
+  min-height: 26px;
   border-radius: 999px;
-  padding: 3px 9px;
+  padding: 3px 10px;
   border: 1px solid var(--line);
-  background: var(--panel-soft);
+  background: var(--surface-soft);
   color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 700;
   white-space: nowrap;
+}
+
+.status-pill {
+  color: var(--teal-deep);
+  background: var(--teal-soft);
+  border-color: rgba(15, 118, 110, 0.18);
 }
 
 .ghost-button {
   min-height: 34px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 0 12px;
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--ink);
 }
 
 .timeline {
   overflow: auto;
-  padding: 22px clamp(16px, 4vw, 54px) 18px;
+  padding: 26px clamp(18px, 5vw, 72px) 22px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   scroll-behavior: smooth;
 }
 
+.timeline:empty::before {
+  content: "今天想完成什么？";
+  display: grid;
+  place-items: center;
+  width: min(720px, 100%);
+  min-height: 44vh;
+  margin: auto;
+  color: #2b302d;
+  font-size: 28px;
+  font-weight: 820;
+  text-align: center;
+}
+
 .message,
 .event-card {
   width: min(780px, 100%);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  box-shadow: 0 8px 24px rgba(38, 45, 41, 0.05);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-tight);
   overflow-wrap: anywhere;
 }
 
 .message {
-  padding: 13px 15px;
-  line-height: 1.55;
+  padding: 14px 16px;
+  line-height: 1.58;
   white-space: pre-wrap;
 }
 
@@ -273,7 +311,7 @@ button {
 .message.markdown h3,
 .message.markdown h4,
 .message.markdown h5 {
-  margin: 2px 0 9px;
+  margin: 3px 0 10px;
   color: var(--ink);
   font-size: 15px;
   line-height: 1.35;
@@ -294,8 +332,8 @@ button {
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 1px 5px;
-  background: var(--panel-soft);
-  color: var(--rust);
+  background: var(--surface-soft);
+  color: var(--red);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 0.92em;
 }
@@ -305,9 +343,9 @@ button {
   max-width: 100%;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 12px;
-  background: #f8faf6;
+  background: #f6f4ed;
 }
 
 .message.markdown pre code {
@@ -322,17 +360,17 @@ button {
 
 .message.markdown a {
   color: var(--teal);
-  font-weight: 650;
+  font-weight: 700;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 
 .message.user {
   align-self: flex-end;
-  width: min(680px, 90%);
-  background: var(--graphite);
+  width: min(660px, 90%);
+  border-color: rgba(15, 118, 110, 0.1);
+  background: var(--teal-deep);
   color: #ffffff;
-  border-color: var(--graphite);
 }
 
 .message.assistant {
@@ -340,7 +378,7 @@ button {
 }
 
 .message.assistant.streaming {
-  border-color: rgba(29, 117, 101, 0.32);
+  border-color: rgba(15, 118, 110, 0.34);
 }
 
 .message.pending {
@@ -348,10 +386,10 @@ button {
   align-items: center;
   gap: 8px;
   width: auto;
-  min-width: 112px;
+  min-width: 116px;
   color: var(--muted);
-  border-color: rgba(29, 117, 101, 0.26);
-  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(15, 118, 110, 0.24);
+  background: rgba(255, 255, 255, 0.86);
 }
 
 .typing-dots {
@@ -392,8 +430,7 @@ button {
 
 .event-card {
   align-self: flex-start;
-  padding: 12px 14px;
-  background: var(--panel);
+  padding: 13px 15px;
 }
 
 .event-card.action {
@@ -401,11 +438,11 @@ button {
 }
 
 .event-card.artifact {
-  border-left: 4px solid var(--amber);
+  border-left: 4px solid var(--gold);
 }
 
 .event-card.decision {
-  border-left: 4px solid var(--rust);
+  border-left: 4px solid var(--red);
 }
 
 .event-card.learning {
@@ -413,17 +450,17 @@ button {
 }
 
 .event-card.learning.confirmation {
-  border-left-color: var(--rust);
-  background: #fffaf5;
+  border-left-color: var(--red);
+  background: var(--red-soft);
 }
 
 .event-card.recall {
-  border-left: 4px solid var(--blue);
+  border-left: 4px solid var(--violet);
 }
 
 .event-card.error {
-  border-left: 4px solid var(--rust);
-  background: var(--amber-soft);
+  border-left: 4px solid var(--red);
+  background: var(--red-soft);
 }
 
 .event-title {
@@ -431,9 +468,9 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 800;
 }
 
 .event-body,
@@ -451,13 +488,13 @@ button {
   gap: 8px;
   margin-top: 10px;
   border-top: 1px solid var(--line);
-  padding-top: 9px;
+  padding-top: 10px;
 }
 
 .tool-detail {
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-soft);
+  border-radius: var(--radius);
+  background: var(--surface-soft);
 }
 
 .tool-detail summary {
@@ -465,7 +502,7 @@ button {
   padding: 8px 10px;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 720;
+  font-weight: 760;
 }
 
 .tool-detail pre {
@@ -503,9 +540,12 @@ button {
 .learning-button,
 .recall-button,
 .settings-action {
-  border-radius: 8px;
   min-height: 32px;
+  border-radius: var(--radius);
   padding: 0 10px;
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--ink);
   font-size: 12px;
 }
 
@@ -517,6 +557,7 @@ button:disabled,
 .settings-action:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+  transform: none;
 }
 
 .artifact-viewer {
@@ -547,8 +588,9 @@ button:disabled,
 .artifact-related-title,
 .recall-title,
 .settings-label {
+  color: var(--ink);
   font-size: 13px;
-  font-weight: 720;
+  font-weight: 760;
   overflow-wrap: anywhere;
 }
 
@@ -588,12 +630,13 @@ button:disabled,
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 10px;
   align-items: end;
-  margin: 0 16px 16px;
-  padding: 10px;
-  background: var(--panel);
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  box-shadow: 0 14px 36px rgba(38, 45, 41, 0.09);
+  min-width: 0;
+  margin: 0 18px 18px;
+  padding: 9px;
+  border: 1px solid rgba(15, 118, 110, 0.2);
+  border-radius: var(--radius);
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgba(18, 22, 20, 0.16);
 }
 
 .composer-tools,
@@ -601,14 +644,25 @@ button:disabled,
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+}
+
+.composer .icon-button {
+  width: 36px;
+  height: 36px;
+  border-color: var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .composer textarea {
   resize: none;
   border: 0;
   outline: none;
+  min-width: 0;
   min-height: 42px;
-  max-height: 160px;
+  max-height: 170px;
   padding: 10px 6px;
   color: var(--ink);
   background: transparent;
@@ -623,7 +677,7 @@ button:disabled,
 .composer .stop {
   min-height: 38px;
   min-width: 68px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 0 13px;
   cursor: pointer;
 }
@@ -634,10 +688,14 @@ button:disabled,
   border: 1px solid var(--teal);
 }
 
+.send-button:hover {
+  background: var(--teal-deep);
+}
+
 .composer .stop {
   background: #ffffff;
-  color: var(--rust);
-  border: 1px solid var(--rust);
+  color: var(--red);
+  border: 1px solid var(--red);
 }
 
 .activity-panel {
@@ -645,15 +703,15 @@ button:disabled,
   grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   height: 100%;
-  background: rgba(255, 253, 248, 0.92);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  background: rgba(21, 25, 23, 0.94);
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
 .app-shell.activity-collapsed {
-  grid-template-columns: 108px minmax(0, 1fr) 0;
+  grid-template-columns: 82px minmax(0, 1fr) 0;
 }
 
 .app-shell.activity-collapsed .activity-panel {
@@ -662,8 +720,8 @@ button:disabled,
 
 .context-panel {
   padding: 14px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(229, 242, 239, 0.55), rgba(255, 253, 248, 0.88));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .context-header,
@@ -675,9 +733,9 @@ button:disabled,
 }
 
 .activity-header {
-  min-height: 72px;
+  min-height: 70px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .context-header h2,
@@ -685,13 +743,17 @@ button:disabled,
 .settings-header h2 {
   margin: 0;
   font-size: 15px;
-  font-weight: 760;
+  font-weight: 800;
 }
 
-.context-header p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 12px;
+.context-header h2,
+.activity-header h2 {
+  color: #f7f4ea;
+}
+
+.context-header p,
+.activity-header p {
+  color: rgba(255, 255, 255, 0.56);
 }
 
 .live-dot {
@@ -700,10 +762,10 @@ button:disabled,
   min-height: 24px;
   border-radius: 999px;
   padding: 0 9px;
-  background: var(--teal);
-  color: #ffffff;
+  background: rgba(15, 118, 110, 0.24);
+  color: #c7fff3;
   font-size: 11px;
-  font-weight: 760;
+  font-weight: 800;
 }
 
 .context-grid {
@@ -717,22 +779,22 @@ button:disabled,
   display: grid;
   gap: 5px;
   min-width: 0;
-  min-height: 74px;
+  min-height: 72px;
   padding: 10px;
-  border: 1px solid rgba(197, 204, 197, 0.82);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .context-label {
-  color: var(--muted);
+  color: rgba(255, 255, 255, 0.54);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 760;
   text-transform: uppercase;
 }
 
 .context-card strong {
-  color: var(--ink);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -751,9 +813,9 @@ button:disabled,
   grid-template-columns: 10px minmax(0, 1fr);
   gap: 9px;
   padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .activity-dot {
@@ -764,30 +826,38 @@ button:disabled,
   background: var(--teal);
 }
 
-.activity-item.action .activity-dot {
-  background: var(--teal);
-}
-
-.activity-item.artifact .activity-dot {
-  background: var(--amber);
-}
-
-.activity-item.decision .activity-dot {
-  background: var(--rust);
-}
-
+.activity-item.action .activity-dot,
 .activity-item.learning .activity-dot {
   background: var(--teal);
 }
 
+.activity-item.artifact .activity-dot {
+  background: var(--gold);
+}
+
+.activity-item.decision .activity-dot {
+  background: var(--red);
+}
+
 .activity-item.recall .activity-dot {
-  background: var(--blue);
+  background: var(--violet);
 }
 
 .activity-title {
+  color: rgba(255, 255, 255, 0.9);
   font-size: 13px;
-  font-weight: 720;
+  font-weight: 760;
   overflow-wrap: anywhere;
+}
+
+.activity-detail {
+  color: rgba(255, 255, 255, 0.58);
+}
+
+.activity-count {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.74);
 }
 
 .settings-overlay {
@@ -795,7 +865,7 @@ button:disabled,
   inset: 0;
   display: flex;
   justify-content: flex-end;
-  background: rgba(32, 37, 33, 0.2);
+  background: rgba(8, 10, 9, 0.42);
   z-index: 10;
 }
 
@@ -804,13 +874,13 @@ button:disabled,
 }
 
 .settings-drawer {
-  width: min(430px, 100vw);
+  width: min(460px, 100vw);
   height: 100vh;
   overflow: auto;
   background: var(--surface);
   border-left: 1px solid var(--line);
   padding: 18px;
-  box-shadow: -18px 0 48px rgba(38, 45, 41, 0.18);
+  box-shadow: -18px 0 50px rgba(8, 10, 9, 0.22);
 }
 
 .settings-header {
@@ -821,10 +891,17 @@ button:disabled,
   margin-bottom: 16px;
 }
 
+.settings-header h2 {
+  color: var(--ink);
+}
+
 .settings-header button {
   min-height: 34px;
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 0 12px;
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--ink);
 }
 
 .settings-content {
@@ -839,6 +916,7 @@ button:disabled,
 
 .settings-section h3 {
   margin: 0 0 10px;
+  color: var(--ink);
   font-size: 14px;
 }
 
@@ -891,27 +969,24 @@ button:disabled,
 .settings-time input {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius);
   min-height: 36px;
   padding: 0 10px;
   color: var(--ink);
   background: #ffffff;
 }
 
-.memory-ontology {
-  display: grid;
-  gap: 10px;
-}
-
-.memory-dimensions {
+.memory-ontology,
+.memory-dimensions,
+.memory-dimension-items {
   display: grid;
   gap: 10px;
 }
 
 .memory-dimension {
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.74);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.72);
   padding: 10px;
 }
 
@@ -924,18 +999,14 @@ button:disabled,
 }
 
 .memory-dimension-header strong {
+  color: var(--ink);
   font-size: 13px;
   text-transform: capitalize;
 }
 
-.memory-dimension-items {
-  display: grid;
-  gap: 8px;
-}
-
 @media (max-width: 1060px) {
   .app-shell {
-    grid-template-columns: 92px minmax(0, 1fr);
+    grid-template-columns: 78px minmax(0, 1fr);
   }
 
   .activity-panel {
@@ -956,11 +1027,17 @@ button:disabled,
     grid-template-rows: auto;
     justify-items: start;
     align-items: center;
+    padding: 8px;
   }
 
   .rail-brand,
   .rail-button {
     width: auto;
+  }
+
+  .rail-button {
+    min-height: 48px;
+    padding: 7px;
   }
 
   .chat-shell {
@@ -970,10 +1047,25 @@ button:disabled,
   .topbar {
     align-items: flex-start;
     padding: 12px;
+    flex-wrap: wrap;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .run-badge {
+    display: none;
   }
 
   .timeline {
     padding: 16px 12px;
+  }
+
+  .timeline:empty::before {
+    min-height: 34vh;
+    font-size: 22px;
   }
 
   .message.user {
@@ -981,13 +1073,38 @@ button:disabled,
   }
 
   .composer {
-    grid-template-columns: 1fr;
+    position: relative;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "input";
     margin: 0 10px 10px;
+    padding-left: 78px;
   }
 
-  .composer-tools,
+  .composer-tools {
+    display: none;
+  }
+
   .composer-actions {
-    justify-content: space-between;
+    position: absolute;
+    left: 9px;
+    top: 9px;
+  }
+
+  .composer textarea {
+    grid-area: input;
+    min-height: 38px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .composer .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+
+  .send-button,
+  .composer .stop {
+    min-width: 60px;
   }
 
   .settings-drawer {
