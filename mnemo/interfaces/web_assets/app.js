@@ -1,27 +1,63 @@
+const MEMORY_DIMENSIONS = [
+  "identity",
+  "cognition",
+  "values",
+  "goals",
+  "preferences",
+  "relationships",
+  "context",
+  "history",
+  "patterns",
+  "boundaries",
+];
+
+const DIMENSION_LABELS = {
+  identity: "身份",
+  cognition: "认知",
+  values: "价值",
+  goals: "目标",
+  preferences: "偏好",
+  relationships: "关系",
+  context: "语境",
+  history: "历史",
+  patterns: "模式",
+  boundaries: "边界",
+};
+
 const state = {
   conversationId: localStorage.getItem("mnemo.conversation_id") || "",
   missionId: localStorage.getItem("mnemo.mission_id") || "",
   lastRunId: localStorage.getItem("mnemo.last_run_id") || "",
   activeRunId: "",
   lastEventId: localStorage.getItem("mnemo.last_event_id") || "",
+  lastUserIntent: localStorage.getItem("mnemo.last_user_intent") || "",
   renderedEventIds: new Set(),
   busy: false,
-  assistantNode: null,
+  cancelRequested: false,
   pendingAssistantNode: null,
-  actions: new Map(),
+  assistantNode: null,
   activityRows: new Map(),
   artifacts: new Map(),
   artifactRelated: new Map(),
   settings: null,
+  memoryOntology: null,
   memoryDimensions: new Map(),
   memoryItems: new Map(),
-  cancelRequested: false,
-  lastUserIntent: localStorage.getItem("mnemo.last_user_intent") || "",
+  avatarStarted: false,
+  avatarRendered: false,
+  compactTools: localStorage.getItem("mnemo.ui.compact_tools") !== "false",
+  streamMarkdown: localStorage.getItem("mnemo.ui.stream_markdown") !== "false",
 };
 
+const views = {
+  chat: document.querySelector("#chatView"),
+  memory: document.querySelector("#memoryView"),
+  settings: document.querySelector("#settingsView"),
+};
+
+const navItems = document.querySelectorAll("[data-view]");
 const timeline = document.querySelector("#timeline");
 const emptyState = document.querySelector("#emptyState");
-const appShell = document.querySelector(".app-shell");
 const form = document.querySelector("#composer");
 const input = document.querySelector("#message");
 const send = document.querySelector("#send");
@@ -29,29 +65,43 @@ const stop = document.querySelector("#stop");
 const reset = document.querySelector("#reset");
 const statusText = document.querySelector("#status");
 const runBadge = document.querySelector("#runBadge");
-const settingsOpen = document.querySelector("#settingsOpen");
-const memoryOpen = document.querySelector("#memoryOpen");
-const memoryPanelOpen = document.querySelector("#memoryPanelOpen");
-const settingsOverlay = document.querySelector("#settingsOverlay");
-const settingsDrawer = document.querySelector(".settings-drawer");
-const settingsClose = document.querySelector("#settingsClose");
-const settingsTitle = document.querySelector("#settingsTitle");
-const settingsContent = document.querySelector("#settingsContent");
-const settingsStatus = document.querySelector("#settingsStatus");
-const activityToggle = document.querySelector("#activityToggle");
-const activityViewAll = document.querySelector("#activityViewAll");
-const activityList = document.querySelector("#activityList");
-const activityCount = document.querySelector("#activityCount");
-const memoryPreviewList = document.querySelector("#memoryPreviewList");
 const contextUserPrompt = document.querySelector("#contextUserPrompt");
-const contextConversation = document.querySelector("#contextConversation");
-const contextMission = document.querySelector("#contextMission");
-const contextRun = document.querySelector("#contextRun");
 const attachButton = document.querySelector("#attachButton");
-const voiceButton = document.querySelector("#voiceButton");
-const mentionButton = document.querySelector("#mentionButton");
-const emptySuggestions = document.querySelectorAll("[data-prefill]");
-const memoryOpeners = document.querySelectorAll("[data-memory-open]");
+const memoryRefresh = document.querySelector("#memoryRefresh");
+const memoryCompass = document.querySelector("#memoryCompass");
+const memoryLayerDetail = document.querySelector("#memoryLayerDetail");
+const memoryStats = document.querySelector("#memoryStats");
+const memoryCountBadge = document.querySelector("#memoryCountBadge");
+const memoryAvatar3d = document.querySelector("#memoryAvatar3d");
+const settingsProviderForm = document.querySelector("#settingsProviderForm");
+const settingProvider = document.querySelector("#settingProvider");
+const settingModel = document.querySelector("#settingModel");
+const settingBaseUrl = document.querySelector("#settingBaseUrl");
+const settingApiKeyEnv = document.querySelector("#settingApiKeyEnv");
+const settingTimeout = document.querySelector("#settingTimeout");
+const settingRetryCount = document.querySelector("#settingRetryCount");
+const settingRetryBackoff = document.querySelector("#settingRetryBackoff");
+const quietEnabled = document.querySelector("#quietEnabled");
+const quietStart = document.querySelector("#quietStart");
+const quietEnd = document.querySelector("#quietEnd");
+const quietTimezone = document.querySelector("#quietTimezone");
+const compactTools = document.querySelector("#compactTools");
+const streamMarkdown = document.querySelector("#streamMarkdown");
+const saveExperience = document.querySelector("#saveExperience");
+const settingsStatus = document.querySelector("#settingsStatus");
+const settingsSummary = document.querySelector("#settingsSummary");
+const memoryMarkdownModal = document.querySelector("#memoryMarkdownModal");
+const memoryMarkdownClose = document.querySelector("#memoryMarkdownClose");
+const memoryMarkdownTitle = document.querySelector("#memoryMarkdownTitle");
+const memoryMarkdownBody = document.querySelector("#memoryMarkdownBody");
+
+document.body.classList.toggle("compact-tools", state.compactTools);
+
+for (const item of navItems) {
+  item.addEventListener("click", () => {
+    switchView(item.dataset.view || "chat");
+  });
+}
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -68,6 +118,7 @@ input.addEventListener("keydown", (event) => {
   event.preventDefault();
   if (!state.busy) form.requestSubmit();
 });
+
 stop.addEventListener("click", () => {
   requestCancel();
 });
@@ -79,92 +130,98 @@ reset.addEventListener("click", () => {
   state.lastRunId = "";
   state.activeRunId = "";
   state.lastEventId = "";
-  state.cancelRequested = false;
+  state.lastUserIntent = "";
   state.renderedEventIds.clear();
+  state.activityRows.clear();
   state.artifacts.clear();
   state.artifactRelated.clear();
-  state.activityRows.clear();
-  state.lastUserIntent = "";
   localStorage.removeItem("mnemo.conversation_id");
   localStorage.removeItem("mnemo.mission_id");
   localStorage.removeItem("mnemo.last_run_id");
   localStorage.removeItem("mnemo.last_event_id");
   localStorage.removeItem("mnemo.last_user_intent");
-  showEmptyState();
-  clearActivity();
+  timeline.replaceChildren(emptyState);
+  emptyState.hidden = false;
+  setStatus("空闲");
   updateContextPanel();
   updateComposerState();
-  setStatus("Ready");
 });
-
-settingsOpen.addEventListener("click", () => {
-  openSettings();
-});
-
-memoryOpen.addEventListener("click", () => {
-  openMemoryDrawer();
-});
-
-memoryPanelOpen.addEventListener("click", () => {
-  openMemoryDrawer();
-});
-
-for (const opener of memoryOpeners) {
-  opener.addEventListener("click", () => {
-    openMemoryDrawer();
-  });
-}
-
-settingsClose.addEventListener("click", () => {
-  closeSettings();
-});
-
-settingsOverlay.addEventListener("click", (event) => {
-  if (event.target === settingsOverlay) closeSettings();
-});
-
-activityToggle.addEventListener("click", () => {
-  appShell.classList.toggle("activity-collapsed");
-});
-
-activityViewAll.addEventListener("click", () => {
-  prefillMessage("Summarize my recent activity and current task state.");
-});
-
-for (const button of emptySuggestions) {
-  button.addEventListener("click", () => {
-    prefillMessage(button.dataset.prefill || "");
-  });
-}
 
 attachButton.addEventListener("click", () => {
-  prefillMessage("Use this file: ");
+  prefillMessage("请使用这个文件：");
 });
 
-voiceButton.addEventListener("click", () => {
-  prefillMessage("Voice note: ");
+for (const suggestion of document.querySelectorAll("[data-prefill]")) {
+  suggestion.addEventListener("click", () => {
+    prefillMessage(suggestion.dataset.prefill || "");
+  });
+}
+
+memoryRefresh.addEventListener("click", () => {
+  state.memoryOntology = null;
+  state.memoryDimensions.clear();
+  state.memoryItems.clear();
+  loadMemoryCompass();
 });
 
-mentionButton.addEventListener("click", () => {
-  prefillMessage("@");
+settingsProviderForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveSettings();
+});
+
+saveExperience.addEventListener("click", () => {
+  state.compactTools = Boolean(compactTools.checked);
+  state.streamMarkdown = Boolean(streamMarkdown.checked);
+  localStorage.setItem("mnemo.ui.compact_tools", String(state.compactTools));
+  localStorage.setItem("mnemo.ui.stream_markdown", String(state.streamMarkdown));
+  document.body.classList.toggle("compact-tools", state.compactTools);
+  saveSettings({ quietOnly: true });
+});
+
+memoryMarkdownClose.addEventListener("click", closeMemoryMarkdown);
+memoryMarkdownModal.addEventListener("click", (event) => {
+  if (event.target === memoryMarkdownModal) closeMemoryMarkdown();
 });
 
 window.addEventListener("online", () => {
   resumeLastRun();
 });
 
+switchView("chat");
+updateContextPanel();
+updateComposerState();
+resumeLastRun();
+
+function switchView(name) {
+  const target = views[name] ? name : "chat";
+  for (const [viewName, view] of Object.entries(views)) {
+    view.classList.toggle("active", viewName === target);
+  }
+  for (const item of navItems) {
+    item.classList.toggle("active", item.dataset.view === target);
+  }
+  if (target === "memory") {
+    initMemoryAvatar();
+    loadMemoryCompass();
+  }
+  if (target === "settings") {
+    loadSettings();
+  }
+  if (target === "chat") {
+    input.focus();
+  }
+}
+
 async function runTurn(message) {
   state.busy = true;
   state.cancelRequested = false;
   state.activeRunId = "";
   state.assistantNode = null;
-  removePendingAssistant();
   rememberUserIntent(message);
-  updateComposerState();
   addMessage("user", message);
   showPendingAssistant();
-  upsertActivity("turn", "run", "任务开始", message);
-  setStatus("Working");
+  setStatus("思考中");
+  updateComposerState();
 
   try {
     const response = await fetch("/api/chat", {
@@ -178,23 +235,25 @@ async function runTurn(message) {
     });
 
     if (!response.ok || !response.body) {
-      addCard("error", "错误", `HTTP ${response.status}`);
+      removePendingAssistant();
+      addCard("error", "Error", `HTTP ${response.status}`);
       return;
     }
 
     await readNdjson(response.body, handleEvent);
   } catch (error) {
     removePendingAssistant();
-    addCard("error", "错误", error.message || String(error));
+    addCard("error", "Error", error.message || String(error));
   } finally {
     state.busy = false;
     state.cancelRequested = false;
     state.activeRunId = "";
-    updateComposerState();
     state.assistantNode = null;
-    await resumeLastRun({ incremental: true });
-    setStatus("Ready");
+    removePendingAssistant();
+    updateComposerState();
+    setStatus("空闲");
     input.focus();
+    await resumeLastRun({ incremental: true });
   }
 }
 
@@ -202,7 +261,7 @@ async function requestCancel() {
   if (!state.busy || state.cancelRequested || !state.activeRunId) return;
   state.cancelRequested = true;
   updateComposerState();
-  setStatus("Cancelling");
+  setStatus("停止中");
   try {
     const response = await fetch("/api/runs/cancel", {
       method: "POST",
@@ -216,15 +275,14 @@ async function requestCancel() {
   } catch (error) {
     state.cancelRequested = false;
     updateComposerState();
-    addCard("error", "错误", error.message || String(error));
+    addCard("error", "Error", error.message || String(error));
   }
 }
 
 async function resumeLastRun(options = {}) {
   if (!state.lastRunId || state.busy) return;
-  const incremental = Boolean(options.incremental);
   const params = new URLSearchParams({ run_id: state.lastRunId, chat: "1" });
-  if (incremental && state.lastEventId) {
+  if (options.incremental && state.lastEventId) {
     params.set("sinceEventId", state.lastEventId);
   }
   try {
@@ -276,11 +334,10 @@ function handleEvent(event) {
   switch (event.type) {
     case "turn.started":
       handleTurnStarted(event);
-      setStatus("Started");
       break;
     case "conversation.hydrated":
     case "status.updated":
-      setStatus(event.data?.text || event.data?.summary || "Working");
+      if (event.data?.tone !== "learning") setStatus(event.data?.text || event.data?.summary || "执行中");
       break;
     case "assistant.delta":
       removePendingAssistant();
@@ -312,19 +369,17 @@ function handleEvent(event) {
       break;
     case "run.completed":
       persistRun(event);
+      removePendingAssistant();
       state.cancelRequested = false;
       state.activeRunId = "";
-      if (state.assistantNode) finalizeAssistantMarkdown("");
+      setStatus("空闲");
       updateComposerState();
-      setStatus("Ready");
-      break;
-    case "run.error":
-    case "server.error":
-      removePendingAssistant();
-      addCard("error", "错误", event.data?.error || "Run failed");
       break;
     default:
-      break;
+      if (event.type && String(event.type).endsWith(".error")) {
+        removePendingAssistant();
+        addCard("error", "Error", event.data?.message || event.data?.error || event.type);
+      }
   }
 }
 
@@ -338,785 +393,454 @@ function persistEventEnvelope(event) {
     localStorage.setItem("mnemo.mission_id", state.missionId);
   }
   if (event.run_id) {
-    if (state.busy) {
-      state.activeRunId = event.run_id;
-    }
+    if (state.busy) state.activeRunId = event.run_id;
     state.lastRunId = event.run_id;
     localStorage.setItem("mnemo.last_run_id", state.lastRunId);
   }
   updateContextPanel();
 }
 
-function handleTurnStarted(event) {
-  const summary = event.data?.input_summary || "";
-  if (summary) {
-    rememberUserIntent(summary);
-    if (!state.busy) {
-      addMessage("user", summary);
-    }
+function persistRun(event) {
+  const result = event.data?.result || {};
+  if (result.conversation_id) {
+    state.conversationId = result.conversation_id;
+    localStorage.setItem("mnemo.conversation_id", state.conversationId);
   }
-}
-
-function rememberUserIntent(text) {
-  const compact = String(text || "").trim();
-  if (!compact) return;
-  state.lastUserIntent = compact;
-  localStorage.setItem("mnemo.last_user_intent", compact);
+  if (result.mission_id) {
+    state.missionId = result.mission_id;
+    localStorage.setItem("mnemo.mission_id", state.missionId);
+  }
+  if (event.run_id) {
+    state.lastRunId = event.run_id;
+    localStorage.setItem("mnemo.last_run_id", state.lastRunId);
+  }
   updateContextPanel();
 }
 
-function updateContextPanel() {
-  if (contextUserPrompt) contextUserPrompt.textContent = state.lastUserIntent || "暂无最近请求";
-  if (contextConversation) contextConversation.textContent = compactId(state.conversationId, "new");
-  if (contextMission) contextMission.textContent = compactId(state.missionId, "new");
-  if (contextRun) contextRun.textContent = compactId(state.lastRunId || state.activeRunId, "none");
-}
-
-async function hydrateRightMemory() {
-  if (!memoryPreviewList) return;
-  renderMemoryPreview([]);
-  try {
-    const response = await fetch("/api/settings");
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return;
-    state.settings = payload;
-    const preferences = payload.learned_preferences || {};
-    renderMemoryPreview(Array.isArray(preferences.items) ? preferences.items : []);
-  } catch (_error) {
-    return;
+function renderActivity(event) {
+  if (event.run_id) {
+    runBadge.textContent = compactId(event.run_id);
   }
-}
-
-function renderMemoryPreview(items) {
-  if (!memoryPreviewList) return;
-  const rows = [];
-  const defaults = [
-    { title: "内容偏好", summary: "Mnemo 会在你派活、修改和确认时沉淀交付偏好。", icon: "♡" },
-    { title: "工作节奏", summary: "重要节奏会进入记忆罗盘，后续任务自动参考。", icon: "▣" },
-    { title: "目标", summary: "当前目标会帮助 Mnemo 判断下一步行动优先级。", icon: "◎" },
-  ];
-  const source = items.length > 0
-    ? items.slice(0, 3).map(memoryPreviewModel)
-    : defaults;
-  for (const item of source) {
-    rows.push(memoryPreviewItem(item));
-  }
-  memoryPreviewList.replaceChildren(...rows);
-}
-
-function memoryPreviewModel(item) {
-  const rawTitle = item.title || item.kind || "偏好";
-  const title = cleanMemoryTitle(rawTitle);
-  const summary = cleanMemorySummary(item.summary || item.title || "已学习的长期偏好", title);
-  return {
-    title,
-    summary,
-    icon: memoryPreviewIcon(item.dimension || item.kind || rawTitle),
-  };
-}
-
-function cleanMemoryTitle(text) {
-  const cleaned = String(text || "")
-    .replace(/^(user_)?preference:\s*/i, "")
-    .replace(/^(preferences|identity|goals|context|patterns|history|knowledge):\s*/i, "")
-    .trim();
-  if (!cleaned) return "偏好";
-  if (cleaned.length > 34) return `${cleaned.slice(0, 34)}...`;
-  return cleaned;
-}
-
-function cleanMemorySummary(text, title) {
-  const cleaned = String(text || "").trim();
-  if (!cleaned || cleaned === title) return "已沉淀为后续任务会自动参考的长期信号。";
-  if (cleaned.length > 82) return `${cleaned.slice(0, 82)}...`;
-  return cleaned;
-}
-
-function memoryPreviewIcon(value) {
-  const text = String(value || "").toLowerCase();
-  if (text.includes("goal")) return "◎";
-  if (text.includes("context") || text.includes("history")) return "▣";
-  if (text.includes("pattern")) return "⌁";
-  return "♡";
-}
-
-function memoryPreviewItem(item) {
-  const row = document.createElement("div");
-  row.className = "memory-preview-item";
-  const icon = document.createElement("span");
-  icon.className = "memory-preview-icon";
-  icon.textContent = item.icon || "♡";
-  const copy = document.createElement("div");
-  const title = document.createElement("strong");
-  title.textContent = item.title || "记忆";
-  const detail = document.createElement("p");
-  detail.textContent = item.summary || "";
-  copy.append(title, detail);
-  row.append(icon, copy);
-  return row;
-}
-
-function compactId(value, fallback) {
-  const text = String(value || "").trim();
-  if (!text) return fallback;
-  if (text.length <= 18) return text;
-  return `${text.slice(0, 8)}...${text.slice(-4)}`;
 }
 
 function isInternalLearningEvent(event) {
-  if (event.type === "status.updated" && event.data?.tone === "learning") {
-    return true;
+  const action = event.data?.action || {};
+  const toolName = action.title || event.data?.tool_name || event.data?.result?.name || "";
+  return (
+    event.data?.tone === "learning" ||
+    toolName === "learning_discard" ||
+    String(event.data?.summary || "").includes("Learning evidence discarded")
+  );
+}
+
+function actionState(type) {
+  if (type === "action.queued") return "queued";
+  if (type === "action.started") return "running";
+  if (type === "action.completed") return "done";
+  return "queued";
+}
+
+function activityActionId(event) {
+  return (
+    event.data?.action_id ||
+    event.data?.action?.action_id ||
+    event.data?.provider_call_id ||
+    event.event_id ||
+    `action_${state.activityRows.size}`
+  );
+}
+
+function renderAction(event) {
+  const action = event.data?.action || {};
+  const id = activityActionId(event);
+  const key = `action:${id}`;
+  const name = event.data?.tool_name || action.title || "tool";
+  const stateName = actionState(event.type);
+  let row = state.activityRows.get(key);
+  if (!row) {
+    row = createToolCallCard(id, name);
+    state.activityRows.set(key, row);
+    timeline.appendChild(row.node);
   }
-  if (event.type?.startsWith("action.")) {
-    return (event.data?.tool_name || event.data?.action?.title) === "learning_discard";
+  row.node.dataset.state = stateName;
+  row.title.textContent = name;
+  row.status.textContent = toolStatusLabel(event);
+  row.summary.textContent = action.summary || event.data?.summary || "工具调用";
+  row.meta.textContent = [action.risk || "", action.provider || "", compactId(id)].filter(Boolean).join(" · ");
+  if (event.data?.action) {
+    renderToolDetails(row.details, event.data.action, event.data);
   }
-  return false;
+  if (event.type === "action.completed") {
+    renderToolResult(row.result, event.data);
+  }
+  timelineScroll();
+}
+
+function createToolCallCard(id, name) {
+  const node = document.createElement("details");
+  node.className = "event-card action tool-call-card";
+  node.dataset.actionId = id;
+  node.open = !state.compactTools;
+
+  const summary = document.createElement("summary");
+  summary.className = "tool-call-summary";
+
+  const icon = document.createElement("span");
+  icon.className = "tool-pulse";
+  icon.setAttribute("aria-hidden", "true");
+
+  const text = document.createElement("span");
+  text.className = "tool-call-title";
+  text.textContent = name;
+
+  const status = document.createElement("span");
+  status.className = "tool-status";
+  status.textContent = "排队";
+
+  summary.append(icon, text, status);
+
+  const body = document.createElement("div");
+  body.className = "tool-call-body";
+  const meta = document.createElement("p");
+  meta.className = "tool-meta";
+  const description = document.createElement("p");
+  description.className = "tool-summary";
+  const details = document.createElement("div");
+  details.className = "tool-details";
+  const result = document.createElement("div");
+  result.className = "tool-result";
+  body.append(meta, description, details, result);
+  node.append(summary, body);
+
+  return { node, title: text, status, meta, summary: description, details, result };
+}
+
+function toolStatusLabel(event) {
+  if (event.type === "action.completed") {
+    return event.data?.outcome === "success" ? "完成" : "失败";
+  }
+  if (event.type === "action.started") return "运行中";
+  return "排队";
+}
+
+function renderToolDetails(target, action, data) {
+  const blocks = [];
+  if (action.arguments && Object.keys(action.arguments).length) {
+    blocks.push(toolDetailBlock("调用参数", action.arguments));
+  }
+  if (data.provider_call_id) {
+    blocks.push(toolDetailText("Provider Call", data.provider_call_id));
+  }
+  target.replaceChildren(...blocks);
+}
+
+function renderToolResult(target, data) {
+  const blocks = [];
+  if (data.summary) blocks.push(toolDetailText("结果摘要", data.summary));
+  if (data.result) blocks.push(toolDetailBlock("返回结果", data.result));
+  target.replaceChildren(...blocks);
+}
+
+function toolDetailText(label, value) {
+  const block = document.createElement("section");
+  block.className = "tool-detail";
+  const title = document.createElement("strong");
+  title.textContent = label;
+  const text = document.createElement("p");
+  text.textContent = String(value || "");
+  block.append(title, text);
+  return block;
+}
+
+function toolDetailBlock(label, value) {
+  const block = document.createElement("section");
+  block.className = "tool-detail";
+  const title = document.createElement("strong");
+  title.textContent = label;
+  const pre = document.createElement("pre");
+  pre.textContent = compactJson(value);
+  block.append(title, pre);
+  return block;
 }
 
 function isToolResultSource(source) {
   return source?.kind === "tool_result";
 }
 
-function renderActivity(event) {
-  switch (event.type) {
-    case "turn.started":
-      upsertActivity("turn", "run", "任务开始", event.data?.input_summary || event.run_id || "");
-      break;
-    case "conversation.hydrated":
-      upsertActivity("context", "run", "上下文已恢复", event.data?.summary || "");
-      break;
-    case "status.updated":
-      upsertActivity("status", "run", "状态", event.data?.text || event.data?.summary || "");
-      break;
-    case "assistant.delta":
-      upsertActivity("assistant-stream", "run", "正在回复", "接收模型输出");
-      break;
-    case "action.queued":
-    case "action.started":
-    case "action.completed":
-      upsertActivity(
-        `action:${activityActionId(event)}`,
-        "action",
-        event.data?.action?.title || event.data?.tool_name || "动作",
-        event.data?.summary || event.type.replace("action.", ""),
-      );
-      break;
-    case "artifact.card":
-      upsertActivity(
-        `artifact:${event.data?.artifact?.artifact_id || Date.now()}`,
-        "artifact",
-        event.data?.artifact?.title || "产物",
-        event.data?.artifact?.kind || "",
-      );
-      break;
-    case "recall.card":
-      upsertActivity("recall", "recall", "找回上下文", event.data?.recall?.query || "");
-      break;
-    case "learning.chip":
-      upsertActivity(
-        `learning:${event.data?.item?.item_id || Date.now()}`,
-        "learning",
-        "记忆候选",
-        event.data?.item?.summary || event.data?.item?.status || "",
-      );
-      break;
-    case "decision.card":
-      upsertActivity(
-        `decision:${event.data?.decision?.item_id || Date.now()}`,
-        "decision",
-        "需要确认",
-        event.data?.decision?.question || "",
-      );
-      break;
-    case "run.completed":
-      upsertActivity("completed", "run", "本轮完成", event.data?.status || "completed");
-      break;
-    case "run.error":
-    case "server.error":
-      upsertActivity("error", "error", "错误", event.data?.error || "Run failed");
-      break;
-    default:
-      break;
+function handleTurnStarted(event) {
+  const summary = event.data?.message || event.data?.user_message || event.data?.prompt || "";
+  if (summary && !state.busy) {
+    addMessage("user", summary);
   }
+  if (summary) rememberUserIntent(summary);
 }
 
-function activityActionId(event) {
-  return event.data?.action_id
-    || event.data?.action?.action_id
-    || event.data?.provider_call_id
-    || event.data?.tool_name
-    || "unknown";
-}
-
-function upsertActivity(key, kind, title, detail) {
-  if (!activityList) return;
-  let row = state.activityRows.get(key);
-  if (!row) {
-    row = activityRow(kind);
-    state.activityRows.set(key, row);
-    activityList.prepend(row.node);
-  }
-  row.node.className = `activity-item ${kind || "run"}`;
-  row.title.textContent = title || "活动";
-  row.detail.textContent = detail || "";
-  if (row.node !== activityList.firstElementChild) {
-    activityList.prepend(row.node);
-  }
-  while (activityList.children.length > 24) {
-    const last = activityList.lastElementChild;
-    for (const [activityKey, activityRowValue] of state.activityRows.entries()) {
-      if (activityRowValue.node === last) state.activityRows.delete(activityKey);
-    }
-    last.remove();
-  }
-  updateActivityCount();
-}
-
-function pushActivity(kind, title, detail) {
-  upsertActivity(`note:${Date.now()}:${activityList?.children.length || 0}`, kind, title, detail);
-}
-
-function activityRow(kind) {
-  const node = document.createElement("div");
-  node.className = `activity-item ${kind || "run"}`;
-  const dot = document.createElement("span");
-  dot.className = "activity-dot";
-  const copy = document.createElement("div");
-  const title = document.createElement("div");
-  title.className = "activity-title";
-  const detail = document.createElement("div");
-  detail.className = "activity-detail";
-  copy.append(title, detail);
-  node.append(dot, copy);
-  return { node, title, detail };
-}
-
-function clearActivity() {
-  if (!activityList) return;
-  state.activityRows.clear();
-  activityList.replaceChildren();
-  updateActivityCount();
-}
-
-function updateActivityCount() {
-  if (!activityCount || !activityList) return;
-  activityCount.textContent = String(activityList.children.length);
-}
-
-function hideEmptyState() {
-  if (!emptyState) return;
+function addMessage(role, text, options = {}) {
   emptyState.hidden = true;
-}
-
-function showEmptyState() {
-  if (!emptyState) return;
-  emptyState.hidden = false;
-  timeline.replaceChildren(emptyState);
-}
-
-function appendAssistant(text) {
-  if (!text) return;
-  if (!state.assistantNode) {
-    state.assistantNode = addMessage("assistant", "");
+  const message = document.createElement("article");
+  message.className = `message ${role}`;
+  if (options.pending) message.classList.add("pending");
+  const avatar = document.createElement("div");
+  avatar.className = "message-avatar";
+  avatar.textContent = role === "user" ? "你" : "M";
+  const content = document.createElement("div");
+  content.className = "message-content";
+  if (role === "assistant") {
+    content.classList.add("markdown");
+    content.dataset.rawText = text || "";
+    renderMarkdownInto(content, text || "");
+  } else {
+    content.textContent = text || "";
   }
-  state.assistantNode.classList.add("streaming");
-  const rawText = `${state.assistantNode.dataset.rawText || ""}${text}`;
-  renderMarkdownInto(state.assistantNode, rawText);
-  scrollToEnd();
+  message.append(avatar, content);
+  timeline.appendChild(message);
+  timelineScroll();
+  return content;
 }
 
 function showPendingAssistant() {
   removePendingAssistant();
-  hideEmptyState();
-  const node = document.createElement("div");
-  node.className = "message assistant pending";
-  const text = document.createElement("span");
-  text.textContent = "回复中";
+  emptyState.hidden = true;
+  const message = document.createElement("article");
+  message.className = "message assistant pending";
+  const avatar = document.createElement("div");
+  avatar.className = "message-avatar";
+  avatar.textContent = "M";
+  const content = document.createElement("div");
+  content.className = "message-content pending-content";
+  const label = document.createElement("span");
+  label.textContent = "回复中";
   const dots = document.createElement("span");
   dots.className = "typing-dots";
-  dots.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
-  node.append(text, dots);
-  state.pendingAssistantNode = node;
-  timeline.appendChild(node);
-  scrollToEnd();
+  dots.append(document.createElement("i"), document.createElement("i"), document.createElement("i"));
+  content.append(label, dots);
+  message.append(avatar, content);
+  timeline.appendChild(message);
+  state.pendingAssistantNode = message;
+  timelineScroll();
 }
 
 function removePendingAssistant() {
-  if (!state.pendingAssistantNode) return;
-  state.pendingAssistantNode.remove();
-  state.pendingAssistantNode = null;
+  if (state.pendingAssistantNode) {
+    state.pendingAssistantNode.remove();
+    state.pendingAssistantNode = null;
+  }
 }
 
-function renderAction(event) {
-  const action = event.data?.action || {};
-  const actionId = event.data?.action_id || action.action_id || event.data?.provider_call_id;
-  let card = state.actions.get(actionId);
-  if (!card) {
-    card = addCard("action", action.title || event.data?.tool_name || "动作", action.summary || "");
-    state.actions.set(actionId, card);
-    renderToolDetails(card, action, event.data || {});
+function appendAssistant(text) {
+  if (!state.assistantNode) {
+    state.assistantNode = addMessage("assistant", "");
   }
-
-  const actionState = event.type === "action.completed" ? event.data?.outcome || "completed" : event.type.replace("action.", "");
-  card.classList.remove("action-queued", "action-started", "action-success", "action-failed", "action-skipped", "action-completed");
-  card.classList.add(`action-${actionState}`);
-  const body = card.querySelector(".event-body");
-  const badge = card.querySelector(".chip");
-  if (event.type === "action.completed") {
-    badge.textContent = event.data?.outcome || "completed";
-    body.textContent = event.data?.summary || body.textContent || "Completed";
-    renderToolResult(card, event.data || {});
+  const rawText = `${state.assistantNode.dataset.rawText || ""}${text || ""}`;
+  state.assistantNode.dataset.rawText = rawText;
+  if (state.streamMarkdown) {
+    renderMarkdownInto(state.assistantNode, rawText);
   } else {
-    badge.textContent = event.type.replace("action.", "");
+    state.assistantNode.textContent = rawText;
   }
+  timelineScroll();
 }
 
-function renderToolDetails(card, action, data) {
-  const details = document.createElement("div");
-  details.className = "tool-details";
-  const args = action.arguments || data.arguments || {};
-  if (Object.keys(args).length > 0) {
-    details.appendChild(toolDetailBlock("Call", args));
+function finalizeAssistantMarkdown(text) {
+  if (!state.assistantNode) {
+    state.assistantNode = addMessage("assistant", text || "");
   }
-  card.appendChild(details);
+  const rawText = text || state.assistantNode.dataset.rawText || "";
+  state.assistantNode.dataset.rawText = rawText;
+  renderMarkdownInto(state.assistantNode, rawText);
+  state.assistantNode = null;
+  timelineScroll();
 }
 
-function renderToolResult(card, data) {
-  if (card.dataset.resultRendered === "true") return;
-  let details = card.querySelector(".tool-details");
-  if (!details) {
-    details = document.createElement("div");
-    details.className = "tool-details";
-    card.appendChild(details);
-  }
-  const result = data.result || {
-    outcome: data.outcome || "completed",
-    summary: data.summary || "",
-    tool: data.tool_name || "",
-  };
-  details.appendChild(toolDetailBlock("Result", result));
-  card.dataset.resultRendered = "true";
-}
-
-function toolDetailBlock(label, value) {
-  const block = document.createElement("details");
-  block.className = "tool-detail";
-  const summary = document.createElement("summary");
-  summary.textContent = label;
-  const body = document.createElement("pre");
-  body.textContent = compactJson(value);
-  block.append(summary, body);
-  return block;
-}
-
-function compactJson(value) {
-  try {
-    return JSON.stringify(value || {}, null, 2);
-  } catch (_error) {
-    return String(value || "");
-  }
+function addCard(kind, titleText, bodyText) {
+  emptyState.hidden = true;
+  const card = document.createElement("section");
+  card.className = `event-card ${kind}`;
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const body = document.createElement("p");
+  body.textContent = bodyText || "";
+  card.append(title, body);
+  timeline.appendChild(card);
+  timelineScroll();
+  return card;
 }
 
 function renderSource(source) {
   if (!source) return;
-  const text = source.summary || source.title || "Source attached";
-  addCard("", source.title || "Source", text);
+  const card = addCard("source", source.title || source.kind || "Source", source.summary || "");
+  if (source.source_id) card.dataset.sourceId = source.source_id;
 }
 
 function renderArtifact(artifact) {
   if (!artifact) return;
-  const artifactId = artifact.artifact_id;
-  const node = document.createElement("div");
-  node.className = "event-card artifact";
-
-  const titleRow = document.createElement("div");
-  titleRow.className = "event-title";
-  const titleNode = document.createElement("span");
-  titleNode.textContent = artifact.title || "Artifact";
-
+  const card = document.createElement("section");
+  card.className = "event-card artifact";
+  const header = document.createElement("div");
+  header.className = "artifact-header";
+  const title = document.createElement("strong");
+  title.textContent = artifact.title || "Artifact";
+  const meta = document.createElement("span");
+  meta.textContent = artifact.kind || "artifact";
+  header.append(title, meta);
   const actions = document.createElement("div");
   actions.className = "artifact-actions";
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.textContent = artifact.kind || "updated";
-  const toggle = artifactButton("打开", () => {
-    toggleArtifact(artifactId, viewer, body, toggle);
+  const open = actionButton("打开", () => toggleArtifact(artifact.artifact_id || artifact.id, body));
+  const exportButton = actionButton("导出", async () => {
+    const loaded = await loadArtifact(artifact.artifact_id || artifact.id);
+    if (loaded?.artifact) exportArtifact(loaded.artifact);
   });
-  toggle.disabled = !artifactId;
-  const continueButton = artifactButton("继续", () => {
-    prefillMessage(`Continue editing artifact ${artifactId}: `);
-  });
-  continueButton.disabled = !artifactId;
-  const exportButton = artifactButton("导出", () => {
-    exportArtifact(artifactId);
-  });
-  exportButton.disabled = !artifactId;
-  const compareButton = artifactButton("比较", () => {
-    toggleArtifactRelated(artifactId, related, compareButton);
-  });
-  compareButton.disabled = !artifactId;
-  const sendButton = artifactButton("发送", () => {
-    prefillMessage(`Send artifact ${artifactId} to: `);
-  });
-  sendButton.disabled = !artifactId;
-  actions.append(chip, toggle, continueButton, exportButton, compareButton, sendButton);
-  if (artifactId && isPatchArtifact(artifact.kind)) {
-    actions.append(
-      artifactButton("应用", () => {
-        prefillMessage(`Apply artifact ${artifactId} as a patch: `);
-      }),
-      artifactButton("回滚", () => {
-        prefillMessage(`Revert changes from artifact ${artifactId}: `);
-      }),
-    );
-  }
-  titleRow.append(titleNode, actions);
-
-  const summary = document.createElement("div");
-  summary.className = "event-body";
-  summary.textContent = artifact.kind || "updated";
-
-  const viewer = document.createElement("div");
-  viewer.className = "artifact-viewer";
-  viewer.hidden = true;
-  const body = document.createElement("pre");
+  const continueButton = actionButton("继续编辑", () => prefillMessage(`Continue editing artifact ${artifact.artifact_id || artifact.id}: `));
+  actions.append(open, exportButton, continueButton);
+  const body = document.createElement("div");
   body.className = "artifact-body";
-  viewer.appendChild(body);
-
-  const related = document.createElement("div");
-  related.className = "artifact-related";
-  related.hidden = true;
-
-  node.append(titleRow, summary, viewer, related);
-  timeline.appendChild(node);
-  scrollToEnd();
+  body.hidden = true;
+  card.append(header, actions, body);
+  timeline.appendChild(card);
+  timelineScroll();
 }
 
-function artifactButton(label, onClick) {
-  const button = document.createElement("button");
-  button.className = "artifact-toggle";
-  button.type = "button";
-  button.textContent = label;
-  button.addEventListener("click", onClick);
-  return button;
-}
-
-async function toggleArtifact(artifactId, viewer, body, toggle) {
-  if (!viewer.hidden) {
-    viewer.hidden = true;
-    toggle.textContent = "打开";
-    scrollToEnd();
+async function toggleArtifact(artifactId, target) {
+  if (!artifactId || !target) return;
+  if (!target.hidden) {
+    target.hidden = true;
     return;
   }
-
-  toggle.disabled = true;
-  toggle.textContent = "加载中";
-  try {
-    await loadArtifact(artifactId);
-  } catch (error) {
-    body.textContent = error.message || String(error);
-    viewer.hidden = false;
-    toggle.textContent = "重试";
-    toggle.disabled = false;
-    scrollToEnd();
+  target.hidden = false;
+  target.replaceChildren(loadingRow("加载产物"));
+  const payload = await loadArtifact(artifactId);
+  if (!payload?.artifact) {
+    target.replaceChildren(textRow("无法加载产物。"));
     return;
   }
-  toggle.disabled = false;
-
-  const artifact = state.artifacts.get(artifactId) || {};
-  body.textContent = artifact.body || "";
-  viewer.hidden = false;
-  toggle.textContent = "收起";
-  scrollToEnd();
+  renderArtifactBody(target, payload);
 }
 
 async function loadArtifact(artifactId) {
-  if (state.artifacts.has(artifactId)) return state.artifacts.get(artifactId);
+  if (!artifactId) return null;
+  if (state.artifacts.has(artifactId)) {
+    return {
+      artifact: state.artifacts.get(artifactId),
+      related: state.artifactRelated.get(artifactId) || [],
+    };
+  }
   const response = await fetch(`/api/artifacts?artifact_id=${encodeURIComponent(artifactId)}`);
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-  if (payload.artifact) {
-    state.artifacts.set(artifactId, payload.artifact);
-    state.artifactRelated.set(artifactId, Array.isArray(payload.related) ? payload.related : []);
+  if (!response.ok) return null;
+  const payload = await response.json();
+  if (payload.artifact) state.artifacts.set(artifactId, payload.artifact);
+  state.artifactRelated.set(artifactId, payload.related || []);
+  return payload;
+}
+
+function renderArtifactBody(target, payload) {
+  const artifact = payload.artifact;
+  const body = document.createElement("article");
+  body.className = "artifact-markdown markdown-body";
+  renderMarkdownInto(body, artifact.body || "");
+  const related = document.createElement("div");
+  related.className = "artifact-related";
+  const title = document.createElement("strong");
+  title.textContent = "相关产物";
+  related.appendChild(title);
+  for (const item of payload.related || []) {
+    const row = document.createElement("button");
+    row.className = "artifact-related-row";
+    row.type = "button";
+    row.textContent = item.title || item.id || "Artifact";
+    row.addEventListener("click", () => prefillMessage(`Compare artifact ${artifact.id} with ${item.id}.`));
+    related.appendChild(row);
   }
-  return state.artifacts.get(artifactId) || {};
+  target.replaceChildren(body, related);
 }
 
-async function exportArtifact(artifactId) {
-  if (!artifactId) return;
-  try {
-    const artifact = await loadArtifact(artifactId);
-    const blob = new Blob([artifact.body || ""], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = artifactFilename(artifact);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  } catch (error) {
-    addCard("error", "错误", error.message || String(error));
-  }
-}
-
-async function toggleArtifactRelated(artifactId, related, button) {
-  if (!artifactId) return;
-  if (!related.hidden) {
-    related.hidden = true;
-    button.textContent = "比较";
-    scrollToEnd();
-    return;
-  }
-  button.disabled = true;
-  button.textContent = "加载中";
-  try {
-    await loadArtifact(artifactId);
-  } catch (error) {
-    related.replaceChildren(artifactRelatedMessage(error.message || String(error)));
-    related.hidden = false;
-    button.textContent = "重试";
-    button.disabled = false;
-    scrollToEnd();
-    return;
-  }
-  button.disabled = false;
-  button.textContent = "收起";
-  const items = state.artifactRelated.get(artifactId) || [];
-  related.replaceChildren();
-  if (items.length === 0) {
-    related.appendChild(artifactRelatedMessage("No related artifacts in this mission."));
-  } else {
-    for (const item of items) {
-      related.appendChild(artifactRelatedRow(artifactId, item));
-    }
-  }
-  related.hidden = false;
-  scrollToEnd();
-}
-
-function artifactRelatedRow(artifactId, item) {
-  const row = document.createElement("div");
-  row.className = "artifact-related-row";
-  const title = document.createElement("div");
-  title.className = "artifact-related-title";
-  title.textContent = item.title || item.id || "Artifact";
-  const detail = document.createElement("div");
-  detail.className = "event-body";
-  detail.textContent = item.kind || "artifact";
-  const actions = document.createElement("div");
-  actions.className = "artifact-actions";
-  actions.append(
-      artifactButton("比较", () => {
-        prefillMessage(`Compare artifact ${artifactId} with artifact ${item.id}: `);
-      }),
-      artifactButton("回到此版", () => {
-        prefillMessage(`Revert artifact ${artifactId} to artifact ${item.id}: `);
-      }),
-  );
-  row.append(title, detail, actions);
-  return row;
-}
-
-function artifactRelatedMessage(text) {
-  const node = document.createElement("div");
-  node.className = "event-body";
-  node.textContent = text;
-  return node;
-}
-
-function artifactFilename(artifact) {
-  const title = String(artifact.title || artifact.id || "artifact")
-    .trim()
-    .replace(/[^a-z0-9._-]+/gi, "-")
-    .replace(/^-+|-+$/g, "");
-  const extension = artifact.kind === "markdown" ? "md" : "txt";
-  return `${title || "artifact"}.${extension}`;
-}
-
-function isPatchArtifact(kind) {
-  const value = String(kind || "").toLowerCase();
-  return value.includes("diff") || value.includes("patch");
-}
-
-function renderLearning(item) {
-  if (!item) return;
-  const needsConfirmation = Boolean(item.requires_confirmation) || String(item.status || "").startsWith("needs_review");
-  const node = document.createElement("div");
-  node.className = "event-card learning";
-  if (needsConfirmation) node.classList.add("confirmation");
-
-  const titleRow = document.createElement("div");
-  titleRow.className = "event-title";
-  const title = document.createElement("span");
-  title.textContent = item.kind === "memory" ? "学习记忆" : "学习信号";
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.textContent = item.status || "draft";
-  titleRow.append(title, chip);
-
-  const body = document.createElement("div");
-  body.className = "event-body";
-  body.textContent = item.summary || (needsConfirmation ? "这条学习需要你确认后才会长期记住。" : "可能学到一个偏好或事实。");
-
-  const actions = document.createElement("div");
-  actions.className = "learning-actions";
-  const itemId = item.item_id;
-  if (item.kind === "memory") {
-    actions.append(
-      learningButton(needsConfirmation ? "确认记住" : "以后这样", "accept", itemId, chip),
-      learningButton("这次而已", "this_time", itemId, chip),
-      learningButton("忽略", "reject", itemId, chip),
-    );
-  }
-
-  node.append(titleRow, body, actions);
-  timeline.appendChild(node);
-  scrollToEnd();
+function exportArtifact(artifact) {
+  const blob = new Blob([artifact.body || ""], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${safeFileName(artifact.title || artifact.id || "artifact")}.${artifact.kind === "markdown" ? "md" : "txt"}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 function renderRecall(recall) {
   if (!recall) return;
-  const items = Array.isArray(recall.items) ? recall.items : [];
-  const node = document.createElement("div");
-  node.className = "event-card recall";
-
-  const titleRow = document.createElement("div");
-  titleRow.className = "event-title";
-  const title = document.createElement("span");
-  title.textContent = "找回上下文";
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.textContent = `${items.length} found`;
-  titleRow.append(title, chip);
-
-  const body = document.createElement("div");
-  body.className = "event-body";
-  body.textContent = recall.query ? `“${recall.query}”` : "过去上下文";
-
+  const card = document.createElement("section");
+  card.className = "event-card recall";
+  const header = document.createElement("div");
+  header.className = "event-title";
+  const title = document.createElement("strong");
+  title.textContent = `Recall · ${recall.count || 0} found`;
+  const meta = document.createElement("span");
+  meta.textContent = recall.scope || "all";
+  header.append(title, meta);
+  const query = document.createElement("p");
+  query.className = "recall-query";
+  query.textContent = recall.query || "";
   const list = document.createElement("div");
-  list.className = "recall-items";
-  for (const item of items) {
-    list.appendChild(recallItem(item));
+  list.className = "recall-list";
+  for (const item of recall.items || []) {
+    list.appendChild(recallItemRow(item));
   }
-
-  node.append(titleRow, body, list);
-  timeline.appendChild(node);
-  scrollToEnd();
+  card.append(header, query, list);
+  timeline.appendChild(card);
+  timelineScroll();
 }
 
-function recallItem(item) {
+function recallItemRow(item) {
   const row = document.createElement("div");
   row.className = "recall-item";
-
-  const titleRow = document.createElement("div");
-  titleRow.className = "recall-title";
-  const title = document.createElement("span");
-  const titleText = compactRecallTitle(item);
-  title.textContent = titleText;
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.textContent = item.kind || item.source_type || "context";
-  titleRow.append(title, chip);
-
-  const summary = document.createElement("div");
-  summary.className = "event-body";
-  const summaryText = String(item.summary || "").trim();
-  summary.textContent = summaryText && summaryText !== titleText ? summaryText : "";
-
+  const body = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = compactRecallTitle(item);
+  const summary = document.createElement("p");
+  const summaryText = String(item.summary || item.snippet || "");
+  if (summaryText && summaryText !== title.textContent) summary.textContent = summaryText;
+  body.append(title, summary);
   const actions = document.createElement("div");
   actions.className = "recall-actions";
-
-  row.append(titleRow, summary, actions);
-  appendRecallActions(actions, item, row, chip);
+  if (item.kind === "artifact" && (item.artifact_id || item.id)) {
+    actions.appendChild(actionButton("打开", () => prefillMessage(`Open artifact ${item.artifact_id || item.id}.`), "recall-button"));
+  }
+  if (item.kind === "decision" && item.item_id) {
+    actions.appendChild(actionButton("处理", () => prefillMessage(`Resolve decision ${item.item_id}: `), "recall-button"));
+  }
+  actions.appendChild(actionButton("使用", () => prefillMessage(`Use this recalled context: ${title.textContent}`), "recall-button"));
+  row.append(body, actions);
   return row;
 }
 
 function compactRecallTitle(item) {
-  const title = String(item.title || "").trim();
-  const summary = String(item.summary || "").trim();
-  if (!title) return summary || "Untitled";
-  const parts = title.split(":");
-  if (parts.length > 1 && parts.slice(1).join(":").trim() === summary) {
-    return parts[0].trim() || summary;
-  }
-  return title;
+  return item.title || item.summary || item.snippet || item.kind || "Recall";
 }
 
-function appendRecallActions(actions, item, row, statusChip) {
-  if (item.kind === "artifact" && item.artifact_id) {
-    const viewer = document.createElement("div");
-    viewer.className = "artifact-viewer";
-    viewer.hidden = true;
-    const body = document.createElement("pre");
-    body.className = "artifact-body";
-    viewer.appendChild(body);
-    actions.appendChild(recallButton("打开", () => {
-      toggleArtifact(item.artifact_id, viewer, body, actions.querySelector("button"));
-    }));
-    actions.appendChild(recallButton("复用", () => {
-      prefillMessage(`Reuse artifact ${item.artifact_id}: `);
-    }));
-    row.appendChild(viewer);
-    return;
-  }
-
-  if (item.kind === "decision" && item.status === "open" && item.item_id) {
+function renderLearning(item) {
+  if (!item) return;
+  const card = document.createElement("section");
+  card.className = "event-card learning";
+  if (item.requires_confirmation) card.classList.add("confirmation");
+  const title = document.createElement("strong");
+  title.textContent = item.requires_confirmation ? "确认是否记住" : "学习信号";
+  const summary = document.createElement("p");
+  summary.textContent = item.summary || "";
+  const actions = document.createElement("div");
+  actions.className = "learning-actions";
+  if (item.kind === "memory" && item.item_id) {
     actions.append(
-      decisionButton("同意", "accepted", item.item_id, statusChip),
-      decisionButton("拒绝", "rejected", item.item_id, statusChip),
-      decisionButton("忽略", "ignored", item.item_id, statusChip),
+      actionButton(item.requires_confirmation ? "确认记住" : "以后这样", () => resolveLearningMemory(item.item_id, "accept", card), "learning-button"),
+      actionButton("这次而已", () => resolveLearningMemory(item.item_id, "this_time", card), "learning-button"),
+      actionButton("不要记", () => resolveLearningMemory(item.item_id, "reject", card), "learning-button"),
     );
-    return;
   }
-
-  if (item.kind === "past_work") {
-    actions.appendChild(recallButton("继续", () => {
-      prefillMessage(`Continue from run ${item.run_id || item.item_id}: `);
-    }));
-    return;
-  }
-
-  actions.appendChild(recallButton("引用", () => {
-    prefillMessage(`Use recalled context ${item.item_id || ""}: `);
-  }));
+  card.append(title, summary, actions);
+  timeline.appendChild(card);
+  timelineScroll();
 }
 
-function recallButton(label, onClick) {
-  const button = document.createElement("button");
-  button.className = "recall-button";
-  button.type = "button";
-  button.textContent = label;
-  button.addEventListener("click", onClick);
-  return button;
-}
-
-function prefillMessage(text) {
-  input.value = text;
-  resizeInput();
-  input.focus();
-}
-
-function learningButton(label, action, itemId, statusChip) {
-  const button = document.createElement("button");
-  button.className = "learning-button";
-  button.type = "button";
-  button.textContent = label;
-  button.disabled = !itemId;
-  button.title = itemId ? label : "Learning item is not persisted";
-  button.addEventListener("click", () => {
-    resolveLearningMemory(itemId, action, statusChip, button.parentElement);
-  });
-  return button;
-}
-
-async function resolveLearningMemory(itemId, action, statusChip, actions) {
-  if (!itemId || !actions) return;
-  const previousStatus = statusChip.textContent || "draft";
-  for (const button of actions.querySelectorAll("button")) {
-    button.disabled = true;
-  }
-  statusChip.textContent = "resolving";
+async function resolveLearningMemory(itemId, action, card) {
+  setCardBusy(card, true);
   try {
     const response = await fetch("/api/learning/memory", {
       method: "POST",
@@ -1125,75 +849,43 @@ async function resolveLearningMemory(itemId, action, statusChip, actions) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    statusChip.textContent = payload.candidate?.status || action;
-    if (action === "undo") {
-      actions.replaceChildren();
-    } else {
-      actions.replaceChildren(learningButton("撤销", "undo", itemId, statusChip));
-    }
+    const status = document.createElement("p");
+    status.className = "resolution";
+    status.textContent = action === "undo" ? "已撤销。" : "已处理。";
+    const undo = action === "accept" ? actionButton("撤销", () => resolveLearningMemory(itemId, "undo", card), "learning-button") : null;
+    card.append(status);
+    if (undo) card.append(undo);
   } catch (error) {
-    statusChip.textContent = previousStatus;
-    for (const button of actions.querySelectorAll("button")) {
-      button.disabled = false;
-    }
-    addCard("error", "错误", error.message || String(error));
+    addCard("error", "Learning error", error.message || String(error));
+  } finally {
+    setCardBusy(card, false);
   }
 }
 
 function renderDecision(decision) {
   if (!decision) return;
-  const node = document.createElement("div");
-  node.className = "event-card decision";
-
-  const titleRow = document.createElement("div");
-  titleRow.className = "event-title";
-  const title = document.createElement("span");
-  title.textContent = "需要确认";
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.textContent = decision.status || "open";
-  titleRow.append(title, chip);
-
-  const body = document.createElement("div");
-  body.className = "event-body";
-  body.textContent = decision.reason
-    ? `${decision.question || "Decision required"} ${decision.reason}`
-    : decision.question || "Decision required";
-
+  const card = document.createElement("section");
+  card.className = "event-card decision";
+  const title = document.createElement("strong");
+  title.textContent = decision.title || "需要确认";
+  const question = document.createElement("p");
+  question.textContent = decision.question || decision.summary || "";
   const actions = document.createElement("div");
   actions.className = "decision-actions";
-  const itemId = decision.item_id;
-  const buttons = [
-    decisionButton("同意", "accepted", itemId, chip),
-    decisionButton("拒绝", "rejected", itemId, chip),
-    decisionButton("忽略", "ignored", itemId, chip),
-  ];
-  actions.append(...buttons);
-
-  node.append(titleRow, body, actions);
-  timeline.appendChild(node);
-  scrollToEnd();
-}
-
-function decisionButton(label, resolution, itemId, statusChip) {
-  const button = document.createElement("button");
-  button.className = "decision-button";
-  button.type = "button";
-  button.textContent = label;
-  button.disabled = !itemId;
-  button.title = itemId ? label : "Decision is not persisted";
-  button.addEventListener("click", () => {
-    resolveDecision(itemId, resolution, statusChip, button.parentElement);
-  });
-  return button;
-}
-
-async function resolveDecision(itemId, resolution, statusChip, actions) {
-  if (!itemId || !actions) return;
-  for (const button of actions.querySelectorAll("button")) {
-    button.disabled = true;
+  if (decision.item_id) {
+    actions.append(
+      actionButton("同意", () => resolveDecision(decision.item_id, "accepted", card), "decision-button"),
+      actionButton("拒绝", () => resolveDecision(decision.item_id, "rejected", card), "decision-button"),
+      actionButton("忽略", () => resolveDecision(decision.item_id, "ignored", card), "decision-button"),
+    );
   }
-  statusChip.textContent = "resolving";
+  card.append(title, question, actions);
+  timeline.appendChild(card);
+  timelineScroll();
+}
+
+async function resolveDecision(itemId, resolution, card) {
+  setCardBusy(card, true);
   try {
     const response = await fetch("/api/inbox/resolve", {
       method: "POST",
@@ -1202,702 +894,483 @@ async function resolveDecision(itemId, resolution, statusChip, actions) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    statusChip.textContent = payload.item?.resolution || resolution;
+    const status = document.createElement("p");
+    status.className = "resolution";
+    status.textContent = `已${resolution === "accepted" ? "同意" : resolution === "rejected" ? "拒绝" : "忽略"}。`;
+    card.append(status);
     if (payload.tool_result) {
-      const tool = payload.tool_result;
-      addCard(tool.ok ? "action" : "error", tool.tool || tool.name || "动作", tool.summary || "工具已完成");
+      const resultCard = addCard(payload.tool_result.ok ? "action" : "error", payload.tool_result.tool || "tool", payload.tool_result.summary || "");
+      card.after(resultCard);
     }
   } catch (error) {
-    statusChip.textContent = "open";
-    for (const button of actions.querySelectorAll("button")) {
-      button.disabled = false;
-    }
-    addCard("error", "错误", error.message || String(error));
+    addCard("error", "Decision error", error.message || String(error));
+  } finally {
+    setCardBusy(card, false);
   }
 }
 
-async function openSettings() {
-  openDrawer("settings", "设置", "加载中");
-  try {
-    const response = await fetch("/api/settings");
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    state.settings = payload;
-    renderSettings(payload);
-    settingsStatus.textContent = "已同步";
-  } catch (error) {
-    settingsStatus.textContent = "错误";
-    settingsContent.replaceChildren(settingsLoadingRow(error.message || String(error)));
+async function loadMemoryCompass() {
+  if (!memoryCompass) return;
+  if (state.memoryOntology) {
+    renderMemoryCompass(state.memoryOntology);
+    return;
   }
-}
-
-async function openMemoryDrawer() {
-  openDrawer("memory", "记忆罗盘", "加载记忆罗盘");
-  state.memoryDimensions.clear();
-  state.memoryItems.clear();
+  memoryCompass.replaceChildren(loadingRow("加载十维记忆"));
+  memoryLayerDetail.replaceChildren(textRow("选择一个维度继续查看。"));
   try {
     const response = await fetch("/api/memory/ontology");
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    renderMemoryDrawer(payload);
-    settingsStatus.textContent = "已同步";
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    state.memoryOntology = payload;
+    renderMemoryCompass(payload);
   } catch (error) {
-    settingsStatus.textContent = "错误";
-    settingsContent.replaceChildren(settingsLoadingRow(error.message || String(error)));
+    memoryCompass.replaceChildren(textRow(error.message || String(error)));
   }
 }
 
-function openDrawer(mode, title, status) {
-  settingsOverlay.hidden = false;
-  settingsOverlay.dataset.mode = mode;
-  if (settingsDrawer) settingsDrawer.dataset.mode = mode;
-  if (settingsTitle) settingsTitle.textContent = title;
-  settingsContent.replaceChildren(settingsLoadingRow(status));
-  settingsStatus.textContent = status;
-  settingsClose.focus();
+function renderMemoryCompass(payload) {
+  const dimensions = payload.dimensions || [];
+  const counts = payload.counts || {};
+  memoryCountBadge.textContent = `${counts.pages || 0} 稳定 · ${counts.candidates || 0} 候选`;
+  renderMemoryStats(counts);
+  const cards = dimensions.map((dimension) => memoryDimensionCard(dimension));
+  memoryCompass.replaceChildren(...cards);
+  const first = dimensions.find((item) => Number(item.pages || 0) + Number(item.candidates || 0) > 0) || dimensions[0];
+  if (first) loadMemoryDimension(first.dimension);
 }
 
-function closeSettings() {
-  settingsOverlay.hidden = true;
-  (settingsOverlay.dataset.mode === "memory" ? memoryOpen : settingsOpen).focus();
-}
-
-function renderSettings(payload) {
-  settingsContent.replaceChildren(
-    settingsConnectedSection(payload.connected_apps || []),
-    settingsPermissionSection(payload.permissions || {}),
-    settingsQuietHoursSection(payload.quiet_hours || payload.settings?.quiet_hours || {}),
-    settingsPreferenceSection(payload.learned_preferences || {}),
-    settingsWorkspaceSection(payload.connected_apps || []),
-    settingsAppearanceSection(),
-    settingsMemoryOntologySection(),
-    settingsDataControlSection(payload.data_controls || {}),
-  );
-}
-
-function settingsConnectedSection(items) {
-  const body = document.createElement("div");
-  body.className = "settings-list";
-  for (const item of items) {
-    body.appendChild(settingsRow(item.label || item.id || "Connection", item.status || "", item.detail || ""));
-  }
-  return settingsSection("模型与连接", body);
-}
-
-function settingsPermissionSection(permissions) {
-  const body = document.createElement("div");
-  body.className = "settings-list";
-  for (const policy of permissions.risk_policy || []) {
-    body.appendChild(settingsRow(policy.risk || "risk", policy.behavior || "", ""));
-  }
-  const openDecisions = Number(permissions.open_decisions || 0);
-  const row = settingsRow("待确认事项", String(openDecisions), "");
-  const button = settingsActionButton("查看", () => {
-    closeSettings();
-    prefillMessage("Show my open decisions.");
+function renderMemoryStats(counts) {
+  const rows = [
+    ["稳定记忆", counts.pages || 0],
+    ["候选信号", counts.candidates || 0],
+    ["覆盖维度", counts.covered_dimensions || 0],
+  ].map(([label, value]) => {
+    const row = document.createElement("div");
+    const strong = document.createElement("strong");
+    strong.textContent = String(value);
+    const span = document.createElement("span");
+    span.textContent = label;
+    row.append(strong, span);
+    return row;
   });
-  row.appendChild(button);
-  body.appendChild(row);
-  return settingsSection("工具权限", body);
+  memoryStats.replaceChildren(...rows);
 }
 
-function settingsQuietHoursSection(quietHours) {
-  const body = document.createElement("form");
-  body.className = "settings-form";
-  const enabledLabel = document.createElement("label");
-  enabledLabel.className = "settings-check";
-  const enabled = document.createElement("input");
-  enabled.type = "checkbox";
-  enabled.checked = Boolean(quietHours.enabled);
-  enabledLabel.append(enabled, document.createTextNode("专注时段"));
-
-  const range = document.createElement("div");
-  range.className = "settings-time-grid";
-  const start = settingsTimeInput("开始", quietHours.start || "22:00");
-  const end = settingsTimeInput("结束", quietHours.end || "07:00");
-  range.append(start.label, end.label);
-
-  const save = settingsActionButton("保存", async () => {
-    save.disabled = true;
-    settingsStatus.textContent = "保存中";
-    try {
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          quiet_hours: {
-            enabled: enabled.checked,
-            start: start.input.value,
-            end: end.input.value,
-            timezone: quietHours.timezone || "local",
-          },
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-      state.settings = payload;
-      renderSettings(payload);
-      settingsStatus.textContent = "已保存";
-    } catch (error) {
-      settingsStatus.textContent = "错误";
-      addCard("error", "错误", error.message || String(error));
-      save.disabled = false;
-    }
-  });
-
-  body.append(enabledLabel, range, save);
-  return settingsSection("Dream 整理", body);
-}
-
-function settingsPreferenceSection(preferences) {
-  const body = document.createElement("div");
-  body.className = "settings-list";
-  const items = Array.isArray(preferences.items) ? preferences.items : [];
-  if (items.length === 0) {
-    body.appendChild(settingsRow("已学偏好", "0", "Mnemo 会从派活、修改和确认中学习。"));
-  } else {
-    for (const item of items) {
-      body.appendChild(settingsRow(item.title || "Preference", confidenceLabel(item.confidence), item.summary || ""));
-    }
-  }
-  const actions = document.createElement("div");
-  actions.className = "settings-actions";
-  actions.appendChild(settingsActionButton("查看长期记忆", () => {
-    openMemoryDrawer();
-  }));
-  actions.appendChild(settingsActionButton("复盘偏好", () => {
-    closeSettings();
-    prefillMessage(preferences.review_prompt || "Review my learned preferences.");
-  }));
-  body.appendChild(actions);
-  return settingsSection("记忆", body);
-}
-
-function settingsWorkspaceSection(items) {
-  const body = document.createElement("div");
-  body.className = "settings-list";
-  const workspace = items.find((item) => item.id === "workspace") || {};
-  body.appendChild(settingsRow("工作区", workspace.status || "connected", workspace.detail || "workspace"));
-  body.appendChild(settingsActionButton("调整工作区", () => {
-    closeSettings();
-    prefillMessage("Change my Mnemo workspace: ");
-  }));
-  return settingsSection("工作区", body);
-}
-
-function settingsAppearanceSection() {
-  const body = document.createElement("div");
-  body.className = "settings-list";
-  body.appendChild(settingsRow("外观密度", "标准", "舒适、标准、紧凑"));
-  const actions = document.createElement("div");
-  actions.className = "settings-actions segmented-actions";
-  actions.append(
-    settingsActionButton("舒适", () => prefillMessage("Set Mnemo appearance density to comfortable.")),
-    settingsActionButton("标准", () => prefillMessage("Set Mnemo appearance density to standard.")),
-    settingsActionButton("紧凑", () => prefillMessage("Set Mnemo appearance density to compact.")),
-  );
-  body.appendChild(actions);
-  return settingsSection("外观", body);
-}
-
-function settingsDataControlSection(dataControls) {
-  const body = document.createElement("div");
-  body.className = "settings-list";
-  const counts = dataControls.counts || {};
-  body.append(
-    settingsRow("记忆", String(counts.memory_pages || 0), `${counts.memory_candidates || 0} 条候选`),
-    settingsRow("产物", String(counts.artifacts || 0), ""),
-    settingsRow("计划任务", String(counts.scheduled_items || 0), ""),
-  );
-  const actions = document.createElement("div");
-  actions.className = "settings-actions";
-  for (const item of dataControls.actions || []) {
-    actions.appendChild(settingsActionButton(item.label || item.id || "操作", () => {
-      closeSettings();
-      prefillMessage(item.prompt || "");
-    }));
-  }
-  body.appendChild(actions);
-  return settingsSection("数据", body);
-}
-
-function settingsMemoryOntologySection() {
-  const body = document.createElement("div");
-  body.className = "settings-list";
-  const target = document.createElement("div");
-  target.className = "memory-ontology";
-  body.appendChild(settingsActionButton("查看记忆罗盘", async () => {
-    target.replaceChildren(settingsLoadingRow("正在加载记忆罗盘"));
-    try {
-      const response = await fetch("/api/memory/ontology");
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-      target.replaceChildren(memoryOntologyView(payload));
-    } catch (error) {
-      target.replaceChildren(settingsLoadingRow(error.message || String(error)));
-    }
-  }));
-  body.appendChild(target);
-  return settingsSection("记忆罗盘", body);
-}
-
-function renderMemoryDrawer(payload) {
-  settingsContent.replaceChildren(memoryCompassView(payload));
-}
-
-function memoryCompassView(payload) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "memory-compass";
-  const tabs = document.createElement("div");
-  tabs.className = "memory-tabs";
-  const activeTab = document.createElement("button");
-  activeTab.type = "button";
-  activeTab.className = "memory-tab active";
-  activeTab.textContent = "罗盘总览";
-  const allTab = document.createElement("button");
-  allTab.type = "button";
-  allTab.className = "memory-tab";
-  allTab.textContent = "全部记忆";
-  tabs.append(activeTab, allTab);
-
-  const search = document.createElement("div");
-  search.className = "memory-search-row";
-  const inputNode = document.createElement("input");
-  inputNode.className = "memory-search";
-  inputNode.type = "search";
-  inputNode.placeholder = "搜索记忆内容";
-  search.appendChild(inputNode);
-
-  const content = document.createElement("div");
-  content.className = "memory-compass-grid";
-  const dimensions = document.createElement("div");
-  dimensions.className = "memory-compass-dimensions";
-  const detail = document.createElement("div");
-  detail.className = "memory-compass-detail";
-
-  const dimensionItems = Array.isArray(payload.dimensions) ? payload.dimensions : [];
-  const firstActive = dimensionItems.find((item) => Number(item.pages || 0) + Number(item.candidates || 0) > 0)
-    || dimensionItems[0]
-    || {};
-  for (const dimension of dimensionItems) {
-    dimensions.appendChild(memoryCompassDimensionRow(dimension, detail, dimension === firstActive));
-  }
-  renderMemoryCompassDetail(detail, firstActive);
-
-  inputNode.addEventListener("input", () => {
-    const query = inputNode.value.trim().toLowerCase();
-    for (const row of dimensions.querySelectorAll(".memory-compass-dimension")) {
-      row.hidden = query ? !row.textContent.toLowerCase().includes(query) : false;
-    }
-  });
-
-  content.append(dimensions, detail);
-  wrapper.append(tabs, search, content, memoryOverview(payload), memoryDrawerActions());
-  return wrapper;
-}
-
-function memoryCompassDimensionRow(dimension, detail, active) {
+function memoryDimensionCard(dimension) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "memory-compass-dimension";
-  if (active) button.classList.add("active");
-  const title = document.createElement("span");
+  button.className = "memory-dimension-card";
+  button.dataset.dimension = dimension.dimension;
+  const title = document.createElement("strong");
   title.textContent = dimensionLabel(dimension.dimension);
-  const count = document.createElement("strong");
+  const count = document.createElement("span");
   count.textContent = `${dimension.pages || 0}/${dimension.candidates || 0}`;
-  const meter = document.createElement("progress");
+  const summary = document.createElement("p");
+  summary.textContent = dimension.summary || "尚未沉淀稳定信号。";
+  const meter = document.createElement("i");
   meter.className = "memory-meter";
-  meter.max = 10;
-  meter.value = Math.min(10, Number(dimension.pages || 0) * 2 + Number(dimension.candidates || 0));
-  button.append(title, count, meter);
-  button.addEventListener("click", () => {
-    for (const row of button.parentElement.querySelectorAll(".memory-compass-dimension")) {
-      row.classList.remove("active");
-    }
-    button.classList.add("active");
-    renderMemoryCompassDetail(detail, dimension);
-  });
+  const total = Number(dimension.pages || 0) + Number(dimension.candidates || 0);
+  meter.style.setProperty("--level", `${Math.min(100, total * 18)}%`);
+  button.append(title, count, summary, meter);
+  button.addEventListener("click", () => loadMemoryDimension(dimension.dimension));
   return button;
 }
 
-function renderMemoryCompassDetail(target, dimension) {
-  const dimensionName = dimension?.dimension || "context";
-  target.dataset.dimension = dimensionName;
-  target.replaceChildren();
-  const tag = document.createElement("span");
-  tag.className = "memory-detail-tag";
-  tag.textContent = dimensionLabel(dimensionName);
-  const title = document.createElement("h3");
-  title.textContent = `${dimensionLabel(dimensionName)}中的长期信号`;
-  const meta = document.createElement("div");
-  meta.className = "memory-detail-meta";
-  meta.textContent = `${dimension.pages || 0} 条稳定记忆 · ${dimension.candidates || 0} 条候选`;
-  const summary = document.createElement("p");
-  summary.className = "memory-detail-summary";
-  summary.textContent = dimension.summary || "先查看这一维的稳定记忆和候选学习，再按需展开证据。";
-  const loading = settingsLoadingRow("正在读取这一维的记忆");
-  target.append(tag, title, meta, summary, loading);
-  loadMemoryDimension(dimensionName, target);
-}
-
-async function loadMemoryDimension(dimensionName, target) {
+async function loadMemoryDimension(dimensionName) {
   const key = String(dimensionName || "context");
+  for (const card of memoryCompass.querySelectorAll(".memory-dimension-card")) {
+    card.classList.toggle("active", card.dataset.dimension === key);
+  }
   if (state.memoryDimensions.has(key)) {
-    renderMemoryDimensionDetail(target, state.memoryDimensions.get(key));
+    renderMemoryDimensionDetail(state.memoryDimensions.get(key));
     return;
   }
+  memoryLayerDetail.replaceChildren(loadingRow(`加载 ${dimensionLabel(key)}`));
   try {
     const response = await fetch(`/api/memory/dimension?dimension=${encodeURIComponent(key)}`);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
     state.memoryDimensions.set(key, payload);
-    if (target.dataset.dimension === key) {
-      renderMemoryDimensionDetail(target, payload);
-    }
+    renderMemoryDimensionDetail(payload);
   } catch (error) {
-    if (target.dataset.dimension !== key) return;
-    const errorRow = settingsLoadingRow(error.message || String(error));
-    errorRow.classList.add("memory-detail-error");
-    target.appendChild(errorRow);
+    memoryLayerDetail.replaceChildren(textRow(error.message || String(error)));
   }
 }
 
-function renderMemoryDimensionDetail(target, payload) {
-  const dimensionName = payload.dimension || target.dataset.dimension || "context";
-  target.dataset.dimension = dimensionName;
-  target.replaceChildren();
-  const tag = document.createElement("span");
-  tag.className = "memory-detail-tag";
-  tag.textContent = dimensionLabel(dimensionName);
-  const title = document.createElement("h3");
-  title.textContent = `${dimensionLabel(dimensionName)}中的长期信号`;
-  const counts = payload.counts || {};
-  const meta = document.createElement("div");
-  meta.className = "memory-detail-meta";
-  meta.textContent = `${counts.pages || 0} 条稳定记忆 · ${counts.candidates || 0} 条候选`;
+function renderMemoryDimensionDetail(payload) {
+  const header = document.createElement("div");
+  header.className = "memory-layer-header";
+  const title = document.createElement("strong");
+  title.textContent = dimensionLabel(payload.dimension);
   const summary = document.createElement("p");
-  summary.className = "memory-detail-summary";
-  summary.textContent = payload.summary || "暂无可展示的长期信号。";
-  const itemPanel = document.createElement("div");
-  itemPanel.className = "memory-item-panel";
-  const pages = memoryDetailSection("稳定记忆", payload.pages || [], itemPanel);
-  const candidates = memoryDetailSection("候选学习", payload.candidates || [], itemPanel);
-  target.append(tag, title, meta, summary, pages, candidates, itemPanel);
+  summary.textContent = payload.summary || "";
+  header.append(title, summary);
+
+  const stable = memoryDetailSection("稳定记忆", payload.pages || []);
+  const candidates = memoryDetailSection("候选信号", payload.candidates || []);
+  memoryLayerDetail.replaceChildren(header, stable, candidates);
 }
 
-function memoryDetailSection(titleText, entries, itemPanel) {
+function memoryDetailSection(titleText, entries) {
   const section = document.createElement("section");
   section.className = "memory-detail-section";
-  const title = document.createElement("h4");
+  const title = document.createElement("h3");
   title.textContent = titleText;
   const list = document.createElement("div");
   list.className = "memory-detail-list";
-  if (!Array.isArray(entries) || entries.length === 0) {
-    list.appendChild(settingsLoadingRow("暂无记忆"));
-  } else {
-    for (const item of entries) {
-      list.appendChild(memoryLayerItem(item, itemPanel));
-    }
+  if (!entries.length) {
+    list.appendChild(textRow("暂无内容。"));
+  }
+  for (const item of entries) {
+    list.appendChild(memoryLayerItem(item));
   }
   section.append(title, list);
   return section;
 }
 
-function memoryLayerItem(item, itemPanel) {
-  const row = document.createElement("div");
-  row.className = "memory-detail-card";
-  const body = document.createElement("div");
-  body.className = "memory-detail-card-body";
+function memoryLayerItem(item) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "memory-detail-card";
   const title = document.createElement("strong");
-  title.textContent = cleanMemoryTitle(item.title || item.kind || "记忆");
+  title.textContent = item.title || "Memory";
   const summary = document.createElement("p");
-  summary.textContent = cleanMemorySummary(item.summary || "", title.textContent);
+  summary.textContent = item.summary || "";
   const meta = document.createElement("span");
-  meta.textContent = `${item.status || item.kind || "memory"}${confidenceLabel(item.confidence) ? ` · ${confidenceLabel(item.confidence)}` : ""}`;
-  body.append(title, summary, meta);
-  const action = document.createElement("button");
-  action.type = "button";
-  action.className = "memory-detail-action";
-  action.textContent = "查看证据";
-  action.addEventListener("click", () => {
-    itemPanel.replaceChildren(settingsLoadingRow("正在读取证据"));
-    loadMemoryItem(item.kind, item.id, itemPanel);
-  });
-  row.append(body, action);
-  return row;
+  meta.textContent = [item.kind || item.status || "memory", confidenceLabel(item.confidence)].filter(Boolean).join(" · ");
+  button.append(title, summary, meta);
+  button.addEventListener("click", () => loadMemoryItem(item.kind, item.id));
+  return button;
 }
 
-async function loadMemoryItem(kind, id, target) {
-  const itemType = String(kind || "");
-  const itemId = String(id || "");
-  const key = `${itemType}:${itemId}`;
-  if (!itemType || !itemId) {
-    target.replaceChildren(settingsLoadingRow("记忆条目缺少标识"));
-    return;
-  }
+async function loadMemoryItem(kind, id) {
+  if (!kind || !id) return;
+  const itemType = kind === "page" ? "page" : "candidate";
+  const key = `${itemType}:${id}`;
   if (state.memoryItems.has(key)) {
-    renderMemoryItemDetail(target, state.memoryItems.get(key));
+    renderMemoryItemDetail(state.memoryItems.get(key));
     return;
   }
+  memoryLayerDetail.appendChild(loadingRow("加载记忆详情"));
   try {
-    const response = await fetch(`/api/memory/item?type=${encodeURIComponent(itemType)}&id=${encodeURIComponent(itemId)}`);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    const response = await fetch(`/api/memory/item?type=${encodeURIComponent(itemType)}&id=${encodeURIComponent(id)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
     state.memoryItems.set(key, payload);
-    renderMemoryItemDetail(target, payload);
+    renderMemoryItemDetail(payload);
   } catch (error) {
-    target.replaceChildren(settingsLoadingRow(error.message || String(error)));
+    memoryLayerDetail.appendChild(textRow(error.message || String(error)));
   }
 }
 
-function renderMemoryItemDetail(target, payload) {
+function renderMemoryItemDetail(payload) {
   const item = payload.item || {};
-  target.replaceChildren();
-  const tag = document.createElement("span");
-  tag.className = "memory-detail-tag";
-  tag.textContent = "证据";
-  const title = document.createElement("h4");
-  title.textContent = cleanMemoryTitle(item.title || item.type || "记忆条目");
+  const panel = document.createElement("section");
+  panel.className = "memory-item-panel";
+  const title = document.createElement("strong");
+  title.textContent = item.title || "Memory";
   const summary = document.createElement("p");
-  summary.className = "memory-detail-summary";
-  summary.textContent = cleanMemorySummary(item.summary || "", title.textContent) || "暂无摘要。";
-  const meta = document.createElement("div");
-  meta.className = "memory-detail-meta";
-  meta.textContent = `${dimensionLabel(item.dimension)} · ${item.status || item.type || "memory"}${confidenceLabel(item.confidence) ? ` · ${confidenceLabel(item.confidence)}` : ""}`;
-  const evidenceTitle = document.createElement("h4");
-  evidenceTitle.textContent = "证据链";
-  const list = document.createElement("div");
-  list.className = "memory-evidence-list";
-  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
-  if (evidence.length === 0) {
-    list.appendChild(settingsLoadingRow("暂无证据"));
-  } else {
-    for (const entry of evidence) {
-      list.appendChild(memoryDetailEvidence(entry));
-    }
+  summary.textContent = item.summary || "";
+  const meta = document.createElement("span");
+  meta.textContent = [dimensionLabel(item.dimension), item.status || item.type || "memory", confidenceLabel(item.confidence)].filter(Boolean).join(" · ");
+  const evidence = document.createElement("div");
+  evidence.className = "memory-evidence-list";
+  for (const row of payload.evidence || []) {
+    evidence.appendChild(memoryDetailEvidence(row));
   }
-  target.append(tag, title, meta, summary, evidenceTitle, list);
+  const markdown = actionButton("查看 Markdown", () => openMemoryMarkdown(payload), "primary-button small");
+  panel.append(title, summary, meta, evidence, markdown);
+  const existing = memoryLayerDetail.querySelector(".memory-item-panel");
+  if (existing) existing.replaceWith(panel);
+  else memoryLayerDetail.appendChild(panel);
 }
 
 function memoryDetailEvidence(item) {
   const row = document.createElement("div");
   row.className = "memory-detail-evidence";
   const title = document.createElement("strong");
-  title.textContent = cleanMemoryTitle(item.title || item.kind || "记忆");
+  title.textContent = item.kind || "evidence";
   const summary = document.createElement("p");
-  summary.textContent = cleanMemorySummary(item.summary || "", title.textContent);
-  const meta = document.createElement("span");
-  meta.textContent = `${item.kind || "memory"}${confidenceLabel(item.confidence) ? ` · ${confidenceLabel(item.confidence)}` : ""}`;
-  row.append(title, summary, meta);
+  summary.textContent = item.summary || item.reason || "";
+  row.append(title, summary);
   return row;
 }
 
-function memoryOverview(payload) {
-  const counts = payload.counts || {};
-  const body = document.createElement("div");
-  body.className = "memory-overview memory-cover-strip";
-  const coverage = document.createElement("strong");
-  coverage.textContent = `记忆覆盖度 ${counts.covered_dimensions || 0}/10`;
-  const pages = document.createElement("span");
-  pages.textContent = `${counts.pages || 0} 条长期记忆`;
-  const candidates = document.createElement("span");
-  candidates.textContent = `${counts.candidates || 0} 条候选`;
-  body.append(coverage, pages, candidates);
-  return body;
+function openMemoryMarkdown(payload) {
+  const item = payload.item || {};
+  memoryMarkdownTitle.textContent = item.title || "记忆详情";
+  renderMarkdownInto(memoryMarkdownBody, payload.markdown || memoryPayloadMarkdown(payload));
+  memoryMarkdownModal.hidden = false;
 }
 
-function memoryDrawerActions() {
-  const actions = document.createElement("div");
-  actions.className = "settings-actions drawer-actions";
-  actions.append(
-    settingsActionButton("忘记内容", () => {
-      closeSettings();
-      prefillMessage("Forget this memory: ");
-    }),
-    settingsActionButton("更新记忆", () => {
-      closeSettings();
-      prefillMessage("Update my long-term memory: ");
-    }),
-    settingsActionButton("引用到当前任务", () => {
-      closeSettings();
-      prefillMessage("Use the relevant long-term memories for the current task: ");
-    }),
-  );
-  return actions;
+function closeMemoryMarkdown() {
+  memoryMarkdownModal.hidden = true;
 }
 
-function memoryOntologyView(payload) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "memory-dimensions";
-  const counts = payload.counts || {};
-  wrapper.appendChild(
-    settingsRow(
-      "覆盖度",
-      `${counts.covered_dimensions || 0}/10`,
-      `${counts.pages || 0} 条长期记忆 · ${counts.candidates || 0} 条候选`,
-    ),
-  );
-  for (const dimension of payload.dimensions || []) {
-    wrapper.appendChild(memoryDimensionRow(dimension));
+function memoryPayloadMarkdown(payload) {
+  const item = payload.item || {};
+  const lines = [
+    `# ${item.title || "Memory"}`,
+    "",
+    `- Dimension: ${item.dimension || "context"}`,
+    `- Type: ${item.type || "memory"}`,
+    `- Status: ${item.status || "unknown"}`,
+    "",
+    "## Summary",
+    "",
+    item.summary || "",
+  ];
+  const evidence = payload.evidence || [];
+  if (evidence.length) {
+    lines.push("", "## Evidence", "");
+    for (const row of evidence) {
+      lines.push(`- **${row.kind || "evidence"}**: ${row.summary || row.reason || ""}`);
+    }
   }
-  return wrapper;
+  return lines.join("\n");
 }
 
-function memoryDimensionRow(dimension) {
-  const row = document.createElement("div");
-  row.className = "memory-dimension";
-  const header = document.createElement("div");
-  header.className = "memory-dimension-header";
-  const title = document.createElement("strong");
-  title.textContent = dimensionLabel(dimension.dimension);
-  const count = document.createElement("span");
-  count.className = "settings-value";
-  count.textContent = `${dimension.pages || 0}/${dimension.candidates || 0}`;
-  header.append(title, count);
-  const meter = document.createElement("progress");
-  meter.className = "memory-meter";
-  meter.max = 10;
-  meter.value = Math.min(10, Number(dimension.pages || 0) * 2 + Number(dimension.candidates || 0));
-  const summary = document.createElement("p");
-  summary.className = "memory-dimension-summary";
-  summary.textContent = dimension.summary || "尚未沉淀稳定信号。";
-  row.append(header, meter, summary);
-  return row;
+async function initMemoryAvatar() {
+  if (state.avatarStarted || !memoryAvatar3d) return;
+  state.avatarStarted = true;
+  const fallbackTimer = window.setTimeout(() => {
+    if (!state.avatarRendered) {
+      state.avatarRendered = true;
+      renderCanvasAvatar();
+    }
+  }, 450);
+  try {
+    const THREE = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
+    if (!state.avatarRendered) {
+      state.avatarRendered = true;
+      window.clearTimeout(fallbackTimer);
+      renderThreeAvatar(THREE);
+    }
+  } catch (_error) {
+    if (!state.avatarRendered) {
+      state.avatarRendered = true;
+      window.clearTimeout(fallbackTimer);
+      renderCanvasAvatar();
+    }
+  }
 }
 
-function dimensionLabel(value) {
-  const labels = {
-    identity: "身份识别",
-    cognition: "认知方式",
-    values: "价值观",
-    goals: "核心目标",
-    preferences: "偏好习惯",
-    relationships: "关系网络",
-    context: "项目知识",
-    history: "历史任务",
-    patterns: "工具习惯",
-    boundaries: "边界约束",
-  };
-  return labels[value] || value || "记忆";
-}
+function renderThreeAvatar(THREE) {
+  const canvas = memoryAvatar3d;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+  camera.position.set(0, 1.4, 5.2);
+  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const key = new THREE.DirectionalLight(0xffffff, 2.2);
+  key.position.set(2.8, 4, 3);
+  scene.add(key, new THREE.AmbientLight(0xdce8ff, 1.2));
 
-function settingsSection(title, body) {
-  const section = document.createElement("section");
-  section.className = "settings-section";
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  section.append(heading, body);
-  return section;
-}
+  const group = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: 0xf4d7c7, roughness: 0.58, metalness: 0.05 });
+  const suit = new THREE.MeshStandardMaterial({ color: 0x1f2d3a, roughness: 0.42, metalness: 0.18 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0x21a6a0, roughness: 0.35, metalness: 0.25 });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 48, 48), skin);
+  head.position.y = 1.45;
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.58, 1.15, 40), suit);
+  torso.position.y = 0.55;
+  const core = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.01, 16, 128), accent);
+  core.rotation.x = Math.PI / 2.4;
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(1.82, 0.012, 16, 160), accent);
+  halo.rotation.x = Math.PI / 2;
+  const armLeft = limb(THREE, suit, -0.68, 0.7, 0.35);
+  const armRight = limb(THREE, suit, 0.68, 0.7, -0.35);
+  const legLeft = limb(THREE, suit, -0.25, -0.35, 0.08);
+  const legRight = limb(THREE, suit, 0.25, -0.35, -0.08);
+  group.add(head, torso, core, halo, armLeft, armRight, legLeft, legRight);
+  scene.add(group);
 
-function settingsRow(label, value, detail) {
-  const row = document.createElement("div");
-  row.className = "settings-row";
-  const main = document.createElement("div");
-  const labelNode = document.createElement("span");
-  labelNode.className = "settings-label";
-  labelNode.textContent = label;
-  const detailNode = document.createElement("span");
-  detailNode.className = "settings-detail";
-  detailNode.textContent = detail || "";
-  main.append(labelNode, detailNode);
-  const valueNode = document.createElement("span");
-  valueNode.className = "settings-value";
-  valueNode.textContent = value || "";
-  row.append(main, valueNode);
-  return row;
-}
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    const size = Math.max(260, Math.min(rect.width || 420, rect.height || 420));
+    renderer.setSize(size, size, false);
+    camera.aspect = 1;
+    camera.updateProjectionMatrix();
+  }
 
-function settingsTimeInput(label, value) {
-  const wrapper = document.createElement("label");
-  wrapper.className = "settings-time";
-  const text = document.createElement("span");
-  text.textContent = label;
-  const inputNode = document.createElement("input");
-  inputNode.type = "time";
-  inputNode.value = value;
-  wrapper.append(text, inputNode);
-  return { label: wrapper, input: inputNode };
-}
-
-function settingsActionButton(label, onClick) {
-  const button = document.createElement("button");
-  button.className = "settings-action";
-  button.type = "button";
-  button.textContent = label;
-  button.addEventListener("click", onClick);
-  return button;
-}
-
-function settingsLoadingRow(text) {
-  const node = document.createElement("div");
-  node.className = "settings-row";
-  node.textContent = text;
-  return node;
-}
-
-function confidenceLabel(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "";
-  return `${Math.round(number * 100)}%`;
-}
-
-function persistRun(event) {
-  const result = event.data?.result || {};
-  state.conversationId = event.conversation_id || result.conversation_id || state.conversationId;
-  state.missionId = event.mission_id || result.mission_id || state.missionId;
-  state.lastRunId = event.run_id || result.run_id || state.lastRunId;
-  state.lastEventId = event.event_id || state.lastEventId;
-  localStorage.setItem("mnemo.conversation_id", state.conversationId);
-  localStorage.setItem("mnemo.mission_id", state.missionId);
-  localStorage.setItem("mnemo.last_run_id", state.lastRunId);
-  localStorage.setItem("mnemo.last_event_id", state.lastEventId);
-  updateContextPanel();
-}
-
-function updateComposerState() {
-  send.disabled = state.busy;
-  reset.disabled = state.busy;
-  stop.hidden = !state.busy;
-  stop.disabled = !state.activeRunId || state.cancelRequested;
-  stop.textContent = state.cancelRequested ? "停止中" : "停止";
-  runBadge.textContent = state.cancelRequested ? "停止中" : state.busy ? "执行中" : "未执行";
-}
-
-function addMessage(role, text) {
-  hideEmptyState();
-  const node = document.createElement("div");
-  node.className = `message ${role}`;
-  if (role === "assistant") {
-    renderMarkdownInto(node, text || "");
+  resize();
+  if (window.ResizeObserver) {
+    new ResizeObserver(resize).observe(canvas);
   } else {
-    node.textContent = text;
+    window.addEventListener("resize", resize);
   }
-  timeline.appendChild(node);
-  scrollToEnd();
-  return node;
+
+  function frame(time) {
+    group.rotation.y = time * 0.00022;
+    core.rotation.z = time * 0.00035;
+    halo.rotation.z = -time * 0.00019;
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
 }
 
-function finalizeAssistantMarkdown(text) {
-  if (!state.assistantNode) {
-    state.assistantNode = addMessage("assistant", "");
+function limb(THREE, material, x, y, rotationZ) {
+  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.9, 24), material);
+  mesh.position.set(x, y, 0);
+  mesh.rotation.z = rotationZ;
+  return mesh;
+}
+
+function renderCanvasAvatar() {
+  const canvas = memoryAvatar3d;
+  const ctx = canvas.getContext("2d");
+  function frame(time) {
+    const width = canvas.width;
+    const height = canvas.height;
+    const centerX = width / 2;
+    const centerY = height / 2;
+    ctx.clearRect(0, 0, width, height);
+    const gradient = ctx.createRadialGradient(centerX, centerY, 40, centerX, centerY, width * 0.45);
+    gradient.addColorStop(0, "rgba(255,255,255,0.95)");
+    gradient.addColorStop(1, "rgba(33,166,160,0.06)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = "rgba(33,166,160,0.35)";
+    ctx.lineWidth = 3;
+    for (let index = 0; index < 3; index += 1) {
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(time * 0.00025 + index * 1.04);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, width * (0.22 + index * 0.06), height * 0.09, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.fillStyle = "#f0c7b8";
+    ctx.beginPath();
+    ctx.arc(centerX, centerY - 90, 44, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1f2d3a";
+    roundRect(ctx, centerX - 55, centerY - 42, 110, 154, 34);
+    ctx.fill();
+    ctx.fillStyle = "#21a6a0";
+    roundRect(ctx, centerX - 34, centerY + 2, 68, 18, 9);
+    ctx.fill();
+    requestAnimationFrame(frame);
   }
-  const finalText = text || state.assistantNode.dataset.rawText || state.assistantNode.textContent || "";
-  state.assistantNode.classList.remove("streaming");
-  renderMarkdownInto(state.assistantNode, finalText);
-  scrollToEnd();
+  requestAnimationFrame(frame);
+}
+
+function roundRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + width, y, x + width, y + height, radius);
+  ctx.arcTo(x + width, y + height, x, y + height, radius);
+  ctx.arcTo(x, y + height, x, y, radius);
+  ctx.arcTo(x, y, x + width, y, radius);
+  ctx.closePath();
+}
+
+async function loadSettings() {
+  settingsStatus.textContent = "加载中";
+  try {
+    const response = await fetch("/api/settings");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    state.settings = payload;
+    renderSettings(payload);
+    settingsStatus.textContent = "已加载";
+  } catch (error) {
+    settingsStatus.textContent = "加载失败";
+    settingsSummary.replaceChildren(textRow(error.message || String(error)));
+  }
+}
+
+function renderSettings(payload) {
+  const runtime = payload.runtime || payload.settings?.runtime || {};
+  settingProvider.value = runtime.provider || "local";
+  settingModel.value = runtime.model || "";
+  settingBaseUrl.value = runtime.base_url || "";
+  settingApiKeyEnv.value = runtime.api_key_env || "";
+  settingTimeout.value = runtime.timeout_s || 30;
+  settingRetryCount.value = runtime.retry_count || 0;
+  settingRetryBackoff.value = runtime.retry_backoff_s || 0;
+
+  const quiet = payload.quiet_hours || payload.settings?.quiet_hours || {};
+  quietEnabled.checked = Boolean(quiet.enabled);
+  quietStart.value = quiet.start || "22:00";
+  quietEnd.value = quiet.end || "07:00";
+  quietTimezone.value = quiet.timezone || "local";
+  compactTools.checked = state.compactTools;
+  streamMarkdown.checked = state.streamMarkdown;
+
+  const blocks = [];
+  blocks.push(settingsSummaryBlock("当前 Provider", `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`));
+  blocks.push(settingsSummaryBlock("权限待处理", String(payload.permissions?.open_decisions || 0)));
+  blocks.push(settingsSummaryBlock("记忆", `${payload.data_controls?.counts?.memory_pages || 0} 稳定 / ${payload.data_controls?.counts?.memory_candidates || 0} 候选`));
+  blocks.push(settingsSummaryBlock("工作区", connectedDetail(payload.connected_apps, "workspace")));
+  settingsSummary.replaceChildren(...blocks);
+}
+
+function settingsSummaryBlock(label, value) {
+  const block = document.createElement("div");
+  block.className = "summary-block";
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const span = document.createElement("span");
+  span.textContent = label;
+  block.append(strong, span);
+  return block;
+}
+
+function connectedDetail(apps, id) {
+  const item = (apps || []).find((app) => app.id === id);
+  return item?.detail || "未连接";
+}
+
+async function saveSettings(options = {}) {
+  settingsStatus.textContent = "保存中";
+  const payload = {
+    quiet_hours: {
+      enabled: Boolean(quietEnabled.checked),
+      start: quietStart.value || "22:00",
+      end: quietEnd.value || "07:00",
+      timezone: quietTimezone.value || "local",
+    },
+  };
+  if (!options.quietOnly) {
+    payload.runtime = {
+      provider: settingProvider.value,
+      model: settingModel.value.trim(),
+      base_url: settingBaseUrl.value.trim(),
+      api_key_env: settingApiKeyEnv.value.trim(),
+      timeout_s: Number(settingTimeout.value || 30),
+      retry_count: Number(settingRetryCount.value || 0),
+      retry_backoff_s: Number(settingRetryBackoff.value || 0),
+    };
+  }
+  try {
+    const response = await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const saved = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(saved.error || `HTTP ${response.status}`);
+    renderSettings(saved);
+    settingsStatus.textContent = "已保存";
+  } catch (error) {
+    settingsStatus.textContent = "保存失败";
+    settingsSummary.replaceChildren(textRow(error.message || String(error)));
+  }
 }
 
 function renderMarkdownInto(node, text) {
-  node.dataset.rawText = text || "";
-  node.replaceChildren();
   node.classList.add("markdown");
+  node.replaceChildren();
   const blocks = markdownBlocks(text || "");
+  if (!blocks.length) {
+    node.appendChild(document.createTextNode(""));
+    return;
+  }
   for (const block of blocks) {
     node.appendChild(block);
-  }
-  if (blocks.length === 0) {
-    node.appendChild(document.createTextNode(""));
   }
 }
 
@@ -1911,43 +1384,40 @@ function markdownBlocks(text) {
       index += 1;
       continue;
     }
-
-    if (line.trim().startsWith("```")) {
-      const codeLines = [];
+    if (line.startsWith("```")) {
+      const code = [];
       index += 1;
-      while (index < lines.length && !lines[index].trim().startsWith("```")) {
-        codeLines.push(lines[index]);
+      while (index < lines.length && !lines[index].startsWith("```")) {
+        code.push(lines[index]);
         index += 1;
       }
-      if (index < lines.length) index += 1;
+      index += 1;
       const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.textContent = codeLines.join("\n");
-      pre.appendChild(code);
+      const codeNode = document.createElement("code");
+      codeNode.textContent = code.join("\n");
+      pre.appendChild(codeNode);
       blocks.push(pre);
       continue;
     }
-
     if (isMarkdownTableStart(lines, index)) {
-      const tableLines = [];
-      while (index < lines.length && lines[index].trim() && isMarkdownTableLine(lines[index])) {
+      const tableLines = [lines[index], lines[index + 1]];
+      index += 2;
+      while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
         tableLines.push(lines[index]);
         index += 1;
       }
       blocks.push(markdownTable(tableLines));
       continue;
     }
-
-    const heading = /^(#{1,3})\s+(.+)$/.exec(line);
+    const heading = line.match(/^(#{1,4})\s+(.*)$/);
     if (heading) {
-      const level = String(heading[1]).length;
-      const node = document.createElement(`h${level + 2}`);
+      const level = Math.min(4, heading[1].length);
+      const node = document.createElement(`h${level}`);
       appendInlineMarkdown(node, heading[2]);
       blocks.push(node);
       index += 1;
       continue;
     }
-
     if (/^\s*[-*]\s+/.test(line)) {
       const list = document.createElement("ul");
       while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
@@ -1959,7 +1429,6 @@ function markdownBlocks(text) {
       blocks.push(list);
       continue;
     }
-
     if (/^\s*\d+\.\s+/.test(line)) {
       const list = document.createElement("ol");
       while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
@@ -1971,103 +1440,85 @@ function markdownBlocks(text) {
       blocks.push(list);
       continue;
     }
-
-    const paragraphLines = [];
+    const paragraph = [];
     while (
-      index < lines.length
-      && lines[index].trim()
-      && !lines[index].trim().startsWith("```")
-      && !isMarkdownTableStart(lines, index)
-      && !/^(#{1,3})\s+/.test(lines[index])
-      && !/^\s*[-*]\s+/.test(lines[index])
-      && !/^\s*\d+\.\s+/.test(lines[index])
+      index < lines.length &&
+      lines[index].trim() &&
+      !lines[index].startsWith("```") &&
+      !/^(#{1,4})\s+/.test(lines[index]) &&
+      !/^\s*[-*]\s+/.test(lines[index]) &&
+      !/^\s*\d+\.\s+/.test(lines[index]) &&
+      !isMarkdownTableStart(lines, index)
     ) {
-      paragraphLines.push(lines[index].trim());
+      paragraph.push(lines[index]);
       index += 1;
     }
-    const paragraph = document.createElement("p");
-    appendInlineMarkdown(paragraph, paragraphLines.join(" "));
-    blocks.push(paragraph);
+    const p = document.createElement("p");
+    appendInlineMarkdown(p, paragraph.join(" "));
+    blocks.push(p);
   }
   return blocks;
 }
 
 function isMarkdownTableStart(lines, index) {
-  if (index + 1 >= lines.length) return false;
-  const header = lines[index].trim();
-  const separator = lines[index + 1].trim();
-  return isMarkdownTableLine(header) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(separator);
-}
-
-function isMarkdownTableLine(line) {
-  return String(line || "").trim().includes("|");
+  return Boolean(
+    lines[index] &&
+      lines[index + 1] &&
+      lines[index].includes("|") &&
+      /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1]),
+  );
 }
 
 function markdownTable(lines) {
   const wrapper = document.createElement("div");
   wrapper.className = "markdown-table-wrap";
   const table = document.createElement("table");
-  const thead = document.createElement("thead");
-  const tbody = document.createElement("tbody");
-  const headerCells = splitMarkdownTableRow(lines[0]);
-  const alignments = splitMarkdownTableRow(lines[1]).map(tableAlignment);
-  const headRow = document.createElement("tr");
-  for (let cellIndex = 0; cellIndex < headerCells.length; cellIndex += 1) {
+  const [headLine, _separator, ...bodyLines] = lines;
+  const header = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const cell of splitTableRow(headLine)) {
     const th = document.createElement("th");
-    if (alignments[cellIndex]) th.style.textAlign = alignments[cellIndex];
-    appendInlineMarkdown(th, headerCells[cellIndex]);
-    headRow.appendChild(th);
+    appendInlineMarkdown(th, cell);
+    headerRow.appendChild(th);
   }
-  thead.appendChild(headRow);
-  for (const bodyLine of lines.slice(2)) {
+  header.appendChild(headerRow);
+  const body = document.createElement("tbody");
+  for (const line of bodyLines) {
     const row = document.createElement("tr");
-    const cells = splitMarkdownTableRow(bodyLine);
-    for (let cellIndex = 0; cellIndex < headerCells.length; cellIndex += 1) {
+    for (const cell of splitTableRow(line)) {
       const td = document.createElement("td");
-      if (alignments[cellIndex]) td.style.textAlign = alignments[cellIndex];
-      appendInlineMarkdown(td, cells[cellIndex] || "");
+      appendInlineMarkdown(td, cell);
       row.appendChild(td);
     }
-    tbody.appendChild(row);
+    body.appendChild(row);
   }
-  table.append(thead, tbody);
+  table.append(header, body);
   wrapper.appendChild(table);
   return wrapper;
 }
 
-function splitMarkdownTableRow(line) {
-  const trimmed = String(line || "").trim().replace(/^\|/, "").replace(/\|$/, "");
-  return trimmed.split("|").map((cell) => cell.trim());
-}
-
-function tableAlignment(cell) {
-  const text = String(cell || "").trim();
-  if (/^:-+:$/.test(text)) return "center";
-  if (/^-+:$/.test(text)) return "right";
-  return "";
+function splitTableRow(line) {
+  return String(line || "")
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
 }
 
 function appendInlineMarkdown(parent, text) {
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\(https?:\/\/[^)\s]+\))/g;
-  let cursor = 0;
-  for (const match of String(text || "").matchAll(pattern)) {
-    if (match.index > cursor) {
-      parent.appendChild(document.createTextNode(text.slice(cursor, match.index)));
-    }
+  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+  let last = 0;
+  const source = String(text || "");
+  for (const match of source.matchAll(pattern)) {
+    if (match.index > last) parent.appendChild(document.createTextNode(source.slice(last, match.index)));
     parent.appendChild(inlineMarkdownNode(match[0]));
-    cursor = match.index + match[0].length;
+    last = match.index + match[0].length;
   }
-  if (cursor < String(text || "").length) {
-    parent.appendChild(document.createTextNode(String(text).slice(cursor)));
-  }
+  if (last < source.length) parent.appendChild(document.createTextNode(source.slice(last)));
 }
 
 function inlineMarkdownNode(token) {
-  if (token.startsWith("`") && token.endsWith("`")) {
-    const code = document.createElement("code");
-    code.textContent = token.slice(1, -1);
-    return code;
-  }
   if (token.startsWith("**") && token.endsWith("**")) {
     const strong = document.createElement("strong");
     strong.textContent = token.slice(2, -2);
@@ -2078,62 +1529,132 @@ function inlineMarkdownNode(token) {
     em.textContent = token.slice(1, -1);
     return em;
   }
-  const link = /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/.exec(token);
+  if (token.startsWith("`") && token.endsWith("`")) {
+    const code = document.createElement("code");
+    code.textContent = token.slice(1, -1);
+    return code;
+  }
+  const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
   if (link) {
     const anchor = document.createElement("a");
     anchor.textContent = link[1];
-    anchor.href = link[2];
+    anchor.href = safeHref(link[2]);
     anchor.target = "_blank";
-    anchor.rel = "noopener noreferrer";
+    anchor.rel = "noreferrer";
     return anchor;
   }
   return document.createTextNode(token);
 }
 
-function addCard(kind, title, bodyText) {
-  hideEmptyState();
-  const node = document.createElement("div");
-  node.className = `event-card ${kind || ""}`.trim();
-  const titleRow = document.createElement("div");
-  titleRow.className = "event-title";
-  const titleNode = document.createElement("span");
-  titleNode.textContent = title;
-  const chip = document.createElement("span");
-  chip.className = "chip";
-  chip.textContent = kind || "updated";
-  titleRow.append(titleNode, chip);
-  const body = document.createElement("div");
-  body.className = "event-body";
-  body.textContent = bodyText || "";
-  node.append(titleRow, body);
-  timeline.appendChild(node);
-  scrollToEnd();
-  return node;
+function safeHref(value) {
+  try {
+    const url = new URL(value, window.location.href);
+    if (["http:", "https:", "mailto:"].includes(url.protocol)) return url.href;
+  } catch (_error) {
+    return "#";
+  }
+  return "#";
 }
 
-function setStatus(text) {
-  const labels = {
-    Ready: "空闲",
-    Working: "执行中",
-    Started: "已开始",
-    Cancelling: "停止中",
-    Loading: "加载中",
-    Error: "错误",
-  };
-  statusText.textContent = labels[text] || text;
+function actionButton(label, onClick, className = "action-button") {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = className;
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function setCardBusy(card, busy) {
+  for (const button of card.querySelectorAll("button")) {
+    button.disabled = busy;
+  }
+}
+
+function prefillMessage(text) {
+  switchView("chat");
+  input.value = text || "";
+  resizeInput();
+  input.focus();
+}
+
+function rememberUserIntent(message) {
+  state.lastUserIntent = compactText(message, 120);
+  localStorage.setItem("mnemo.last_user_intent", state.lastUserIntent);
+  updateContextPanel();
+}
+
+function updateContextPanel() {
+  contextUserPrompt.textContent = state.lastUserIntent || "暂无最近请求";
+  runBadge.textContent = state.activeRunId ? compactId(state.activeRunId) : state.lastRunId ? compactId(state.lastRunId) : "未执行";
+}
+
+function updateComposerState() {
+  send.disabled = state.busy;
+  reset.disabled = state.busy;
+  stop.hidden = !state.busy;
+  stop.disabled = !state.activeRunId || state.cancelRequested;
+  input.disabled = state.busy;
 }
 
 function resizeInput() {
   input.style.height = "auto";
-  input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
 }
 
-function scrollToEnd() {
+function setStatus(text) {
+  statusText.textContent = text;
+}
+
+function timelineScroll() {
   timeline.scrollTop = timeline.scrollHeight;
 }
 
-input.focus();
-updateComposerState();
-updateContextPanel();
-hydrateRightMemory();
-resumeLastRun();
+function loadingRow(text) {
+  const row = document.createElement("p");
+  row.className = "loading-row";
+  row.textContent = text;
+  return row;
+}
+
+function textRow(text) {
+  const row = document.createElement("p");
+  row.className = "text-row";
+  row.textContent = text;
+  return row;
+}
+
+function dimensionLabel(value) {
+  return DIMENSION_LABELS[value] || value || "语境";
+}
+
+function confidenceLabel(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const number = Number(value);
+  if (Number.isNaN(number)) return "";
+  return `${Math.round(number * 100)}%`;
+}
+
+function compactText(value, limit) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1)).trim()}…`;
+}
+
+function compactId(value) {
+  const text = String(value || "");
+  if (text.length <= 12) return text || "none";
+  return `${text.slice(0, 6)}…${text.slice(-4)}`;
+}
+
+function compactJson(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch (_error) {
+    return String(value);
+  }
+}
+
+function safeFileName(value) {
+  return String(value || "artifact").replace(/[^a-z0-9._-]+/gi, "-").replace(/^-+|-+$/g, "") || "artifact";
+}

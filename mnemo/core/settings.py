@@ -19,6 +19,15 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
         "end": "07:00",
         "timezone": "local",
     },
+    "runtime": {
+        "provider": "",
+        "model": "",
+        "base_url": "",
+        "api_key_env": "",
+        "timeout_s": 30.0,
+        "retry_count": 0,
+        "retry_backoff_s": 0.0,
+    },
 }
 
 
@@ -40,6 +49,11 @@ def load_user_settings(state_dir: str | Path) -> dict[str, Any]:
             settings["quiet_hours"] = _normalize_quiet_hours(raw["quiet_hours"])
         except ValueError:
             return settings
+    if isinstance(raw.get("runtime"), dict):
+        try:
+            settings["runtime"] = _normalize_runtime_settings({**settings["runtime"], **raw["runtime"]})
+        except ValueError:
+            return settings
     return settings
 
 
@@ -51,6 +65,12 @@ def save_user_settings(state_dir: str | Path, patch: dict[str, Any]) -> dict[str
         if not isinstance(patch["quiet_hours"], dict):
             raise ValueError("quiet_hours must be an object")
         settings["quiet_hours"] = _normalize_quiet_hours({**settings["quiet_hours"], **patch["quiet_hours"]})
+    if "runtime" in patch:
+        if not isinstance(patch["runtime"], dict):
+            raise ValueError("runtime must be an object")
+        settings["runtime"] = _normalize_runtime_settings({**settings["runtime"], **patch["runtime"]})
+    if "api_key" in patch:
+        raise ValueError("api_key cannot be stored in settings; use api_key_env")
 
     path = settings_path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,6 +92,61 @@ def _normalize_quiet_hours(value: dict[str, Any]) -> dict[str, Any]:
         "end": end,
         "timezone": timezone,
     }
+
+
+def _normalize_runtime_settings(value: dict[str, Any]) -> dict[str, Any]:
+    if "api_key" in value:
+        raise ValueError("runtime api_key cannot be stored; use api_key_env")
+    return {
+        "provider": _normalize_text(value.get("provider"), "runtime provider", limit=80),
+        "model": _normalize_text(value.get("model"), "runtime model", limit=160),
+        "base_url": _normalize_text(value.get("base_url"), "runtime base_url", limit=500),
+        "api_key_env": _normalize_env_name(value.get("api_key_env")),
+        "timeout_s": _normalize_float(value.get("timeout_s"), "runtime timeout_s", minimum=1.0, maximum=600.0),
+        "retry_count": _normalize_int(value.get("retry_count"), "runtime retry_count", minimum=0, maximum=10),
+        "retry_backoff_s": _normalize_float(
+            value.get("retry_backoff_s"),
+            "runtime retry_backoff_s",
+            minimum=0.0,
+            maximum=60.0,
+        ),
+    }
+
+
+def _normalize_text(value: Any, name: str, *, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) > limit:
+        raise ValueError(f"{name} is too long")
+    return text
+
+
+def _normalize_env_name(value: Any) -> str:
+    text = _normalize_text(value, "runtime api_key_env", limit=120)
+    if not text:
+        return ""
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", text):
+        raise ValueError("runtime api_key_env must be an environment variable name")
+    return text
+
+
+def _normalize_float(value: Any, name: str, *, minimum: float, maximum: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a number") from exc
+    if number < minimum or number > maximum:
+        raise ValueError(f"{name} must be between {minimum:g} and {maximum:g}")
+    return number
+
+
+def _normalize_int(value: Any, name: str, *, minimum: int, maximum: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if number < minimum or number > maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum}")
+    return number
 
 
 def _normalize_time(value: Any, name: str) -> str:

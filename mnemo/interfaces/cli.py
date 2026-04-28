@@ -1865,6 +1865,7 @@ def _cmd_web(args: argparse.Namespace) -> int:
             base_url=config.base_url,
             model=config.model,
             api_key=config.api_key,
+            api_key_env=config.api_key_env,
             timeout_s=config.timeout_s,
             retry_count=config.retry_count,
             retry_backoff_s=config.retry_backoff_s,

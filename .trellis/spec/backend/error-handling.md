@@ -62,7 +62,7 @@
 - Web artifact endpoint errors are JSON: missing `artifact_id` returns 400, unknown artifact id returns 404; related artifact metadata must omit bodies.
 - Web Inbox resolve endpoint errors are JSON: missing fields or invalid resolution return 400, unknown item id returns 404.
 - Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404; valid actions are `accept`, `this_time`, `reject`, and `undo`.
-- Web settings endpoint errors are JSON: invalid quiet-hours payloads return 400 and settings summaries do not expose provider secrets.
+- Web settings endpoint errors are JSON: invalid quiet-hours or runtime-provider payloads return 400, raw API key storage is rejected, and settings summaries do not expose provider secrets.
 - HTTP core API errors are JSON: invalid JSON or bad fields return 400, unknown methods return 404, and expected `MnemoError` service failures map to 400 or 404 without traceback.
 - HTTP `schedule-dream` validates `next_run_at` as a string, number, or null and returns compact JSON errors for invalid payload shapes.
 - HTTP `schedule-watch` and `schedule-cron` validate required fields and `next_run_at` as a string, number, or null, returning compact JSON errors for invalid payload shapes.
@@ -123,7 +123,7 @@
 | Web artifact endpoint | Valid artifact returns body plus compact related metadata; missing/unknown ids return JSON errors | `tests/test_web.py` |
 | Web Inbox resolve endpoint | Valid resolve returns item payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web learning memory endpoint | Valid action returns compact candidate payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
-| Web settings endpoint | Valid quiet-hours update returns settings payload; invalid time payload returns JSON error; API keys are not exposed | `tests/test_web.py` |
+| Web settings endpoint | Valid runtime and quiet-hours updates return settings payloads; invalid time/runtime payloads return JSON errors; API keys are not exposed | `tests/test_web.py` |
 | HTTP core API errors | Invalid JSON, missing required fields, and unknown methods return compact JSON errors | `tests/test_web.py` |
 | HTTP Dream schedule errors | Invalid `next_run_at` returns compact JSON 400 without traceback | `tests/test_web.py` |
 | HTTP Watch/Cron schedule errors | Missing Watch target or invalid Cron `next_run_at` returns compact JSON 400 without traceback | `tests/test_web.py` |
@@ -176,7 +176,7 @@
 - Web artifact endpoint test for success, compact related metadata, and JSON error responses.
 - Web Inbox resolve endpoint test for success and JSON error responses.
 - Web learning memory endpoint test for success and JSON error responses.
-- Web settings endpoint test for summary, quiet-hours update, invalid time errors, and secret redaction.
+- Web settings endpoint test for summary, runtime update, quiet-hours update, invalid payload errors, raw-secret rejection, and secret redaction.
 - CLI conversation/mission show tests for missing ids without tracebacks.
 - CLI run trace/show/cancel tests for missing run ids without tracebacks.
 - CLI harness eval/variant/release tests for unknown suites or variants without tracebacks.

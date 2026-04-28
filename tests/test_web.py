@@ -655,7 +655,7 @@ print(json.dumps({
                 "User prefers concise report summaries.",
                 confidence=0.88,
             )
-            store.add_memory_candidate(run_id, "User may prefer settings drawers", dimension="preferences")
+            store.add_memory_candidate(run_id, "User may prefer quick provider switching", dimension="preferences")
             store.upsert_artifact(mission_id, run_id, "Settings artifact", "Hidden artifact body")
             store.add_inbox_item(category="decision", title="Approve settings action?", priority=1, source_run_id=run_id)
 
@@ -668,18 +668,38 @@ print(json.dumps({
                     provider="openai-compatible",
                     model="settings-model",
                     api_key="secret-settings-key",
+                    api_key_env="MNEMO_SETTINGS_KEY",
+                    timeout_s=90,
+                    retry_count=3,
+                    retry_backoff_s=1.25,
                 )
             ) as server:
                 status, _, body = server.request("GET", "/api/settings")
                 update_status, _, update_body = server.request(
                     "POST",
                     "/api/settings",
-                    {"quiet_hours": {"enabled": True, "start": "21:30", "end": "07:15"}},
+                    {
+                        "quiet_hours": {"enabled": True, "start": "21:30", "end": "07:15"},
+                        "runtime": {
+                            "provider": "anthropic",
+                            "model": "claude-settings",
+                            "base_url": "https://anthropic.test/v1",
+                            "api_key_env": "MNEMO_TEST_KEY",
+                            "timeout_s": 45,
+                            "retry_count": 2,
+                            "retry_backoff_s": 0.5,
+                        },
+                    },
                 )
                 invalid_status, _, invalid_body = server.request(
                     "POST",
                     "/api/settings",
                     {"quiet_hours": {"enabled": True, "start": "99:00", "end": "07:15"}},
+                )
+                secret_status, _, secret_body = server.request(
+                    "POST",
+                    "/api/settings",
+                    {"runtime": {"api_key": "sk-should-not-save"}},
                 )
 
             payload = json.loads(body)
@@ -688,6 +708,12 @@ print(json.dumps({
             self.assertNotIn("secret-settings-key", body)
             self.assertNotIn("Hidden artifact body", body)
             self.assertEqual(payload["connected_apps"][0]["detail"], "openai-compatible · settings-model")
+            self.assertEqual(payload["runtime"]["provider"], "openai-compatible")
+            self.assertEqual(payload["runtime"]["model"], "settings-model")
+            self.assertEqual(payload["runtime"]["api_key_env"], "MNEMO_SETTINGS_KEY")
+            self.assertEqual(payload["runtime"]["timeout_s"], 90.0)
+            self.assertEqual(payload["runtime"]["retry_count"], 3)
+            self.assertEqual(payload["runtime"]["retry_backoff_s"], 1.25)
             self.assertEqual(payload["permissions"]["open_decisions"], 1)
             self.assertEqual(payload["learned_preferences"]["count"], 1)
             self.assertEqual(payload["data_controls"]["counts"]["artifacts"], 1)
@@ -698,9 +724,18 @@ print(json.dumps({
             self.assertTrue(updated["quiet_hours"]["enabled"])
             self.assertEqual(updated["quiet_hours"]["start"], "21:30")
             self.assertEqual(updated["quiet_hours"]["end"], "07:15")
+            self.assertEqual(updated["runtime"]["provider"], "anthropic")
+            self.assertEqual(updated["runtime"]["model"], "claude-settings")
+            self.assertEqual(updated["runtime"]["base_url"], "https://anthropic.test/v1")
+            self.assertEqual(updated["runtime"]["api_key_env"], "MNEMO_TEST_KEY")
+            self.assertEqual(updated["runtime"]["timeout_s"], 45.0)
+            self.assertEqual(updated["runtime"]["retry_count"], 2)
+            self.assertEqual(updated["runtime"]["retry_backoff_s"], 0.5)
 
             self.assertEqual(invalid_status, 400)
             self.assertIn("quiet_hours start", json.loads(invalid_body)["error"])
+            self.assertEqual(secret_status, 400)
+            self.assertIn("api_key cannot be stored", json.loads(secret_body)["error"])
 
     def test_web_defaults_workspace_to_state_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -825,6 +860,8 @@ print(json.dumps({
             self.assertEqual(page_payload["item"]["id"], preferences_page_id)
             self.assertEqual(page_payload["item"]["dimension"], "preferences")
             self.assertTrue(page_payload["evidence"])
+            self.assertIn("# reports", page_payload["markdown"])
+            self.assertIn("## Evidence", page_payload["markdown"])
             self.assertNotIn("secret-ontology-key", page_body)
             self.assertEqual(invalid_status, 400)
             self.assertIn("unknown memory dimension", json.loads(invalid_body)["error"])
@@ -885,11 +922,9 @@ print(json.dumps({
                 self.assertIn("toggleArtifact", body)
                 self.assertIn("loadArtifact", body)
                 self.assertIn("exportArtifact", body)
-                self.assertIn("toggleArtifactRelated", body)
+                self.assertIn("renderArtifactBody", body)
                 self.assertIn("Continue editing artifact", body)
-                self.assertIn("Send artifact", body)
-                self.assertIn("Apply artifact", body)
-                self.assertIn("Revert changes from artifact", body)
+                self.assertIn("Compare artifact", body)
                 self.assertIn("artifact-body", body)
                 self.assertIn("artifact-related", css)
                 self.assertIn("artifact-related-row", css)
@@ -923,53 +958,44 @@ print(json.dumps({
                 self.assertEqual(status, 200)
                 self.assertEqual(script_status, 200)
                 self.assertEqual(css_status, 200)
-                self.assertIn('class="app-shell"', html)
-                self.assertIn('class="rail"', html)
-                self.assertIn('class="rail-brand"', html)
+                self.assertIn('class="mnemo-shell"', html)
+                self.assertIn('class="app-nav"', html)
+                self.assertIn('class="brand-button"', html)
                 self.assertIn("一个聊天框，完成所有事", html)
                 self.assertIn('id="emptyState"', html)
                 self.assertIn("data-prefill", html)
-                self.assertIn("topbar-icon", html)
                 self.assertIn('id="memoryOpen"', html)
-                self.assertIn('id="memoryPanelOpen"', html)
                 self.assertIn("记忆罗盘", html)
-                self.assertIn('id="activityPanel"', html)
                 self.assertIn('id="contextUserPrompt"', html)
-                self.assertIn('id="memoryPreviewList"', html)
-                self.assertIn("context-technical", html)
-                self.assertIn('id="contextConversation"', html)
-                self.assertIn('id="contextMission"', html)
-                self.assertIn('id="contextRun"', html)
-                self.assertIn('class="composer-tools"', html)
+                self.assertIn('id="memoryAvatar3d"', html)
+                self.assertIn('id="memoryCompass"', html)
+                self.assertIn('id="memoryMarkdownModal"', html)
+                self.assertIn('id="settingsProviderForm"', html)
                 self.assertIn('id="attachButton"', html)
-                self.assertIn('id="voiceButton"', html)
-                self.assertIn('id="mentionButton"', html)
+                self.assertIn('id="compactTools"', html)
                 self.assertIn("renderActivity", script)
-                self.assertIn("pushActivity", script)
-                self.assertIn("openMemoryDrawer", script)
-                self.assertIn("hydrateRightMemory", script)
-                self.assertIn("renderMemoryPreview", script)
-                self.assertIn("emptySuggestions", script)
-                self.assertIn("hideEmptyState", script)
-                self.assertIn("showEmptyState", script)
-                self.assertIn("memoryOverview", script)
-                self.assertIn("memoryCompassView", script)
+                self.assertIn("switchView", script)
+                self.assertIn("loadMemoryCompass", script)
+                self.assertIn("renderMemoryCompass", script)
+                self.assertIn("initMemoryAvatar", script)
+                self.assertIn("renderThreeAvatar", script)
+                self.assertIn("renderCanvasAvatar", script)
+                self.assertIn("openMemoryMarkdown", script)
+                self.assertIn("renderSettings", script)
+                self.assertIn("saveSettings", script)
                 self.assertIn("dimensionLabel", script)
                 self.assertIn("actionState", script)
-                self.assertIn("activity-collapsed", script)
                 self.assertIn("runBadge.textContent", script)
-                self.assertIn("activity-panel", css)
+                self.assertIn("mnemo-shell", css)
+                self.assertIn("app-nav", css)
                 self.assertIn("empty-state", css)
-                self.assertIn("context-panel", css)
-                self.assertIn("rail-brand", css)
+                self.assertIn("chat-view", css)
                 self.assertIn("status-pill", css)
-                self.assertIn("composer-tools", css)
-                self.assertIn("app-shell", css)
-                self.assertIn("mini-link", css)
-                self.assertIn("action-started", css)
-                self.assertIn("memory-search", css)
-                self.assertIn("memory-preview-item", css)
-                self.assertIn("context-technical", css)
+                self.assertIn("tool-call-card", css)
+                self.assertIn("memory-avatar-canvas", css)
+                self.assertIn("memory-dimension-card", css)
+                self.assertIn("settings-card", css)
+                self.assertIn("markdown-modal", css)
 
     def test_web_client_asset_renders_markdown_and_context_history(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1014,10 +1040,10 @@ print(json.dumps({
                 self.assertEqual(status, 200)
                 self.assertIn("activityRows: new Map()", script)
                 self.assertIn("activityActionId", script)
-                self.assertIn("upsertActivity", script)
+                self.assertIn("createToolCallCard", script)
                 self.assertIn("state.activityRows.get(key)", script)
                 self.assertIn("state.activityRows.set(key, row)", script)
-                self.assertIn("activityList.prepend(row.node)", script)
+                self.assertIn("timeline.appendChild(row.node)", script)
                 self.assertIn("state.activityRows.clear()", script)
                 self.assertIn("isInternalLearningEvent", script)
                 self.assertIn('event.data?.tone === "learning"', script)
@@ -1073,14 +1099,16 @@ print(json.dumps({
                 self.assertIn("renderRecall", script)
                 self.assertIn("recall-actions", script)
                 self.assertIn("prefillMessage", script)
-                self.assertIn("toggleArtifact(item.artifact_id", script)
-                self.assertIn("decisionButton(\"同意\"", script)
-                self.assertIn("event-card.recall", css)
+                self.assertIn("Open artifact", script)
+                self.assertIn("Resolve decision", script)
+                self.assertIn("actionButton(\"处理\"", script)
+                self.assertIn("recall-list", css)
+                self.assertIn("recall-item", css)
                 self.assertIn("recall-button", css)
                 self.assertIn("compactRecallTitle", script)
-                self.assertIn("summaryText !== titleText", script)
+                self.assertIn("summaryText !== title.textContent", script)
 
-    def test_web_client_asset_renders_settings_drawer(self) -> None:
+    def test_web_client_asset_renders_settings_and_memory_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
                 status, _, html = server.request("GET", "/")
@@ -1091,37 +1119,40 @@ print(json.dumps({
                 self.assertEqual(script_status, 200)
                 self.assertEqual(css_status, 200)
                 self.assertIn('id="settingsOpen"', html)
-                self.assertIn('id="settingsOverlay"', html)
+                self.assertIn('id="settingsProviderForm"', html)
+                self.assertIn('id="settingProvider"', html)
+                self.assertIn('id="settingModel"', html)
+                self.assertIn('id="settingBaseUrl"', html)
+                self.assertIn('id="settingApiKeyEnv"', html)
                 self.assertIn("记忆罗盘", html)
+                self.assertIn('id="memoryAvatar3d"', html)
+                self.assertIn('id="memoryMarkdownModal"', html)
                 self.assertIn("/api/settings", script)
                 self.assertIn("renderSettings", script)
-                self.assertIn("settingsQuietHoursSection", script)
-                self.assertIn("settingsMemoryOntologySection", script)
+                self.assertIn("saveSettings", script)
+                self.assertIn("payload.runtime", script)
+                self.assertIn("quiet_hours", script)
                 self.assertIn("/api/memory/ontology", script)
                 self.assertIn("/api/memory/dimension", script)
                 self.assertIn("/api/memory/item", script)
-                self.assertIn("memoryOntologyView", script)
-                self.assertIn("openMemoryDrawer", script)
-                self.assertIn("renderMemoryDrawer", script)
-                self.assertIn("memoryCompassView", script)
-                self.assertIn("memoryCompassDimensionRow", script)
-                self.assertIn("renderMemoryCompassDetail", script)
+                self.assertIn("loadMemoryCompass", script)
+                self.assertIn("renderMemoryCompass", script)
+                self.assertIn("memoryDimensionCard", script)
                 self.assertIn("loadMemoryDimension", script)
                 self.assertIn("renderMemoryDimensionDetail", script)
                 self.assertIn("loadMemoryItem", script)
                 self.assertIn("renderMemoryItemDetail", script)
-                self.assertIn("记忆罗盘", script)
-                self.assertIn("settingsWorkspaceSection", script)
-                self.assertIn("settingsAppearanceSection", script)
-                self.assertIn("prefillMessage(item.prompt", script)
-                self.assertIn("settings-drawer", css)
-                self.assertIn("settings-action", css)
-                self.assertIn("memory-dimensions", css)
-                self.assertIn("memory-compass-grid", css)
+                self.assertIn("openMemoryMarkdown", script)
+                self.assertIn("memoryPayloadMarkdown", script)
+                self.assertIn("Memory Markdown", html)
+                self.assertIn("settings-layout", css)
+                self.assertIn("settings-card", css)
+                self.assertIn("memory-compass", css)
+                self.assertIn("memory-dimension-card", css)
                 self.assertIn("memory-detail-card", css)
                 self.assertIn("memory-item-panel", css)
                 self.assertIn("memory-detail-evidence", css)
-                self.assertIn('settings-drawer[data-mode="memory"]', css)
+                self.assertIn("memory-avatar-canvas", css)
 
     def test_web_client_asset_supports_enter_pending_and_tool_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1147,9 +1178,10 @@ print(json.dumps({
                 self.assertIn('source?.kind === "tool_result"', script)
                 self.assertIn("message.pending", css)
                 self.assertIn("typing-dots", css)
+                self.assertIn("tool-call-card", css)
                 self.assertIn("tool-detail", css)
-                self.assertIn(".event-card.action .tool-detail pre", css)
-                self.assertIn(".event-card.action .tool-details", css)
+                self.assertIn(".tool-detail pre", css)
+                self.assertIn(".tool-details", css)
 
 
 class RunningServer:

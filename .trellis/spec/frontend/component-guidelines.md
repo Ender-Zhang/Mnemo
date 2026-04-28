@@ -3,16 +3,16 @@
 ## Scenario: DOM Components Without A Framework
 
 ### 1. Scope / Trigger
-- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, learning chips, or settings drawer controls.
-- Goal: keep the UI understandable as a single chat surface while supporting rich action visibility.
+- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, learning chips, memory compass, or settings page controls.
+- Goal: keep the UI understandable as a single product shell where chat remains the execution surface and memory/settings remain lightweight inspection/configuration surfaces.
 
 ### 2. Component Patterns
 - Components are DOM builder/render functions in `mnemo/interfaces/web_assets/app.js`.
 - Reusable visual units are CSS classes in `app.css`: `.message`, `.event-card`, `.event-title`, `.event-body`, `.composer`.
-- The primary screen is always the chat shell: top status, timeline, and one composer.
+- The primary screen is always the chat view: top status, timeline, and one composer.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
 - Busy-state commands such as stop/cancel belong inside the existing composer.
-- Low-frequency settings live in a drawer launched from the chat top bar; they must not become a dashboard-first flow.
+- Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
 
 ### 3. Contracts
 - Render functions must tolerate missing optional fields with concise fallbacks.
@@ -26,13 +26,13 @@
 - Recall item titles and summaries should not repeat the same text.
 - Learning chips should stay inline in the timeline and resolve or undo memory candidates through `/api/learning/memory`.
 - Learning chips with `requires_confirmation=true` should use explicit confirmation wording before durable memory promotion.
-- The settings drawer renders compact connected-app, permission, quiet-hours, preference, and data-control summaries from `/api/settings`.
-- Ten-dimensional memory inspection lives in the settings drawer through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence for a selected item.
-- Settings drawer actions should either save narrow settings or prefill the single composer for normal user intent.
+- The settings view renders compact connected-app, permission, quiet-hours, runtime provider/model, preference, and data-control summaries from `/api/settings`.
+- Ten-dimensional memory inspection lives in the memory compass view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
+- Settings actions should save narrow settings only; ordinary user tasks still route through the single composer.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
 - Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.
 - Replayed `turn.started` events should render the historical user prompt when the client is not actively streaming a new turn.
-- Right-side activity rows should upsert by stable event/action keys so queued, started, and completed action events update one row.
+- Tool activity rows should upsert by stable event/action keys so queued, started, and completed action events update one compact card.
 - Internal learning housekeeping, including `learning_discard` action lifecycle events and learning-tone status updates, should not appear as visible Activity rows.
 - Buttons must have clear text or `title` attributes when their action is not obvious.
 - Text containers must use wrapping constraints so long ids, URLs, and tool names do not overflow.
@@ -48,8 +48,8 @@
 | Tool approval card | Denied external/admin tool calls project through the existing decision card path and accepted approvals show compact tool results | `tests/test_web.py`, `tests/test_runtime.py` |
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
 | Learning chip | Shows compact learning text, high-risk confirmation wording, accept/this-turn/reject, and post-resolution undo actions | `tests/test_web.py`, `tests/test_runtime.py` |
-| Settings drawer | Shows compact low-frequency settings, saves quiet hours, and reuses composer prefill actions | `tests/test_web.py` |
-| Memory ontology drawer | Loads compact L1 coverage, then L2/L3 memory detail on demand without raw secrets | `tests/test_web.py` |
+| Settings page | Shows compact low-frequency settings, saves quiet hours and runtime provider preferences without raw secrets | `tests/test_web.py` |
+| Memory compass page | Loads compact L1 coverage, then L2/L3 memory detail and markdown on demand without raw secrets | `tests/test_web.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
 | Activity upsert | Merges action lifecycle events into a stable row | Asset behavior in `tests/test_web.py` |
 | Internal learning housekeeping | Suppresses `learning_discard` and learning-tone status from visible activity | Asset behavior in `tests/test_web.py` |
@@ -68,8 +68,8 @@
 - Good: render Recall results as inline item rows with buttons that open artifacts, resolve decisions, or prefill the composer.
 - Good: resolve or undo a Learning chip with small inline buttons rather than opening a memory dashboard.
 - Good: label review-gated Learning chip acceptance as an explicit confirmation instead of casual preference learning.
-- Good: let data-control actions prefill the single composer instead of adding a separate data-management screen.
-- Good: inspect ten-dimensional memory from settings as a compact, read-only view.
+- Good: keep data-control actions compact and route task-like follow-ups back to the single composer.
+- Good: inspect ten-dimensional memory from the memory compass as a compact, read-only view.
 - Good: keep evidence chains behind explicit item selection.
 - Good: use `document.createElement`, `textContent`, and `replaceChildren` for Markdown blocks and inline marks.
 - Good: store streaming Markdown source in `dataset.rawText` before final formatting.
@@ -87,8 +87,8 @@
 - For recall cards, assert the asset handles `recall.card` and does not require a separate dashboard route.
 - For recall cards, assert repeated title/summary text is compacted.
 - For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses confirmation wording for review-gated items.
-- For settings, assert the asset calls `/api/settings`, renders the drawer, and reuses composer prefill for user actions.
-- For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and settings drawer assets expose progressive L1/L2/L3 disclosure.
+- For settings, assert the asset calls `/api/settings`, renders the settings view, saves provider/runtime and quiet-hours settings, and never exposes raw provider secrets.
+- For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory compass assets expose progressive L1/L2/L3 disclosure and markdown modal viewing.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
-- For activity rows, assert `activityRows`, `activityActionId`, and `upsertActivity` are present.
+- For activity rows, assert `activityRows`, `activityActionId`, and compact tool-card upsert behavior are present.
 - For internal learning housekeeping, assert `isInternalLearningEvent`, `tone === "learning"`, and `learning_discard` filters are present.

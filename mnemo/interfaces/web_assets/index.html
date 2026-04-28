@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,131 +7,226 @@
     <link rel="stylesheet" href="/app.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <nav class="rail" aria-label="Mnemo">
-        <div class="rail-brand">
-          <div class="rail-mark" aria-label="Mnemo">M</div>
-          <span>Mnemo</span>
+    <main class="mnemo-shell">
+      <nav class="app-nav" aria-label="Mnemo">
+        <button class="brand-button" type="button" data-view="chat" aria-label="Mnemo 首页">
+          <span class="brand-mark">M</span>
+          <span class="brand-copy">
+            <strong>Mnemo</strong>
+            <small>Personal agent</small>
+          </span>
+        </button>
+
+        <div class="nav-group" role="tablist" aria-label="主要页面">
+          <button id="navChat" class="nav-item active" type="button" data-view="chat">
+            <span class="nav-icon nav-chat" aria-hidden="true"></span>
+            <span>对话</span>
+          </button>
+          <button id="memoryOpen" class="nav-item" type="button" data-view="memory">
+            <span class="nav-icon nav-memory" aria-hidden="true"></span>
+            <span>记忆罗盘</span>
+          </button>
+          <button id="settingsOpen" class="nav-item" type="button" data-view="settings">
+            <span class="nav-icon nav-settings" aria-hidden="true"></span>
+            <span>设置</span>
+          </button>
         </div>
-        <button class="rail-button active" type="button" title="对话" aria-label="对话">
-          <span class="rail-icon rail-chat" aria-hidden="true"></span><span>对话</span>
-        </button>
-        <button id="memoryOpen" class="rail-button" type="button" title="记忆罗盘" aria-label="记忆罗盘">
-          <span class="rail-icon rail-memory" aria-hidden="true"></span><span>记忆</span>
-        </button>
-        <button id="activityToggle" class="rail-button" type="button" title="实时活动" aria-label="实时活动">
-          <span class="rail-icon rail-activity" aria-hidden="true"></span><span>活动</span>
-        </button>
-        <button id="settingsOpen" class="rail-button" type="button" title="设置" aria-label="设置">
-          <span class="rail-icon rail-settings" aria-hidden="true"></span><span>设置</span>
-        </button>
-        <div class="rail-spacer"></div>
-        <div class="rail-profile" aria-label="当前用户">
-          <span class="rail-avatar">你</span>
+
+        <div class="nav-bottom">
+          <span id="status" class="status-pill">空闲</span>
+          <button id="reset" class="quiet-button" type="button">新对话</button>
         </div>
       </nav>
 
-      <section class="chat-shell">
-        <header class="topbar">
-          <div class="window-dots" aria-hidden="true">
-            <span></span><span></span><span></span>
-          </div>
-          <div class="topbar-copy">
-            <h1>Mnemo</h1>
-            <p>一个聊天框，完成所有事</p>
-          </div>
-          <div class="topbar-actions">
-            <span id="status" class="status-pill">空闲</span>
-            <span id="runBadge" class="run-badge">未执行</span>
-            <button id="reset" class="ghost-button" type="button" title="新对话">新对话</button>
-            <button class="topbar-icon search-icon" type="button" title="搜索" aria-label="搜索"></button>
-            <button class="topbar-icon star-icon" type="button" title="收藏" aria-label="收藏"></button>
-            <span class="topbar-avatar" aria-label="当前用户">你</span>
-          </div>
-        </header>
-
-        <section id="timeline" class="timeline" aria-live="polite">
-          <section id="emptyState" class="empty-state" aria-label="开始对话">
-            <div class="empty-spark" aria-hidden="true">✦</div>
-            <h2>今天想完成什么？</h2>
-            <p>把想法、文件、计划或问题交给 Mnemo，它会在执行中记住你的偏好。</p>
-            <div class="empty-suggestions" aria-label="快捷任务">
-              <button type="button" data-prefill="帮我梳理一下今天最重要的三件事。">梳理今日任务</button>
-              <button type="button" data-prefill="帮我把这段内容整理成清晰的行动计划：">整理行动计划</button>
-              <button type="button" data-prefill="回顾最近的工作进展，并给出下一步建议。">回顾工作进展</button>
+      <section class="workspace">
+        <section id="chatView" class="view chat-view active" aria-label="对话">
+          <header class="chat-header">
+            <div class="chat-title">
+              <p class="eyebrow">Mnemo Agent</p>
+              <h1>一个聊天框，完成所有事</h1>
             </div>
-          </section>
+            <div class="chat-context">
+              <span id="runBadge" class="context-chip">未执行</span>
+              <span id="contextUserPrompt" class="context-chip muted">暂无最近请求</span>
+            </div>
+          </header>
+
+          <div id="timeline" class="timeline" aria-live="polite">
+            <section id="emptyState" class="empty-state" aria-label="开始对话">
+              <div class="orbital-mark" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <h2>今天想让 Mnemo 做什么？</h2>
+              <p>直接派活。Mnemo 会调用工具、展示动作，并在合适的时候沉淀你的长期偏好。</p>
+              <div class="suggestion-row" aria-label="快捷任务">
+                <button type="button" data-prefill="帮我梳理今天最重要的三件事，并给出执行顺序。">梳理今日任务</button>
+                <button type="button" data-prefill="帮我把这段内容整理成可执行计划：">整理行动计划</button>
+                <button type="button" data-prefill="回顾最近关于 Mnemo 的进展，告诉我下一步最该做什么。">回顾项目进展</button>
+              </div>
+            </section>
+          </div>
+
+          <form id="composer" class="composer">
+            <button id="attachButton" class="composer-icon" type="button" title="添加文件" aria-label="添加文件">+</button>
+            <textarea id="message" name="message" rows="1" placeholder="给 Mnemo 派活。Enter 发送，Shift+Enter 换行"></textarea>
+            <button id="stop" class="stop-button" type="button" hidden>停止</button>
+            <button id="send" class="send-button" type="submit" title="发送" aria-label="发送">
+              <span aria-hidden="true"></span>
+            </button>
+          </form>
         </section>
 
-        <form id="composer" class="composer">
-          <div class="composer-tools" aria-label="Composer tools">
-            <button id="attachButton" class="icon-button" type="button" title="添加文件" aria-label="添加文件">＋</button>
-            <button id="voiceButton" class="icon-button" type="button" title="语音输入" aria-label="语音输入">🎙</button>
-            <button id="mentionButton" class="icon-button" type="button" title="提及应用" aria-label="提及应用">@</button>
+        <section id="memoryView" class="view memory-view" aria-label="记忆罗盘">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Memory Compass</p>
+              <h1>记忆罗盘</h1>
+              <p>十维记忆以渐进式披露呈现：先看全局，再进入维度，最后查看单条记忆的 Markdown 详情。</p>
+            </div>
+            <button id="memoryRefresh" class="quiet-button" type="button">刷新</button>
+          </header>
+
+          <div class="memory-layout">
+            <section class="avatar-panel">
+              <canvas id="memoryAvatar3d" class="memory-avatar-canvas" width="720" height="720" aria-label="三维记忆人物"></canvas>
+              <div id="memoryStats" class="memory-stats"></div>
+            </section>
+
+            <section class="memory-panel">
+              <div class="panel-heading">
+                <div>
+                  <h2>十维星盘</h2>
+                  <p>点击维度查看 L2，再点记忆卡片查看 L3。</p>
+                </div>
+                <span id="memoryCountBadge" class="context-chip">未加载</span>
+              </div>
+              <div id="memoryCompass" class="memory-compass"></div>
+              <div id="memoryLayerDetail" class="memory-layer-detail"></div>
+            </section>
           </div>
-          <textarea id="message" name="message" rows="1" placeholder="发送消息，@ 让 Mnemo 帮你处理任务..."></textarea>
-          <div class="composer-actions">
-            <button id="stop" class="stop" type="button" title="停止当前任务" hidden>停止</button>
-            <button id="send" class="send-button" type="submit" title="发送">➤</button>
+        </section>
+
+        <section id="settingsView" class="view settings-view" aria-label="设置">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Settings</p>
+              <h1>设置</h1>
+              <p>配置模型提供商、运行参数、免打扰时间和本地体验偏好。</p>
+            </div>
+            <span id="settingsStatus" class="status-pill">未加载</span>
+          </header>
+
+          <div class="settings-layout">
+            <form id="settingsProviderForm" class="settings-card">
+              <div class="settings-card-header">
+                <h2>模型与 Provider</h2>
+                <p>不在浏览器保存 API Key。需要密钥时只保存环境变量名。</p>
+              </div>
+              <label>
+                <span>Provider</span>
+                <select id="settingProvider" name="provider">
+                  <option value="local">local</option>
+                  <option value="openai-compatible">openai-compatible</option>
+                  <option value="anthropic">anthropic</option>
+                </select>
+              </label>
+              <label>
+                <span>模型</span>
+                <input id="settingModel" name="model" type="text" placeholder="Qwen3.6-Plus / gpt-5.4" />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input id="settingBaseUrl" name="base_url" type="url" placeholder="https://example.com/v1" />
+              </label>
+              <label>
+                <span>API Key 环境变量</span>
+                <input id="settingApiKeyEnv" name="api_key_env" type="text" placeholder="MNEMO_API_KEY" />
+              </label>
+              <div class="settings-grid">
+                <label>
+                  <span>超时秒数</span>
+                  <input id="settingTimeout" name="timeout_s" type="number" min="1" max="600" step="1" />
+                </label>
+                <label>
+                  <span>重试次数</span>
+                  <input id="settingRetryCount" name="retry_count" type="number" min="0" max="10" step="1" />
+                </label>
+                <label>
+                  <span>重试间隔</span>
+                  <input id="settingRetryBackoff" name="retry_backoff_s" type="number" min="0" max="60" step="0.1" />
+                </label>
+              </div>
+              <button class="primary-button" type="submit">保存 Provider 设置</button>
+            </form>
+
+            <section class="settings-card">
+              <div class="settings-card-header">
+                <h2>体验偏好</h2>
+                <p>这些设置保持轻量，不改变 agentic loop。</p>
+              </div>
+              <label class="switch-row">
+                <span>
+                  <strong>安静时间</strong>
+                  <small>降低主动提醒和非必要状态提示</small>
+                </span>
+                <input id="quietEnabled" type="checkbox" />
+              </label>
+              <div class="settings-grid">
+                <label>
+                  <span>开始</span>
+                  <input id="quietStart" type="time" value="22:00" />
+                </label>
+                <label>
+                  <span>结束</span>
+                  <input id="quietEnd" type="time" value="07:00" />
+                </label>
+                <label>
+                  <span>时区</span>
+                  <input id="quietTimezone" type="text" value="local" />
+                </label>
+              </div>
+              <label class="switch-row">
+                <span>
+                  <strong>紧凑工具卡片</strong>
+                  <small>工具调用默认折叠，只显示关键状态</small>
+                </span>
+                <input id="compactTools" type="checkbox" checked />
+              </label>
+              <label class="switch-row">
+                <span>
+                  <strong>流式 Markdown</strong>
+                  <small>模型输出边生成边排版</small>
+                </span>
+                <input id="streamMarkdown" type="checkbox" checked />
+              </label>
+              <button id="saveExperience" class="secondary-button" type="button">保存体验设置</button>
+            </section>
+
+            <section class="settings-card wide-card">
+              <div class="settings-card-header">
+                <h2>系统状态</h2>
+                <p>仅显示摘要，不暴露密钥和原始记忆正文。</p>
+              </div>
+              <div id="settingsSummary" class="settings-summary"></div>
+            </section>
           </div>
-        </form>
+        </section>
       </section>
-
-      <aside id="activityPanel" class="activity-panel" aria-label="Context and activity">
-        <section class="activity-card">
-          <header class="activity-header">
-            <div>
-              <h2>实时活动</h2>
-              <p>当前正在发生什么</p>
-            </div>
-            <span id="activityCount" class="activity-count">0</span>
-          </header>
-          <div id="activityList" class="activity-list"></div>
-          <button id="activityViewAll" class="panel-footer-link" type="button" title="查看全部活动">查看全部活动</button>
-        </section>
-        <section class="context-panel" aria-label="User context">
-          <header class="context-header">
-            <div>
-              <h2>偏好与长期记忆</h2>
-              <p>从你的派活过程里沉淀</p>
-            </div>
-            <button id="memoryPanelOpen" class="mini-link" type="button">查看</button>
-          </header>
-          <div id="memoryPreviewList" class="memory-preview-list"></div>
-          <button class="panel-footer-link" type="button" data-memory-open title="查看全部记忆">查看全部记忆</button>
-          <div class="context-grid context-technical" aria-hidden="true">
-            <div class="context-card">
-              <span class="context-label">最近请求</span>
-              <strong id="contextUserPrompt">暂无最近请求</strong>
-            </div>
-            <div class="context-card">
-              <span class="context-label">对话上下文</span>
-              <strong id="contextConversation">new</strong>
-            </div>
-            <div class="context-card">
-              <span class="context-label">当前焦点</span>
-              <strong id="contextMission">new</strong>
-            </div>
-            <div class="context-card">
-              <span class="context-label">最近运行</span>
-              <strong id="contextRun">none</strong>
-            </div>
-          </div>
-        </section>
-      </aside>
     </main>
-    <div id="settingsOverlay" class="settings-overlay" hidden>
-      <aside class="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
-        <header class="settings-header">
+
+    <div id="memoryMarkdownModal" class="modal-backdrop" hidden>
+      <section class="markdown-modal" role="dialog" aria-modal="true" aria-labelledby="memoryMarkdownTitle">
+        <header>
           <div>
-            <h2 id="settingsTitle">设置</h2>
-            <p id="settingsStatus">空闲</p>
+            <p class="eyebrow">Memory Markdown</p>
+            <h2 id="memoryMarkdownTitle">记忆详情</h2>
           </div>
-          <button id="settingsClose" type="button" title="关闭" aria-label="关闭">×</button>
+          <button id="memoryMarkdownClose" class="quiet-button" type="button">关闭</button>
         </header>
-        <div id="settingsContent" class="settings-content"></div>
-      </aside>
+        <article id="memoryMarkdownBody" class="markdown-body"></article>
+      </section>
     </div>
+
     <script src="/app.js"></script>
   </body>
 </html>

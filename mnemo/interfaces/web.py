@@ -5,6 +5,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 import json
+import os
 from pathlib import Path
 import socket
 from typing import Any
@@ -14,7 +15,7 @@ from ..core.events import chat_event_as_dict
 from ..core.errors import MnemoError
 from ..core.jsonutil import dumps
 from ..core.models import RunRequest
-from ..core.settings import load_user_settings, save_user_settings
+from ..core.settings import load_user_settings, save_user_settings, settings_path
 from ..core.workspace import resolve_workspace_root
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
 from ..runtime import stream_local, stream_provider
@@ -36,6 +37,7 @@ class WebServerConfig:
     base_url: str | None = None
     model: str | None = None
     api_key: str | None = None
+    api_key_env: str | None = None
     timeout_s: float = 30.0
     retry_count: int = 0
     retry_backoff_s: float = 0.0
@@ -98,6 +100,7 @@ def _resolved_web_config(config: WebServerConfig) -> WebServerConfig:
         base_url=config.base_url,
         model=config.model,
         api_key=config.api_key,
+        api_key_env=config.api_key_env,
         timeout_s=config.timeout_s,
         retry_count=config.retry_count,
         retry_backoff_s=config.retry_backoff_s,
@@ -117,7 +120,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
             elif parsed.path == "/app.js":
                 self._send_asset("app.js", "application/javascript; charset=utf-8")
             elif parsed.path == "/api/health":
-                self._send_json({"ok": True, "provider": config.provider})
+                effective = _effective_web_config(config)
+                self._send_json({"ok": True, "provider": effective.provider, "model": effective.model or ""})
             elif parsed.path == "/api/core/schema":
                 self._send_json({"api_schema": mnemo_core_api_schema()})
             elif parsed.path == "/api/core/openapi.json":
@@ -462,6 +466,7 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
 
 
 def _stream_events(config: WebServerConfig, request: RunRequest):
+    config = _effective_web_config(config)
     if config.provider == "local":
         yield from stream_local(request)
         return
@@ -498,6 +503,42 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
         yield from stream_provider(request, provider)
         return
     raise ValueError(f"unsupported provider: {config.provider}")
+
+
+def _effective_web_config(config: WebServerConfig) -> WebServerConfig:
+    settings = load_user_settings(config.state_dir)
+    runtime = settings.get("runtime", {}) if isinstance(settings.get("runtime"), dict) else {}
+    raw_runtime = _raw_runtime_settings(config.state_dir)
+    api_key = config.api_key
+    api_key_env = str(raw_runtime.get("api_key_env") or config.api_key_env or "").strip()
+    if api_key_env:
+        api_key = os.environ.get(api_key_env) or None
+    timeout_s = runtime.get("timeout_s") if "timeout_s" in raw_runtime else config.timeout_s
+    retry_count = runtime.get("retry_count") if "retry_count" in raw_runtime else config.retry_count
+    retry_backoff_s = runtime.get("retry_backoff_s") if "retry_backoff_s" in raw_runtime else config.retry_backoff_s
+    return WebServerConfig(
+        state_dir=config.state_dir,
+        host=config.host,
+        port=config.port,
+        workspace_root=config.workspace_root,
+        provider=str(runtime.get("provider") or config.provider or "local"),
+        base_url=str(runtime.get("base_url") or config.base_url or "") or None,
+        model=str(runtime.get("model") or config.model or "") or None,
+        api_key=api_key,
+        api_key_env=api_key_env or None,
+        timeout_s=float(timeout_s if timeout_s is not None else config.timeout_s),
+        retry_count=int(retry_count if retry_count is not None else config.retry_count),
+        retry_backoff_s=float(retry_backoff_s if retry_backoff_s is not None else config.retry_backoff_s),
+    )
+
+
+def _raw_runtime_settings(state_dir: str | Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(settings_path(state_dir).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    runtime = raw.get("runtime") if isinstance(raw, dict) else None
+    return runtime if isinstance(runtime, dict) else {}
 
 
 def _dispatch_core_api(config: WebServerConfig, method: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -663,10 +704,29 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
     scheduled = store.list_scheduled_items(status="active", limit=100)
     preferences = _preference_cards(memory_pages)
     settings = load_user_settings(config.state_dir)
+    effective = _effective_web_config(config)
 
     return {
         "settings": settings,
-        "connected_apps": _connected_app_cards(config),
+        "runtime": {
+            "provider": effective.provider,
+            "model": effective.model or "",
+            "base_url": effective.base_url or "",
+            "api_key_env": effective.api_key_env or "",
+            "timeout_s": effective.timeout_s,
+            "retry_count": effective.retry_count,
+            "retry_backoff_s": effective.retry_backoff_s,
+            "current": {
+                "provider": config.provider,
+                "model": config.model or "",
+                "base_url": config.base_url or "",
+                "timeout_s": config.timeout_s,
+                "retry_count": config.retry_count,
+                "retry_backoff_s": config.retry_backoff_s,
+            },
+            "applies": "live",
+        },
+        "connected_apps": _connected_app_cards(effective),
         "permissions": {
             "open_decisions": len(open_decisions),
             "risk_policy": [
@@ -803,11 +863,14 @@ def _memory_item_payload(config: WebServerConfig, item_type: str, item_id: str) 
             else None
         )
         tombstones = store.list_memory_tombstones(target_id=item_id, target_type="page", limit=5)
+        detail = _memory_l3_page_detail(page, dimension)
+        evidence = _memory_item_evidence(source_candidate, tombstones)
         return {
             "kind": "memory_item",
             "level": "L3",
-            "item": _memory_l3_page_detail(page, dimension),
-            "evidence": _memory_item_evidence(source_candidate, tombstones),
+            "item": detail,
+            "evidence": evidence,
+            "markdown": _memory_item_markdown(detail, evidence),
         }
     if normalized_type in {"candidate", "memory_candidate"}:
         candidate = store.get_memory_candidate(item_id)
@@ -817,11 +880,14 @@ def _memory_item_payload(config: WebServerConfig, item_type: str, item_id: str) 
             return None
         dimension = _memory_dimension(candidate, fallback="context")
         tombstones = store.list_memory_tombstones(target_id=item_id, target_type="candidate", limit=5)
+        detail = _memory_l3_candidate_detail(candidate, dimension)
+        evidence = _memory_item_evidence(candidate, tombstones)
         return {
             "kind": "memory_item",
             "level": "L3",
-            "item": _memory_l3_candidate_detail(candidate, dimension),
-            "evidence": _memory_item_evidence(candidate, tombstones),
+            "item": detail,
+            "evidence": evidence,
+            "markdown": _memory_item_markdown(detail, evidence),
         }
     raise ValueError(f"unsupported memory item type: {item_type}")
 
@@ -934,6 +1000,28 @@ def _memory_item_evidence(
             }
         )
     return evidence
+
+
+def _memory_item_markdown(detail: dict[str, Any], evidence: list[dict[str, Any]]) -> str:
+    lines = [
+        f"# {detail.get('title') or 'Memory'}",
+        "",
+        f"- Dimension: {detail.get('dimension') or 'context'}",
+        f"- Type: {detail.get('type') or 'memory'}",
+        f"- Status: {detail.get('status') or 'unknown'}",
+        f"- Confidence: {detail.get('confidence') if detail.get('confidence') is not None else 'unknown'}",
+        "",
+        "## Summary",
+        "",
+        str(detail.get("summary") or "").strip() or "No summary.",
+    ]
+    if evidence:
+        lines.extend(["", "## Evidence", ""])
+        for item in evidence:
+            prefix = item.get("kind") or "evidence"
+            summary = str(item.get("summary") or item.get("reason") or "").strip() or "No summary."
+            lines.append(f"- **{prefix}**: {summary}")
+    return "\n".join(lines)
 
 
 def _memory_display_title(value: str) -> str:

@@ -158,7 +158,7 @@
 - `/api/memory/dimension` must exclude promoted, rejected, tombstoned, archived, and private-deleted candidates from the user-facing candidate list.
 - `/api/memory/item` is the L3 memory disclosure endpoint: it returns one selected page or candidate with clipped detail and compact evidence/tombstone rows.
 - `/api/memory/item` must only read active pages and open draft/review candidates; historical rejected/tombstoned/private records require explicit CLI or memory search paths.
-- L4 raw session recall remains available only through explicit memory/session search paths, never through the memory drawer ontology, dimension, or item endpoints.
+- L4 raw session recall remains available only through explicit memory/session search paths, never through the memory compass ontology, dimension, or item endpoints.
 - `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.
 - `mnemo memory list` defaults to draft candidates; page listing defaults to active pages.
 - `mnemo memory list --status all` means no status filter.
