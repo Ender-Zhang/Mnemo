@@ -56,6 +56,8 @@ const views = {
 };
 
 const navItems = document.querySelectorAll("[data-view]");
+const closeSheetButtons = document.querySelectorAll("[data-close-sheet]");
+const mobileSheetQuery = window.matchMedia("(max-width: 640px)");
 const timeline = document.querySelector("#timeline");
 const emptyState = document.querySelector("#emptyState");
 const form = document.querySelector("#composer");
@@ -114,6 +116,12 @@ document.body.classList.toggle("compact-tools", state.compactTools);
 for (const item of navItems) {
   item.addEventListener("click", () => {
     switchView(item.dataset.view || "chat", { updateLocation: true });
+  });
+}
+
+for (const button of closeSheetButtons) {
+  button.addEventListener("click", () => {
+    switchView("chat", { updateLocation: true });
   });
 }
 
@@ -201,6 +209,17 @@ memoryMarkdownModal.addEventListener("click", (event) => {
   if (event.target === memoryMarkdownModal) closeMemoryMarkdown();
 });
 
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (!memoryMarkdownModal.hidden) {
+    closeMemoryMarkdown();
+    return;
+  }
+  if (document.body.classList.contains("mobile-sheet-open")) {
+    switchView("chat", { updateLocation: true });
+  }
+});
+
 window.addEventListener("online", () => {
   resumeLastRun();
 });
@@ -213,6 +232,10 @@ window.addEventListener("popstate", () => {
   switchView(viewFromLocation());
 });
 
+mobileSheetQuery.addEventListener("change", () => {
+  switchView(viewFromLocation());
+});
+
 switchView(viewFromLocation());
 updateContextPanel();
 updateComposerState();
@@ -221,9 +244,13 @@ resumeLastRun();
 
 function switchView(name, options = {}) {
   const target = views[name] ? name : "chat";
+  const useMobileSheet = isMobileSheetTarget(target);
   for (const [viewName, view] of Object.entries(views)) {
-    view.classList.toggle("active", viewName === target);
+    const active = useMobileSheet ? viewName === "chat" || viewName === target : viewName === target;
+    view.classList.toggle("active", active);
+    view.classList.toggle("sheet-active", useMobileSheet && viewName === target);
   }
+  document.body.classList.toggle("mobile-sheet-open", useMobileSheet);
   for (const item of navItems) {
     item.classList.toggle("active", item.dataset.view === target);
   }
@@ -243,6 +270,10 @@ function switchView(name, options = {}) {
   if (target === "chat") {
     input.focus();
   }
+}
+
+function isMobileSheetTarget(target) {
+  return target !== "chat" && mobileSheetQuery.matches;
 }
 
 function viewFromLocation() {

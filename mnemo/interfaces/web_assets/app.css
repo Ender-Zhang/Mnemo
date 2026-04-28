@@ -376,6 +376,22 @@ textarea:disabled {
   grid-column: 1;
 }
 
+.page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sheet-close {
+  display: none;
+}
+
+.sheet-backdrop {
+  display: none;
+}
+
 .timeline {
   grid-column: 1;
 }
@@ -1812,6 +1828,17 @@ h1 {
   }
 }
 
+@keyframes sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 1180px) {
   .chat-view {
     grid-template-columns: 1fr;
@@ -1941,6 +1968,29 @@ h1 {
     overflow-x: hidden;
   }
 
+  body.mobile-sheet-open {
+    overflow: hidden;
+  }
+
+  body.mobile-sheet-open .chat-view {
+    filter: saturate(0.94) brightness(0.95);
+    pointer-events: none;
+  }
+
+  body.mobile-sheet-open .composer,
+  body.mobile-sheet-open .nav-group {
+    pointer-events: none;
+  }
+
+  body.mobile-sheet-open .sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 11;
+    display: block;
+    background: rgba(21, 24, 23, 0.08);
+    backdrop-filter: blur(8px);
+  }
+
   .mnemo-shell,
   .workspace,
   .view {
@@ -1963,6 +2013,52 @@ h1 {
   .workspace,
   .view {
     min-height: calc(100dvh - 60px);
+  }
+
+  .memory-view.sheet-active,
+  .settings-view.sheet-active {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    z-index: 12;
+    grid-template-rows: auto minmax(0, 1fr);
+    width: 100%;
+    height: min(82dvh, 780px);
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid rgba(222, 215, 204, 0.92);
+    border-bottom: 0;
+    border-radius: var(--radius) var(--radius) 0 0;
+    background:
+      linear-gradient(135deg, rgba(228, 243, 240, 0.58), rgba(255, 253, 249, 0.94) 38%, rgba(255, 242, 220, 0.34)),
+      rgba(255, 253, 249, 0.96);
+    box-shadow: 0 -22px 70px rgba(39, 33, 24, 0.18);
+    backdrop-filter: blur(18px);
+    animation: sheet-rise 170ms ease both;
+  }
+
+  .memory-view.sheet-active::before,
+  .settings-view.sheet-active::before {
+    content: "";
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    width: 42px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(102, 112, 107, 0.28);
+    transform: translateX(-50%);
+  }
+
+  .sheet-active .page-header {
+    padding-top: 28px;
+  }
+
+  .sheet-close {
+    display: inline-flex;
+    align-items: center;
   }
 
   .quiet-button {
@@ -2141,6 +2237,12 @@ h1 {
     padding: 0 12px calc(112px + env(safe-area-inset-bottom));
   }
 
+  .sheet-active .memory-layout,
+  .sheet-active .settings-layout {
+    overflow: auto;
+    padding-bottom: 24px;
+  }
+
   .panel-heading {
     flex-direction: column;
     align-items: stretch;
@@ -2153,7 +2255,7 @@ h1 {
   }
 
   .avatar-panel {
-    min-height: 420px;
+    min-height: 360px;
   }
 
   .memory-avatar-canvas {

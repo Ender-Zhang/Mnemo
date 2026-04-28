@@ -149,7 +149,10 @@
               <h1>记忆罗盘</h1>
               <p>先看全局，再进入维度，最后查看单条记忆的证据与详情。</p>
             </div>
-            <button id="memoryRefresh" class="quiet-button" type="button">刷新</button>
+            <div class="page-actions">
+              <button id="memoryRefresh" class="quiet-button" type="button">刷新</button>
+              <button class="quiet-button sheet-close" type="button" data-close-sheet aria-label="关闭记忆罗盘">关闭</button>
+            </div>
           </header>
 
           <div class="memory-layout">
@@ -180,7 +183,10 @@
               <h1>设置</h1>
               <p>配置模型连接、运行参数、安静时间和体验偏好。</p>
             </div>
-            <span id="settingsStatus" class="status-pill">未加载</span>
+            <div class="page-actions">
+              <span id="settingsStatus" class="status-pill">未加载</span>
+              <button class="quiet-button sheet-close" type="button" data-close-sheet aria-label="关闭设置">关闭</button>
+            </div>
           </header>
 
           <div class="settings-layout">
@@ -281,6 +287,8 @@
         </section>
       </section>
     </main>
+
+    <div class="sheet-backdrop" data-close-sheet aria-hidden="true"></div>
 
     <div id="memoryMarkdownModal" class="modal-backdrop" hidden>
       <section class="markdown-modal" role="dialog" aria-modal="true" aria-labelledby="memoryMarkdownTitle">
