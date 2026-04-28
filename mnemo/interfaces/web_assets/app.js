@@ -18,6 +18,7 @@ const state = {
 };
 
 const timeline = document.querySelector("#timeline");
+const emptyState = document.querySelector("#emptyState");
 const appShell = document.querySelector(".app-shell");
 const form = document.querySelector("#composer");
 const input = document.querySelector("#message");
@@ -36,8 +37,10 @@ const settingsTitle = document.querySelector("#settingsTitle");
 const settingsContent = document.querySelector("#settingsContent");
 const settingsStatus = document.querySelector("#settingsStatus");
 const activityToggle = document.querySelector("#activityToggle");
+const activityViewAll = document.querySelector("#activityViewAll");
 const activityList = document.querySelector("#activityList");
 const activityCount = document.querySelector("#activityCount");
+const memoryPreviewList = document.querySelector("#memoryPreviewList");
 const contextUserPrompt = document.querySelector("#contextUserPrompt");
 const contextConversation = document.querySelector("#contextConversation");
 const contextMission = document.querySelector("#contextMission");
@@ -45,6 +48,8 @@ const contextRun = document.querySelector("#contextRun");
 const attachButton = document.querySelector("#attachButton");
 const voiceButton = document.querySelector("#voiceButton");
 const mentionButton = document.querySelector("#mentionButton");
+const emptySuggestions = document.querySelectorAll("[data-prefill]");
+const memoryOpeners = document.querySelectorAll("[data-memory-open]");
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -83,7 +88,7 @@ reset.addEventListener("click", () => {
   localStorage.removeItem("mnemo.last_run_id");
   localStorage.removeItem("mnemo.last_event_id");
   localStorage.removeItem("mnemo.last_user_intent");
-  timeline.replaceChildren();
+  showEmptyState();
   clearActivity();
   updateContextPanel();
   updateComposerState();
@@ -102,6 +107,12 @@ memoryPanelOpen.addEventListener("click", () => {
   openMemoryDrawer();
 });
 
+for (const opener of memoryOpeners) {
+  opener.addEventListener("click", () => {
+    openMemoryDrawer();
+  });
+}
+
 settingsClose.addEventListener("click", () => {
   closeSettings();
 });
@@ -113,6 +124,16 @@ settingsOverlay.addEventListener("click", (event) => {
 activityToggle.addEventListener("click", () => {
   appShell.classList.toggle("activity-collapsed");
 });
+
+activityViewAll.addEventListener("click", () => {
+  prefillMessage("Summarize my recent activity and current task state.");
+});
+
+for (const button of emptySuggestions) {
+  button.addEventListener("click", () => {
+    prefillMessage(button.dataset.prefill || "");
+  });
+}
 
 attachButton.addEventListener("click", () => {
   prefillMessage("Use this file: ");
@@ -349,6 +370,90 @@ function updateContextPanel() {
   if (contextRun) contextRun.textContent = compactId(state.lastRunId || state.activeRunId, "none");
 }
 
+async function hydrateRightMemory() {
+  if (!memoryPreviewList) return;
+  renderMemoryPreview([]);
+  try {
+    const response = await fetch("/api/settings");
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return;
+    state.settings = payload;
+    const preferences = payload.learned_preferences || {};
+    renderMemoryPreview(Array.isArray(preferences.items) ? preferences.items : []);
+  } catch (_error) {
+    return;
+  }
+}
+
+function renderMemoryPreview(items) {
+  if (!memoryPreviewList) return;
+  const rows = [];
+  const defaults = [
+    { title: "内容偏好", summary: "Mnemo 会在你派活、修改和确认时沉淀交付偏好。", icon: "♡" },
+    { title: "工作节奏", summary: "重要节奏会进入记忆罗盘，后续任务自动参考。", icon: "▣" },
+    { title: "目标", summary: "当前目标会帮助 Mnemo 判断下一步行动优先级。", icon: "◎" },
+  ];
+  const source = items.length > 0
+    ? items.slice(0, 3).map(memoryPreviewModel)
+    : defaults;
+  for (const item of source) {
+    rows.push(memoryPreviewItem(item));
+  }
+  memoryPreviewList.replaceChildren(...rows);
+}
+
+function memoryPreviewModel(item) {
+  const rawTitle = item.title || item.kind || "偏好";
+  const title = cleanMemoryTitle(rawTitle);
+  const summary = cleanMemorySummary(item.summary || item.title || "已学习的长期偏好", title);
+  return {
+    title,
+    summary,
+    icon: memoryPreviewIcon(item.dimension || item.kind || rawTitle),
+  };
+}
+
+function cleanMemoryTitle(text) {
+  const cleaned = String(text || "")
+    .replace(/^(user_)?preference:\s*/i, "")
+    .replace(/^(preferences|identity|goals|context|patterns|history|knowledge):\s*/i, "")
+    .trim();
+  if (!cleaned) return "偏好";
+  if (cleaned.length > 34) return `${cleaned.slice(0, 34)}...`;
+  return cleaned;
+}
+
+function cleanMemorySummary(text, title) {
+  const cleaned = String(text || "").trim();
+  if (!cleaned || cleaned === title) return "已沉淀为后续任务会自动参考的长期信号。";
+  if (cleaned.length > 82) return `${cleaned.slice(0, 82)}...`;
+  return cleaned;
+}
+
+function memoryPreviewIcon(value) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("goal")) return "◎";
+  if (text.includes("context") || text.includes("history")) return "▣";
+  if (text.includes("pattern")) return "⌁";
+  return "♡";
+}
+
+function memoryPreviewItem(item) {
+  const row = document.createElement("div");
+  row.className = "memory-preview-item";
+  const icon = document.createElement("span");
+  icon.className = "memory-preview-icon";
+  icon.textContent = item.icon || "♡";
+  const copy = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = item.title || "记忆";
+  const detail = document.createElement("p");
+  detail.textContent = item.summary || "";
+  copy.append(title, detail);
+  row.append(icon, copy);
+  return row;
+}
+
 function compactId(value, fallback) {
   const text = String(value || "").trim();
   if (!text) return fallback;
@@ -496,6 +601,17 @@ function updateActivityCount() {
   activityCount.textContent = String(activityList.children.length);
 }
 
+function hideEmptyState() {
+  if (!emptyState) return;
+  emptyState.hidden = true;
+}
+
+function showEmptyState() {
+  if (!emptyState) return;
+  emptyState.hidden = false;
+  timeline.replaceChildren(emptyState);
+}
+
 function appendAssistant(text) {
   if (!text) return;
   if (!state.assistantNode) {
@@ -509,6 +625,7 @@ function appendAssistant(text) {
 
 function showPendingAssistant() {
   removePendingAssistant();
+  hideEmptyState();
   const node = document.createElement("div");
   node.className = "message assistant pending";
   const text = document.createElement("span");
@@ -1321,59 +1438,151 @@ function settingsMemoryOntologySection() {
 }
 
 function renderMemoryDrawer(payload) {
-  const dimensions = memoryOntologyView(payload);
-  settingsContent.replaceChildren(
-    memoryOverview(payload),
-    memorySearchSection(dimensions),
-    dimensions,
-    memoryDrawerActions(),
-  );
+  settingsContent.replaceChildren(memoryCompassView(payload));
 }
 
-function memorySearchSection(dimensions) {
-  const body = document.createElement("div");
-  body.className = "settings-list";
+function memoryCompassView(payload) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "memory-compass";
+  const tabs = document.createElement("div");
+  tabs.className = "memory-tabs";
+  const activeTab = document.createElement("button");
+  activeTab.type = "button";
+  activeTab.className = "memory-tab active";
+  activeTab.textContent = "罗盘总览";
+  const allTab = document.createElement("button");
+  allTab.type = "button";
+  allTab.className = "memory-tab";
+  allTab.textContent = "全部记忆";
+  tabs.append(activeTab, allTab);
+
+  const search = document.createElement("div");
+  search.className = "memory-search-row";
   const inputNode = document.createElement("input");
   inputNode.className = "memory-search";
   inputNode.type = "search";
   inputNode.placeholder = "搜索记忆内容";
+  search.appendChild(inputNode);
+
+  const content = document.createElement("div");
+  content.className = "memory-compass-grid";
+  const dimensions = document.createElement("div");
+  dimensions.className = "memory-compass-dimensions";
+  const detail = document.createElement("div");
+  detail.className = "memory-compass-detail";
+
+  const dimensionItems = Array.isArray(payload.dimensions) ? payload.dimensions : [];
+  const firstActive = dimensionItems.find((item) => Number(item.pages || 0) + Number(item.candidates || 0) > 0)
+    || dimensionItems[0]
+    || {};
+  for (const dimension of dimensionItems) {
+    dimensions.appendChild(memoryCompassDimensionRow(dimension, detail, dimension === firstActive));
+  }
+  renderMemoryCompassDetail(detail, firstActive);
+
   inputNode.addEventListener("input", () => {
     const query = inputNode.value.trim().toLowerCase();
-    for (const row of dimensions.querySelectorAll(".memory-dimension")) {
+    for (const row of dimensions.querySelectorAll(".memory-compass-dimension")) {
       row.hidden = query ? !row.textContent.toLowerCase().includes(query) : false;
     }
   });
-  body.appendChild(inputNode);
-  return settingsSection("查找记忆", body);
+
+  content.append(dimensions, detail);
+  wrapper.append(tabs, search, content, memoryOverview(payload), memoryDrawerActions());
+  return wrapper;
+}
+
+function memoryCompassDimensionRow(dimension, detail, active) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "memory-compass-dimension";
+  if (active) button.classList.add("active");
+  const title = document.createElement("span");
+  title.textContent = dimensionLabel(dimension.dimension);
+  const count = document.createElement("strong");
+  count.textContent = `${dimension.pages || 0}/${dimension.candidates || 0}`;
+  const meter = document.createElement("progress");
+  meter.className = "memory-meter";
+  meter.max = 10;
+  meter.value = Math.min(10, Number(dimension.pages || 0) * 2 + Number(dimension.candidates || 0));
+  button.append(title, count, meter);
+  button.addEventListener("click", () => {
+    for (const row of button.parentElement.querySelectorAll(".memory-compass-dimension")) {
+      row.classList.remove("active");
+    }
+    button.classList.add("active");
+    renderMemoryCompassDetail(detail, dimension);
+  });
+  return button;
+}
+
+function renderMemoryCompassDetail(target, dimension) {
+  target.replaceChildren();
+  const tag = document.createElement("span");
+  tag.className = "memory-detail-tag";
+  tag.textContent = dimensionLabel(dimension.dimension);
+  const title = document.createElement("h3");
+  title.textContent = `${dimensionLabel(dimension.dimension)}中的长期信号`;
+  const meta = document.createElement("div");
+  meta.className = "memory-detail-meta";
+  meta.textContent = `${dimension.pages || 0} 条稳定记忆 · ${dimension.candidates || 0} 条候选`;
+  const evidenceTitle = document.createElement("h4");
+  evidenceTitle.textContent = "证据链";
+  const list = document.createElement("div");
+  list.className = "memory-detail-list";
+  const entries = Array.isArray(dimension.items) ? dimension.items : [];
+  if (entries.length === 0) {
+    list.appendChild(settingsLoadingRow("暂无记忆"));
+  } else {
+    for (const item of entries) {
+      list.appendChild(memoryDetailEvidence(item));
+    }
+  }
+  target.append(tag, title, meta, evidenceTitle, list);
+}
+
+function memoryDetailEvidence(item) {
+  const row = document.createElement("div");
+  row.className = "memory-detail-evidence";
+  const title = document.createElement("strong");
+  title.textContent = cleanMemoryTitle(item.title || item.kind || "记忆");
+  const summary = document.createElement("p");
+  summary.textContent = cleanMemorySummary(item.summary || "", title.textContent);
+  const meta = document.createElement("span");
+  meta.textContent = `${item.kind || "memory"}${confidenceLabel(item.confidence) ? ` · ${confidenceLabel(item.confidence)}` : ""}`;
+  row.append(title, summary, meta);
+  return row;
 }
 
 function memoryOverview(payload) {
   const counts = payload.counts || {};
   const body = document.createElement("div");
-  body.className = "memory-overview";
-  body.append(
-    settingsRow("覆盖维度", `${counts.covered_dimensions || 0}/10`, ""),
-    settingsRow("长期记忆", String(counts.pages || 0), "已沉淀的稳定资料"),
-    settingsRow("候选学习", String(counts.candidates || 0), "等待确认或整理的学习信号"),
-  );
-  return settingsSection("罗盘总览", body);
+  body.className = "memory-overview memory-cover-strip";
+  const coverage = document.createElement("strong");
+  coverage.textContent = `记忆覆盖度 ${counts.covered_dimensions || 0}/10`;
+  const pages = document.createElement("span");
+  pages.textContent = `${counts.pages || 0} 条长期记忆`;
+  const candidates = document.createElement("span");
+  candidates.textContent = `${counts.candidates || 0} 条候选`;
+  body.append(coverage, pages, candidates);
+  return body;
 }
 
 function memoryDrawerActions() {
   const actions = document.createElement("div");
   actions.className = "settings-actions drawer-actions";
   actions.append(
-    settingsActionButton("引用到当前任务", () => {
+    settingsActionButton("忘记内容", () => {
       closeSettings();
-      prefillMessage("Use the relevant long-term memories for the current task: ");
+      prefillMessage("Forget this memory: ");
     }),
     settingsActionButton("更新记忆", () => {
       closeSettings();
       prefillMessage("Update my long-term memory: ");
     }),
-    settingsActionButton("忘记内容", () => {
+    settingsActionButton("引用到当前任务", () => {
       closeSettings();
-      prefillMessage("Forget this memory: ");
+      prefillMessage("Use the relevant long-term memories for the current task: ");
     }),
   );
   return actions;
@@ -1437,6 +1646,13 @@ function dimensionLabel(value) {
     history: "历史任务",
     patterns: "工具习惯",
     boundaries: "边界约束",
+    personal_profile: "个人资料",
+    user_profile: "用户资料",
+    profile: "个人资料",
+    finance: "财务偏好",
+    knowledge: "知识背景",
+    work_style: "工作方式",
+    workflow: "工作方式",
   };
   return labels[value] || value || "记忆";
 }
@@ -1525,6 +1741,7 @@ function updateComposerState() {
 }
 
 function addMessage(role, text) {
+  hideEmptyState();
   const node = document.createElement("div");
   node.className = `message ${role}`;
   if (role === "assistant") {
@@ -1750,6 +1967,7 @@ function inlineMarkdownNode(token) {
 }
 
 function addCard(kind, title, bodyText) {
+  hideEmptyState();
   const node = document.createElement("div");
   node.className = `event-card ${kind || ""}`.trim();
   const titleRow = document.createElement("div");
@@ -1793,4 +2011,5 @@ function scrollToEnd() {
 input.focus();
 updateComposerState();
 updateContextPanel();
+hydrateRightMemory();
 resumeLastRun();
