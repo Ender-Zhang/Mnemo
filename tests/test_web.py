@@ -8,6 +8,8 @@ import threading
 import unittest
 from pathlib import Path
 
+from mnemo.core.models import ChatEvent
+import mnemo.interfaces.web as web_module
 from mnemo.interfaces.web import WebServerConfig, build_http_server
 from mnemo.storage import StateStore
 
@@ -49,6 +51,33 @@ class WebInterfaceTests(unittest.TestCase):
                 followup_result = followup_events[-1]["data"]["result"]
                 self.assertEqual(result["conversation_id"], followup_result["conversation_id"])
                 self.assertEqual(result["mission_id"], followup_result["mission_id"])
+
+    def test_web_chat_does_not_duplicate_streamed_runtime_error(self) -> None:
+        original_stream_events = web_module._stream_events
+
+        def failing_stream(_config: WebServerConfig, _request) -> object:
+            yield ChatEvent(
+                event_id="evt_error",
+                type="run.error",
+                run_id="run_error",
+                conversation_id="conv_error",
+                mission_id="mis_error",
+                data={"error": "provider returned HTTP 429: week allocated quota exceeded."},
+            )
+            raise RuntimeError("provider returned HTTP 429: week allocated quota exceeded.")
+
+        web_module._stream_events = failing_stream
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                    status, _, body = server.request("POST", "/api/chat", {"message": "hello"})
+        finally:
+            web_module._stream_events = original_stream_events
+
+        self.assertEqual(status, 200)
+        events = [json.loads(line) for line in body.splitlines() if line.strip()]
+        self.assertEqual([event["type"] for event in events], ["run.error"])
+        self.assertEqual(events[0]["data"]["error"], "provider returned HTTP 429: week allocated quota exceeded.")
 
     def test_web_chat_passes_workspace_bootstrap_to_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

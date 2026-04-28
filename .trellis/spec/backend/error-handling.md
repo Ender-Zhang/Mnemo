@@ -51,6 +51,7 @@
 
 ### 3. Contracts
 - Provider adapters raise `ProviderStatusError` for non-2xx HTTP responses.
+- `ProviderStatusError` may append a compact provider `error.message` or `message` field to the user-facing error string, but must keep the raw body only on the exception object for tests/diagnostics.
 - Provider adapters raise `ProviderTimeoutError` for socket/URL timeout conditions.
 - Provider adapters raise `ProviderConnectionError` for unreachable endpoints.
 - Provider adapters raise `ProviderPayloadError` for invalid or non-object JSON payloads.
@@ -59,6 +60,7 @@
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
 - Runtime cancellation is cooperative state, not a provider/tool error; observed cancellation completes the run with `status="cancelled"`.
 - Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
+- Web chat streams must not emit a duplicate `server.error` after the runtime has already emitted a `*.error` chat event for the same failed stream.
 - Web artifact endpoint errors are JSON: missing `artifact_id` returns 400, unknown artifact id returns 404; related artifact metadata must omit bodies.
 - Web Inbox resolve endpoint errors are JSON: missing fields or invalid resolution return 400, unknown item id returns 404.
 - Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404; valid actions are `accept`, `this_time`, `reject`, and `undo`.
@@ -109,6 +111,7 @@
 | Anthropic smoke succeeds | JSON includes skipped models and passed chat check | `tests/test_cli.py` |
 | API key supplied | Request header uses key, stdout redacts it | `tests/test_cli.py` |
 | Provider returns HTTP error | CLI exits non-zero and stderr includes normalized status | `tests/test_cli.py` |
+| Provider status includes message | Error string includes compact provider message without raw secrets | `tests/test_providers.py` |
 | Invalid provider payload | Adapter raises `ProviderPayloadError` | `tests/test_providers.py` |
 | Provider timeout | Adapter raises `ProviderTimeoutError` | `tests/test_providers.py` |
 | External command succeeds with unsupported fields | CLI/SDK return proposals and ignored field names without direct writes | `tests/test_cli.py`, `tests/test_runtime_external.py` |
@@ -120,6 +123,7 @@
 | Capability inspection | CLI reports provider capability metadata without leaking API keys | `tests/test_cli.py` |
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
+| Web streamed runtime error | Response includes one runtime error card and no duplicate server error | `tests/test_web.py` |
 | Web artifact endpoint | Valid artifact returns body plus compact related metadata; missing/unknown ids return JSON errors | `tests/test_web.py` |
 | Web Inbox resolve endpoint | Valid resolve returns item payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web learning memory endpoint | Valid action returns compact candidate payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
@@ -152,6 +156,7 @@
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
 - Good: show response previews and model ids, not raw request payloads.
+- Good: surface compact provider quota/rate-limit reasons such as `error.message`.
 - Good: set `retry_count` only for transient endpoint instability and keep default at zero.
 - Base: `--api-key` is supported for local smoke but is redacted in output.
 - Base: streaming calls rely on timeout and normalized errors, not retries.

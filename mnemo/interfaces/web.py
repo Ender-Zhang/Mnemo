@@ -182,11 +182,15 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
             self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
 
+            emitted_stream_error = False
             try:
                 for event in _stream_events(config, request):
+                    if event.type.endswith(".error"):
+                        emitted_stream_error = True
                     self._write_ndjson(chat_event_as_dict(event))
             except Exception as exc:
-                self._write_ndjson({"type": "server.error", "data": {"error": str(exc)}})
+                if not emitted_stream_error:
+                    self._write_ndjson({"type": "server.error", "data": {"error": str(exc)}})
             finally:
                 try:
                     self.wfile.flush()

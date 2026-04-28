@@ -183,6 +183,7 @@ class ProviderAdapterTests(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 429)
         self.assertIn("rate limited", context.exception.body or "")
+        self.assertIn("provider returned HTTP 429: rate limited", str(context.exception))
 
     def test_openai_provider_raises_payload_error_for_bad_json(self) -> None:
         with FakeOpenAIServer(b"not-json") as server:

@@ -72,6 +72,7 @@
 - L2 and L3 memory responses are cached only in volatile runtime maps for the current browser session; they must not add browser persistence keys.
 - Enter submits the composer while Shift+Enter inserts a newline.
 - After a user submits a turn, the client renders one volatile pending assistant message until the first assistant delta, final message, run error, or stream error arrives.
+- A failed stream should produce one visible error card; if the runtime has already emitted `run.error`, the web transport must not add a second `server.error`.
 - Pending assistant state must never be persisted in browser storage.
 - While a run is streaming, the composer exposes one stop control that calls `/api/runs/cancel`.
 - `activeRunId` is a volatile current-stream id and must not be stored in `localStorage`.
