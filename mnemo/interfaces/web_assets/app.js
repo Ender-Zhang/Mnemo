@@ -24,6 +24,30 @@ const DIMENSION_LABELS = {
   boundaries: "边界",
 };
 
+const MEMORY_KIND_LABELS = {
+  page: "稳定记忆",
+  candidate: "候选信号",
+  memory: "记忆",
+};
+
+const MEMORY_STATUS_LABELS = {
+  active: "稳定",
+  pending: "待确认",
+  draft: "候选",
+  promoted: "已沉淀",
+  rejected: "已忽略",
+  tombstoned: "已忘记",
+};
+
+const MEMORY_EVIDENCE_LABELS = {
+  source_candidate: "来源信号",
+  source_page: "来源记忆",
+  evidence: "对话证据",
+  memory_safety: "安全校验",
+  tool_result: "工具结果",
+  session: "会话证据",
+};
+
 const state = {
   conversationId: localStorage.getItem("mnemo.conversation_id") || "",
   missionId: localStorage.getItem("mnemo.mission_id") || "",
@@ -1145,7 +1169,11 @@ function memoryLayerItem(item) {
   const summary = document.createElement("p");
   summary.textContent = item.summary || "";
   const meta = document.createElement("span");
-  meta.textContent = [item.kind || item.status || "memory", confidenceLabel(item.confidence)].filter(Boolean).join(" · ");
+  meta.textContent = [
+    memoryKindLabel(item.kind || "memory"),
+    memoryStatusLabel(item.status),
+    confidenceLabel(item.confidence),
+  ].filter(Boolean).join(" · ");
   button.append(title, summary, meta);
   button.addEventListener("click", () => loadMemoryItem(item.kind, item.id));
   return button;
@@ -1186,7 +1214,11 @@ function renderMemoryItemDetail(payload) {
   const summary = document.createElement("p");
   summary.textContent = item.summary || "";
   const meta = document.createElement("span");
-  meta.textContent = [dimensionLabel(item.dimension), item.status || item.type || "memory", confidenceLabel(item.confidence)].filter(Boolean).join(" · ");
+  meta.textContent = [
+    dimensionLabel(item.dimension),
+    memoryStatusLabel(item.status || item.type || "memory"),
+    confidenceLabel(item.confidence),
+  ].filter(Boolean).join(" · ");
   const evidence = document.createElement("div");
   evidence.className = "memory-evidence-list";
   for (const row of payload.evidence || []) {
@@ -1197,7 +1229,7 @@ function renderMemoryItemDetail(payload) {
   actions.append(
     actionButton("引用到当前任务", () => prefillMemoryAction("use", payload), "primary-button small"),
     actionButton("更新", () => prefillMemoryAction("update", payload), "secondary-button small"),
-    actionButton("忘记", () => prefillMemoryAction("forget", payload), "secondary-button small"),
+    actionButton("忘记", () => prefillMemoryAction("forget", payload), "secondary-button small danger-button"),
     actionButton("查看详情", () => openMemoryMarkdown(payload), "secondary-button small"),
   );
   panel.append(title, summary, meta, evidence, actions);
@@ -1217,11 +1249,59 @@ function memoryDetailEvidence(item) {
   const row = document.createElement("div");
   row.className = "memory-detail-evidence";
   const title = document.createElement("strong");
-  title.textContent = item.kind || "evidence";
+  title.textContent = memoryEvidenceLabel(item.kind);
   const summary = document.createElement("p");
-  summary.textContent = item.summary || item.reason || "";
+  summary.textContent = memoryEvidenceSummary(item);
   row.append(title, summary);
   return row;
+}
+
+function memoryKindLabel(value) {
+  const key = String(value || "memory");
+  return MEMORY_KIND_LABELS[key] || key;
+}
+
+function memoryStatusLabel(value) {
+  const key = String(value || "").split(":")[0];
+  if (!key) return "";
+  return MEMORY_STATUS_LABELS[key] || (key === "unknown" ? "未知" : key);
+}
+
+function memoryEvidenceLabel(value) {
+  const key = String(value || "evidence");
+  return MEMORY_EVIDENCE_LABELS[key] || "证据";
+}
+
+function memoryEvidenceSummary(item) {
+  const rawSummary = String(item.summary || "").trim();
+  const summaryReason = memoryEvidenceReasonLabel(rawSummary);
+  if (summaryReason) return summaryReason;
+  if (rawSummary && !isTechnicalToken(rawSummary)) return compactText(rawSummary, 220);
+  const reason = memoryEvidenceReasonLabel(item.reason);
+  if (reason) return reason;
+  const kind = String(item.kind || "");
+  if (kind === "memory_safety") return "已通过基础记忆安全检查。";
+  if (kind === "source_candidate") return "来自记忆整理过程中的候选信号。";
+  if (kind === "source_page") return "来自已沉淀的长期记忆。";
+  return "暂无更多摘要。";
+}
+
+function memoryEvidenceReasonLabel(value) {
+  const reason = String(value || "").trim();
+  if (!reason) return "";
+  const labels = {
+    user_message: "来自用户消息。",
+    assistant_message: "来自助手回复。",
+    tool_result: "来自工具执行结果。",
+    duplicate: "与已有记忆存在重叠。",
+  };
+  if (labels[reason]) return labels[reason];
+  if (isTechnicalToken(reason)) return "";
+  return compactText(reason, 220);
+}
+
+function isTechnicalToken(value) {
+  return /^[a-z0-9_.:-]+$/i.test(String(value || "").trim());
 }
 
 function openMemoryMarkdown(payload) {
@@ -1241,8 +1321,8 @@ function memoryPayloadMarkdown(payload) {
     `# ${item.title || "Memory"}`,
     "",
     `- 维度: ${dimensionLabel(item.dimension || "context")}`,
-    `- 类型: ${item.type || "memory"}`,
-    `- 状态: ${item.status || "unknown"}`,
+    `- 类型: ${memoryKindLabel(item.type || "memory")}`,
+    `- 状态: ${memoryStatusLabel(item.status || "unknown")}`,
     "",
     "## 摘要",
     "",
@@ -1252,7 +1332,7 @@ function memoryPayloadMarkdown(payload) {
   if (evidence.length) {
     lines.push("", "## 证据", "");
     for (const row of evidence) {
-      lines.push(`- **${row.kind || "evidence"}**: ${row.summary || row.reason || ""}`);
+      lines.push(`- **${memoryEvidenceLabel(row.kind)}**: ${memoryEvidenceSummary(row)}`);
     }
   }
   return lines.join("\n");
@@ -1261,7 +1341,7 @@ function memoryPayloadMarkdown(payload) {
 function prefillMemoryAction(intent, payload) {
   const item = payload.item || {};
   const title = item.title || "这条记忆";
-  const summary = item.summary || "";
+  const summary = compactText(item.summary || "", 180);
   const dimension = dimensionLabel(item.dimension || "context");
   if (intent === "forget") {
     prefillMessage(`请评估并忘记这条记忆：${title}。维度：${dimension}。摘要：${summary}`);

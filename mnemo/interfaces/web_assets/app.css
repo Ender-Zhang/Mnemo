@@ -1071,6 +1071,12 @@ h1 {
   color: var(--ink);
 }
 
+.danger-button {
+  border-color: rgba(198, 84, 71, 0.32);
+  background: rgba(255, 236, 234, 0.72);
+  color: #95372e;
+}
+
 .artifact-body {
   padding: 0 14px 14px;
 }
