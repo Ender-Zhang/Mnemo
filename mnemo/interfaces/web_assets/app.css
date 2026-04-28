@@ -365,6 +365,46 @@ button {
   text-underline-offset: 3px;
 }
 
+.message.markdown .markdown-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+}
+
+.message.markdown table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.message.markdown th,
+.message.markdown td {
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  vertical-align: top;
+}
+
+.message.markdown th {
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-weight: 760;
+}
+
+.message.markdown tr:last-child td {
+  border-bottom: 0;
+}
+
+.message.markdown th:last-child,
+.message.markdown td:last-child {
+  border-right: 0;
+}
+
 .message.user {
   align-self: flex-end;
   width: min(660px, 90%);
@@ -434,7 +474,9 @@ button {
 }
 
 .event-card.action {
+  width: min(680px, 100%);
   border-left: 4px solid var(--teal);
+  padding: 9px 11px;
 }
 
 .event-card.artifact {
@@ -481,6 +523,40 @@ button {
   font-size: 13px;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+
+.event-card.action .event-title {
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.event-card.action .event-body {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.event-card.action .chip {
+  min-height: 22px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.event-card.action .tool-details {
+  gap: 5px;
+  margin-top: 7px;
+  padding-top: 7px;
+}
+
+.event-card.action .tool-detail summary {
+  padding: 5px 8px;
+  font-size: 11px;
+}
+
+.event-card.action .tool-detail pre {
+  max-height: 160px;
+  padding: 7px 8px;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .tool-details {

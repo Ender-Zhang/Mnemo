@@ -490,9 +490,8 @@ function appendAssistant(text) {
     state.assistantNode = addMessage("assistant", "");
   }
   state.assistantNode.classList.add("streaming");
-  const rawText = `${state.assistantNode.dataset.rawText || state.assistantNode.textContent || ""}${text}`;
-  state.assistantNode.dataset.rawText = rawText;
-  state.assistantNode.textContent = rawText;
+  const rawText = `${state.assistantNode.dataset.rawText || ""}${text}`;
+  renderMarkdownInto(state.assistantNode, rawText);
   scrollToEnd();
 }
 
@@ -1438,6 +1437,16 @@ function markdownBlocks(text) {
       continue;
     }
 
+    if (isMarkdownTableStart(lines, index)) {
+      const tableLines = [];
+      while (index < lines.length && lines[index].trim() && isMarkdownTableLine(lines[index])) {
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+      blocks.push(markdownTable(tableLines));
+      continue;
+    }
+
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
     if (heading) {
       const level = String(heading[1]).length;
@@ -1477,6 +1486,7 @@ function markdownBlocks(text) {
       index < lines.length
       && lines[index].trim()
       && !lines[index].trim().startsWith("```")
+      && !isMarkdownTableStart(lines, index)
       && !/^(#{1,3})\s+/.test(lines[index])
       && !/^\s*[-*]\s+/.test(lines[index])
       && !/^\s*\d+\.\s+/.test(lines[index])
@@ -1489,6 +1499,61 @@ function markdownBlocks(text) {
     blocks.push(paragraph);
   }
   return blocks;
+}
+
+function isMarkdownTableStart(lines, index) {
+  if (index + 1 >= lines.length) return false;
+  const header = lines[index].trim();
+  const separator = lines[index + 1].trim();
+  return isMarkdownTableLine(header) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(separator);
+}
+
+function isMarkdownTableLine(line) {
+  return String(line || "").trim().includes("|");
+}
+
+function markdownTable(lines) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "markdown-table-wrap";
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const tbody = document.createElement("tbody");
+  const headerCells = splitMarkdownTableRow(lines[0]);
+  const alignments = splitMarkdownTableRow(lines[1]).map(tableAlignment);
+  const headRow = document.createElement("tr");
+  for (let cellIndex = 0; cellIndex < headerCells.length; cellIndex += 1) {
+    const th = document.createElement("th");
+    if (alignments[cellIndex]) th.style.textAlign = alignments[cellIndex];
+    appendInlineMarkdown(th, headerCells[cellIndex]);
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  for (const bodyLine of lines.slice(2)) {
+    const row = document.createElement("tr");
+    const cells = splitMarkdownTableRow(bodyLine);
+    for (let cellIndex = 0; cellIndex < headerCells.length; cellIndex += 1) {
+      const td = document.createElement("td");
+      if (alignments[cellIndex]) td.style.textAlign = alignments[cellIndex];
+      appendInlineMarkdown(td, cells[cellIndex] || "");
+      row.appendChild(td);
+    }
+    tbody.appendChild(row);
+  }
+  table.append(thead, tbody);
+  wrapper.appendChild(table);
+  return wrapper;
+}
+
+function splitMarkdownTableRow(line) {
+  const trimmed = String(line || "").trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function tableAlignment(cell) {
+  const text = String(cell || "").trim();
+  if (/^:-+:$/.test(text)) return "center";
+  if (/^-+:$/.test(text)) return "right";
+  return "";
 }
 
 function appendInlineMarkdown(parent, text) {

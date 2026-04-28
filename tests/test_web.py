@@ -887,9 +887,13 @@ print(json.dumps({
                 self.assertEqual(css_status, 200)
                 self.assertIn("renderMarkdownInto", script)
                 self.assertIn("markdownBlocks", script)
+                self.assertIn("markdownTable", script)
+                self.assertIn("isMarkdownTableStart", script)
                 self.assertIn("appendInlineMarkdown", script)
                 self.assertIn("inlineMarkdownNode", script)
+                self.assertIn("renderMarkdownInto(state.assistantNode, rawText)", script)
                 self.assertIn('document.createElement("pre")', script)
+                self.assertIn('document.createElement("table")', script)
                 self.assertIn('document.createElement("strong")', script)
                 self.assertIn('document.createElement("em")', script)
                 self.assertIn('document.createElement("a")', script)
@@ -905,6 +909,8 @@ print(json.dumps({
                 self.assertIn("updateContextPanel", script)
                 self.assertIn("compactId", script)
                 self.assertIn("message.markdown", css)
+                self.assertIn("markdown-table-wrap", css)
+                self.assertIn(".message.markdown table", css)
 
     def test_web_client_asset_deduplicates_activity_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1028,6 +1034,8 @@ print(json.dumps({
                 self.assertIn("message.pending", css)
                 self.assertIn("typing-dots", css)
                 self.assertIn("tool-detail", css)
+                self.assertIn(".event-card.action .tool-detail pre", css)
+                self.assertIn(".event-card.action .tool-details", css)
 
 
 class RunningServer:
