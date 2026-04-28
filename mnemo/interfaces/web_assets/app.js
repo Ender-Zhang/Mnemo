@@ -239,7 +239,7 @@ window.addEventListener("keydown", (event) => {
     closeMemoryMarkdown();
     return;
   }
-  if (document.body.classList.contains("mobile-sheet-open")) {
+  if (document.body.classList.contains("mobile-sheet-open") || document.body.classList.contains("drawer-open")) {
     switchView("chat", { updateLocation: true });
   }
 });
@@ -269,12 +269,15 @@ resumeLastRun();
 function switchView(name, options = {}) {
   const target = views[name] ? name : "chat";
   const useMobileSheet = isMobileSheetTarget(target);
+  const useDesktopDrawer = isDesktopDrawerTarget(target);
   for (const [viewName, view] of Object.entries(views)) {
-    const active = useMobileSheet ? viewName === "chat" || viewName === target : viewName === target;
+    const active = useMobileSheet || useDesktopDrawer ? viewName === "chat" || viewName === target : viewName === target;
     view.classList.toggle("active", active);
     view.classList.toggle("sheet-active", useMobileSheet && viewName === target);
+    view.classList.toggle("drawer-active", useDesktopDrawer && viewName === target);
   }
   document.body.classList.toggle("mobile-sheet-open", useMobileSheet);
+  document.body.classList.toggle("drawer-open", useDesktopDrawer);
   for (const item of navItems) {
     item.classList.toggle("active", item.dataset.view === target);
   }
@@ -298,6 +301,10 @@ function switchView(name, options = {}) {
 
 function isMobileSheetTarget(target) {
   return target !== "chat" && mobileSheetQuery.matches;
+}
+
+function isDesktopDrawerTarget(target) {
+  return target !== "chat" && !mobileSheetQuery.matches;
 }
 
 function viewFromLocation() {
