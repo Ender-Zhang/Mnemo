@@ -70,7 +70,7 @@ textarea:disabled {
 
 .mnemo-shell {
   display: grid;
-  grid-template-columns: 112px minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr);
   height: 100vh;
   overflow: hidden;
 }
@@ -262,7 +262,7 @@ textarea:disabled {
 @media (min-width: 981px) {
   .app-nav {
     gap: 18px;
-    padding: 22px 12px;
+    padding: 20px 10px;
   }
 
   .brand-button {
@@ -277,15 +277,15 @@ textarea:disabled {
     flex-direction: column;
     justify-content: center;
     gap: 7px;
-    min-height: 66px;
+    min-height: 60px;
     padding: 8px 4px;
     font-size: 12px;
     text-align: center;
   }
 
   .nav-icon {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
 
   .nav-bottom {
@@ -460,6 +460,12 @@ body.drawer-open .sheet-backdrop {
 
 .chat-header {
   grid-column: 1;
+  align-items: center;
+  min-height: 66px;
+  padding: 14px 42px 12px;
+  border-bottom: 1px solid rgba(222, 215, 204, 0.72);
+  background: rgba(255, 253, 249, 0.32);
+  backdrop-filter: blur(12px);
 }
 
 .page-actions {
@@ -491,6 +497,11 @@ body.drawer-open .sheet-backdrop {
   min-width: 0;
 }
 
+.chat-title {
+  display: grid;
+  gap: 2px;
+}
+
 .eyebrow {
   margin: 0 0 7px;
   color: var(--teal);
@@ -510,6 +521,18 @@ h1 {
   margin-bottom: 0;
   font-size: 27px;
   line-height: 1.18;
+}
+
+.chat-title h1 {
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.chat-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .page-header p,
