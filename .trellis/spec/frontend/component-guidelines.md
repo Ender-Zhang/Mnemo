@@ -30,7 +30,7 @@
 - Ten-dimensional memory inspection lives in the settings drawer through `/api/memory/ontology` and shows compact coverage, counts, and clipped item summaries.
 - Settings drawer actions should either save narrow settings or prefill the single composer for normal user intent.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
-- Streaming assistant deltas should stay text-first; final `assistant.message` or `run.completed` may replace the text node with safe Markdown DOM.
+- Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.
 - Replayed `turn.started` events should render the historical user prompt when the client is not actively streaming a new turn.
 - Right-side activity rows should upsert by stable event/action keys so queued, started, and completed action events update one row.
 - Internal learning housekeeping, including `learning_discard` action lifecycle events and learning-tone status updates, should not appear as visible Activity rows.

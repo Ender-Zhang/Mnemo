@@ -27,8 +27,12 @@ const reset = document.querySelector("#reset");
 const statusText = document.querySelector("#status");
 const runBadge = document.querySelector("#runBadge");
 const settingsOpen = document.querySelector("#settingsOpen");
+const memoryOpen = document.querySelector("#memoryOpen");
+const memoryPanelOpen = document.querySelector("#memoryPanelOpen");
 const settingsOverlay = document.querySelector("#settingsOverlay");
+const settingsDrawer = document.querySelector(".settings-drawer");
 const settingsClose = document.querySelector("#settingsClose");
+const settingsTitle = document.querySelector("#settingsTitle");
 const settingsContent = document.querySelector("#settingsContent");
 const settingsStatus = document.querySelector("#settingsStatus");
 const activityToggle = document.querySelector("#activityToggle");
@@ -90,6 +94,14 @@ settingsOpen.addEventListener("click", () => {
   openSettings();
 });
 
+memoryOpen.addEventListener("click", () => {
+  openMemoryDrawer();
+});
+
+memoryPanelOpen.addEventListener("click", () => {
+  openMemoryDrawer();
+});
+
 settingsClose.addEventListener("click", () => {
   closeSettings();
 });
@@ -128,7 +140,7 @@ async function runTurn(message) {
   updateComposerState();
   addMessage("user", message);
   showPendingAssistant();
-  upsertActivity("turn", "run", "Turn started", message);
+  upsertActivity("turn", "run", "任务开始", message);
   setStatus("Working");
 
   try {
@@ -143,14 +155,14 @@ async function runTurn(message) {
     });
 
     if (!response.ok || !response.body) {
-      addCard("error", "Error", `HTTP ${response.status}`);
+      addCard("error", "错误", `HTTP ${response.status}`);
       return;
     }
 
     await readNdjson(response.body, handleEvent);
   } catch (error) {
     removePendingAssistant();
-    addCard("error", "Error", error.message || String(error));
+    addCard("error", "错误", error.message || String(error));
   } finally {
     state.busy = false;
     state.cancelRequested = false;
@@ -181,7 +193,7 @@ async function requestCancel() {
   } catch (error) {
     state.cancelRequested = false;
     updateComposerState();
-    addCard("error", "Error", error.message || String(error));
+    addCard("error", "错误", error.message || String(error));
   }
 }
 
@@ -286,7 +298,7 @@ function handleEvent(event) {
     case "run.error":
     case "server.error":
       removePendingAssistant();
-      addCard("error", "Error", event.data?.error || "Run failed");
+      addCard("error", "错误", event.data?.error || "Run failed");
       break;
     default:
       break;
@@ -331,7 +343,7 @@ function rememberUserIntent(text) {
 }
 
 function updateContextPanel() {
-  if (contextUserPrompt) contextUserPrompt.textContent = state.lastUserIntent || "No recent prompt";
+  if (contextUserPrompt) contextUserPrompt.textContent = state.lastUserIntent || "暂无最近请求";
   if (contextConversation) contextConversation.textContent = compactId(state.conversationId, "new");
   if (contextMission) contextMission.textContent = compactId(state.missionId, "new");
   if (contextRun) contextRun.textContent = compactId(state.lastRunId || state.activeRunId, "none");
@@ -361,16 +373,16 @@ function isToolResultSource(source) {
 function renderActivity(event) {
   switch (event.type) {
     case "turn.started":
-      upsertActivity("turn", "run", "Run started", event.data?.input_summary || event.run_id || "");
+      upsertActivity("turn", "run", "任务开始", event.data?.input_summary || event.run_id || "");
       break;
     case "conversation.hydrated":
-      upsertActivity("context", "run", "Context restored", event.data?.summary || "");
+      upsertActivity("context", "run", "上下文已恢复", event.data?.summary || "");
       break;
     case "status.updated":
-      upsertActivity("status", "run", "Status", event.data?.text || event.data?.summary || "");
+      upsertActivity("status", "run", "状态", event.data?.text || event.data?.summary || "");
       break;
     case "assistant.delta":
-      upsertActivity("assistant-stream", "run", "Streaming answer", "Receiving model output");
+      upsertActivity("assistant-stream", "run", "正在回复", "接收模型输出");
       break;
     case "action.queued":
     case "action.started":
@@ -378,7 +390,7 @@ function renderActivity(event) {
       upsertActivity(
         `action:${activityActionId(event)}`,
         "action",
-        event.data?.action?.title || event.data?.tool_name || "Action",
+        event.data?.action?.title || event.data?.tool_name || "动作",
         event.data?.summary || event.type.replace("action.", ""),
       );
       break;
@@ -386,18 +398,18 @@ function renderActivity(event) {
       upsertActivity(
         `artifact:${event.data?.artifact?.artifact_id || Date.now()}`,
         "artifact",
-        event.data?.artifact?.title || "Artifact",
+        event.data?.artifact?.title || "产物",
         event.data?.artifact?.kind || "",
       );
       break;
     case "recall.card":
-      upsertActivity("recall", "recall", "Recall", event.data?.recall?.query || "");
+      upsertActivity("recall", "recall", "找回上下文", event.data?.recall?.query || "");
       break;
     case "learning.chip":
       upsertActivity(
         `learning:${event.data?.item?.item_id || Date.now()}`,
         "learning",
-        "Memory candidate",
+        "记忆候选",
         event.data?.item?.summary || event.data?.item?.status || "",
       );
       break;
@@ -405,16 +417,16 @@ function renderActivity(event) {
       upsertActivity(
         `decision:${event.data?.decision?.item_id || Date.now()}`,
         "decision",
-        "Decision needed",
+        "需要确认",
         event.data?.decision?.question || "",
       );
       break;
     case "run.completed":
-      upsertActivity("completed", "run", "Run completed", event.data?.status || "completed");
+      upsertActivity("completed", "run", "本轮完成", event.data?.status || "completed");
       break;
     case "run.error":
     case "server.error":
-      upsertActivity("error", "error", "Error", event.data?.error || "Run failed");
+      upsertActivity("error", "error", "错误", event.data?.error || "Run failed");
       break;
     default:
       break;
@@ -438,7 +450,7 @@ function upsertActivity(key, kind, title, detail) {
     activityList.prepend(row.node);
   }
   row.node.className = `activity-item ${kind || "run"}`;
-  row.title.textContent = title || "Activity";
+  row.title.textContent = title || "活动";
   row.detail.textContent = detail || "";
   if (row.node !== activityList.firstElementChild) {
     activityList.prepend(row.node);
@@ -521,11 +533,14 @@ function renderAction(event) {
   const actionId = event.data?.action_id || action.action_id || event.data?.provider_call_id;
   let card = state.actions.get(actionId);
   if (!card) {
-    card = addCard("action", action.title || event.data?.tool_name || "Action", action.summary || "");
+    card = addCard("action", action.title || event.data?.tool_name || "动作", action.summary || "");
     state.actions.set(actionId, card);
     renderToolDetails(card, action, event.data || {});
   }
 
+  const actionState = event.type === "action.completed" ? event.data?.outcome || "completed" : event.type.replace("action.", "");
+  card.classList.remove("action-queued", "action-started", "action-success", "action-failed", "action-skipped", "action-completed");
+  card.classList.add(`action-${actionState}`);
   const body = card.querySelector(".event-body");
   const badge = card.querySelector(".chip");
   if (event.type === "action.completed") {
@@ -605,33 +620,33 @@ function renderArtifact(artifact) {
   const chip = document.createElement("span");
   chip.className = "chip";
   chip.textContent = artifact.kind || "updated";
-  const toggle = artifactButton("Open", () => {
+  const toggle = artifactButton("打开", () => {
     toggleArtifact(artifactId, viewer, body, toggle);
   });
   toggle.disabled = !artifactId;
-  const continueButton = artifactButton("Continue", () => {
+  const continueButton = artifactButton("继续", () => {
     prefillMessage(`Continue editing artifact ${artifactId}: `);
   });
   continueButton.disabled = !artifactId;
-  const exportButton = artifactButton("Export", () => {
+  const exportButton = artifactButton("导出", () => {
     exportArtifact(artifactId);
   });
   exportButton.disabled = !artifactId;
-  const compareButton = artifactButton("Compare", () => {
+  const compareButton = artifactButton("比较", () => {
     toggleArtifactRelated(artifactId, related, compareButton);
   });
   compareButton.disabled = !artifactId;
-  const sendButton = artifactButton("Send", () => {
+  const sendButton = artifactButton("发送", () => {
     prefillMessage(`Send artifact ${artifactId} to: `);
   });
   sendButton.disabled = !artifactId;
   actions.append(chip, toggle, continueButton, exportButton, compareButton, sendButton);
   if (artifactId && isPatchArtifact(artifact.kind)) {
     actions.append(
-      artifactButton("Apply", () => {
+      artifactButton("应用", () => {
         prefillMessage(`Apply artifact ${artifactId} as a patch: `);
       }),
-      artifactButton("Revert", () => {
+      artifactButton("回滚", () => {
         prefillMessage(`Revert changes from artifact ${artifactId}: `);
       }),
     );
@@ -670,19 +685,19 @@ function artifactButton(label, onClick) {
 async function toggleArtifact(artifactId, viewer, body, toggle) {
   if (!viewer.hidden) {
     viewer.hidden = true;
-    toggle.textContent = "Open";
+    toggle.textContent = "打开";
     scrollToEnd();
     return;
   }
 
   toggle.disabled = true;
-  toggle.textContent = "Loading";
+  toggle.textContent = "加载中";
   try {
     await loadArtifact(artifactId);
   } catch (error) {
     body.textContent = error.message || String(error);
     viewer.hidden = false;
-    toggle.textContent = "Retry";
+    toggle.textContent = "重试";
     toggle.disabled = false;
     scrollToEnd();
     return;
@@ -692,7 +707,7 @@ async function toggleArtifact(artifactId, viewer, body, toggle) {
   const artifact = state.artifacts.get(artifactId) || {};
   body.textContent = artifact.body || "";
   viewer.hidden = false;
-  toggle.textContent = "Hide";
+  toggle.textContent = "收起";
   scrollToEnd();
 }
 
@@ -722,7 +737,7 @@ async function exportArtifact(artifactId) {
     link.remove();
     URL.revokeObjectURL(url);
   } catch (error) {
-    addCard("error", "Error", error.message || String(error));
+    addCard("error", "错误", error.message || String(error));
   }
 }
 
@@ -730,24 +745,24 @@ async function toggleArtifactRelated(artifactId, related, button) {
   if (!artifactId) return;
   if (!related.hidden) {
     related.hidden = true;
-    button.textContent = "Compare";
+    button.textContent = "比较";
     scrollToEnd();
     return;
   }
   button.disabled = true;
-  button.textContent = "Loading";
+  button.textContent = "加载中";
   try {
     await loadArtifact(artifactId);
   } catch (error) {
     related.replaceChildren(artifactRelatedMessage(error.message || String(error)));
     related.hidden = false;
-    button.textContent = "Retry";
+    button.textContent = "重试";
     button.disabled = false;
     scrollToEnd();
     return;
   }
   button.disabled = false;
-  button.textContent = "Hide";
+  button.textContent = "收起";
   const items = state.artifactRelated.get(artifactId) || [];
   related.replaceChildren();
   if (items.length === 0) {
@@ -773,12 +788,12 @@ function artifactRelatedRow(artifactId, item) {
   const actions = document.createElement("div");
   actions.className = "artifact-actions";
   actions.append(
-    artifactButton("Compare", () => {
-      prefillMessage(`Compare artifact ${artifactId} with artifact ${item.id}: `);
-    }),
-    artifactButton("Revert to", () => {
-      prefillMessage(`Revert artifact ${artifactId} to artifact ${item.id}: `);
-    }),
+      artifactButton("比较", () => {
+        prefillMessage(`Compare artifact ${artifactId} with artifact ${item.id}: `);
+      }),
+      artifactButton("回到此版", () => {
+        prefillMessage(`Revert artifact ${artifactId} to artifact ${item.id}: `);
+      }),
   );
   row.append(title, detail, actions);
   return row;
@@ -815,7 +830,7 @@ function renderLearning(item) {
   const titleRow = document.createElement("div");
   titleRow.className = "event-title";
   const title = document.createElement("span");
-  title.textContent = item.kind === "memory" ? "Learning memory" : "Learning";
+  title.textContent = item.kind === "memory" ? "学习记忆" : "学习信号";
   const chip = document.createElement("span");
   chip.className = "chip";
   chip.textContent = item.status || "draft";
@@ -850,7 +865,7 @@ function renderRecall(recall) {
   const titleRow = document.createElement("div");
   titleRow.className = "event-title";
   const title = document.createElement("span");
-  title.textContent = "Recall";
+  title.textContent = "找回上下文";
   const chip = document.createElement("span");
   chip.className = "chip";
   chip.textContent = `${items.length} found`;
@@ -858,7 +873,7 @@ function renderRecall(recall) {
 
   const body = document.createElement("div");
   body.className = "event-body";
-  body.textContent = recall.query ? `“${recall.query}”` : "Past context";
+  body.textContent = recall.query ? `“${recall.query}”` : "过去上下文";
 
   const list = document.createElement("div");
   list.className = "recall-items";
@@ -917,10 +932,10 @@ function appendRecallActions(actions, item, row, statusChip) {
     const body = document.createElement("pre");
     body.className = "artifact-body";
     viewer.appendChild(body);
-    actions.appendChild(recallButton("Open", () => {
+    actions.appendChild(recallButton("打开", () => {
       toggleArtifact(item.artifact_id, viewer, body, actions.querySelector("button"));
     }));
-    actions.appendChild(recallButton("Reuse", () => {
+    actions.appendChild(recallButton("复用", () => {
       prefillMessage(`Reuse artifact ${item.artifact_id}: `);
     }));
     row.appendChild(viewer);
@@ -929,21 +944,21 @@ function appendRecallActions(actions, item, row, statusChip) {
 
   if (item.kind === "decision" && item.status === "open" && item.item_id) {
     actions.append(
-      decisionButton("Approve", "accepted", item.item_id, statusChip),
-      decisionButton("Reject", "rejected", item.item_id, statusChip),
-      decisionButton("Ignore", "ignored", item.item_id, statusChip),
+      decisionButton("同意", "accepted", item.item_id, statusChip),
+      decisionButton("拒绝", "rejected", item.item_id, statusChip),
+      decisionButton("忽略", "ignored", item.item_id, statusChip),
     );
     return;
   }
 
   if (item.kind === "past_work") {
-    actions.appendChild(recallButton("Continue", () => {
+    actions.appendChild(recallButton("继续", () => {
       prefillMessage(`Continue from run ${item.run_id || item.item_id}: `);
     }));
     return;
   }
 
-  actions.appendChild(recallButton("Use", () => {
+  actions.appendChild(recallButton("引用", () => {
     prefillMessage(`Use recalled context ${item.item_id || ""}: `);
   }));
 }
@@ -1002,7 +1017,7 @@ async function resolveLearningMemory(itemId, action, statusChip, actions) {
     for (const button of actions.querySelectorAll("button")) {
       button.disabled = false;
     }
-    addCard("error", "Error", error.message || String(error));
+    addCard("error", "错误", error.message || String(error));
   }
 }
 
@@ -1014,7 +1029,7 @@ function renderDecision(decision) {
   const titleRow = document.createElement("div");
   titleRow.className = "event-title";
   const title = document.createElement("span");
-  title.textContent = "Decision";
+  title.textContent = "需要确认";
   const chip = document.createElement("span");
   chip.className = "chip";
   chip.textContent = decision.status || "open";
@@ -1030,9 +1045,9 @@ function renderDecision(decision) {
   actions.className = "decision-actions";
   const itemId = decision.item_id;
   const buttons = [
-    decisionButton("Approve", "accepted", itemId, chip),
-    decisionButton("Reject", "rejected", itemId, chip),
-    decisionButton("Ignore", "ignored", itemId, chip),
+    decisionButton("同意", "accepted", itemId, chip),
+    decisionButton("拒绝", "rejected", itemId, chip),
+    decisionButton("忽略", "ignored", itemId, chip),
   ];
   actions.append(...buttons);
 
@@ -1071,38 +1086,59 @@ async function resolveDecision(itemId, resolution, statusChip, actions) {
     statusChip.textContent = payload.item?.resolution || resolution;
     if (payload.tool_result) {
       const tool = payload.tool_result;
-      addCard(tool.ok ? "action" : "error", tool.tool || tool.name || "Action", tool.summary || "Tool completed");
+      addCard(tool.ok ? "action" : "error", tool.tool || tool.name || "动作", tool.summary || "工具已完成");
     }
   } catch (error) {
     statusChip.textContent = "open";
     for (const button of actions.querySelectorAll("button")) {
       button.disabled = false;
     }
-    addCard("error", "Error", error.message || String(error));
+    addCard("error", "错误", error.message || String(error));
   }
 }
 
 async function openSettings() {
-  settingsOverlay.hidden = false;
-  settingsContent.replaceChildren(settingsLoadingRow("Loading"));
-  settingsStatus.textContent = "Loading";
-  settingsClose.focus();
+  openDrawer("settings", "设置", "加载中");
   try {
     const response = await fetch("/api/settings");
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
     state.settings = payload;
     renderSettings(payload);
-    settingsStatus.textContent = "Ready";
+    settingsStatus.textContent = "已同步";
   } catch (error) {
-    settingsStatus.textContent = "Error";
+    settingsStatus.textContent = "错误";
     settingsContent.replaceChildren(settingsLoadingRow(error.message || String(error)));
   }
 }
 
+async function openMemoryDrawer() {
+  openDrawer("memory", "记忆罗盘", "加载记忆罗盘");
+  try {
+    const response = await fetch("/api/memory/ontology");
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    renderMemoryDrawer(payload);
+    settingsStatus.textContent = "已同步";
+  } catch (error) {
+    settingsStatus.textContent = "错误";
+    settingsContent.replaceChildren(settingsLoadingRow(error.message || String(error)));
+  }
+}
+
+function openDrawer(mode, title, status) {
+  settingsOverlay.hidden = false;
+  settingsOverlay.dataset.mode = mode;
+  if (settingsDrawer) settingsDrawer.dataset.mode = mode;
+  if (settingsTitle) settingsTitle.textContent = title;
+  settingsContent.replaceChildren(settingsLoadingRow(status));
+  settingsStatus.textContent = status;
+  settingsClose.focus();
+}
+
 function closeSettings() {
   settingsOverlay.hidden = true;
-  settingsOpen.focus();
+  (settingsOverlay.dataset.mode === "memory" ? memoryOpen : settingsOpen).focus();
 }
 
 function renderSettings(payload) {
@@ -1111,6 +1147,8 @@ function renderSettings(payload) {
     settingsPermissionSection(payload.permissions || {}),
     settingsQuietHoursSection(payload.quiet_hours || payload.settings?.quiet_hours || {}),
     settingsPreferenceSection(payload.learned_preferences || {}),
+    settingsWorkspaceSection(payload.connected_apps || []),
+    settingsAppearanceSection(),
     settingsMemoryOntologySection(),
     settingsDataControlSection(payload.data_controls || {}),
   );
@@ -1122,7 +1160,7 @@ function settingsConnectedSection(items) {
   for (const item of items) {
     body.appendChild(settingsRow(item.label || item.id || "Connection", item.status || "", item.detail || ""));
   }
-  return settingsSection("Connected Apps", body);
+  return settingsSection("模型与连接", body);
 }
 
 function settingsPermissionSection(permissions) {
@@ -1132,14 +1170,14 @@ function settingsPermissionSection(permissions) {
     body.appendChild(settingsRow(policy.risk || "risk", policy.behavior || "", ""));
   }
   const openDecisions = Number(permissions.open_decisions || 0);
-  const row = settingsRow("Open decisions", String(openDecisions), "");
-  const button = settingsActionButton("Review", () => {
+  const row = settingsRow("待确认事项", String(openDecisions), "");
+  const button = settingsActionButton("查看", () => {
     closeSettings();
     prefillMessage("Show my open decisions.");
   });
   row.appendChild(button);
   body.appendChild(row);
-  return settingsSection("Permissions", body);
+  return settingsSection("工具权限", body);
 }
 
 function settingsQuietHoursSection(quietHours) {
@@ -1150,17 +1188,17 @@ function settingsQuietHoursSection(quietHours) {
   const enabled = document.createElement("input");
   enabled.type = "checkbox";
   enabled.checked = Boolean(quietHours.enabled);
-  enabledLabel.append(enabled, document.createTextNode("Quiet hours"));
+  enabledLabel.append(enabled, document.createTextNode("专注时段"));
 
   const range = document.createElement("div");
   range.className = "settings-time-grid";
-  const start = settingsTimeInput("Start", quietHours.start || "22:00");
-  const end = settingsTimeInput("End", quietHours.end || "07:00");
+  const start = settingsTimeInput("开始", quietHours.start || "22:00");
+  const end = settingsTimeInput("结束", quietHours.end || "07:00");
   range.append(start.label, end.label);
 
-  const save = settingsActionButton("Save", async () => {
+  const save = settingsActionButton("保存", async () => {
     save.disabled = true;
-    settingsStatus.textContent = "Saving";
+    settingsStatus.textContent = "保存中";
     try {
       const response = await fetch("/api/settings", {
         method: "POST",
@@ -1178,16 +1216,16 @@ function settingsQuietHoursSection(quietHours) {
       if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
       state.settings = payload;
       renderSettings(payload);
-      settingsStatus.textContent = "Saved";
+      settingsStatus.textContent = "已保存";
     } catch (error) {
-      settingsStatus.textContent = "Error";
-      addCard("error", "Error", error.message || String(error));
+      settingsStatus.textContent = "错误";
+      addCard("error", "错误", error.message || String(error));
       save.disabled = false;
     }
   });
 
   body.append(enabledLabel, range, save);
-  return settingsSection("Quiet Hours", body);
+  return settingsSection("Dream 整理", body);
 }
 
 function settingsPreferenceSection(preferences) {
@@ -1195,17 +1233,50 @@ function settingsPreferenceSection(preferences) {
   body.className = "settings-list";
   const items = Array.isArray(preferences.items) ? preferences.items : [];
   if (items.length === 0) {
-    body.appendChild(settingsRow("Learned preferences", "0", ""));
+    body.appendChild(settingsRow("已学偏好", "0", "Mnemo 会从派活、修改和确认中学习。"));
   } else {
     for (const item of items) {
       body.appendChild(settingsRow(item.title || "Preference", confidenceLabel(item.confidence), item.summary || ""));
     }
   }
-  body.appendChild(settingsActionButton("Review", () => {
+  const actions = document.createElement("div");
+  actions.className = "settings-actions";
+  actions.appendChild(settingsActionButton("查看长期记忆", () => {
+    openMemoryDrawer();
+  }));
+  actions.appendChild(settingsActionButton("复盘偏好", () => {
     closeSettings();
     prefillMessage(preferences.review_prompt || "Review my learned preferences.");
   }));
-  return settingsSection("Learned Preferences", body);
+  body.appendChild(actions);
+  return settingsSection("记忆", body);
+}
+
+function settingsWorkspaceSection(items) {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  const workspace = items.find((item) => item.id === "workspace") || {};
+  body.appendChild(settingsRow("工作区", workspace.status || "connected", workspace.detail || "workspace"));
+  body.appendChild(settingsActionButton("调整工作区", () => {
+    closeSettings();
+    prefillMessage("Change my Mnemo workspace: ");
+  }));
+  return settingsSection("工作区", body);
+}
+
+function settingsAppearanceSection() {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  body.appendChild(settingsRow("外观密度", "标准", "舒适、标准、紧凑"));
+  const actions = document.createElement("div");
+  actions.className = "settings-actions segmented-actions";
+  actions.append(
+    settingsActionButton("舒适", () => prefillMessage("Set Mnemo appearance density to comfortable.")),
+    settingsActionButton("标准", () => prefillMessage("Set Mnemo appearance density to standard.")),
+    settingsActionButton("紧凑", () => prefillMessage("Set Mnemo appearance density to compact.")),
+  );
+  body.appendChild(actions);
+  return settingsSection("外观", body);
 }
 
 function settingsDataControlSection(dataControls) {
@@ -1213,20 +1284,20 @@ function settingsDataControlSection(dataControls) {
   body.className = "settings-list";
   const counts = dataControls.counts || {};
   body.append(
-    settingsRow("Memory", String(counts.memory_pages || 0), `${counts.memory_candidates || 0} candidates`),
-    settingsRow("Artifacts", String(counts.artifacts || 0), ""),
-    settingsRow("Scheduled", String(counts.scheduled_items || 0), ""),
+    settingsRow("记忆", String(counts.memory_pages || 0), `${counts.memory_candidates || 0} 条候选`),
+    settingsRow("产物", String(counts.artifacts || 0), ""),
+    settingsRow("计划任务", String(counts.scheduled_items || 0), ""),
   );
   const actions = document.createElement("div");
   actions.className = "settings-actions";
   for (const item of dataControls.actions || []) {
-    actions.appendChild(settingsActionButton(item.label || item.id || "Action", () => {
+    actions.appendChild(settingsActionButton(item.label || item.id || "操作", () => {
       closeSettings();
       prefillMessage(item.prompt || "");
     }));
   }
   body.appendChild(actions);
-  return settingsSection("Data Controls", body);
+  return settingsSection("数据", body);
 }
 
 function settingsMemoryOntologySection() {
@@ -1234,8 +1305,8 @@ function settingsMemoryOntologySection() {
   body.className = "settings-list";
   const target = document.createElement("div");
   target.className = "memory-ontology";
-  body.appendChild(settingsActionButton("View ten dimensions", async () => {
-    target.replaceChildren(settingsLoadingRow("Loading memory ontology"));
+  body.appendChild(settingsActionButton("查看记忆罗盘", async () => {
+    target.replaceChildren(settingsLoadingRow("正在加载记忆罗盘"));
     try {
       const response = await fetch("/api/memory/ontology");
       const payload = await response.json().catch(() => ({}));
@@ -1246,7 +1317,66 @@ function settingsMemoryOntologySection() {
     }
   }));
   body.appendChild(target);
-  return settingsSection("Memory Ontology", body);
+  return settingsSection("记忆罗盘", body);
+}
+
+function renderMemoryDrawer(payload) {
+  const dimensions = memoryOntologyView(payload);
+  settingsContent.replaceChildren(
+    memoryOverview(payload),
+    memorySearchSection(dimensions),
+    dimensions,
+    memoryDrawerActions(),
+  );
+}
+
+function memorySearchSection(dimensions) {
+  const body = document.createElement("div");
+  body.className = "settings-list";
+  const inputNode = document.createElement("input");
+  inputNode.className = "memory-search";
+  inputNode.type = "search";
+  inputNode.placeholder = "搜索记忆内容";
+  inputNode.addEventListener("input", () => {
+    const query = inputNode.value.trim().toLowerCase();
+    for (const row of dimensions.querySelectorAll(".memory-dimension")) {
+      row.hidden = query ? !row.textContent.toLowerCase().includes(query) : false;
+    }
+  });
+  body.appendChild(inputNode);
+  return settingsSection("查找记忆", body);
+}
+
+function memoryOverview(payload) {
+  const counts = payload.counts || {};
+  const body = document.createElement("div");
+  body.className = "memory-overview";
+  body.append(
+    settingsRow("覆盖维度", `${counts.covered_dimensions || 0}/10`, ""),
+    settingsRow("长期记忆", String(counts.pages || 0), "已沉淀的稳定资料"),
+    settingsRow("候选学习", String(counts.candidates || 0), "等待确认或整理的学习信号"),
+  );
+  return settingsSection("罗盘总览", body);
+}
+
+function memoryDrawerActions() {
+  const actions = document.createElement("div");
+  actions.className = "settings-actions drawer-actions";
+  actions.append(
+    settingsActionButton("引用到当前任务", () => {
+      closeSettings();
+      prefillMessage("Use the relevant long-term memories for the current task: ");
+    }),
+    settingsActionButton("更新记忆", () => {
+      closeSettings();
+      prefillMessage("Update my long-term memory: ");
+    }),
+    settingsActionButton("忘记内容", () => {
+      closeSettings();
+      prefillMessage("Forget this memory: ");
+    }),
+  );
+  return actions;
 }
 
 function memoryOntologyView(payload) {
@@ -1255,9 +1385,9 @@ function memoryOntologyView(payload) {
   const counts = payload.counts || {};
   wrapper.appendChild(
     settingsRow(
-      "Coverage",
+      "覆盖度",
       `${counts.covered_dimensions || 0}/10`,
-      `${counts.pages || 0} pages · ${counts.candidates || 0} candidates`,
+      `${counts.pages || 0} 条长期记忆 · ${counts.candidates || 0} 条候选`,
     ),
   );
   for (const dimension of payload.dimensions || []) {
@@ -1272,23 +1402,43 @@ function memoryDimensionRow(dimension) {
   const header = document.createElement("div");
   header.className = "memory-dimension-header";
   const title = document.createElement("strong");
-  title.textContent = dimension.dimension || "memory";
+  title.textContent = dimensionLabel(dimension.dimension);
   const count = document.createElement("span");
   count.className = "settings-value";
   count.textContent = `${dimension.pages || 0}/${dimension.candidates || 0}`;
   header.append(title, count);
+  const meter = document.createElement("progress");
+  meter.className = "memory-meter";
+  meter.max = 10;
+  meter.value = Math.min(10, Number(dimension.pages || 0) * 2 + Number(dimension.candidates || 0));
   const items = document.createElement("div");
   items.className = "memory-dimension-items";
   const entries = Array.isArray(dimension.items) ? dimension.items : [];
   if (entries.length === 0) {
-    items.appendChild(settingsLoadingRow("No memory yet"));
+    items.appendChild(settingsLoadingRow("暂无记忆"));
   } else {
     for (const item of entries) {
       items.appendChild(settingsRow(item.title || item.kind || "Memory", confidenceLabel(item.confidence), item.summary || ""));
     }
   }
-  row.append(header, items);
+  row.append(header, meter, items);
   return row;
+}
+
+function dimensionLabel(value) {
+  const labels = {
+    identity: "身份识别",
+    cognition: "认知方式",
+    values: "价值观",
+    goals: "核心目标",
+    preferences: "偏好习惯",
+    relationships: "关系网络",
+    context: "项目知识",
+    history: "历史任务",
+    patterns: "工具习惯",
+    boundaries: "边界约束",
+  };
+  return labels[value] || value || "记忆";
 }
 
 function settingsSection(title, body) {
@@ -1370,8 +1520,8 @@ function updateComposerState() {
   reset.disabled = state.busy;
   stop.hidden = !state.busy;
   stop.disabled = !state.activeRunId || state.cancelRequested;
-  stop.textContent = state.cancelRequested ? "Stopping" : "Stop";
-  runBadge.textContent = state.cancelRequested ? "Stopping" : state.busy ? "Running" : "Idle";
+  stop.textContent = state.cancelRequested ? "停止中" : "停止";
+  runBadge.textContent = state.cancelRequested ? "停止中" : state.busy ? "执行中" : "未执行";
 }
 
 function addMessage(role, text) {
@@ -1620,7 +1770,15 @@ function addCard(kind, title, bodyText) {
 }
 
 function setStatus(text) {
-  statusText.textContent = text;
+  const labels = {
+    Ready: "空闲",
+    Working: "执行中",
+    Started: "已开始",
+    Cancelling: "停止中",
+    Loading: "加载中",
+    Error: "错误",
+  };
+  statusText.textContent = labels[text] || text;
 }
 
 function resizeInput() {

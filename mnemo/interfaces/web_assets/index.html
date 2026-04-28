@@ -13,27 +13,30 @@
           <div class="rail-mark" aria-label="Mnemo">M</div>
           <span>Mnemo</span>
         </div>
-        <button class="rail-button active" type="button" title="Chat" aria-label="Chat">
-          <span class="rail-icon">C</span><span>Chat</span>
+        <button class="rail-button active" type="button" title="对话" aria-label="对话">
+          <span class="rail-icon">⌘</span><span>对话</span>
         </button>
-        <button id="activityToggle" class="rail-button" type="button" title="Activity" aria-label="Activity">
-          <span class="rail-icon">A</span><span>Activity</span>
+        <button id="memoryOpen" class="rail-button" type="button" title="记忆罗盘" aria-label="记忆罗盘">
+          <span class="rail-icon">◇</span><span>记忆</span>
         </button>
-        <button id="settingsOpen" class="rail-button" type="button" title="Settings" aria-label="Settings">
-          <span class="rail-icon">S</span><span>Settings</span>
+        <button id="activityToggle" class="rail-button" type="button" title="实时活动" aria-label="实时活动">
+          <span class="rail-icon">↯</span><span>活动</span>
+        </button>
+        <button id="settingsOpen" class="rail-button" type="button" title="设置" aria-label="设置">
+          <span class="rail-icon">⚙</span><span>设置</span>
         </button>
       </nav>
 
       <section class="chat-shell">
         <header class="topbar">
           <div class="topbar-copy">
-            <h1>Mnemo OS</h1>
-            <p>Everything starts here</p>
+            <h1>Mnemo</h1>
+            <p>一个聊天框，完成所有事</p>
           </div>
           <div class="topbar-actions">
-            <span id="status" class="status-pill">Ready</span>
-            <span id="runBadge" class="run-badge">Idle</span>
-            <button id="reset" class="ghost-button" type="button" title="New conversation">New</button>
+            <span id="status" class="status-pill">空闲</span>
+            <span id="runBadge" class="run-badge">未执行</span>
+            <button id="reset" class="ghost-button" type="button" title="新对话">新对话</button>
           </div>
         </header>
 
@@ -41,14 +44,14 @@
 
         <form id="composer" class="composer">
           <div class="composer-tools" aria-label="Composer tools">
-            <button id="attachButton" class="icon-button" type="button" title="Attach file" aria-label="Attach file">+</button>
-            <button id="voiceButton" class="icon-button" type="button" title="Voice input" aria-label="Voice input">mic</button>
-            <button id="mentionButton" class="icon-button" type="button" title="Mention app" aria-label="Mention app">@</button>
+            <button id="attachButton" class="icon-button" type="button" title="添加文件" aria-label="添加文件">＋</button>
+            <button id="voiceButton" class="icon-button" type="button" title="语音输入" aria-label="语音输入">🎙</button>
+            <button id="mentionButton" class="icon-button" type="button" title="提及应用" aria-label="提及应用">@</button>
           </div>
-          <textarea id="message" name="message" rows="1" placeholder="今天想完成什么？"></textarea>
+          <textarea id="message" name="message" rows="1" placeholder="发送消息，@ 让 Mnemo 帮你处理任务..."></textarea>
           <div class="composer-actions">
-            <button id="stop" class="stop" type="button" title="Stop current run" hidden>Stop</button>
-            <button id="send" class="send-button" type="submit" title="Send">Send</button>
+            <button id="stop" class="stop" type="button" title="停止当前任务" hidden>停止</button>
+            <button id="send" class="send-button" type="submit" title="发送">➤</button>
           </div>
         </form>
       </section>
@@ -57,34 +60,34 @@
         <section class="context-panel" aria-label="User context">
           <header class="context-header">
             <div>
-              <h2>User Context</h2>
-              <p>Session continuity</p>
+              <h2>偏好与长期记忆</h2>
+              <p>从你的派活过程里沉淀</p>
             </div>
-            <span class="live-dot">Live</span>
+            <button id="memoryPanelOpen" class="mini-link" type="button">查看</button>
           </header>
           <div class="context-grid">
             <div class="context-card">
-              <span class="context-label">Recent ask</span>
-              <strong id="contextUserPrompt">No recent prompt</strong>
+              <span class="context-label">最近请求</span>
+              <strong id="contextUserPrompt">暂无最近请求</strong>
             </div>
             <div class="context-card">
-              <span class="context-label">Conversation</span>
+              <span class="context-label">对话上下文</span>
               <strong id="contextConversation">new</strong>
             </div>
             <div class="context-card">
-              <span class="context-label">Mission</span>
+              <span class="context-label">当前焦点</span>
               <strong id="contextMission">new</strong>
             </div>
             <div class="context-card">
-              <span class="context-label">Last run</span>
+              <span class="context-label">最近运行</span>
               <strong id="contextRun">none</strong>
             </div>
           </div>
         </section>
         <header class="activity-header">
           <div>
-            <h2>Activity</h2>
-            <p>Current run</p>
+            <h2>实时活动</h2>
+            <p>当前正在发生什么</p>
           </div>
           <span id="activityCount" class="activity-count">0</span>
         </header>
@@ -95,10 +98,10 @@
       <aside class="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
         <header class="settings-header">
           <div>
-            <h2 id="settingsTitle">Settings</h2>
-            <p id="settingsStatus">Ready</p>
+            <h2 id="settingsTitle">设置</h2>
+            <p id="settingsStatus">空闲</p>
           </div>
-          <button id="settingsClose" type="button" title="Close settings">Close</button>
+          <button id="settingsClose" type="button" title="关闭">关闭</button>
         </header>
         <div id="settingsContent" class="settings-content"></div>
       </aside>

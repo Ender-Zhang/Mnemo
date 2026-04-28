@@ -11,7 +11,7 @@
 - Keep stream events compact; fetch large bodies through explicit APIs.
 - Use `textContent` for model/tool/user-controlled content.
 - Render assistant Markdown with DOM-created nodes and `textContent`, not `innerHTML`.
-- Keep live streaming readable as plain text before final Markdown formatting.
+- Keep live streaming readable with safe DOM-created Markdown formatting; never use `innerHTML`.
 - Keep layout responsive with stable widths, wrapping, and no overlapping text.
 - Keep stdout clean for CLI stream/JSON tests; web asset tests should not require a browser.
 
