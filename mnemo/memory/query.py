@@ -17,6 +17,69 @@ CONTENT_DIMENSIONS = (
     "patterns",
 )
 
+MEMORY_ONTOLOGY_DIMENSIONS = (*CONTENT_DIMENSIONS, "boundaries")
+
+MEMORY_DIMENSION_ALIASES = {
+    "profile": "identity",
+    "personal": "identity",
+    "personal_profile": "identity",
+    "user_profile": "identity",
+    "user_identity": "identity",
+    "preference": "preferences",
+    "user_preference": "preferences",
+    "finance": "preferences",
+    "financial": "preferences",
+    "money": "preferences",
+    "budget": "preferences",
+    "goal": "goals",
+    "objective": "goals",
+    "relationship": "relationships",
+    "relations": "relationships",
+    "current_context": "context",
+    "project": "context",
+    "knowledge": "context",
+    "background": "context",
+    "domain_knowledge": "context",
+    "past": "history",
+    "task_history": "history",
+    "habit": "patterns",
+    "habits": "patterns",
+    "workflow": "patterns",
+    "work_style": "patterns",
+    "tool_habit": "patterns",
+    "boundary": "boundaries",
+    "constraint": "boundaries",
+    "constraints": "boundaries",
+}
+
+
+def normalize_memory_dimension(
+    value: str | None,
+    *,
+    fallback: str = "context",
+    allow_policy: bool = True,
+) -> str:
+    normalized = _normalize_dimension_token(value)
+    mapped = MEMORY_DIMENSION_ALIASES.get(normalized, normalized)
+    allowed = MEMORY_ONTOLOGY_DIMENSIONS if allow_policy else CONTENT_DIMENSIONS
+    if mapped in allowed:
+        return mapped
+    fallback_token = MEMORY_DIMENSION_ALIASES.get(_normalize_dimension_token(fallback), _normalize_dimension_token(fallback))
+    if fallback_token in allowed:
+        return fallback_token
+    return "context"
+
+
+def is_known_memory_dimension(value: str | None, *, allow_policy: bool = True) -> bool:
+    normalized = _normalize_dimension_token(value)
+    mapped = MEMORY_DIMENSION_ALIASES.get(normalized, normalized)
+    allowed = MEMORY_ONTOLOGY_DIMENSIONS if allow_policy else CONTENT_DIMENSIONS
+    return mapped in allowed
+
+
+def _normalize_dimension_token(value: str | None) -> str:
+    return "_".join(str(value or "").strip().lower().replace("-", "_").split())
+
 
 @dataclass(frozen=True)
 class MemoryQueryPlan:

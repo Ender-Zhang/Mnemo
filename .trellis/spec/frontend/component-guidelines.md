@@ -27,7 +27,7 @@
 - Learning chips should stay inline in the timeline and resolve or undo memory candidates through `/api/learning/memory`.
 - Learning chips with `requires_confirmation=true` should use explicit confirmation wording before durable memory promotion.
 - The settings drawer renders compact connected-app, permission, quiet-hours, preference, and data-control summaries from `/api/settings`.
-- Ten-dimensional memory inspection lives in the settings drawer through `/api/memory/ontology` and shows compact coverage, counts, and clipped item summaries.
+- Ten-dimensional memory inspection lives in the settings drawer through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence for a selected item.
 - Settings drawer actions should either save narrow settings or prefill the single composer for normal user intent.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
 - Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.
@@ -49,7 +49,7 @@
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
 | Learning chip | Shows compact learning text, high-risk confirmation wording, accept/this-turn/reject, and post-resolution undo actions | `tests/test_web.py`, `tests/test_runtime.py` |
 | Settings drawer | Shows compact low-frequency settings, saves quiet hours, and reuses composer prefill actions | `tests/test_web.py` |
-| Memory ontology drawer | Loads compact ten-dimensional memory coverage without raw secrets | `tests/test_web.py` |
+| Memory ontology drawer | Loads compact L1 coverage, then L2/L3 memory detail on demand without raw secrets | `tests/test_web.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
 | Activity upsert | Merges action lifecycle events into a stable row | Asset behavior in `tests/test_web.py` |
 | Internal learning housekeeping | Suppresses `learning_discard` and learning-tone status from visible activity | Asset behavior in `tests/test_web.py` |
@@ -70,6 +70,7 @@
 - Good: label review-gated Learning chip acceptance as an explicit confirmation instead of casual preference learning.
 - Good: let data-control actions prefill the single composer instead of adding a separate data-management screen.
 - Good: inspect ten-dimensional memory from settings as a compact, read-only view.
+- Good: keep evidence chains behind explicit item selection.
 - Good: use `document.createElement`, `textContent`, and `replaceChildren` for Markdown blocks and inline marks.
 - Good: store streaming Markdown source in `dataset.rawText` before final formatting.
 - Good: filter internal learning maintenance by event metadata such as tool name and status tone.
@@ -87,7 +88,7 @@
 - For recall cards, assert repeated title/summary text is compacted.
 - For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses confirmation wording for review-gated items.
 - For settings, assert the asset calls `/api/settings`, renders the drawer, and reuses composer prefill for user actions.
-- For memory ontology, assert `/api/memory/ontology` and settings drawer assets expose compact ten-dimensional coverage.
+- For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and settings drawer assets expose progressive L1/L2/L3 disclosure.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
 - For activity rows, assert `activityRows`, `activityActionId`, and `upsertActivity` are present.
 - For internal learning housekeeping, assert `isInternalLearningEvent`, `tone === "learning"`, and `learning_discard` filters are present.

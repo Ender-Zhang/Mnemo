@@ -193,7 +193,7 @@ print(json.dumps({
             self.assertEqual(result["kind"], "update_result")
             self.assertEqual(len(result["memory_candidates"]), 1)
             self.assertEqual(len(candidates), 1)
-            self.assertEqual(candidates[0]["dimension"], "integration")
+            self.assertEqual(candidates[0]["dimension"], "context")
             self.assertEqual(len(notes), 1)
             self.assertEqual(notes[0]["metadata"]["source"], "unit-test")
 

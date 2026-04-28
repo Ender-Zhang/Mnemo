@@ -92,6 +92,24 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(safety["taint"], "trusted")
             self.assertEqual(safety["warnings"], [])
 
+    def test_write_candidate_normalizes_memory_dimensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+
+            preference = MemoryEngine(store).write_candidate(
+                run_id,
+                "User mentioned a budget preference",
+                dimension="finance",
+            )
+            fallback = MemoryEngine(store).write_candidate(
+                run_id,
+                "User shared a durable project fact",
+                dimension="scratchpad",
+            )
+
+            self.assertEqual(store.get_memory_candidate(preference["candidate_id"])["dimension"], "preferences")
+            self.assertEqual(store.get_memory_candidate(fallback["candidate_id"])["dimension"], "context")
+
     def test_write_candidate_taints_prompt_injection_for_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)

@@ -9,7 +9,16 @@ from typing import Any
 
 from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
-from .query import CONTENT_DIMENSIONS, MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
+from .query import (
+    CONTENT_DIMENSIONS,
+    MEMORY_DIMENSION_ALIASES,
+    MEMORY_ONTOLOGY_DIMENSIONS,
+    MemoryQueryPlan,
+    annotate_memory_match,
+    build_memory_query_plan,
+    fuse_ranked_batches,
+    normalize_memory_dimension,
+)
 from .safety import append_safety_evidence, scan_memory_candidate
 
 L1_SNAPSHOT_FILENAME = "l1-memory-snapshot.json"
@@ -190,10 +199,11 @@ class MemoryEngine:
         evidence: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         scan = scan_memory_candidate(claim, evidence)
+        normalized_dimension = normalize_memory_dimension(dimension, fallback="context")
         candidate_id = self.store.add_memory_candidate(
             run_id,
             claim,
-            dimension=dimension,
+            dimension=normalized_dimension,
             scope=scope,
             confidence=confidence,
             evidence=append_safety_evidence(evidence, scan),
@@ -235,7 +245,7 @@ class MemoryEngine:
             candidate = self.write_candidate(
                 note["run_id"],
                 content,
-                dimension=metadata.get("dimension") or "working_note",
+                dimension=metadata.get("dimension") or "context",
                 scope=metadata.get("scope") or f"mission:{note['mission_id']}",
                 confidence=_bounded_confidence(metadata.get("confidence"), DEFAULT_W0_CONFIDENCE),
                 evidence=[
@@ -1876,7 +1886,7 @@ def _candidate_result(candidate: dict[str, Any]) -> dict[str, Any]:
         "type": "candidate",
         "id": candidate["id"],
         "claim": candidate["claim"],
-        "dimension": candidate.get("dimension"),
+        "dimension": normalize_memory_dimension(candidate.get("dimension"), fallback="context"),
         "scope": candidate["scope"],
         "confidence": candidate["confidence"],
         "status": candidate["status"],
@@ -1901,7 +1911,7 @@ def _session_result(message: dict[str, Any]) -> dict[str, Any]:
 
 def _candidate_title(candidate: dict[str, Any]) -> str:
     claim = _normalize_space(candidate.get("claim", ""))
-    dimension = candidate.get("dimension") or "memory"
+    dimension = normalize_memory_dimension(candidate.get("dimension"), fallback="context")
     title_body = claim[:72].rstrip()
     return f"{dimension}: {title_body}"
 
@@ -2153,7 +2163,7 @@ def _compact_safety_scan(scan: dict[str, Any]) -> dict[str, Any]:
 
 
 def _dimension_counts(pages: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> dict[str, int]:
-    counts = {dimension: 0 for dimension in CONTENT_DIMENSIONS}
+    counts = {dimension: 0 for dimension in MEMORY_ONTOLOGY_DIMENSIONS}
     for page in pages:
         dimension = _infer_dimension(page.get("title") or page.get("scope") or "")
         if dimension in counts:
@@ -2170,9 +2180,9 @@ def _dimension_counts(pages: list[dict[str, Any]], candidates: list[dict[str, An
 def _infer_dimension(value: str) -> str:
     text = str(value or "").strip().casefold()
     head = text.split(":", 1)[0].strip()
-    if head in CONTENT_DIMENSIONS:
-        return head
-    for dimension in CONTENT_DIMENSIONS:
+    if head in MEMORY_ONTOLOGY_DIMENSIONS or head in MEMORY_DIMENSION_ALIASES:
+        return normalize_memory_dimension(head, fallback="context")
+    for dimension in MEMORY_ONTOLOGY_DIMENSIONS:
         if dimension in text:
             return dimension
     return "context"

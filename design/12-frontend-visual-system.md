@@ -184,15 +184,17 @@ Structure:
   罗盘总览 | 全部记忆
   search/filter row
   left/list: dimensions with coverage bars and counts
-  right/detail: selected memory summaries and evidence rows
+  right/detail: selected dimension summaries, then selected item evidence
   footer actions: 忘记 / 更新 / 引用到当前任务
 ```
 
 Implementation scope for current lightweight frontend:
-- Fetch `/api/memory/ontology` on open.
-- Show coverage summary.
+- Fetch `/api/memory/ontology` on open as L1 only.
+- Show coverage summary and short dimension summaries.
 - Show every dimension row with a progress bar and count.
-- Expand each dimension with clipped memory summaries already returned by the API.
+- Fetch `/api/memory/dimension` only after a dimension is selected, then show clipped stable-memory and candidate cards.
+- Fetch `/api/memory/item` only after an item is selected, then show clipped detail and compact evidence rows.
+- Never dump raw session transcripts, raw evidence blobs, provider payloads, or all memory pages into the drawer.
 - Footer actions prefill the single composer; browser does not directly mutate memory except existing learning-chip APIs.
 
 ## 8. Settings Drawer

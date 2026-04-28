@@ -13,6 +13,8 @@ const state = {
   artifacts: new Map(),
   artifactRelated: new Map(),
   settings: null,
+  memoryDimensions: new Map(),
+  memoryItems: new Map(),
   cancelRequested: false,
   lastUserIntent: localStorage.getItem("mnemo.last_user_intent") || "",
 };
@@ -1231,6 +1233,8 @@ async function openSettings() {
 
 async function openMemoryDrawer() {
   openDrawer("memory", "记忆罗盘", "加载记忆罗盘");
+  state.memoryDimensions.clear();
+  state.memoryItems.clear();
   try {
     const response = await fetch("/api/memory/ontology");
     const payload = await response.json().catch(() => ({}));
@@ -1517,28 +1521,162 @@ function memoryCompassDimensionRow(dimension, detail, active) {
 }
 
 function renderMemoryCompassDetail(target, dimension) {
+  const dimensionName = dimension?.dimension || "context";
+  target.dataset.dimension = dimensionName;
   target.replaceChildren();
   const tag = document.createElement("span");
   tag.className = "memory-detail-tag";
-  tag.textContent = dimensionLabel(dimension.dimension);
+  tag.textContent = dimensionLabel(dimensionName);
   const title = document.createElement("h3");
-  title.textContent = `${dimensionLabel(dimension.dimension)}中的长期信号`;
+  title.textContent = `${dimensionLabel(dimensionName)}中的长期信号`;
   const meta = document.createElement("div");
   meta.className = "memory-detail-meta";
   meta.textContent = `${dimension.pages || 0} 条稳定记忆 · ${dimension.candidates || 0} 条候选`;
-  const evidenceTitle = document.createElement("h4");
-  evidenceTitle.textContent = "证据链";
+  const summary = document.createElement("p");
+  summary.className = "memory-detail-summary";
+  summary.textContent = dimension.summary || "先查看这一维的稳定记忆和候选学习，再按需展开证据。";
+  const loading = settingsLoadingRow("正在读取这一维的记忆");
+  target.append(tag, title, meta, summary, loading);
+  loadMemoryDimension(dimensionName, target);
+}
+
+async function loadMemoryDimension(dimensionName, target) {
+  const key = String(dimensionName || "context");
+  if (state.memoryDimensions.has(key)) {
+    renderMemoryDimensionDetail(target, state.memoryDimensions.get(key));
+    return;
+  }
+  try {
+    const response = await fetch(`/api/memory/dimension?dimension=${encodeURIComponent(key)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    state.memoryDimensions.set(key, payload);
+    if (target.dataset.dimension === key) {
+      renderMemoryDimensionDetail(target, payload);
+    }
+  } catch (error) {
+    if (target.dataset.dimension !== key) return;
+    const errorRow = settingsLoadingRow(error.message || String(error));
+    errorRow.classList.add("memory-detail-error");
+    target.appendChild(errorRow);
+  }
+}
+
+function renderMemoryDimensionDetail(target, payload) {
+  const dimensionName = payload.dimension || target.dataset.dimension || "context";
+  target.dataset.dimension = dimensionName;
+  target.replaceChildren();
+  const tag = document.createElement("span");
+  tag.className = "memory-detail-tag";
+  tag.textContent = dimensionLabel(dimensionName);
+  const title = document.createElement("h3");
+  title.textContent = `${dimensionLabel(dimensionName)}中的长期信号`;
+  const counts = payload.counts || {};
+  const meta = document.createElement("div");
+  meta.className = "memory-detail-meta";
+  meta.textContent = `${counts.pages || 0} 条稳定记忆 · ${counts.candidates || 0} 条候选`;
+  const summary = document.createElement("p");
+  summary.className = "memory-detail-summary";
+  summary.textContent = payload.summary || "暂无可展示的长期信号。";
+  const itemPanel = document.createElement("div");
+  itemPanel.className = "memory-item-panel";
+  const pages = memoryDetailSection("稳定记忆", payload.pages || [], itemPanel);
+  const candidates = memoryDetailSection("候选学习", payload.candidates || [], itemPanel);
+  target.append(tag, title, meta, summary, pages, candidates, itemPanel);
+}
+
+function memoryDetailSection(titleText, entries, itemPanel) {
+  const section = document.createElement("section");
+  section.className = "memory-detail-section";
+  const title = document.createElement("h4");
+  title.textContent = titleText;
   const list = document.createElement("div");
   list.className = "memory-detail-list";
-  const entries = Array.isArray(dimension.items) ? dimension.items : [];
-  if (entries.length === 0) {
+  if (!Array.isArray(entries) || entries.length === 0) {
     list.appendChild(settingsLoadingRow("暂无记忆"));
   } else {
     for (const item of entries) {
-      list.appendChild(memoryDetailEvidence(item));
+      list.appendChild(memoryLayerItem(item, itemPanel));
     }
   }
-  target.append(tag, title, meta, evidenceTitle, list);
+  section.append(title, list);
+  return section;
+}
+
+function memoryLayerItem(item, itemPanel) {
+  const row = document.createElement("div");
+  row.className = "memory-detail-card";
+  const body = document.createElement("div");
+  body.className = "memory-detail-card-body";
+  const title = document.createElement("strong");
+  title.textContent = cleanMemoryTitle(item.title || item.kind || "记忆");
+  const summary = document.createElement("p");
+  summary.textContent = cleanMemorySummary(item.summary || "", title.textContent);
+  const meta = document.createElement("span");
+  meta.textContent = `${item.status || item.kind || "memory"}${confidenceLabel(item.confidence) ? ` · ${confidenceLabel(item.confidence)}` : ""}`;
+  body.append(title, summary, meta);
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "memory-detail-action";
+  action.textContent = "查看证据";
+  action.addEventListener("click", () => {
+    itemPanel.replaceChildren(settingsLoadingRow("正在读取证据"));
+    loadMemoryItem(item.kind, item.id, itemPanel);
+  });
+  row.append(body, action);
+  return row;
+}
+
+async function loadMemoryItem(kind, id, target) {
+  const itemType = String(kind || "");
+  const itemId = String(id || "");
+  const key = `${itemType}:${itemId}`;
+  if (!itemType || !itemId) {
+    target.replaceChildren(settingsLoadingRow("记忆条目缺少标识"));
+    return;
+  }
+  if (state.memoryItems.has(key)) {
+    renderMemoryItemDetail(target, state.memoryItems.get(key));
+    return;
+  }
+  try {
+    const response = await fetch(`/api/memory/item?type=${encodeURIComponent(itemType)}&id=${encodeURIComponent(itemId)}`);
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    state.memoryItems.set(key, payload);
+    renderMemoryItemDetail(target, payload);
+  } catch (error) {
+    target.replaceChildren(settingsLoadingRow(error.message || String(error)));
+  }
+}
+
+function renderMemoryItemDetail(target, payload) {
+  const item = payload.item || {};
+  target.replaceChildren();
+  const tag = document.createElement("span");
+  tag.className = "memory-detail-tag";
+  tag.textContent = "证据";
+  const title = document.createElement("h4");
+  title.textContent = cleanMemoryTitle(item.title || item.type || "记忆条目");
+  const summary = document.createElement("p");
+  summary.className = "memory-detail-summary";
+  summary.textContent = cleanMemorySummary(item.summary || "", title.textContent) || "暂无摘要。";
+  const meta = document.createElement("div");
+  meta.className = "memory-detail-meta";
+  meta.textContent = `${dimensionLabel(item.dimension)} · ${item.status || item.type || "memory"}${confidenceLabel(item.confidence) ? ` · ${confidenceLabel(item.confidence)}` : ""}`;
+  const evidenceTitle = document.createElement("h4");
+  evidenceTitle.textContent = "证据链";
+  const list = document.createElement("div");
+  list.className = "memory-evidence-list";
+  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+  if (evidence.length === 0) {
+    list.appendChild(settingsLoadingRow("暂无证据"));
+  } else {
+    for (const entry of evidence) {
+      list.appendChild(memoryDetailEvidence(entry));
+    }
+  }
+  target.append(tag, title, meta, summary, evidenceTitle, list);
 }
 
 function memoryDetailEvidence(item) {
@@ -1620,17 +1758,10 @@ function memoryDimensionRow(dimension) {
   meter.className = "memory-meter";
   meter.max = 10;
   meter.value = Math.min(10, Number(dimension.pages || 0) * 2 + Number(dimension.candidates || 0));
-  const items = document.createElement("div");
-  items.className = "memory-dimension-items";
-  const entries = Array.isArray(dimension.items) ? dimension.items : [];
-  if (entries.length === 0) {
-    items.appendChild(settingsLoadingRow("暂无记忆"));
-  } else {
-    for (const item of entries) {
-      items.appendChild(settingsRow(item.title || item.kind || "Memory", confidenceLabel(item.confidence), item.summary || ""));
-    }
-  }
-  row.append(header, meter, items);
+  const summary = document.createElement("p");
+  summary.className = "memory-dimension-summary";
+  summary.textContent = dimension.summary || "尚未沉淀稳定信号。";
+  row.append(header, meter, summary);
   return row;
 }
 

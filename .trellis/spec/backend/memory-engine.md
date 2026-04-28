@@ -55,6 +55,8 @@
 - CLI: `mnemo memory links <memory_id> [--direction outgoing|incoming|both] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory snapshot [--state-dir DIR] [--json]`
 - Web API: `GET /api/memory/ontology`
+- Web API: `GET /api/memory/dimension?dimension=<dimension>`
+- Web API: `GET /api/memory/item?type=page|candidate&id=<id>`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
@@ -71,6 +73,7 @@
 ### 3. Contracts
 - Normal tools write memory candidates, not stable pages.
 - Normal tools and W0 ingestion write memory candidates through `MemoryEngine.write_candidate()`.
+- `MemoryEngine.write_candidate()` normalizes every durable candidate dimension into the configured memory ontology; non-standard labels such as `finance`, `profile`, or `work_style` must not persist as separate user-facing buckets.
 - After-turn learning reflection writes memory candidates through the same `memory_write_candidate` tool and `MemoryEngine.write_candidate()` path.
 - Candidate writes append compact `memory_safety` evidence with taint, risk, review flag, warning labels, and source summaries.
 - Candidate evidence source taint is deterministic and recognizes trusted user/run/work-note sources, external web/file/tool/imported-skill/MCP/runtime sources, and unknown sources.
@@ -147,9 +150,14 @@
 - `session_message` results contain `id`, `message_id`, `conversation_id`, `mission_id`, `run_id`, `role`, `snippet`, and `created_at`; they must omit raw `content`.
 - Prompt-facing context cards for `session_message` include compact `summary` and provenance ids, not full transcripts.
 - `memory_read` must read stable memory pages as well as memory candidates.
-- `/api/memory/ontology` must expose the configured ten-dimension memory coverage as compact counts and clipped page/candidate summaries for user inspection.
+- `/api/memory/ontology` is the L1 memory disclosure endpoint: it must expose the configured ten-dimension memory coverage as compact counts, short summaries, and per-dimension drill-down URLs only.
 - `/api/memory/ontology` must normalize non-standard historical dimension labels into the configured ten dimensions and must never return extra user-facing dimensions.
-- `/api/memory/ontology` must be read-only and must not expose provider secrets, raw evidence blobs, or unbounded memory bodies.
+- `/api/memory/ontology` must be read-only and must not expose provider secrets, raw evidence blobs, unbounded memory bodies, or per-item detail arrays.
+- `/api/memory/dimension` is the L2 memory disclosure endpoint: it returns active stable pages and open draft/review candidates for one normalized dimension as clipped cards with detail URLs.
+- `/api/memory/dimension` must exclude promoted, rejected, tombstoned, archived, and private-deleted candidates from the user-facing candidate list.
+- `/api/memory/item` is the L3 memory disclosure endpoint: it returns one selected page or candidate with clipped detail and compact evidence/tombstone rows.
+- `/api/memory/item` must only read active pages and open draft/review candidates; historical rejected/tombstoned/private records require explicit CLI or memory search paths.
+- L4 raw session recall remains available only through explicit memory/session search paths, never through the memory drawer ontology, dimension, or item endpoints.
 - `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.
 - `mnemo memory list` defaults to draft candidates; page listing defaults to active pages.
 - `mnemo memory list --status all` means no status filter.
@@ -194,7 +202,9 @@
 | L4 session search | `search_scope="sessions"` returns bounded message snippets and omits raw content | `tests/test_memory.py` |
 | Tombstone-aware session recall | Default session/all search suppresses snippets matching tombstones; explicit include returns them for historical lookup | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |
 | Memory page read | `memory_read` can load stable pages by id | `tests/test_tools.py` |
-| Memory ontology API | Web settings can inspect ten-dimensional memory coverage with clipped summaries | `tests/test_web.py` |
+| Memory ontology API | Web settings can inspect L1 ten-dimensional coverage without item arrays | `tests/test_web.py` |
+| Memory dimension API | Web settings can inspect one L2 dimension with clipped page/candidate cards | `tests/test_web.py` |
+| Memory item API | Web settings can inspect one L3 memory item with compact evidence | `tests/test_web.py` |
 | CLI memory list | Candidate/page listing uses status defaults and `all` filter | `tests/test_cli.py` |
 | CLI memory read | Candidate and page ids return typed memory payloads | `tests/test_cli.py` |
 | CLI memory links | Outgoing and incoming links can be inspected by id | `tests/test_cli.py` |
@@ -233,6 +243,7 @@
 - Good: use one-hop page links to surface adjacent wiki knowledge while keeping tool schemas unchanged.
 - Good: require explicit `search_scope="sessions"` for raw-session recall so default memory search stays lightweight.
 - Good: suppress tombstoned facts at the L4 recall boundary by default, with explicit historical opt-in.
+- Good: keep user inspection progressive: L1 coverage first, L2 dimension cards on click, L3 evidence only for a selected item.
 - Good: expose query plans as compact metadata so the model can decide whether to refine, read, or ask the user.
 - Good: expose health cards as compact model input so the model chooses whether to verify, link, archive, or ignore.
 - Good: expose decay as a bounded tool the model may call after seeing health cards, not as an always-on workflow.

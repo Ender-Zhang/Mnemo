@@ -720,16 +720,27 @@ print(json.dumps({
             conversation_id = store.create_conversation("web memory ontology")
             mission_id = store.create_mission(conversation_id, "web memory ontology")
             run_id = store.create_run(conversation_id, mission_id, "memory ontology")
-            store.upsert_memory_page(
+            source_candidate_id = store.add_memory_candidate(
+                run_id,
+                "User may prefer calmer UI",
+                dimension="preferences",
+                confidence=0.72,
+                evidence=[{"kind": "turn", "summary": "Asked for calmer UI"}],
+            )
+            preferences_page_id = store.upsert_memory_page(
                 "preferences: reports",
                 "User prefers concise reports. " + ("long private detail " * 30),
                 confidence=0.91,
+                source_candidate_id=source_candidate_id,
             )
             store.upsert_memory_page("goals: mnemo", "Build a lightweight agentic system.", confidence=0.82)
             store.upsert_memory_page("user_profile: Chen", "The user profile belongs under identity.", confidence=0.75)
-            store.add_memory_candidate(run_id, "User may prefer calmer UI", dimension="preferences")
             store.add_memory_candidate(run_id, "User has a monthly budget preference", dimension="finance")
             store.add_memory_candidate(run_id, "User works through compact loops", dimension="work_style")
+            promoted_id = store.add_memory_candidate(run_id, "Promoted entries stay out of L1 candidates", dimension="preferences")
+            rejected_id = store.add_memory_candidate(run_id, "Rejected entries stay hidden", dimension="preferences")
+            store.update_memory_candidate_status(promoted_id, "promoted")
+            store.update_memory_candidate_status(rejected_id, "rejected:duplicate")
 
             with RunningServer(
                 WebServerConfig(
@@ -741,11 +752,34 @@ print(json.dumps({
                 )
             ) as server:
                 status, _, body = server.request("GET", "/api/memory/ontology")
+                dimension_status, _, dimension_body = server.request(
+                    "GET",
+                    "/api/memory/dimension?dimension=finance",
+                )
+                page_status, _, page_body = server.request(
+                    "GET",
+                    f"/api/memory/item?type=page&id={preferences_page_id}",
+                )
+                invalid_status, _, invalid_body = server.request(
+                    "GET",
+                    "/api/memory/dimension?dimension=random_bucket",
+                )
+                missing_status, _, missing_body = server.request(
+                    "GET",
+                    "/api/memory/item?type=page&id=missing",
+                )
+                hidden_status, _, hidden_body = server.request(
+                    "GET",
+                    f"/api/memory/item?type=candidate&id={promoted_id}",
+                )
 
             payload = json.loads(body)
+            dimension_payload = json.loads(dimension_body)
+            page_payload = json.loads(page_body)
             dimensions = {item["dimension"]: item for item in payload["dimensions"]}
             self.assertEqual(status, 200)
             self.assertEqual(payload["kind"], "memory_ontology")
+            self.assertEqual(payload["level"], "L1")
             ontology_names = {
                 "identity",
                 "cognition",
@@ -767,11 +801,37 @@ print(json.dumps({
             self.assertEqual(dimensions["preferences"]["pages"], 1)
             self.assertEqual(dimensions["preferences"]["candidates"], 2)
             self.assertEqual(dimensions["patterns"]["candidates"], 1)
+            self.assertEqual(dimensions["preferences"]["level"], "L1")
+            self.assertIn("/api/memory/dimension?dimension=preferences", dimensions["preferences"]["dimension_url"])
+            self.assertNotIn("items", dimensions["preferences"])
             self.assertNotIn("user_profile", dimensions)
             self.assertNotIn("finance", dimensions)
             self.assertNotIn("work_style", dimensions)
-            self.assertIn("...[truncated]", json.dumps(dimensions["preferences"]))
             self.assertNotIn("secret-ontology-key", body)
+            self.assertNotIn("long private detail", body)
+            self.assertEqual(dimension_status, 200)
+            self.assertEqual(dimension_payload["kind"], "memory_dimension")
+            self.assertEqual(dimension_payload["level"], "L2")
+            self.assertEqual(dimension_payload["dimension"], "preferences")
+            self.assertTrue(dimension_payload["pages"])
+            self.assertTrue(dimension_payload["candidates"])
+            self.assertIn("/api/memory/item?type=page", dimension_payload["pages"][0]["detail_url"])
+            self.assertIn("...[truncated]", json.dumps(dimension_payload["pages"][0]))
+            self.assertNotIn("Promoted entries stay out", dimension_body)
+            self.assertNotIn("Rejected entries stay hidden", dimension_body)
+            self.assertEqual(page_status, 200)
+            self.assertEqual(page_payload["kind"], "memory_item")
+            self.assertEqual(page_payload["level"], "L3")
+            self.assertEqual(page_payload["item"]["id"], preferences_page_id)
+            self.assertEqual(page_payload["item"]["dimension"], "preferences")
+            self.assertTrue(page_payload["evidence"])
+            self.assertNotIn("secret-ontology-key", page_body)
+            self.assertEqual(invalid_status, 400)
+            self.assertIn("unknown memory dimension", json.loads(invalid_body)["error"])
+            self.assertEqual(missing_status, 404)
+            self.assertIn("memory item not found", json.loads(missing_body)["error"])
+            self.assertEqual(hidden_status, 404)
+            self.assertIn("memory item not found", json.loads(hidden_body)["error"])
 
     def test_web_cancel_run_endpoint_marks_run_and_records_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1038,12 +1098,18 @@ print(json.dumps({
                 self.assertIn("settingsQuietHoursSection", script)
                 self.assertIn("settingsMemoryOntologySection", script)
                 self.assertIn("/api/memory/ontology", script)
+                self.assertIn("/api/memory/dimension", script)
+                self.assertIn("/api/memory/item", script)
                 self.assertIn("memoryOntologyView", script)
                 self.assertIn("openMemoryDrawer", script)
                 self.assertIn("renderMemoryDrawer", script)
                 self.assertIn("memoryCompassView", script)
                 self.assertIn("memoryCompassDimensionRow", script)
                 self.assertIn("renderMemoryCompassDetail", script)
+                self.assertIn("loadMemoryDimension", script)
+                self.assertIn("renderMemoryDimensionDetail", script)
+                self.assertIn("loadMemoryItem", script)
+                self.assertIn("renderMemoryItemDetail", script)
                 self.assertIn("记忆罗盘", script)
                 self.assertIn("settingsWorkspaceSection", script)
                 self.assertIn("settingsAppearanceSection", script)
@@ -1052,6 +1118,8 @@ print(json.dumps({
                 self.assertIn("settings-action", css)
                 self.assertIn("memory-dimensions", css)
                 self.assertIn("memory-compass-grid", css)
+                self.assertIn("memory-detail-card", css)
+                self.assertIn("memory-item-panel", css)
                 self.assertIn("memory-detail-evidence", css)
                 self.assertIn('settings-drawer[data-mode="memory"]', css)
 

@@ -34,8 +34,10 @@
 - API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject"|"undo" }`
 - API: `GET /api/settings`
 - API: `POST /api/settings` with JSON `{ "quiet_hours": { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string } }`
-- API: `GET /api/memory/ontology` returns compact ten-dimensional memory counts and clipped page/candidate summaries.
+- API: `GET /api/memory/ontology` returns L1 compact ten-dimensional memory counts, short summaries, and per-dimension drill-down URLs.
 - API: `GET /api/memory/ontology` returns exactly the configured ten user-facing dimensions; historical labels such as profile, finance, or work-style must already be normalized by the API.
+- API: `GET /api/memory/dimension?dimension=<dimension>` returns L2 clipped page/candidate cards for one normalized dimension.
+- API: `GET /api/memory/item?type=page|candidate&id=<id>` returns L3 clipped item detail plus compact evidence rows.
 
 ### 3. Contracts
 - The browser stores durable conversation, mission, last run, and last processed chat event ids in `localStorage`.
@@ -63,7 +65,10 @@
 - Settings drawer state is fetched on open through `/api/settings`; it is not persisted in browser storage.
 - Settings drawer can update quiet hours through `/api/settings` and otherwise prefill the single composer for user-facing actions.
 - `/api/settings` payloads must summarize learned preferences and data counts without raw artifact bodies, raw memory dumps, or provider secrets.
-- `/api/memory/ontology` is a read-only settings-drawer view; it must summarize ten-dimensional memory coverage without provider secrets or unbounded raw memory bodies.
+- `/api/memory/ontology` is a read-only settings-drawer view; it must summarize ten-dimensional L1 memory coverage without provider secrets, item arrays, or unbounded raw memory bodies.
+- The memory drawer must fetch L2 dimension cards only after the user selects a dimension.
+- The memory drawer must fetch L3 evidence only after the user selects a memory page or candidate.
+- L2 and L3 memory responses are cached only in volatile runtime maps for the current browser session; they must not add browser persistence keys.
 - Enter submits the composer while Shift+Enter inserts a newline.
 - After a user submits a turn, the client renders one volatile pending assistant message until the first assistant delta, final message, run error, or stream error arrives.
 - Pending assistant state must never be persisted in browser storage.
@@ -92,8 +97,10 @@
 | Settings summary | Returns compact connected app, permission, quiet-hours, preference, and data-control data without secrets | `tests/test_web.py` |
 | Settings update | Saves valid quiet-hours settings and rejects invalid time payloads with JSON errors | `tests/test_web.py` |
 | Settings asset | Opens a drawer from chat and preloads settings through `/api/settings` | `tests/test_web.py` |
-| Memory ontology asset | Opens compact ten-dimensional memory coverage from settings | `tests/test_web.py` |
-| Memory ontology API | Returns compact dimension counts/summaries without secrets | `tests/test_web.py` |
+| Memory ontology asset | Opens compact ten-dimensional L1 coverage from settings | `tests/test_web.py` |
+| Memory ontology API | Returns compact L1 dimension counts/summaries without secrets or item arrays | `tests/test_web.py` |
+| Memory dimension asset/API | Loads one L2 dimension on demand with clipped cards | `tests/test_web.py` |
+| Memory item asset/API | Loads one L3 item on demand with compact evidence | `tests/test_web.py` |
 | Enter submit | Enter sends and Shift+Enter remains newline-capable | Asset behavior in `tests/test_web.py` |
 | Pending assistant | Volatile reply indicator appears during stream wait and is cleaned up | Asset behavior in `tests/test_web.py` |
 | Stop control | Requests run cancellation with active run id without clearing replay state | `tests/test_web.py` |
@@ -112,6 +119,7 @@
 - Good: keep `requires_confirmation` as streamed card-local presentation metadata.
 - Good: fetch settings only when the drawer opens and keep ordinary user actions in composer prefill.
 - Good: keep ten-dimensional memory inspection read-only and drawer-scoped.
+- Good: reveal memory progressively instead of dumping every page, candidate, and evidence row into the first drawer payload.
 - Good: keep pending assistant UI as volatile DOM state.
 - Good: request cancellation and keep the stream open until the runtime emits completion.
 - Good: clear `activeRunId` before each new turn so a stale replay id cannot be cancelled.
@@ -144,8 +152,9 @@
 - Learning memory API covers accept, this-turn-only, reject, undo, missing candidate, and invalid action errors.
 - Frontend asset includes inline learning resolution hooks and review-gated confirmation wording.
 - Frontend asset includes Enter-to-send handling and volatile pending assistant cleanup.
-- Frontend asset includes `/api/memory/ontology` settings-drawer loading.
-- Memory ontology API covers ten dimensions and compact body/secret behavior.
+- Frontend asset includes `/api/memory/ontology`, `/api/memory/dimension`, and `/api/memory/item` drawer loading.
+- Memory ontology API covers ten dimensions, L1-only payload shape, and compact body/secret behavior.
+- Memory dimension and item APIs cover L2/L3 on-demand disclosure.
 - Settings API covers summary, quiet-hours update, invalid time errors, and no secret leakage.
 - Frontend asset includes settings drawer hooks and composer-prefill actions.
 - Run cancel API covers success, missing id, unknown id, and frontend stop-control asset hooks.

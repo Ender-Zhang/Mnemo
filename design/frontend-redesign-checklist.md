@@ -48,10 +48,12 @@
 
 - [x] Add `记忆` rail entry.
 - [x] Open memory-focused drawer through the existing overlay.
-- [x] Fetch `/api/memory/ontology` on open.
+- [x] Fetch `/api/memory/ontology` on open as L1 coverage only.
+- [x] Fetch `/api/memory/dimension` after a dimension is selected.
+- [x] Fetch `/api/memory/item` after a memory item is selected.
 - [x] Use `记忆罗盘` as the user-facing name instead of `十维记忆`.
 - [x] Show dimensional coverage rows with bars and counts.
-- [x] Show clipped memory summaries and evidence-like rows.
+- [x] Show clipped memory summaries first, then evidence rows only after item selection.
 - [x] Route update/forget/use actions through composer prefill unless an existing API exists.
 
 ## Settings Drawer

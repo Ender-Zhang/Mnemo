@@ -172,8 +172,16 @@ dimension_exposure:
   保留全量会话消息; 支持 FTS5 跨会话关键词搜索
   → "上次我在哪次对话里提到过 lifetime?" 可精确召回
   → 按 source/agent_type/date 过滤; 按相关性排序
-  
+
 ```
+
+**渐进式披露执行契约**:
+
+- 写入：所有长期候选都经过 `MemoryEngine.write_candidate()`，维度必须归一到十维本体；`profile/finance/work_style` 等历史或外部标签不能形成额外记忆桶。
+- L1：`/api/memory/ontology` 只暴露十维覆盖度、短摘要和维度 drill-down URL，不返回 item 数组、原始证据或完整正文。
+- L2：`/api/memory/dimension` 只在用户选择某一维后返回该维 active stable pages 与 open draft/review candidates 的 clipped cards。
+- L3：`/api/memory/item` 只在用户选择具体条目后返回 clipped detail 与 compact evidence/tombstone rows。
+- L4：原始会话只通过显式 session/all memory search 进入，不从记忆罗盘默认展开。
 
 ### 3.4 记忆 Frontmatter Schema
 

@@ -21,6 +21,7 @@ from ..runtime import stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..memory import MemoryEngine
+from ..memory.query import MEMORY_ONTOLOGY_DIMENSIONS, is_known_memory_dimension, normalize_memory_dimension
 from ..sdk import MnemoClient, mnemo_core_api_schema
 from ..storage import StateStore
 
@@ -131,6 +132,10 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_settings()
             elif parsed.path == "/api/memory/ontology":
                 self._handle_memory_ontology()
+            elif parsed.path == "/api/memory/dimension":
+                self._handle_memory_dimension(parsed.query)
+            elif parsed.path == "/api/memory/item":
+                self._handle_memory_item(parsed.query)
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -278,6 +283,38 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
 
         def _handle_memory_ontology(self) -> None:
             self._send_json(_memory_ontology_payload(config))
+
+        def _handle_memory_dimension(self, query: str) -> None:
+            params = parse_qs(query)
+            raw_dimension = _first_param(params, "dimension")
+            if not raw_dimension:
+                self._send_json({"error": "dimension is required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not is_known_memory_dimension(raw_dimension):
+                self._send_json({"error": f"unknown memory dimension: {raw_dimension}"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            dimension = normalize_memory_dimension(raw_dimension, fallback="context")
+            self._send_json(_memory_dimension_payload(config, dimension))
+
+        def _handle_memory_item(self, query: str) -> None:
+            params = parse_qs(query)
+            item_type = _first_param(params, "type")
+            item_id = _first_param(params, "id")
+            if not item_type:
+                self._send_json({"error": "type is required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not item_id:
+                self._send_json({"error": "id is required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                payload = _memory_item_payload(config, item_type, item_id)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if payload is None:
+                self._send_json({"error": f"memory item not found: {item_id}"}, status=HTTPStatus.NOT_FOUND)
+                return
+            self._send_json(payload)
 
         def _handle_settings_update(self) -> None:
             try:
@@ -661,95 +698,49 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
         },
     }
 
-
-MEMORY_ONTOLOGY_DIMENSIONS = [
-    "identity",
-    "cognition",
-    "values",
-    "goals",
-    "preferences",
-    "relationships",
-    "context",
-    "history",
-    "patterns",
-    "boundaries",
-]
-
-
-MEMORY_ONTOLOGY_DIMENSION_ALIASES = {
-    "profile": "identity",
-    "personal": "identity",
-    "personal_profile": "identity",
-    "user_profile": "identity",
-    "user_identity": "identity",
-    "preference": "preferences",
-    "user_preference": "preferences",
-    "finance": "preferences",
-    "financial": "preferences",
-    "money": "preferences",
-    "budget": "preferences",
-    "goal": "goals",
-    "objective": "goals",
-    "relationship": "relationships",
-    "relations": "relationships",
-    "current_context": "context",
-    "project": "context",
-    "knowledge": "context",
-    "background": "context",
-    "domain_knowledge": "context",
-    "past": "history",
-    "task_history": "history",
-    "habit": "patterns",
-    "habits": "patterns",
-    "workflow": "patterns",
-    "work_style": "patterns",
-    "tool_habit": "patterns",
-    "boundary": "boundaries",
-    "constraint": "boundaries",
-    "constraints": "boundaries",
-}
-
-
 def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
     store = StateStore(config.state_dir)
     store.initialize()
     pages = store.list_memory_pages(status="active", limit=1000)
-    candidates = store.list_memory_candidates(status=None, limit=1000)
+    candidates = [
+        candidate
+        for candidate in store.list_memory_candidates(status=None, limit=1000)
+        if _is_open_memory_candidate(candidate)
+    ]
     buckets = {
-        dimension: {"dimension": dimension, "pages": 0, "candidates": 0, "items": []}
+        dimension: {
+            "dimension": dimension,
+            "level": "L1",
+            "pages": 0,
+            "candidates": 0,
+            "summary": "",
+            "next_level": "dimension",
+            "dimension_url": f"/api/memory/dimension?dimension={dimension}",
+            "_samples": [],
+        }
         for dimension in MEMORY_ONTOLOGY_DIMENSIONS
     }
     for page in pages:
         dimension = _memory_dimension(page, fallback="context")
         bucket = buckets[dimension]
         bucket["pages"] += 1
-        if len(bucket["items"]) < 3:
-            bucket["items"].append(
-                {
-                    "kind": "page",
-                    "id": page.get("id"),
-                    "title": _clip_text(str(page.get("title") or dimension), 90),
-                    "summary": _clip_text(str(page.get("content") or ""), 160),
-                    "confidence": page.get("confidence"),
-                }
-            )
+        if len(bucket["_samples"]) < 2:
+            bucket["_samples"].append(_memory_display_title(str(page.get("title") or dimension)))
     for candidate in candidates:
         dimension = _memory_dimension(candidate, fallback="context")
         bucket = buckets[dimension]
         bucket["candidates"] += 1
-        if len(bucket["items"]) < 3:
-            bucket["items"].append(
-                {
-                    "kind": "candidate",
-                    "id": candidate.get("id"),
-                    "title": _clip_text(str(candidate.get("claim") or dimension), 90),
-                    "summary": _clip_text(str(candidate.get("status") or "candidate"), 160),
-                    "confidence": candidate.get("confidence"),
-                }
-            )
-    dimensions = [buckets[dimension] for dimension in MEMORY_ONTOLOGY_DIMENSIONS]
+        if len(bucket["_samples"]) < 2:
+            bucket["_samples"].append(_memory_display_title(str(candidate.get("claim") or dimension)))
+    dimensions = []
+    for dimension in MEMORY_ONTOLOGY_DIMENSIONS:
+        item = dict(buckets[dimension])
+        samples = item.pop("_samples", [])
+        item["summary"] = _memory_dimension_summary(dimension, samples, item["pages"], item["candidates"])
+        dimensions.append(item)
     return {
         "kind": "memory_ontology",
+        "level": "L1",
         "dimensions": dimensions,
         "counts": {
             "pages": len(pages),
@@ -761,20 +752,208 @@ def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
     }
 
 
+def _memory_dimension_payload(config: WebServerConfig, dimension: str) -> dict[str, Any]:
+    store = StateStore(config.state_dir)
+    store.initialize()
+    pages = [
+        page
+        for page in store.list_memory_pages(status="active", limit=1000)
+        if _memory_dimension(page, fallback="context") == dimension
+    ]
+    candidates = [
+        candidate
+        for candidate in store.list_memory_candidates(status=None, limit=1000)
+        if _is_open_memory_candidate(candidate) and _memory_dimension(candidate, fallback="context") == dimension
+    ]
+    page_items = [_memory_l2_page_card(page) for page in pages]
+    candidate_items = [_memory_l2_candidate_card(candidate) for candidate in candidates]
+    return {
+        "kind": "memory_dimension",
+        "level": "L2",
+        "dimension": dimension,
+        "summary": _memory_dimension_summary(
+            dimension,
+            [item["title"] for item in [*page_items, *candidate_items]][:2],
+            len(page_items),
+            len(candidate_items),
+        ),
+        "counts": {
+            "pages": len(page_items),
+            "candidates": len(candidate_items),
+        },
+        "pages": page_items,
+        "candidates": candidate_items,
+    }
+
+
+def _memory_item_payload(config: WebServerConfig, item_type: str, item_id: str) -> dict[str, Any] | None:
+    store = StateStore(config.state_dir)
+    store.initialize()
+    normalized_type = str(item_type or "").strip().lower()
+    if normalized_type in {"page", "memory_page", "stable"}:
+        page = store.get_memory_page(item_id)
+        if not page:
+            return None
+        if str(page.get("status") or "") != "active":
+            return None
+        dimension = _memory_dimension(page, fallback="context")
+        source_candidate = (
+            store.get_memory_candidate(str(page.get("source_candidate_id")))
+            if page.get("source_candidate_id")
+            else None
+        )
+        tombstones = store.list_memory_tombstones(target_id=item_id, target_type="page", limit=5)
+        return {
+            "kind": "memory_item",
+            "level": "L3",
+            "item": _memory_l3_page_detail(page, dimension),
+            "evidence": _memory_item_evidence(source_candidate, tombstones),
+        }
+    if normalized_type in {"candidate", "memory_candidate"}:
+        candidate = store.get_memory_candidate(item_id)
+        if not candidate:
+            return None
+        if not _is_open_memory_candidate(candidate):
+            return None
+        dimension = _memory_dimension(candidate, fallback="context")
+        tombstones = store.list_memory_tombstones(target_id=item_id, target_type="candidate", limit=5)
+        return {
+            "kind": "memory_item",
+            "level": "L3",
+            "item": _memory_l3_candidate_detail(candidate, dimension),
+            "evidence": _memory_item_evidence(candidate, tombstones),
+        }
+    raise ValueError(f"unsupported memory item type: {item_type}")
+
+
 def _memory_dimension(item: dict[str, Any], *, fallback: str) -> str:
-    value = _normalize_memory_dimension_name(str(item.get("dimension") or ""))
+    value = str(item.get("dimension") or "")
     if not value:
         title = str(item.get("title") or "").strip()
-        value = _normalize_memory_dimension_name(title.split(":", 1)[0]) if ":" in title else ""
-    mapped = MEMORY_ONTOLOGY_DIMENSION_ALIASES.get(value, value)
-    if mapped in MEMORY_ONTOLOGY_DIMENSIONS:
-        return mapped
-    fallback_dimension = _normalize_memory_dimension_name(fallback)
-    return fallback_dimension if fallback_dimension in MEMORY_ONTOLOGY_DIMENSIONS else "context"
+        value = title.split(":", 1)[0] if ":" in title else ""
+    return normalize_memory_dimension(value, fallback=fallback)
 
 
-def _normalize_memory_dimension_name(value: str) -> str:
-    return "_".join(str(value or "").strip().lower().replace("-", "_").split())
+def _is_open_memory_candidate(candidate: dict[str, Any]) -> bool:
+    status = str(candidate.get("status") or "")
+    return status == "draft" or status.startswith("needs_review")
+
+
+def _memory_l2_page_card(page: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "page",
+        "id": page.get("id"),
+        "title": _clip_text(_memory_display_title(str(page.get("title") or "")), 90),
+        "summary": _clip_text(str(page.get("content") or ""), 180),
+        "confidence": page.get("confidence"),
+        "status": page.get("status"),
+        "updated_at": page.get("updated_at"),
+        "detail_url": f"/api/memory/item?type=page&id={page.get('id')}",
+    }
+
+
+def _memory_l2_candidate_card(candidate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "candidate",
+        "id": candidate.get("id"),
+        "title": _clip_text(_memory_display_title(str(candidate.get("claim") or "")), 90),
+        "summary": _clip_text(str(candidate.get("status") or "candidate"), 120),
+        "confidence": candidate.get("confidence"),
+        "status": candidate.get("status"),
+        "created_at": candidate.get("created_at"),
+        "detail_url": f"/api/memory/item?type=candidate&id={candidate.get('id')}",
+    }
+
+
+def _memory_l3_page_detail(page: dict[str, Any], dimension: str) -> dict[str, Any]:
+    return {
+        "type": "page",
+        "id": page.get("id"),
+        "dimension": dimension,
+        "title": _clip_text(_memory_display_title(str(page.get("title") or "")), 120),
+        "summary": _clip_text(str(page.get("content") or ""), 700),
+        "scope": page.get("scope"),
+        "confidence": page.get("confidence"),
+        "status": page.get("status"),
+        "source_candidate_id": page.get("source_candidate_id"),
+        "created_at": page.get("created_at"),
+        "updated_at": page.get("updated_at"),
+    }
+
+
+def _memory_l3_candidate_detail(candidate: dict[str, Any], dimension: str) -> dict[str, Any]:
+    return {
+        "type": "candidate",
+        "id": candidate.get("id"),
+        "dimension": dimension,
+        "title": _clip_text(_memory_display_title(str(candidate.get("claim") or "")), 120),
+        "summary": _clip_text(str(candidate.get("claim") or ""), 700),
+        "scope": candidate.get("scope"),
+        "confidence": candidate.get("confidence"),
+        "status": candidate.get("status"),
+        "created_at": candidate.get("created_at"),
+    }
+
+
+def _memory_item_evidence(
+    source_candidate: dict[str, Any] | None,
+    tombstones: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+    if source_candidate:
+        evidence.append(
+            {
+                "kind": "source_candidate",
+                "id": source_candidate.get("id"),
+                "summary": _clip_text(str(source_candidate.get("claim") or ""), 180),
+                "status": source_candidate.get("status"),
+                "confidence": source_candidate.get("confidence"),
+                "run_id": source_candidate.get("run_id"),
+            }
+        )
+        for item in source_candidate.get("evidence", [])[:3]:
+            if not isinstance(item, dict):
+                continue
+            evidence.append(
+                {
+                    "kind": str(item.get("kind") or "evidence"),
+                    "summary": _clip_text(
+                        str(item.get("summary") or item.get("text") or item.get("source") or item.get("id") or ""),
+                        180,
+                    ),
+                }
+            )
+    for tombstone in tombstones[:3]:
+        evidence.append(
+            {
+                "kind": "tombstone",
+                "id": tombstone.get("id"),
+                "summary": _clip_text(str(tombstone.get("summary") or tombstone.get("reason") or ""), 180),
+                "reason": tombstone.get("reason"),
+                "created_at": tombstone.get("created_at"),
+            }
+        )
+    return evidence
+
+
+def _memory_display_title(value: str) -> str:
+    text = " ".join(str(value or "").strip().split())
+    if ":" not in text:
+        return text
+    head, body = text.split(":", 1)
+    if is_known_memory_dimension(head):
+        return body.strip() or head.strip()
+    return text
+
+
+def _memory_dimension_summary(dimension: str, samples: list[str], pages: int, candidates: int) -> str:
+    if pages == 0 and candidates == 0:
+        return "尚未沉淀稳定信号。"
+    sample_text = "；".join(_clip_text(sample, 60) for sample in samples if sample)
+    prefix = f"{pages} 条稳定记忆"
+    if candidates:
+        prefix += f" · {candidates} 条候选"
+    return f"{prefix}。{sample_text}" if sample_text else f"{prefix}。"
 
 
 def _clip_text(value: str, limit: int) -> str:
