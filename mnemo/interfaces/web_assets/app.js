@@ -858,11 +858,21 @@ function renderArtifact(artifact) {
   card.className = "event-card artifact";
   const header = document.createElement("div");
   header.className = "artifact-header";
+  const icon = document.createElement("span");
+  icon.className = "artifact-icon";
+  icon.textContent = artifactIconLabel(artifact.kind);
+  const copy = document.createElement("div");
+  copy.className = "artifact-copy";
   const title = document.createElement("strong");
   title.textContent = artifact.title || "Artifact";
+  const preview = document.createElement("p");
+  preview.className = "artifact-preview";
+  preview.textContent = artifact.summary || artifact.description || "产物已准备好，打开后查看正文。";
   const meta = document.createElement("span");
+  meta.className = "artifact-kind";
   meta.textContent = artifact.kind || "artifact";
-  header.append(title, meta);
+  copy.append(title, preview);
+  header.append(icon, copy, meta);
   const actions = document.createElement("div");
   actions.className = "artifact-actions";
   const open = actionButton("打开", () => toggleArtifact(artifact.artifact_id || artifact.id, body));
@@ -878,6 +888,15 @@ function renderArtifact(artifact) {
   card.append(header, actions, body);
   timeline.appendChild(card);
   timelineScroll();
+}
+
+function artifactIconLabel(kind) {
+  const normalized = String(kind || "").toLowerCase();
+  if (normalized.includes("markdown") || normalized.includes("doc")) return "文";
+  if (normalized.includes("table") || normalized.includes("sheet") || normalized.includes("csv")) return "表";
+  if (normalized.includes("code") || normalized.includes("diff")) return "码";
+  if (normalized.includes("message") || normalized.includes("mail")) return "信";
+  return "产";
 }
 
 async function toggleArtifact(artifactId, target) {
@@ -1001,9 +1020,19 @@ function renderLearning(item) {
   const card = document.createElement("section");
   card.className = "event-card learning";
   if (item.requires_confirmation) card.classList.add("confirmation");
+  const head = document.createElement("div");
+  head.className = "learning-chip-head";
+  const icon = document.createElement("span");
+  icon.className = "learning-icon";
+  icon.textContent = item.requires_confirmation ? "?" : "+";
   const title = document.createElement("strong");
-  title.textContent = item.requires_confirmation ? "确认是否记住" : "学习信号";
+  title.textContent = item.requires_confirmation ? "需要确认的记忆" : "可记住的偏好";
+  const risk = document.createElement("span");
+  risk.className = "learning-risk";
+  risk.textContent = item.requires_confirmation ? "确认" : (item.risk || item.dimension || "候选");
+  head.append(icon, title, risk);
   const summary = document.createElement("p");
+  summary.className = "learning-summary";
   summary.textContent = item.summary || "";
   const actions = document.createElement("div");
   actions.className = "learning-actions";
@@ -1014,7 +1043,7 @@ function renderLearning(item) {
       actionButton("不要记", () => resolveLearningMemory(item.item_id, "reject", card), "learning-button"),
     );
   }
-  card.append(title, summary, actions);
+  card.append(head, summary, actions);
   timeline.appendChild(card);
   timelineScroll();
 }
@@ -1046,9 +1075,19 @@ function renderDecision(decision) {
   if (!decision) return;
   const card = document.createElement("section");
   card.className = "event-card decision";
+  const head = document.createElement("div");
+  head.className = "decision-head";
+  const icon = document.createElement("span");
+  icon.className = "decision-icon";
+  icon.textContent = "!";
   const title = document.createElement("strong");
   title.textContent = decision.title || "需要确认";
+  const risk = document.createElement("span");
+  risk.className = "decision-risk";
+  risk.textContent = decision.risk || decision.priority || "确认";
+  head.append(icon, title, risk);
   const question = document.createElement("p");
+  question.className = "decision-question";
   question.textContent = decision.question || decision.summary || "";
   const actions = document.createElement("div");
   actions.className = "decision-actions";
@@ -1059,7 +1098,7 @@ function renderDecision(decision) {
       actionButton("忽略", () => resolveDecision(decision.item_id, "ignored", card), "decision-button"),
     );
   }
-  card.append(title, question, actions);
+  card.append(head, question, actions);
   timeline.appendChild(card);
   timelineScroll();
 }

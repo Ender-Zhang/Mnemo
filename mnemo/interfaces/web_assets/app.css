@@ -1207,7 +1207,6 @@ h1 {
   line-height: 1.45;
 }
 
-.artifact-header,
 .event-title {
   display: flex;
   align-items: center;
@@ -1216,10 +1215,76 @@ h1 {
   padding: 12px 14px 0;
 }
 
-.artifact-header span,
 .event-title span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.event-card.artifact {
+  border-color: rgba(166, 111, 31, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 249, 0.92), rgba(255, 248, 236, 0.72)),
+    rgba(255, 253, 249, 0.82);
+}
+
+.artifact-header {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 14px 2px;
+}
+
+.artifact-icon,
+.learning-icon,
+.decision-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.artifact-icon {
+  background: rgba(255, 242, 220, 0.86);
+  color: var(--gold);
+}
+
+.artifact-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.artifact-copy strong,
+.learning-chip-head strong,
+.decision-head strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.artifact-preview,
+.learning-summary,
+.decision-question {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.artifact-kind {
+  align-self: center;
+  max-width: 112px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .artifact-actions,
@@ -1340,11 +1405,65 @@ h1 {
   padding: 12px 14px;
 }
 
-.event-card.learning > strong,
-.event-card.decision > strong,
-.event-card.learning > p,
-.event-card.decision > p {
-  padding: 0;
+.event-card.learning {
+  border-color: rgba(11, 125, 120, 0.2);
+  background: rgba(228, 243, 240, 0.5);
+}
+
+.event-card.decision {
+  border-color: rgba(198, 84, 71, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 253, 249, 0.9), rgba(255, 236, 234, 0.48)),
+    rgba(255, 253, 249, 0.82);
+}
+
+.learning-chip-head,
+.decision-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.learning-icon {
+  background: rgba(255, 253, 249, 0.76);
+  color: var(--teal);
+}
+
+.decision-icon {
+  background: rgba(255, 236, 234, 0.84);
+  color: var(--coral);
+}
+
+.learning-risk,
+.decision-risk {
+  max-width: 96px;
+  padding: 3px 7px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: rgba(255, 253, 249, 0.72);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.learning-summary,
+.decision-question {
+  padding-top: 8px;
+}
+
+.event-card.learning .learning-actions,
+.event-card.decision .decision-actions {
+  padding: 10px 0 0;
+}
+
+.event-card.decision .decision-button:first-child,
+.event-card.learning .learning-button:first-child {
+  border-color: rgba(21, 24, 23, 0.18);
+  background: #17201f;
+  color: #fff;
 }
 
 .event-card.learning.confirmation {

@@ -925,7 +925,10 @@ print(json.dumps({
                 self.assertIn("renderArtifactBody", body)
                 self.assertIn("Continue editing artifact", body)
                 self.assertIn("Compare artifact", body)
+                self.assertIn("artifactIconLabel", body)
                 self.assertIn("artifact-body", body)
+                self.assertIn("artifact-icon", css)
+                self.assertIn("artifact-preview", css)
                 self.assertIn("artifact-related", css)
                 self.assertIn("artifact-related-row", css)
 
@@ -1143,7 +1146,10 @@ print(json.dumps({
                 self.assertIn("resolveDecision", script)
                 self.assertIn("item_id: itemId", script)
                 self.assertIn("payload.tool_result", script)
+                self.assertIn("decision-head", script)
+                self.assertIn("decision-question", script)
                 self.assertIn("decision-button", css)
+                self.assertIn("decision-risk", css)
                 self.assertIn("event-card.decision", css)
 
     def test_web_client_asset_resolves_learning_chips_inline(self) -> None:
@@ -1164,7 +1170,10 @@ print(json.dumps({
                 self.assertIn("确认记住", script)
                 self.assertIn("requires_confirmation", script)
                 self.assertIn('action === "undo"', script)
+                self.assertIn("learning-chip-head", script)
+                self.assertIn("learning-summary", script)
                 self.assertIn("learning-button", css)
+                self.assertIn("learning-risk", css)
                 self.assertIn("event-card.learning", css)
                 self.assertIn("event-card.learning.confirmation", css)
 
