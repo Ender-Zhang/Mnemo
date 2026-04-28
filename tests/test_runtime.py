@@ -348,6 +348,101 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("learning.reflection.completed", ledger_event_types)
             self.assertEqual(events[-1].data["result"]["response"], "Done.")
 
+    def test_provider_runtime_learning_debt_reviews_recent_no_learning_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [ProviderEvent(type="text_delta", text="Turn 1 done."), ProviderEvent(type="completed")],
+                    [ProviderEvent(type="text_delta", text="Turn 2 done."), ProviderEvent(type="completed")],
+                    [ProviderEvent(type="text_delta", text="Turn 3 done."), ProviderEvent(type="completed")],
+                    [ProviderEvent(type="text_delta", text="Turn 4 done."), ProviderEvent(type="completed")],
+                    [ProviderEvent(type="text_delta", text="Turn 5 done."), ProviderEvent(type="completed")],
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="memory_write_candidate",
+                                arguments={
+                                    "claim": "User repeatedly asks for implementation progress tracking",
+                                    "dimension": "preferences",
+                                    "evidence": [{"kind": "learning_debt_packet", "run_index": 4}],
+                                },
+                                call_id="call_debt_memory",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(type="completed", metadata={"stage": "learning_debt_review"}),
+                    ],
+                ]
+            )
+            runtime = ProviderAgentRuntime(provider)
+            conversation_id = None
+            events = []
+            for index in range(5):
+                events = list(
+                    runtime.stream(
+                        RunRequest(
+                            message=f"progress check turn {index + 1}",
+                            state_dir=tmp,
+                            conversation_id=conversation_id,
+                        )
+                    )
+                )
+                conversation_id = events[-1].data["result"]["conversation_id"]
+
+            store = StateStore(tmp)
+            ledger_events = store.get_run_events(events[-1].run_id)
+            event_types = [event["event_type"] for event in ledger_events]
+            debt_packet = next(event for event in ledger_events if event["event_type"] == "learning.debt_review.packet")
+            reflection_request = provider.requests[-1]
+
+            self.assertEqual(len(provider.requests), 6)
+            self.assertEqual(reflection_request.metadata["stage"], "learning_debt_review")
+            self.assertEqual(reflection_request.metadata["packet_kind"], "learning_debt_packet")
+            self.assertIn("learning_debt_packet", reflection_request.messages[-1]["content"])
+            self.assertEqual(len(debt_packet["payload"]["packet"]["runs"]), 5)
+            self.assertIn("learning.debt_review.completed", event_types)
+            self.assertEqual(store.search_memory_candidates("progress tracking", limit=5)[0]["claim"], "User repeatedly asks for implementation progress tracking")
+
+    def test_provider_runtime_learning_debt_review_waits_after_recent_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    *[
+                        [ProviderEvent(type="text_delta", text=f"Turn {index} done."), ProviderEvent(type="completed")]
+                        for index in range(1, 6)
+                    ],
+                    [ProviderEvent(type="completed")],
+                    [ProviderEvent(type="text_delta", text="Turn 6 done."), ProviderEvent(type="completed")],
+                ]
+            )
+            runtime = ProviderAgentRuntime(provider)
+            conversation_id = None
+            events = []
+            for index in range(6):
+                events = list(
+                    runtime.stream(
+                        RunRequest(
+                            message=f"ordinary turn {index + 1}",
+                            state_dir=tmp,
+                            conversation_id=conversation_id,
+                        )
+                    )
+                )
+                conversation_id = events[-1].data["result"]["conversation_id"]
+
+            store = StateStore(tmp)
+            latest_events = store.get_run_events(events[-1].run_id)
+            debt_skips = [
+                event
+                for event in latest_events
+                if event["event_type"] == "learning.debt_review.skipped"
+            ]
+
+            self.assertEqual(len(provider.requests), 7)
+            self.assertEqual(debt_skips[-1]["payload"]["reason"], "recent_debt_review")
+
     def test_provider_runtime_adds_progressive_memory_and_skill_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

@@ -174,6 +174,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-28-learning-debt-review`: Provider learning now reviews compact recent-turn packets after several completed turns without learning candidates, using the existing `learning.v1` tools and a debt-review barrier to avoid repeated low-signal reflection.
 - [x] `04-28-redesign-polished-chat-shell`: Web UI now uses a darker product shell, calmer light chat surface, responsive composer, compact context/activity panels, and desktop/mobile-validated layouts while preserving the single-chat interaction model.
 - [x] `04-28-default-user-workspace`: Local file/shell tools, Web, SDK, MCP, and live replay now resolve missing workspace roots to `<state-dir>/workspace`, preventing user-generated files from landing in the source repo by default.
 - [x] `04-27-polish-chat-interactions-memory-view`: Web chat now sends on Enter, shows a pending assistant indicator, consolidates tool call/result details into one card, suppresses duplicate tool-result source cards, compacts recall duplication, and exposes ten-dimensional memory inspection from settings.

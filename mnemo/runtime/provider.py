@@ -25,6 +25,7 @@ from .common import (
     tool_result_summary,
 )
 from .learning import (
+    build_learning_debt_packet,
     build_learning_packet,
     build_learning_tool_bundle,
     learning_reflection_messages,
@@ -316,20 +317,76 @@ class ProviderAgentRuntime:
         should_reflect, reason = should_reflect_on_learning_packet(packet)
         if not should_reflect:
             ledger.append(run_id, "learning.reflection.skipped", {"reason": reason})
+            debt_packet, debt_reason = build_learning_debt_packet(store, run_id)
+            if debt_packet is None:
+                ledger.append(run_id, "learning.debt_review.skipped", {"reason": debt_reason})
+                return
+            ledger.append(run_id, "learning.debt_review.packet", {"packet": debt_packet, "reason": debt_reason})
+            yield from self._stream_learning_packet_reflection(
+                request=request,
+                store=store,
+                ledger=ledger,
+                registry=registry,
+                run_id=run_id,
+                mission_id=mission_id,
+                packet=debt_packet,
+                tool_results=tool_results,
+                capabilities=capabilities,
+                base_epoch=base_epoch,
+                emit=emit,
+                stage="learning_debt_review",
+                status_text="正在回看最近几轮是否有可学习信号。",
+            )
             return
 
+        yield from self._stream_learning_packet_reflection(
+            request=request,
+            store=store,
+            ledger=ledger,
+            registry=registry,
+            run_id=run_id,
+            mission_id=mission_id,
+            packet=packet,
+            tool_results=tool_results,
+            capabilities=capabilities,
+            base_epoch=base_epoch,
+            emit=emit,
+            stage="after_turn_learning",
+            status_text="正在整理可学习信号。",
+        )
+
+    def _stream_learning_packet_reflection(
+        self,
+        *,
+        request: RunRequest,
+        store: StateStore,
+        ledger: RunLedger,
+        registry: ToolRegistry,
+        run_id: str,
+        mission_id: str,
+        packet: dict[str, Any],
+        tool_results: list[ToolResult],
+        capabilities: Any,
+        base_epoch: int,
+        emit,
+        stage: str,
+        status_text: str,
+    ) -> Iterator[ChatEvent]:
         bundle = build_learning_tool_bundle(
             registry,
             provider_adapter_version=capabilities.adapter_version,
             epoch=base_epoch + 1,
         )
         cache_plan = capabilities.cache_plan(bundle.metadata())
+        packet_kind = str(packet.get("kind") or "learning_packet")
         ledger.append(
             run_id,
             "learning.reflection.started",
-            {"tool_bundle": bundle.metadata(), "cache_plan": cache_plan},
+            {"tool_bundle": bundle.metadata(), "cache_plan": cache_plan, "stage": stage, "packet_kind": packet_kind},
         )
-        yield emit("status.updated", {"text": "正在整理可学习信号。", "tone": "learning"})
+        if stage == "learning_debt_review":
+            ledger.append(run_id, "learning.debt_review.started", {"packet_kind": packet_kind})
+        yield emit("status.updated", {"text": status_text, "tone": "learning"})
 
         tool_calls = []
         completed = []
@@ -341,10 +398,11 @@ class ProviderAgentRuntime:
                     tools=bundle.specs,
                     metadata={
                         "run_id": run_id,
-                        "stage": "after_turn_learning",
+                        "stage": stage,
                         "tool_bundle": bundle.metadata(),
                         "provider_capabilities": capabilities.metadata(),
                         "cache_plan": cache_plan,
+                        "packet_kind": packet_kind,
                     },
                 )
             ):
@@ -363,6 +421,8 @@ class ProviderAgentRuntime:
             run_id,
             "learning.reflection.provider_completed",
             {
+                "stage": stage,
+                "packet_kind": packet_kind,
                 "metadata": [event.metadata for event in completed],
                 "tool_call_count": len(tool_calls),
                 "assistant_text": "".join(assistant_parts).strip()[:500],
@@ -370,6 +430,8 @@ class ProviderAgentRuntime:
         )
         if not tool_calls:
             ledger.append(run_id, "learning.reflection.completed", {"tool_call_count": 0, "tool_results": []})
+            if stage == "learning_debt_review":
+                ledger.append(run_id, "learning.debt_review.completed", {"tool_call_count": 0})
             return
 
         reflection_harness = ToolHarness(
@@ -413,8 +475,19 @@ class ProviderAgentRuntime:
         ledger.append(
             run_id,
             "learning.reflection.completed",
-            {"tool_call_count": len(tool_calls), "tool_results": learning_results},
+            {
+                "stage": stage,
+                "packet_kind": packet_kind,
+                "tool_call_count": len(tool_calls),
+                "tool_results": learning_results,
+            },
         )
+        if stage == "learning_debt_review":
+            ledger.append(
+                run_id,
+                "learning.debt_review.completed",
+                {"tool_call_count": len(tool_calls), "tool_results": learning_results},
+            )
 
 
 def run_provider(request: RunRequest, provider: ProviderAdapter) -> RunResult:

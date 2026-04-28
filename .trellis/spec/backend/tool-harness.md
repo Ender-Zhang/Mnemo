@@ -41,6 +41,9 @@
 - After-turn learning reflection uses a `learning.v1` ToolBundle and the normal provider-native tool call + ToolHarness execution boundary.
 - After-turn learning reflection must pass a structure-only evidence gate before the second provider call: reflect when the packet already has learning candidates or at least three non-learning tool results; otherwise persist `learning.reflection.skipped`.
 - The learning reflection gate must not use user-message keyword lists or language-specific text matching.
+- Learning debt review may run after a low-signal turn only when recent completed turns in the same conversation have accrued without learning candidates or a prior debt review barrier.
+- Learning debt review must build a compact multi-run packet from run summaries and compact tool-result metadata, then use the same `learning.v1` provider-native tools and ToolHarness path; the runtime must not classify raw text with keyword rules.
+- A completed learning debt review is a structural barrier so ordinary low-signal turns do not repeatedly trigger the same multi-run review.
 - `tool_search(query?, risk?, limit=20)` returns compact tool cards without raw schemas.
 - `tool_expand_schema(names)` returns matching tool names for the runtime to add to the next provider `ToolBundle` epoch; it does not return raw schemas to the model.
 - Provider runtime records `tool_bundle.expanded` with `cache_bust_reason="lazy_schema_expansion"` when a successful `tool_expand_schema` call changes the active bundle.
@@ -133,6 +136,7 @@
 | Review memory learning chip | Review-gated memory candidates stream a `learning.chip` that requires confirmation and omits raw evidence | `tests/test_runtime.py` |
 | After-turn mixed learning | Provider reflection can propose memory/skill/tool/eval candidates from one compact packet | `tests/test_runtime.py` |
 | Low-signal learning skip | Zero/low-tool turns skip the second provider learning call and persist a skip reason | `tests/test_runtime.py` |
+| Learning debt review | Recent no-learning completed turns trigger one compact multi-run review through `learning.v1`, then wait behind a debt-review barrier | `tests/test_runtime.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
 | Skill patch candidate | Return compact patch evidence without body and leave source skill unchanged | `tests/test_tools.py`, `tests/test_skills_filesystem.py` |
@@ -202,6 +206,7 @@
 - ToolBundle tests: assert stable ids, compact metadata, profile filtering, and lazy expansion epochs.
 - After-turn learning tests: assert compact packet reflection uses `learning.v1`, persists lifecycle events, and can produce mixed candidate chips.
 - Low-signal learning tests: assert a zero-tool turn does not create an after-turn provider request and records `learning.reflection.skipped`.
+- Learning debt tests: assert five recent no-learning turns can trigger one multi-run packet and that a recent debt review suppresses repeated review.
 - Anthropic provider: assert tool specs are passed as `tools`, tool results become `tool_result` blocks, and streaming tool deltas are parsed.
 
 ### 7. Wrong vs Correct
