@@ -32,6 +32,7 @@
 - Prompt/bootstrap and memory-write scanning share `mnemo.core.injection.injection_warnings()` for warning label consistency.
 - `memory.l1_snapshot` is daily-cache context and must appear before turn-scoped `memory.index`.
 - `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
+- `memory.index` consumes `MemoryEngine.context_cards()` output; rejected, tombstoned, archived, private-deleted, and review-gated memory candidates must be filtered before prompt assembly.
 - CLI inspection of the same compiled context is read-only: `mnemo memory snapshot`.
 - Tool schemas still travel through provider-native tool definitions; dropping `tools.cards` must not remove actual tool availability.
 - Learning reflection prompt is a separate compact after-turn request and must not mutate the stable user-facing prompt prefix.
@@ -59,6 +60,7 @@
 | Suspicious bootstrap content | Preserve warning labels in metadata without raw content | `tests/test_prompt.py` |
 | L1 snapshot present | Add `memory.l1_snapshot` with `daily_context` cache segment before `memory.index` | `tests/test_prompt.py` |
 | Empty L1 snapshot | Do not inject `memory.l1_snapshot` | `tests/test_prompt.py` |
+| Memory index cards | Prompt-facing memory cards exclude rejected/tombstoned/review-gated candidates | `tests/test_memory.py`, `tests/test_runtime.py` |
 | CLI snapshot inspection | Existing compiled snapshot is inspectable without full page bodies | `tests/test_cli.py` |
 | Tight prompt budget with tools | May drop `tools.cards`; tool schema metadata remains present | `tests/test_prompt.py` |
 | Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |

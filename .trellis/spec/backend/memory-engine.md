@@ -124,6 +124,7 @@
 - `MemoryEngine.search()` may include `linked_page` results by following one hop from matching active pages through outgoing links and backlinks.
 - `linked_page` results must be active pages, bounded by the search limit, deterministic, and de-duplicated from seed page/candidate ids.
 - Prompt-facing context cards for `linked_page` include compact `summary`, `relation`, and `linked_from`, not raw evidence.
+- Prompt-facing context cards must include only active pages, linked active pages, draft candidates, or non-tombstoned session snippets; rejected, tombstoned, archived, private-deleted, and review-gated candidates must not be injected into prompts through `MemoryEngine.context_cards()`.
 - `MemoryEngine.search(search_scope="memory")` preserves the default stable-memory behavior: active pages, candidates, and one-hop linked pages.
 - `MemoryEngine.search(search_scope="stable")` is accepted as an alias of `memory`.
 - `MemoryEngine.search(search_scope="sessions")` returns L4 `session_message` snippets from prior run messages without page/candidate results.
@@ -199,6 +200,7 @@
 | Direct association | Search returns linked active pages that do not match the query text | `tests/test_memory.py` |
 | Reverse association | Search returns active pages linked back to the query match | `tests/test_memory.py` |
 | Association cards | Context cards include relation metadata without full raw payloads | `tests/test_memory.py` |
+| Prompt context card filtering | Rejected, tombstoned, and review-gated candidates stay out of prompt-facing context cards | `tests/test_memory.py` |
 | L4 session search | `search_scope="sessions"` returns bounded message snippets and omits raw content | `tests/test_memory.py` |
 | Tombstone-aware session recall | Default session/all search suppresses snippets matching tombstones; explicit include returns them for historical lookup | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |
 | Memory page read | `memory_read` can load stable pages by id | `tests/test_tools.py` |

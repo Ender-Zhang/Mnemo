@@ -186,6 +186,7 @@ class MemoryEngine:
                 search_scope=search_scope,
                 include_tombstoned=include_tombstoned,
             )
+            if _is_prompt_context_item(item)
         ]
 
     def write_candidate(
@@ -1951,6 +1952,18 @@ def _context_card(item: dict[str, Any]) -> dict[str, Any]:
         "confidence": item.get("confidence"),
         "status": item.get("status"),
     }
+
+
+def _is_prompt_context_item(item: dict[str, Any]) -> bool:
+    item_type = str(item.get("type") or "")
+    status = str(item.get("status") or "")
+    if item_type in {"page", "linked_page"}:
+        return status == "active"
+    if item_type == "candidate":
+        return status == "draft"
+    if item_type == "session_message":
+        return not _is_tombstone_status(status)
+    return False
 
 
 def _snapshot_item(page: dict[str, Any]) -> dict[str, Any]:
