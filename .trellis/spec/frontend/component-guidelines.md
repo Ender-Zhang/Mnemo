@@ -16,6 +16,7 @@
 - Chat empty state may show read-only glance cards for current runtime, memory counts, and latest activity; these cards must not become a second task surface.
 - Desktop chat may show a read-only context rail for real-time activity, recent request, runtime, and memory summary; it must hide on smaller screens and must not expose Mission/Run internals beyond compact resume labels.
 - Busy-state commands such as stop/cancel belong inside the existing composer.
+- The composer input remains editable while a run is busy so the user can draft the next turn; sending is disabled until the current run finishes.
 - Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
 
 ### 3. Contracts
@@ -69,6 +70,7 @@
 - Good: keep all user task interaction in the single composer.
 - Good: use artifact card buttons to prefill composer intent for model/tool-led follow-up work.
 - Good: use a busy-state composer button for run cancellation instead of a separate operations area.
+- Good: keep the composer textarea editable during a running answer while disabling only send.
 - Good: resolve a Decision card with small inline buttons rather than opening a separate Inbox dashboard.
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
 - Good: expose tool arguments/results in collapsible details on the same action card.

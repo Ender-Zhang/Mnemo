@@ -937,9 +937,11 @@ print(json.dumps({
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
                 status, _, html = server.request("GET", "/")
                 script_status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
 
                 self.assertEqual(status, 200)
                 self.assertEqual(script_status, 200)
+                self.assertEqual(css_status, 200)
                 self.assertIn('id="stop"', html)
                 self.assertIn("/api/runs/cancel", script)
                 self.assertIn("requestCancel", script)
@@ -948,8 +950,12 @@ print(json.dumps({
                 self.assertIn("run_id: state.activeRunId", script)
                 self.assertIn("stop.disabled = !state.activeRunId || state.cancelRequested", script)
                 self.assertIn("updateComposerState", script)
+                self.assertIn("composer-busy", script)
+                self.assertIn("send.disabled = state.busy || !hasDraft", script)
+                self.assertIn('input.setAttribute("aria-busy", String(state.busy))', script)
                 self.assertIn("if (state.busy) return;", script)
                 self.assertIn("reset.disabled = state.busy", script)
+                self.assertIn("composer-scan", css)
 
     def test_web_client_asset_uses_polished_single_chat_shell(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

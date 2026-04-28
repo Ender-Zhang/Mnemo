@@ -926,6 +926,7 @@ h1 {
 }
 
 .composer {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr;
   align-items: stretch;
@@ -938,9 +939,35 @@ h1 {
   background: rgba(255, 253, 249, 0.88);
   box-shadow: var(--shadow);
   backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+
+.composer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgba(11, 125, 120, 0.72), transparent);
+  opacity: 0;
+  transform: translateX(-42%);
+  pointer-events: none;
+}
+
+.composer.composer-busy {
+  border-color: rgba(11, 125, 120, 0.28);
+  box-shadow: 0 18px 58px rgba(39, 33, 24, 0.1), 0 0 0 4px rgba(228, 243, 240, 0.62);
+}
+
+.composer.composer-busy::before {
+  opacity: 1;
+  animation: composer-scan 1.25s ease-in-out infinite;
 }
 
 .composer textarea {
+  position: relative;
   width: 100%;
   max-height: 180px;
   min-height: 42px;
@@ -992,6 +1019,12 @@ h1 {
 .send-button {
   background: #17201f;
   color: #fff;
+}
+
+.send-button:disabled {
+  border-color: rgba(222, 215, 204, 0.78);
+  background: rgba(21, 24, 23, 0.2);
+  color: rgba(21, 24, 23, 0.45);
 }
 
 .send-button span {
@@ -2184,6 +2217,18 @@ h1 {
   to {
     opacity: 1;
     transform: translateX(0);
+  }
+}
+
+@keyframes composer-scan {
+  0% {
+    transform: translateX(-48%);
+  }
+  50% {
+    transform: translateX(48%);
+  }
+  100% {
+    transform: translateX(-48%);
   }
 }
 

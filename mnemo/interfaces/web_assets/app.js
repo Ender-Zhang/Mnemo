@@ -162,7 +162,10 @@ form.addEventListener("submit", (event) => {
   runTurn(message);
 });
 
-input.addEventListener("input", resizeInput);
+input.addEventListener("input", () => {
+  resizeInput();
+  updateComposerState();
+});
 input.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
   event.preventDefault();
@@ -2074,11 +2077,15 @@ function updateContextPanel() {
 }
 
 function updateComposerState() {
-  send.disabled = state.busy;
+  const hasDraft = Boolean(input.value.trim());
+  form.classList.toggle("composer-busy", state.busy);
+  form.classList.toggle("composer-has-draft", hasDraft);
+  send.disabled = state.busy || !hasDraft;
   reset.disabled = state.busy;
   stop.hidden = !state.busy;
   stop.disabled = !state.activeRunId || state.cancelRequested;
-  input.disabled = state.busy;
+  input.disabled = false;
+  input.setAttribute("aria-busy", String(state.busy));
 }
 
 function resizeInput() {
