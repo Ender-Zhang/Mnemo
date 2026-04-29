@@ -109,7 +109,8 @@
 - `mnemo memory notes` defaults to open notes; `--status all` means no status filter.
 - Duplicate candidates are rejected as `rejected:duplicate`.
 - Rejected candidates create a durable `memory_tombstones` row with compact summary, target hash, evidence run id, and do-not-resurrect rule.
-- Duplicate candidates may reinforce existing page confidence and must create a `reinforces` memory link.
+- Exact duplicate candidates and conservative near-duplicate candidates may reinforce existing page confidence and must create a `reinforces` memory link.
+- Near-duplicate reinforcement requires same normalized memory dimension, non-conflicting polarity, and high keyword overlap/containment; otherwise the candidate remains eligible for conflict detection, promotion, or low-confidence skip.
 - Conflicting candidates are not promoted automatically.
 - Conflicting candidates are marked `needs_review:conflict` and linked with `conflicts_with`.
 - Dream consolidation returns `w0`, `promoted`, `rejected`, `skipped`, `conflicts`, and a compact L1 `snapshot`.
@@ -217,6 +218,7 @@
 | Injected candidate write | `needs_review:prompt_injection` with high-risk safety evidence | `tests/test_memory.py`, `tests/test_tools.py` |
 | After-turn memory candidate | Mixed learning reflection can create a memory candidate and chip through the normal write pipeline | `tests/test_runtime.py` |
 | Exact duplicate of active page | Reject candidate, raise page confidence, add `reinforces` link | `tests/test_memory.py` |
+| Near duplicate of active page | Same-dimension, same-polarity near duplicate reinforces the active page instead of creating a second stable page | `tests/test_memory.py` |
 | Obvious contradiction | Mark `needs_review:conflict`, add `conflicts_with` link, do not promote | `tests/test_memory.py` |
 | Low confidence non-conflict | Keep `draft`, return skipped entry | `tests/test_memory.py` |
 | High confidence non-conflict | Promote to active memory page | `tests/test_memory.py` |
@@ -303,7 +305,7 @@
 - Daemon W0 recovery covers model-marked notes without mutating ephemeral notes.
 - Candidate writes cover trusted/low-risk and injected/high-risk safety scans.
 - CLI `memory notes` covers default open notes, unfiltered notes, metadata/result payloads, and compact non-JSON rows.
-- Duplicate reinforcement updates confidence and creates `reinforces`.
+- Duplicate and conservative near-duplicate reinforcement update confidence and create `reinforces`.
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
 - Search/context cards remain compact and omit raw evidence.
 - Associative recall covers direct links, backlinks, archived-page filtering, and compact context cards.

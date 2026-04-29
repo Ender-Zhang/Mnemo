@@ -1075,6 +1075,38 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(links[0]["relation"], "reinforces")
             self.assertEqual(links[0]["target_id"], page_id)
 
+    def test_near_duplicate_candidate_reinforces_existing_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            page_id = store.upsert_memory_page(
+                "preferences: update style",
+                "User prefers concise engineering updates",
+                confidence=0.72,
+            )
+            duplicate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers concise updates",
+                dimension="preferences",
+                confidence=0.86,
+            )
+            distinct_id = store.add_memory_candidate(
+                run_id,
+                "User prefers detailed architecture diagrams",
+                dimension="preferences",
+                confidence=0.86,
+            )
+
+            result = MemoryEngine(store).dream_consolidate(min_confidence=0.7)
+
+            rejected = {item["candidate_id"]: item["status"] for item in result["rejected"]}
+            page = store.get_memory_page(page_id)
+            links = store.list_memory_links(duplicate_id)
+            self.assertEqual(rejected[duplicate_id], "rejected:duplicate")
+            self.assertEqual(links[0]["relation"], "reinforces")
+            self.assertEqual(links[0]["target_id"], page_id)
+            self.assertGreater(page["confidence"], 0.86)
+            self.assertEqual(store.get_memory_candidate(distinct_id)["status"], "promoted")
+
     def test_conflicting_candidate_is_routed_to_review(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)

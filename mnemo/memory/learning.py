@@ -25,6 +25,10 @@ from .utils import (
 from .wiki import materialize_memory_page, materialize_memory_pages
 
 
+NEAR_DUPLICATE_JACCARD_THRESHOLD = 0.72
+NEAR_DUPLICATE_CONTAINMENT_THRESHOLD = 0.82
+
+
 class MemoryLearningMixin:
     def write_candidate(
         self,
@@ -293,7 +297,7 @@ class MemoryLearningMixin:
                 rejected.append(self.reject_candidate(candidate["id"], "empty"))
                 continue
 
-            duplicate_page = self._find_duplicate_page(claim)
+            duplicate_page = self._find_duplicate_page(candidate)
             if fingerprint in seen_claims or duplicate_page:
                 if duplicate_page:
                     self._reinforce_page(candidate, duplicate_page)
@@ -330,15 +334,49 @@ class MemoryLearningMixin:
     def _l1_snapshot_path(self) -> Path:
         return self.store.state_dir / "wiki" / L1_SNAPSHOT_FILENAME
 
-    def _find_duplicate_page(self, claim: str) -> dict[str, Any] | None:
+    def _find_duplicate_page(self, candidate: dict[str, Any]) -> dict[str, Any] | None:
+        claim = _normalize_space(candidate.get("claim", ""))
         matches = self.store.search_memory_pages(claim, limit=1)
-        return next(
+        exact_match = next(
             (
                 page
                 for page in matches
                 if _fingerprint(page.get("content", "")) == _fingerprint(claim)
             ),
             None,
+        )
+        if exact_match:
+            return exact_match
+
+        candidate_dimension = normalize_memory_dimension(candidate.get("dimension"), fallback="context")
+        candidates = self._duplicate_candidate_pages(claim, dimension=candidate_dimension)
+        return next(
+            (
+                page
+                for page in candidates
+                if _same_memory_dimension(candidate_dimension, page)
+                and _is_near_duplicate_claim(claim, str(page.get("content") or ""))
+            ),
+            None,
+        )
+
+    def _duplicate_candidate_pages(self, claim: str, *, dimension: str) -> list[dict[str, Any]]:
+        queries = [dimension, *_keywords(claim)[:6]]
+        pages_by_id: dict[str, dict[str, Any]] = {}
+        for query in queries:
+            if not query:
+                continue
+            for page in self.store.search_memory_pages(str(query), limit=10):
+                page_id = str(page.get("id") or "")
+                if page_id and page_id not in pages_by_id:
+                    pages_by_id[page_id] = page
+        return sorted(
+            pages_by_id.values(),
+            key=lambda page: (
+                -float(page.get("confidence") or 0.0),
+                -float(page.get("updated_at") or page.get("created_at") or 0.0),
+                str(page.get("id") or ""),
+            ),
         )
 
     def _reinforce_page(self, candidate: dict[str, Any], page: dict[str, Any]) -> None:
@@ -389,3 +427,31 @@ class MemoryLearningMixin:
             "conflict_page_id": page["id"],
             "reason": "conflicts_with_active_memory",
         }
+
+
+def _same_memory_dimension(candidate_dimension: str, page: dict[str, Any]) -> bool:
+    title = str(page.get("title") or "")
+    title_head = title.split(":", 1)[0] if ":" in title else ""
+    page_dimension = normalize_memory_dimension(title_head or page.get("scope"), fallback="context")
+    return page_dimension == candidate_dimension
+
+
+def _is_near_duplicate_claim(left: str, right: str) -> bool:
+    if _fingerprint(left) == _fingerprint(right):
+        return True
+    left_polarity = _polarity(left)
+    right_polarity = _polarity(right)
+    if {left_polarity, right_polarity} == {"positive", "negative"}:
+        return False
+    left_terms = set(_keywords(left))
+    right_terms = set(_keywords(right))
+    if not left_terms or not right_terms:
+        return False
+    overlap = left_terms & right_terms
+    union = left_terms | right_terms
+    jaccard = len(overlap) / len(union)
+    containment = len(overlap) / min(len(left_terms), len(right_terms))
+    return (
+        jaccard >= NEAR_DUPLICATE_JACCARD_THRESHOLD
+        or containment >= NEAR_DUPLICATE_CONTAINMENT_THRESHOLD
+    )

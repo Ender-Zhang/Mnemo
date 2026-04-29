@@ -631,6 +631,8 @@ class MemoryAuditTrail:
 
 在写入 L2 之前，所有候选事实必须通过质量评估，避免记忆库堆满低价值条目：
 
+实现契约：consolidation 先执行保守去重。完全相同或同维度、同极性、关键词高度重叠/包含的 near-duplicate 候选，不创建新 L2 页面，而是拒绝为 `rejected:duplicate`，提高已有页面 confidence，并写 `reinforces` link。明显矛盾不能走去重路径，仍进入 conflict review。
+
 ```python
 class MemoryQualityFilter:
     """
