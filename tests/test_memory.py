@@ -1138,6 +1138,52 @@ class MemoryEngineTests(unittest.TestCase):
             path.write_text("{", encoding="utf-8")
             self.assertIsNone(engine.load_l1_snapshot())
 
+    def test_compile_l1_snapshot_includes_pointers_and_association_hubs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            engine = MemoryEngine(store)
+            target_id = store.upsert_memory_page(
+                "cognition: learning style",
+                "User learns by building concrete tools.",
+                confidence=0.91,
+            )
+            rust_id = store.upsert_memory_page(
+                "goals: rust learning",
+                "User is learning Rust through Mnemo work.",
+                confidence=0.9,
+                metadata={
+                    "aliases": ["tokio", "rust async"],
+                    "associations": [
+                        {
+                            "target_id": target_id,
+                            "reason": "Rust progress depends on learning style.",
+                            "strength": 0.8,
+                        }
+                    ],
+                },
+            )
+            docs_id = store.upsert_memory_page(
+                "patterns: build to learn",
+                "User prefers practical projects as learning scaffolds.",
+                confidence=0.86,
+                metadata={"aliases": ["project-based learning"]},
+            )
+            store.add_memory_link(docs_id, target_id, "related", weight=0.7)
+
+            snapshot = engine.compile_l1_snapshot(limit=10)
+            plan = engine.plan_query("tokio")
+
+            pointer = next(item for item in snapshot["pointers"] if item["page_id"] == rust_id)
+            self.assertEqual(pointer["trigger"], "tokio")
+            self.assertEqual(pointer["target"], "goals#rust-learning")
+            self.assertIn("learning style", pointer["associations"])
+            hub = next(item for item in snapshot["association_hubs"] if item["page_id"] == target_id)
+            self.assertEqual(hub["target"], "cognition#learning-style")
+            self.assertEqual(hub["source_count"], 2)
+            self.assertIn("tokio", hub["triggers"])
+            self.assertNotIn("User learns by building concrete tools.", str(snapshot.get("association_hubs")))
+            self.assertIn("goals: rust learning", plan.aliases)
+
     def test_load_or_compile_l1_snapshot_materializes_missing_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, _run_id = _store_with_run(tmp)

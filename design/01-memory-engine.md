@@ -982,6 +982,8 @@ ASSOCIATION HUBS:
 
 L1 只保留热点名称和触发条件，不复述长事实。具体内容仍按需读取 L2。
 
+实现契约：`compile_l1_snapshot()` 需要输出三类紧凑结构：`items` 是 active page 摘要；`pointers` 是 alias/title trigger 到 `dimension#slug` 的路标；`association_hubs` 是被多个 active page 指向的高价值联想节点。三者都不得携带完整正文、原始 evidence 或 transcript。Prompt 只能把这些作为低 token 路标；真正需要细节时仍调用 `memory_search` / `memory_read`。
+
 #### 3.15.7 DreamCycle 中的维护
 
 DreamCycle 的 `link_and_prune` 阶段负责维护 LLM Wiki：

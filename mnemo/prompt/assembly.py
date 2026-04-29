@@ -294,14 +294,23 @@ class PromptAssembler:
     def _memory_snapshot(self, snapshot: dict[str, Any]) -> PromptBlock:
         items = _snapshot_items(snapshot)
         visible_items = items[:L1_SNAPSHOT_PROMPT_ITEM_LIMIT]
+        pointers = _snapshot_pointers(snapshot)
+        hubs = _snapshot_association_hubs(snapshot)
         page_count = snapshot.get("page_count")
         lines = [
             "Daily compiled memory snapshot:",
             "If this snapshot fully answers the user, answer directly without a retrieval tool.",
             "Use memory_search or memory_read for details beyond this snapshot.",
         ]
+        if pointers:
+            lines.append("Pointers:")
+            lines.extend(f"- {_memory_snapshot_pointer_text(pointer)}" for pointer in pointers[:8])
+        if hubs:
+            lines.append("Association hubs:")
+            lines.extend(f"- {_memory_snapshot_hub_text(hub)}" for hub in hubs[:5])
         if isinstance(page_count, int) and page_count > len(visible_items):
             lines.append(f"Showing {len(visible_items)} of {page_count} active memory pages.")
+        lines.append("Active summaries:")
         lines.extend(f"- {_memory_snapshot_item_text(item)}" for item in visible_items)
         return _block(
             id="memory.l1_snapshot",
@@ -511,6 +520,28 @@ def _memory_snapshot_item_text(item: dict[str, Any]) -> str:
     )
 
 
+def _memory_snapshot_pointer_text(pointer: dict[str, Any]) -> str:
+    confidence = _confidence_text(pointer.get("confidence"))
+    associations = pointer.get("associations")
+    suffix = ""
+    if isinstance(associations, list) and associations:
+        suffix = f" [assoc: {', '.join(_compact(str(item), limit=40) for item in associations[:3])}]"
+    return (
+        f"{_compact(pointer.get('trigger', ''), limit=48)} -> "
+        f"{_compact(pointer.get('target', pointer.get('page_id', '')), limit=72)}"
+        f"{confidence}{suffix}"
+    )
+
+
+def _memory_snapshot_hub_text(hub: dict[str, Any]) -> str:
+    triggers = hub.get("triggers")
+    trigger_text = ""
+    if isinstance(triggers, list) and triggers:
+        trigger_text = f"; triggers: {', '.join(_compact(str(item), limit=36) for item in triggers[:4])}"
+    count = hub.get("source_count") or hub.get("incoming_count") or 0
+    return f"{_compact(hub.get('target', hub.get('page_id', '')), limit=72)} ({count} sources){trigger_text}"
+
+
 def _skill_card_text(card: dict[str, Any]) -> str:
     status = card.get("status") or "unknown"
     return f"{card.get('name', '')} [{status}]: {_compact(card.get('description', ''))}"
@@ -523,6 +554,24 @@ def _snapshot_items(snapshot: dict[str, Any] | None) -> tuple[dict[str, Any], ..
     if not isinstance(items, list):
         return ()
     return tuple(item for item in items if isinstance(item, dict))
+
+
+def _snapshot_pointers(snapshot: dict[str, Any] | None) -> tuple[dict[str, Any], ...]:
+    if not isinstance(snapshot, dict):
+        return ()
+    pointers = snapshot.get("pointers")
+    if not isinstance(pointers, list):
+        return ()
+    return tuple(pointer for pointer in pointers if isinstance(pointer, dict))
+
+
+def _snapshot_association_hubs(snapshot: dict[str, Any] | None) -> tuple[dict[str, Any], ...]:
+    if not isinstance(snapshot, dict):
+        return ()
+    hubs = snapshot.get("association_hubs")
+    if not isinstance(hubs, list):
+        return ()
+    return tuple(hub for hub in hubs if isinstance(hub, dict))
 
 
 def _confidence_text(value: Any) -> str:

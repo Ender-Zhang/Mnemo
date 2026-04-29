@@ -81,6 +81,7 @@
   - `health.py`: memory health cards, score, stale/decay decisions.
   - `dream.py`: Dream delta, model action execution, persisted reports, Dream status.
   - `cards.py`: compact read-model/result shape builders.
+  - `snapshot.py`: compact L1 memory snapshot compiler for active-page cards, alias pointers, and association hubs.
   - `utils.py` and `constants.py`: dependency-free shared helpers/constants.
 - Public imports continue to use `from mnemo.memory import MemoryEngine`; direct engine constants such as `W0_MEMORY_RETENTION` remain re-exported by `mnemo/memory/engine.py` for compatibility.
 - Normal tools write memory candidates, not stable pages.
@@ -129,10 +130,11 @@
 - Dream scheduled ticks refresh the L1 snapshot through the normal Dream execution result, and tick/report payloads expose only snapshot counts and report ids.
 - `mnemo dream status` must be read-only and return latest report metadata plus current backlog counts.
 - `mnemo dream report --latest` must load the latest persisted report without recomputing memory maintenance.
-- L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
+- L1 snapshots contain active memory page cards only for `items`: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
+- L1 snapshots may include bounded `pointers` derived from active-page aliases/title triggers and bounded `association_hubs` derived from active `memory_links` plus active wiki metadata links/associations.
 - L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
 - Runtime prompt assembly may call `load_or_compile_l1_snapshot()` to materialize a missing L1 snapshot when active memory pages exist; an empty memory store still omits L1.
-- Prompt-facing snapshots must omit raw evidence and full page content.
+- Prompt-facing snapshots must omit raw evidence and full page content; pointers and association hubs expose only compact trigger, target, counts, and short association labels.
 - Stable memory pages may carry compact `metadata` for maintenance hints such as `expires`, `expires_at`, `decay_days`, `last_verified_at`, and `verified_at`.
 - Stable memory pages may carry compact `metadata.aliases`, `metadata.links`, and `metadata.associations`; these fields are recall hints, not authoritative facts.
 - `MemoryEngine.decay_stale_pages()` inspects active pages only and applies bounded metadata-driven maintenance; pages without expiry or decay metadata are skipped.
@@ -157,6 +159,7 @@
 - `MemoryEngine.search_with_plan()` includes compact `recall_policy.tombstone_filter` metadata for session searches: enabled flag, tombstone count, suppressed count, and bounded suppressed item provenance.
 - `MemoryEngine.plan_query()` returns a compact deterministic plan with original, lexical, semantic, alias, temporal, dimension, clarification, and route fields.
 - Query planning preserves the original user language and exact proper nouns as lexical routes.
+- Query planning may use L1 snapshot pointers and association hubs to add alias routes without scanning or injecting full memory pages.
 - Query planning maps common Chinese identity/name questions such as `我叫什么`, `我的名字是什么`, and `我是谁` to the `identity` dimension and compact name/profile lexical routes.
 - The first QueryPlanner implementation is deterministic and dependency-free; vector embedding, reranking, and model-led spreading activation remain extensions.
 - `MemoryEngine.search_with_plan()` returns `query_plan` plus `matches`; `MemoryEngine.search()` preserves the list-only compatibility wrapper.
@@ -224,6 +227,7 @@
 | CLI W0 note list | Open and processed working notes can be inspected without mutation | `tests/test_cli.py` |
 | Missing or invalid snapshot file | Return `None` | `tests/test_memory.py` |
 | Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
+| L1 pointers and hubs | Snapshot includes compact alias pointers and association hubs without raw page bodies | `tests/test_memory.py`, `tests/test_prompt.py` |
 | Direct association | Search returns linked active pages that do not match the query text | `tests/test_memory.py` |
 | Reverse association | Search returns active pages linked back to the query match | `tests/test_memory.py` |
 | Metadata association | Search expands active wiki `metadata.links` and `metadata.associations`, materializes compact frontmatter, and suppresses orphan false positives | `tests/test_memory.py` |

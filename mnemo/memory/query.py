@@ -301,7 +301,65 @@ def _snapshot_aliases(tokens: list[str], snapshot: dict[str, Any] | None) -> lis
         searchable = f"{title} {summary}".casefold()
         if query_terms and any(term in searchable for term in query_terms):
             aliases.extend(_title_aliases(title))
+    aliases.extend(_snapshot_pointer_aliases(query_terms, snapshot))
+    aliases.extend(_snapshot_hub_aliases(query_terms, snapshot))
     return _bounded_unique(aliases, limit=5)
+
+
+def _snapshot_pointer_aliases(query_terms: set[str], snapshot: dict[str, Any]) -> list[str]:
+    pointers = snapshot.get("pointers")
+    if not isinstance(pointers, list):
+        return []
+    aliases: list[str] = []
+    for pointer in pointers:
+        if not isinstance(pointer, dict):
+            continue
+        searchable = _searchable_snapshot_values(
+            pointer.get("trigger"),
+            pointer.get("aliases"),
+            pointer.get("target"),
+            pointer.get("title"),
+            pointer.get("associations"),
+        )
+        if _query_terms_match(query_terms, searchable):
+            aliases.extend(
+                str(value or "")
+                for value in (pointer.get("title"), pointer.get("trigger"), pointer.get("target"))
+            )
+    return aliases
+
+
+def _snapshot_hub_aliases(query_terms: set[str], snapshot: dict[str, Any]) -> list[str]:
+    hubs = snapshot.get("association_hubs")
+    if not isinstance(hubs, list):
+        return []
+    aliases: list[str] = []
+    for hub in hubs:
+        if not isinstance(hub, dict):
+            continue
+        searchable = _searchable_snapshot_values(
+            hub.get("target"),
+            hub.get("title"),
+            hub.get("triggers"),
+            hub.get("why"),
+        )
+        if _query_terms_match(query_terms, searchable):
+            aliases.extend(str(value or "") for value in (hub.get("title"), hub.get("target")))
+    return aliases
+
+
+def _searchable_snapshot_values(*values: Any) -> str:
+    parts: list[str] = []
+    for value in values:
+        if isinstance(value, list):
+            parts.extend(str(item or "") for item in value)
+        else:
+            parts.append(str(value or ""))
+    return " ".join(parts).casefold()
+
+
+def _query_terms_match(query_terms: set[str], searchable: str) -> bool:
+    return bool(query_terms and any(term in searchable for term in query_terms))
 
 
 def _title_aliases(title: str) -> list[str]:

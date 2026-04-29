@@ -5,10 +5,11 @@ import time
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
-from .cards import _candidate_title, _snapshot_item, _skip_working_note
+from .cards import _candidate_title, _skip_working_note
 from .constants import DEFAULT_W0_CONFIDENCE, L1_SNAPSHOT_FILENAME, MIN_W0_CANDIDATE_CHARS, W0_MEMORY_RETENTION
 from .query import normalize_memory_dimension
 from .safety import append_safety_evidence, scan_memory_candidate
+from .snapshot import compile_l1_snapshot_payload
 from .utils import (
     _bounded_confidence,
     _compact_safety_scan,
@@ -114,13 +115,7 @@ class MemoryLearningMixin:
     def compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any]:
         pages = self.store.list_memory_pages(status="active", limit=max(0, int(limit)))
         materialize_memory_pages(self.store.state_dir, pages)
-        items = [_snapshot_item(page) for page in pages]
-        snapshot = {
-            "kind": "l1_memory_snapshot",
-            "generated_at": time.time(),
-            "page_count": len(items),
-            "items": items,
-        }
+        snapshot = compile_l1_snapshot_payload(self.store, pages, generated_at=time.time())
         path = self._l1_snapshot_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(dumps(snapshot), encoding="utf-8")

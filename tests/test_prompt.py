@@ -201,6 +201,23 @@ class PromptAssemblerTests(unittest.TestCase):
                 "kind": "l1_memory_snapshot",
                 "generated_at": 123,
                 "page_count": 1,
+                "pointers": [
+                    {
+                        "trigger": "writing/docs",
+                        "target": "preferences#daily-preference",
+                        "page_id": "mempg_daily",
+                        "confidence": 0.88,
+                        "associations": ["communication style"],
+                    }
+                ],
+                "association_hubs": [
+                    {
+                        "target": "cognition#communication-style",
+                        "page_id": "mempg_hub",
+                        "source_count": 2,
+                        "triggers": ["writing/docs", "review"],
+                    }
+                ],
                 "items": [
                     {
                         "id": "mempg_daily",
@@ -250,6 +267,10 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertIn("answer directly without a retrieval tool", snapshot.content)
         self.assertIn("memory_search", snapshot.content)
         self.assertIn("mempg_daily", snapshot.content)
+        self.assertIn("Pointers:", snapshot.content)
+        self.assertIn("writing/docs -> preferences#daily-preference", snapshot.content)
+        self.assertIn("Association hubs:", snapshot.content)
+        self.assertIn("cognition#communication-style", snapshot.content)
         self.assertNotIn("generated_at", snapshot.content)
         self.assertIn("answer directly without a retrieval tool", memory.content)
         self.assertIn("memory_read", memory.content)

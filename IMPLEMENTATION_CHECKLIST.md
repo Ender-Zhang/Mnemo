@@ -65,7 +65,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Conflict detection, confidence updates, durable tombstones, private-delete redaction, low-usefulness archival, replacement links, harmful eval routing, compact memory health review cards, and metadata-driven decay/stale marking exist.
 - [x] W0 working memory to long-term candidate pipeline.
 - [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, applies explicit model-proposed memory maintenance actions, persists compact applied/skipped results, supports lightweight scheduled Dream ticks, and limits local fallback to delta candidates; richer provider-led idle heuristics remain incomplete.
-- [~] L1 cache-friendly memory snapshot compile/load exists and scheduled Dream ticks refresh it through normal Dream execution; fine-grained cache invalidation remains incomplete.
+- [~] L1 cache-friendly memory snapshot compile/load exists with active summaries, alias pointers, and association hubs, and scheduled Dream ticks refresh it through normal Dream execution; fine-grained cache invalidation remains incomplete.
 - [x] Memory eval cases and regression gates cover smoke/safety cases, L4 session-search regressions, injection-scan, wrong-memory tombstone suppression, low-confidence over-personalization no-promotion, and compact Memory Health gates.
 - [x] L4 cross-session FTS5 search over run user/assistant messages with LIKE fallback and bounded snippets.
 - [~] Memory QueryPlanner foundation: deterministic lexical/semantic-style/dimension/temporal planning, route fusion, compact annotations, tombstone-aware session suppression, and CLI debug output exist; vector semantic retrieval and true MMR remain.
@@ -174,6 +174,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-29-memory-l1-association-index`: L1 memory snapshots now compile compact alias pointers and association hubs from active pages, metadata associations, and memory links, and prompt/query planning can use those low-token routes before reading full pages.
 - [x] `04-29-memory-wiki-metadata-associations`: Memory recall now resolves active wiki metadata aliases, links, and associations, materializes them into compact markdown frontmatter, carries `why_relevant` into linked context cards, and counts metadata connections in memory health.
 - [x] `04-28-default-open-tool-policy`: Default ToolExecutionPolicy now allows read/write/external/admin risks so normal Web runs do not stall on approval cards; explicit stricter policies still exercise the tool approval path.
 - [x] `04-28-learning-debt-review`: Provider learning now reviews compact recent-turn packets after several completed turns without learning candidates, using the existing `learning.v1` tools and a debt-review barrier to avoid repeated low-signal reflection.
