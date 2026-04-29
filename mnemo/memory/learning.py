@@ -7,6 +7,13 @@ from typing import Any
 from ..core.jsonutil import dumps, loads
 from .cards import _candidate_title, _skip_working_note
 from .constants import DEFAULT_W0_CONFIDENCE, L1_SNAPSHOT_FILENAME, MIN_W0_CANDIDATE_CHARS, W0_MEMORY_RETENTION
+from .quality import (
+    append_quality_evidence,
+    candidate_quality_signal,
+    compact_quality_signal,
+    low_quality_status,
+    score_memory_quality,
+)
 from .query import normalize_memory_dimension
 from .safety import append_safety_evidence, scan_memory_candidate
 from .snapshot import compile_l1_snapshot_payload
@@ -41,14 +48,16 @@ class MemoryLearningMixin:
         evidence: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         scan = scan_memory_candidate(claim, evidence)
+        quality = score_memory_quality(claim, evidence)
         normalized_dimension = normalize_memory_dimension(dimension, fallback="context")
+        evidence_with_safety = append_safety_evidence(evidence, scan)
         candidate_id = self.store.add_memory_candidate(
             run_id,
             claim,
             dimension=normalized_dimension,
             scope=scope,
             confidence=confidence,
-            evidence=append_safety_evidence(evidence, scan),
+            evidence=append_quality_evidence(evidence_with_safety, quality),
         )
         status = "draft"
         if scan.get("requires_review"):
@@ -58,6 +67,7 @@ class MemoryLearningMixin:
             "candidate_id": candidate_id,
             "status": status,
             "safety": _compact_safety_scan(scan),
+            "quality": compact_quality_signal(quality),
         }
 
     def ingest_working_notes(self, limit: int = 20, *, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]:
@@ -295,6 +305,26 @@ class MemoryLearningMixin:
 
             if not claim:
                 rejected.append(self.reject_candidate(candidate["id"], "empty"))
+                continue
+
+            quality = candidate_quality_signal(candidate)
+            quality_status = low_quality_status(quality)
+            if quality_status == "rejected":
+                result = self.reject_candidate(candidate["id"], "low_quality")
+                result["quality"] = compact_quality_signal(quality)
+                rejected.append(result)
+                continue
+            if quality_status == "needs_review":
+                status = "needs_review:low_quality"
+                self.store.update_memory_candidate_status(candidate["id"], status)
+                skipped.append(
+                    {
+                        "candidate_id": candidate["id"],
+                        "status": status,
+                        "reason": "below_quality_threshold",
+                        "quality": compact_quality_signal(quality),
+                    }
+                )
                 continue
 
             duplicate_page = self._find_duplicate_page(candidate)

@@ -62,7 +62,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Stable memory is not directly mutated by normal task tools.
 - [x] Memory engine pages/indexes beyond candidates.
 - [x] Associative recall / LLM Wiki style memory graph, including persisted `memory_links` plus active-page metadata `aliases`, `links`, and `associations`.
-- [x] Conflict detection, exact/near-duplicate reinforcement, confidence updates, durable tombstones, private-delete redaction, low-usefulness archival, replacement links, harmful eval routing, compact memory health review cards, and metadata-driven decay/stale marking exist.
+- [x] Candidate safety/quality signals, conflict detection, exact/near-duplicate reinforcement, confidence updates, durable tombstones, private-delete redaction, low-usefulness archival, replacement links, harmful eval routing, compact memory health review cards, and metadata-driven decay/stale marking exist.
 - [x] W0 working memory to long-term candidate pipeline.
 - [~] DreamCycle idle memory consolidation now collects compact deltas, records model-facing maintenance plans, applies explicit model-proposed memory maintenance actions, persists compact applied/skipped results, supports lightweight scheduled Dream ticks, and limits local fallback to delta candidates; richer provider-led idle heuristics remain incomplete.
 - [~] L1 cache-friendly memory snapshot compile/load exists with active summaries, alias pointers, and association hubs, and scheduled Dream ticks refresh it through normal Dream execution; fine-grained cache invalidation remains incomplete.
@@ -174,6 +174,7 @@ This file tracks implementation status against the design package. Keep it updat
 
 ## Recently Landed Trellis Tasks
 
+- [x] `04-30-memory-quality-signal`: Memory candidate writes now attach compact quality scores for specificity, personalization, persistence, actionability, and verifiability, and Dream fallback rejects explicit discard-quality candidates before stable-page promotion.
 - [x] `04-30-memory-near-duplicate-reinforcement`: Dream consolidation now treats conservative same-dimension, same-polarity near-duplicate candidates as reinforcement of existing active pages, preventing paraphrased stable memories from duplicating.
 - [x] `04-29-memory-l1-association-index`: L1 memory snapshots now compile compact alias pointers and association hubs from active pages, metadata associations, and memory links, and prompt/query planning can use those low-token routes before reading full pages.
 - [x] `04-29-memory-wiki-metadata-associations`: Memory recall now resolves active wiki metadata aliases, links, and associations, materializes them into compact markdown frontmatter, carries `why_relevant` into linked context cards, and counts metadata connections in memory health.

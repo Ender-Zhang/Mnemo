@@ -93,11 +93,15 @@ class MemoryEngineTests(unittest.TestCase):
 
             candidate = store.get_memory_candidate(result["candidate_id"])
             safety = next(item for item in candidate["evidence"] if item.get("kind") == "memory_safety")
+            quality = next(item for item in candidate["evidence"] if item.get("kind") == "memory_quality")
             self.assertEqual(result["status"], "draft")
             self.assertEqual(result["safety"]["risk"], "low")
             self.assertFalse(result["safety"]["requires_review"])
+            self.assertEqual(result["quality"]["recommendation"], "write")
             self.assertEqual(safety["taint"], "trusted")
             self.assertEqual(safety["warnings"], [])
+            self.assertEqual(quality["recommendation"], "write")
+            self.assertIn("actionability", quality["scores"])
 
     def test_write_candidate_normalizes_memory_dimensions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -820,6 +824,28 @@ class MemoryEngineTests(unittest.TestCase):
             loaded_snapshot = MemoryEngine(store).load_l1_snapshot()
             self.assertIsNotNone(loaded_snapshot)
             self.assertEqual(loaded_snapshot["page_count"], 1)
+
+    def test_dream_consolidate_rejects_low_quality_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            created = MemoryEngine(store).write_candidate(
+                run_id,
+                "User mentioned something",
+                dimension="context",
+                confidence=0.95,
+                evidence=[{"kind": "user_message", "text": "maybe remember this"}],
+            )
+
+            result = MemoryEngine(store).dream_consolidate(min_confidence=0.7)
+
+            rejected = result["rejected"][0]
+            candidate = store.get_memory_candidate(created["candidate_id"])
+            self.assertEqual(created["quality"]["recommendation"], "discard")
+            self.assertEqual(rejected["candidate_id"], created["candidate_id"])
+            self.assertEqual(rejected["status"], "rejected:low_quality")
+            self.assertEqual(rejected["quality"]["recommendation"], "discard")
+            self.assertEqual(candidate["status"], "rejected:low_quality")
+            self.assertEqual(store.list_memory_pages(status=None), [])
 
     def test_dream_maintenance_persists_model_decision_report_and_uses_delta_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

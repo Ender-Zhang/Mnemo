@@ -81,6 +81,7 @@
   - `health.py`: memory health cards, score, stale/decay decisions.
   - `dream.py`: Dream delta, model action execution, persisted reports, Dream status.
   - `cards.py`: compact read-model/result shape builders.
+  - `quality.py`: deterministic candidate quality signals for specificity, personalization, persistence, actionability, and verifiability.
   - `snapshot.py`: compact L1 memory snapshot compiler for active-page cards, alias pointers, and association hubs.
   - `utils.py` and `constants.py`: dependency-free shared helpers/constants.
 - Public imports continue to use `from mnemo.memory import MemoryEngine`; direct engine constants such as `W0_MEMORY_RETENTION` remain re-exported by `mnemo/memory/engine.py` for compatibility.
@@ -89,9 +90,12 @@
 - `MemoryEngine.write_candidate()` normalizes every durable candidate dimension into the configured memory ontology; non-standard labels such as `finance`, `profile`, or `work_style` must not persist as separate user-facing buckets.
 - After-turn learning reflection writes memory candidates through the same `memory_write_candidate` tool and `MemoryEngine.write_candidate()` path.
 - Candidate writes append compact `memory_safety` evidence with taint, risk, review flag, warning labels, and source summaries.
+- Candidate writes append compact `memory_quality` evidence with bounded specificity, personalization, persistence, actionability, verifiability scores, a weighted average, recommendation, and one-line reason.
 - Candidate evidence source taint is deterministic and recognizes trusted user/run/work-note sources, external web/file/tool/imported-skill/MCP/runtime sources, and unknown sources.
 - Candidate claim/evidence text is scanned for prompt override, secret request, and tool-call injection markers through the shared injection warning helper.
 - Candidate writes with injection warnings are marked `needs_review:prompt_injection` and must not be promoted by Dream consolidation.
+- Dream consolidation must not promote candidates whose stored quality signal recommends `discard`; these candidates become `rejected:low_quality` with compact quality metadata in the result.
+- Dream consolidation may route quality `draft` recommendations to `needs_review:low_quality` instead of promoting them; candidates without a stored quality signal keep the existing compatibility behavior.
 - Stable memory pages are created through promotion or explicit curation.
 - Active stable memory pages are materialized as deterministic wiki markdown files under `wiki/<dimension>/<page_id>.md`; stale, archived, and tombstoned pages move to `wiki/_archive/<page_id>.md`, and private-deleted pages move to `wiki/_redacted/<page_id>.md`.
 - Wiki markdown materialization is triggered by promotion, L1 snapshot compilation, stale/decay status changes, tombstone/archive curation, and private-delete redaction.
@@ -215,6 +219,8 @@
 | --- | --- | --- |
 | Empty candidate | `rejected:empty` | `tests/test_memory.py` |
 | Safe candidate write | Draft candidate with low-risk `memory_safety` evidence | `tests/test_memory.py` |
+| Candidate quality signal | Candidate write appends compact `memory_quality` evidence and result metadata | `tests/test_memory.py` |
+| Low-quality candidate | Dream consolidation rejects stored discard-quality candidates without creating a stable page | `tests/test_memory.py` |
 | Injected candidate write | `needs_review:prompt_injection` with high-risk safety evidence | `tests/test_memory.py`, `tests/test_tools.py` |
 | After-turn memory candidate | Mixed learning reflection can create a memory candidate and chip through the normal write pipeline | `tests/test_runtime.py` |
 | Exact duplicate of active page | Reject candidate, raise page confidence, add `reinforces` link | `tests/test_memory.py` |
@@ -304,6 +310,7 @@
 - W0 ingestion creates candidates from model-marked working notes and skips ephemeral notes.
 - Daemon W0 recovery covers model-marked notes without mutating ephemeral notes.
 - Candidate writes cover trusted/low-risk and injected/high-risk safety scans.
+- Candidate writes cover quality evidence, low-quality rejection, and no stable-page creation for discarded quality signals.
 - CLI `memory notes` covers default open notes, unfiltered notes, metadata/result payloads, and compact non-JSON rows.
 - Duplicate and conservative near-duplicate reinforcement update confidence and create `reinforces`.
 - Conflict review creates `conflicts_with` and leaves the active page unchanged.
