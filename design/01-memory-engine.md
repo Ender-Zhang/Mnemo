@@ -227,6 +227,8 @@ watches: [rust-progress]  # 关联哪些 Watch 任务
 
 `dimension` 只接受九个内容维度：`identity|cognition|values|goals|preferences|relationships|context|history|patterns`。`boundaries` 不作为普通 wiki page 的 `dimension`，它存放在 `policy/boundaries.yaml` 和 `policy/exposure.yaml`，由 Memory Router、ApprovalGate、ContextCapsuleBuilder 执行。
 
+实现契约：frontmatter 中的 `aliases`、`links`、`associations` 必须进入 Memory Engine 核心能力，而不是只作为展示字段。`aliases` 可参与 query route 召回；`links` 和 `associations` 解析到 active page 后参与一跳 wiki expansion；无法解析、stale、archived、tombstoned、private-deleted 的目标只能被丢弃。健康检查的 connectedness 也要基于这些 metadata 计算，避免把已显式连接的 wiki 页面误判为孤岛。
+
 ### 3.5 Memory Search Pipeline：先规划 Query，再混合召回
 
 记忆检索失败最常见的原因不是索引不够强，而是 query 构造错。Mnemo 把 query planning 作为检索第一步，而不是直接把用户原话丢给 BM25 或向量库。
@@ -875,6 +877,8 @@ associations:
 ```
 
 `links` 偏结构化指针，`associations` 偏叙事联想。两者都只是召回线索；页面正文和 evidence 仍然是事实判断依据。
+
+当前默认实现只做确定性的显式联想：从 SQLite `memory_links` 和 active wiki metadata 的 `links/associations` 扩展一跳，并把 `reason` 映射为 `why_relevant`。模型驱动的隐式 spreading activation 仍然是可选高级扩展，不能在用户同步请求里悄悄改写 wiki。
 
 #### 3.15.3 召回管线位置
 

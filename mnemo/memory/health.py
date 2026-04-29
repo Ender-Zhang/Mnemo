@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from .associations import has_metadata_associations
 from .query import MEMORY_DIMENSION_ALIASES, MEMORY_ONTOLOGY_DIMENSIONS, normalize_memory_dimension
 from .utils import (
     _bounded_confidence,
@@ -169,6 +170,8 @@ class MemoryHealthMixin:
             return False
         list_backlinks = getattr(self.store, "list_memory_backlinks", None)
         if list_backlinks and list_backlinks(page_id):
+            return False
+        if has_metadata_associations(self.store, page_id):
             return False
         return True
 

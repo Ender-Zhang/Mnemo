@@ -128,6 +128,10 @@ def _context_card(item: dict[str, Any]) -> dict[str, Any]:
         if item["type"] == "linked_page":
             card["relation"] = item.get("relation")
             card["linked_from"] = item.get("linked_from")
+            if item.get("why_relevant"):
+                card["why_relevant"] = item.get("why_relevant")
+            if item.get("association_path"):
+                card["association_path"] = item.get("association_path")
         return card
     if item["type"] == "session_message":
         return {

@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from .associations import compact_wiki_metadata
 from .query import CONTENT_DIMENSIONS, normalize_memory_dimension
 from .utils import _normalize_space
 
@@ -84,11 +85,11 @@ def render_memory_page_markdown(page: dict[str, Any]) -> str:
         "updated_at": _iso_timestamp(page.get("updated_at")),
         "content_hash": memory_page_content_hash(page),
     }
+    metadata = page.get("metadata") if isinstance(page.get("metadata"), dict) else {}
+    frontmatter.update(compact_wiki_metadata(metadata))
     lines = ["---"]
     for key, value in frontmatter.items():
-        encoded = _frontmatter_value(value)
-        if encoded is not None:
-            lines.append(f"{key}: {encoded}")
+        lines.extend(_frontmatter_lines(key, value))
     lines.extend(["---", "", f"# {title}", "", content, ""])
     return "\n".join(lines)
 
@@ -141,6 +142,8 @@ def _display_title(value: str) -> str:
 def _frontmatter_value(value: Any) -> str | None:
     if value is None:
         return None
+    if isinstance(value, (dict, list, tuple)):
+        return None
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, (int, float)):
@@ -149,6 +152,68 @@ def _frontmatter_value(value: Any) -> str | None:
     if not text:
         return None
     return json.dumps(text, ensure_ascii=False)
+
+
+def _frontmatter_lines(key: str, value: Any, *, indent: int = 0) -> list[str]:
+    prefix = " " * indent
+    encoded = _frontmatter_value(value)
+    if encoded is not None:
+        return [f"{prefix}{key}: {encoded}"]
+    if isinstance(value, list):
+        if not value:
+            return []
+        lines = [f"{prefix}{key}:"]
+        for item in value:
+            lines.extend(_frontmatter_list_item_lines(item, indent=indent + 2))
+        return lines
+    if isinstance(value, dict):
+        if not value:
+            return []
+        lines = [f"{prefix}{key}:"]
+        for child_key, child_value in value.items():
+            lines.extend(_frontmatter_lines(str(child_key), child_value, indent=indent + 2))
+        return lines
+    return []
+
+
+def _frontmatter_list_item_lines(value: Any, *, indent: int) -> list[str]:
+    prefix = " " * indent
+    encoded = _frontmatter_value(value)
+    if encoded is not None:
+        return [f"{prefix}- {encoded}"]
+    if isinstance(value, dict) and value:
+        items = list(value.items())
+        first_key, first_value = items[0]
+        first_encoded = _frontmatter_value(first_value)
+        if first_encoded is not None:
+            lines = [f"{prefix}- {first_key}: {first_encoded}"]
+        else:
+            lines = [f"{prefix}- {first_key}:"]
+            lines.extend(_frontmatter_nested_value_lines(first_value, indent=indent + 4))
+        for child_key, child_value in items[1:]:
+            lines.extend(_frontmatter_lines(str(child_key), child_value, indent=indent + 2))
+        return lines
+    return []
+
+
+def _frontmatter_nested_value_lines(value: Any, *, indent: int) -> list[str]:
+    prefix = " " * indent
+    encoded = _frontmatter_value(value)
+    if encoded is not None:
+        return [f"{prefix}{encoded}"]
+    if isinstance(value, list):
+        return [
+            line
+            for item in value
+            for line in _frontmatter_list_item_lines(item, indent=indent)
+        ]
+    if isinstance(value, dict):
+        return [
+            line
+            for child_key, child_value in value.items()
+            for line in _frontmatter_lines(str(child_key), child_value, indent=indent)
+        ]
+    return []
 
 
 def _iso_timestamp(value: Any) -> str | None:

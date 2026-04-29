@@ -95,6 +95,7 @@
 - Active stable memory pages are materialized as deterministic wiki markdown files under `wiki/<dimension>/<page_id>.md`; stale, archived, and tombstoned pages move to `wiki/_archive/<page_id>.md`, and private-deleted pages move to `wiki/_redacted/<page_id>.md`.
 - Wiki markdown materialization is triggered by promotion, L1 snapshot compilation, stale/decay status changes, tombstone/archive curation, and private-delete redaction.
 - Wiki markdown frontmatter must include compact page metadata: `id`, normalized content `dimension`, `status`, `confidence`, `scope`, timestamps, source candidate id when present, and a content hash.
+- Wiki markdown frontmatter must also preserve compact page-local metadata when present: `aliases`, `links`, `associations`, decay/verification hints, exposure hints, and watch ids. These fields remain bounded metadata and must not contain raw evidence blobs or transcript bodies.
 - Wiki markdown writes must be atomic and must remove older same-page wiki files from previous dimension/status folders so active recall cannot be visually contradicted by stale files.
 - Private-delete redaction must overwrite/remove any pre-existing wiki markdown containing the deleted page id; managed wiki files must not retain the deleted raw body.
 - User-facing learning undo uses `MemoryEngine.undo_candidate()` to tombstone the promoted page and candidate through existing curation records.
@@ -133,6 +134,7 @@
 - Runtime prompt assembly may call `load_or_compile_l1_snapshot()` to materialize a missing L1 snapshot when active memory pages exist; an empty memory store still omits L1.
 - Prompt-facing snapshots must omit raw evidence and full page content.
 - Stable memory pages may carry compact `metadata` for maintenance hints such as `expires`, `expires_at`, `decay_days`, `last_verified_at`, and `verified_at`.
+- Stable memory pages may carry compact `metadata.aliases`, `metadata.links`, and `metadata.associations`; these fields are recall hints, not authoritative facts.
 - `MemoryEngine.decay_stale_pages()` inspects active pages only and applies bounded metadata-driven maintenance; pages without expiry or decay metadata are skipped.
 - Expired active pages are marked `stale:expired`.
 - Decayed pages reduce confidence by `0.01 * overdue_days` after `decay_days`; pages at or below `stale_confidence` are marked `stale:decay`.
@@ -140,8 +142,11 @@
 - `MemoryEngine.health_report()` surfaces `decay_due_active` and `expired_active` counts plus advisory review cards without mutating memory.
 - Dream plans may include the `memory_decay_stale_pages` tool when health counts show decay-due active pages; the model still decides whether to run it.
 - `MemoryEngine.search()` may include `linked_page` results by following one hop from matching active pages through outgoing links and backlinks.
+- `MemoryEngine.search()` also expands one hop through active-page `metadata.links` and `metadata.associations`, resolving targets by active page id, wiki path, title slug, or alias.
+- `MemoryEngine.search()` should retrieve active pages whose compact `metadata.aliases` match the planned query route even when the alias does not appear in title/content.
 - `linked_page` results must be active pages, bounded by the search limit, deterministic, and de-duplicated from seed page/candidate ids.
-- Prompt-facing context cards for `linked_page` include compact `summary`, `relation`, and `linked_from`, not raw evidence.
+- `linked_page` results may include compact `why_relevant` and `association_path` metadata when the link source provides a reason; this metadata is advisory and must not be treated as fact.
+- Prompt-facing context cards for `linked_page` include compact `summary`, `relation`, `linked_from`, optional `why_relevant`, and optional `association_path`, not raw evidence.
 - Prompt-facing context cards must include only active pages, linked active pages, draft candidates, or non-tombstoned session snippets; rejected, tombstoned, archived, private-deleted, and review-gated candidates must not be injected into prompts through `MemoryEngine.context_cards()`.
 - `MemoryEngine.search(search_scope="memory")` preserves the default stable-memory behavior: active pages, candidates, and one-hop linked pages.
 - `MemoryEngine.search(search_scope="stable")` is accepted as an alias of `memory`.
@@ -165,6 +170,7 @@
 - Private-deleting a candidate must also redact promoted pages found through links or `source_candidate_id`.
 - Private-delete L4 suppression uses tombstone `evidence_run_id` provenance for the source run; it must not store raw deleted text just to suppress future recall.
 - `MemoryEngine.health_report()` returns compact counts, configured-dimension coverage, scalar component scores, and bounded review cards for model-led memory cultivation.
+- `MemoryEngine.health_report()` orphan detection must count both persisted `memory_links` and active-page metadata links/backlinks so wiki-frontmatter associations do not appear as disconnected memory.
 - Memory health review cards are advisory input to the model; they do not schedule or execute a fixed maintenance workflow.
 - `mnemo memory search --debug-query` includes the compact query plan; default search output remains matches-only.
 - `session_message` results contain `id`, `message_id`, `conversation_id`, `mission_id`, `run_id`, `role`, `snippet`, and `created_at`; they must omit raw `content`.
@@ -220,7 +226,8 @@
 | Active and archived pages | Snapshot includes active pages only | `tests/test_memory.py` |
 | Direct association | Search returns linked active pages that do not match the query text | `tests/test_memory.py` |
 | Reverse association | Search returns active pages linked back to the query match | `tests/test_memory.py` |
-| Association cards | Context cards include relation metadata without full raw payloads | `tests/test_memory.py` |
+| Metadata association | Search expands active wiki `metadata.links` and `metadata.associations`, materializes compact frontmatter, and suppresses orphan false positives | `tests/test_memory.py` |
+| Association cards | Context cards include relation and relevance metadata without full raw payloads | `tests/test_memory.py` |
 | Prompt context card filtering | Rejected, tombstoned, and review-gated candidates stay out of prompt-facing context cards | `tests/test_memory.py` |
 | L4 session search | `search_scope="sessions"` returns bounded message snippets and omits raw content | `tests/test_memory.py` |
 | Tombstone-aware session recall | Default session/all search suppresses snippets matching tombstones; explicit include returns them for historical lookup | `tests/test_memory.py`, `tests/test_cli.py`, `tests/test_tools.py` |

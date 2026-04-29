@@ -598,6 +598,57 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(linked[0]["relation"], "supports")
             self.assertEqual(linked[0]["linked_from"], seed_id)
 
+    def test_metadata_associations_expand_recall_and_wiki_frontmatter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            target_id = store.upsert_memory_page(
+                "cognition: learning style",
+                "User learns programming concepts by building concrete tools.",
+                confidence=0.88,
+            )
+            source_id = store.upsert_memory_page(
+                "goals: rust learning",
+                "User is learning Rust through Mnemo implementation tasks.",
+                confidence=0.9,
+                metadata={
+                    "aliases": ["tokio", "rust async"],
+                    "links": [target_id],
+                    "associations": [
+                        {
+                            "path": "cognition/learning-style",
+                            "reason": "Learning style explains Rust progress.",
+                            "strength": 0.8,
+                            "evidence": "run_2026_04_24_001",
+                        }
+                    ],
+                },
+            )
+            engine = MemoryEngine(store)
+
+            alias_results = engine.search("tokio", limit=5)
+            results = engine.search("Rust", limit=5)
+            cards = engine.context_cards("Rust", limit=5)
+            engine.compile_l1_snapshot(limit=10)
+            wiki_body = (store.state_dir / "wiki" / "goals" / f"{source_id}.md").read_text(encoding="utf-8")
+            report = engine.health_report(limit=10)
+
+            self.assertIn(source_id, {item["id"] for item in alias_results})
+            linked = [item for item in results if item["type"] == "linked_page" and item["id"] == target_id]
+            self.assertEqual(len(linked), 1)
+            self.assertEqual(linked[0]["relation"], "association")
+            self.assertEqual(linked[0]["linked_from"], source_id)
+            self.assertEqual(linked[0]["why_relevant"], "Learning style explains Rust progress.")
+            linked_cards = [card for card in cards if card["type"] == "linked_page" and card["id"] == target_id]
+            self.assertEqual(linked_cards[0]["why_relevant"], "Learning style explains Rust progress.")
+            self.assertIn("aliases:", wiki_body)
+            self.assertIn('- "tokio"', wiki_body)
+            self.assertIn("links:", wiki_body)
+            self.assertIn(f'- "{target_id}"', wiki_body)
+            self.assertIn("associations:", wiki_body)
+            self.assertIn('target: "cognition/learning-style"', wiki_body)
+            self.assertIn('reason: "Learning style explains Rust progress."', wiki_body)
+            self.assertEqual(report["counts"]["pages"]["orphan_active"], 0)
+
     def test_context_cards_are_compact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id = _store_with_run(tmp)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .associations import metadata_alias_pages, metadata_association_links_for_page
 from .cards import _candidate_result, _context_card, _is_prompt_context_item, _page_result, _session_result
 from .constants import PRIVATE_DELETE_TOMBSTONE_REASON
 from .query import MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
@@ -94,11 +95,15 @@ class MemoryRecallMixin:
                 _page_result(page)
                 for page in self.store.search_memory_pages(query, limit=max(limit, 1))
             ]
+            alias_pages = [
+                _page_result(page)
+                for page in metadata_alias_pages(self.store, query, limit=max(limit, 1))
+            ]
             candidates = [
                 _candidate_result(candidate)
                 for candidate in self.store.search_memory_candidates(query, limit=max(limit, 1))
             ]
-            batches.append((route["route"], query, [*pages, *candidates]))
+            batches.append((route["route"], query, [*pages, *alias_pages, *candidates]))
         return fuse_ranked_batches(batches, plan=plan, limit=max(limit * 2, 1))
 
     def _search_session_routes(
@@ -195,6 +200,8 @@ class MemoryRecallMixin:
                             "linked_from": page_id,
                             "link_id": link["id"],
                             "link_weight": link["weight"],
+                            "why_relevant": _association_reason(link),
+                            "association_path": _association_path(page, linked_page),
                             "match_signals": [
                                 {"route": "wiki", "query": page.get("title") or page_id, "rank": len(associated) + 1}
                             ],
@@ -218,6 +225,7 @@ class MemoryRecallMixin:
         if list_backlinks:
             links.extend((link, link["source_id"]) for link in list_backlinks(page_id))
 
+        links.extend(metadata_association_links_for_page(self.store, page_id))
         return sorted(
             links,
             key=lambda item: (
@@ -226,6 +234,25 @@ class MemoryRecallMixin:
                 item[0].get("id", ""),
             ),
         )
+
+
+def _association_reason(link: dict[str, Any]) -> str | None:
+    reason = _normalize_space(str(link.get("reason") or ""))
+    if reason:
+        return reason
+    relation = _normalize_space(str(link.get("relation") or ""))
+    if relation in {"wiki_link", "wiki_backlink"}:
+        return "explicit wiki link"
+    if relation:
+        return f"explicit {relation}"
+    return None
+
+
+def _association_path(seed_page: dict[str, Any], linked_page: dict[str, Any]) -> list[str]:
+    return [
+        str(seed_page.get("title") or seed_page.get("id") or ""),
+        str(linked_page.get("title") or linked_page.get("id") or ""),
+    ]
 
 
 def _session_suppression_tombstones(store: Any, *, limit: int = 100) -> list[dict[str, Any]]:
