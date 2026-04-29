@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -44,6 +45,27 @@ class WebServerConfig:
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
+
+_MEMORY_DIMENSION_LABELS = {
+    "identity": "身份",
+    "cognition": "认知",
+    "values": "价值",
+    "goals": "目标",
+    "preferences": "偏好",
+    "relationships": "关系",
+    "context": "语境",
+    "history": "历史",
+    "patterns": "模式",
+    "boundaries": "边界",
+}
+
+_MEMORY_EVIDENCE_LABELS = {
+    "source_candidate": "来源候选",
+    "turn": "对话",
+    "tool": "工具",
+    "tombstone": "归档记录",
+    "memory_safety": "安全检查",
+}
 
 
 def build_http_server(config: WebServerConfig) -> ThreadingHTTPServer:
@@ -885,7 +907,7 @@ def _memory_item_payload(config: WebServerConfig, item_type: str, item_id: str) 
         dimension = _memory_dimension(candidate, fallback="context")
         tombstones = store.list_memory_tombstones(target_id=item_id, target_type="candidate", limit=5)
         detail = _memory_l3_candidate_detail(candidate, dimension)
-        evidence = _memory_item_evidence(candidate, tombstones)
+        evidence = _memory_item_evidence(candidate, tombstones, include_source_candidate=False)
         return {
             "kind": "memory_item",
             "level": "L3",
@@ -968,9 +990,11 @@ def _memory_l3_candidate_detail(candidate: dict[str, Any], dimension: str) -> di
 def _memory_item_evidence(
     source_candidate: dict[str, Any] | None,
     tombstones: list[dict[str, Any]],
+    *,
+    include_source_candidate: bool = True,
 ) -> list[dict[str, Any]]:
     evidence: list[dict[str, Any]] = []
-    if source_candidate:
+    if source_candidate and include_source_candidate:
         evidence.append(
             {
                 "kind": "source_candidate",
@@ -981,6 +1005,7 @@ def _memory_item_evidence(
                 "run_id": source_candidate.get("run_id"),
             }
         )
+    if source_candidate:
         for item in source_candidate.get("evidence", [])[:3]:
             if not isinstance(item, dict):
                 continue
@@ -1007,25 +1032,67 @@ def _memory_item_evidence(
 
 
 def _memory_item_markdown(detail: dict[str, Any], evidence: list[dict[str, Any]]) -> str:
-    lines = [
-        f"# {detail.get('title') or 'Memory'}",
-        "",
-        f"- Dimension: {detail.get('dimension') or 'context'}",
-        f"- Type: {detail.get('type') or 'memory'}",
-        f"- Status: {detail.get('status') or 'unknown'}",
-        f"- Confidence: {detail.get('confidence') if detail.get('confidence') is not None else 'unknown'}",
-        "",
-        "## Summary",
-        "",
-        str(detail.get("summary") or "").strip() or "No summary.",
-    ]
+    dimension = normalize_memory_dimension(str(detail.get("dimension") or ""), fallback="context")
+    kind = str(detail.get("type") or "memory").strip() or "memory"
+    title = _memory_wiki_title(detail, dimension=dimension)
+    body = str(detail.get("summary") or "").strip()
+    frontmatter = {
+        "kind": kind,
+        "dimension": dimension,
+        "status": str(detail.get("status") or "unknown"),
+        "confidence": _memory_wiki_confidence(detail.get("confidence")),
+        "scope": str(detail.get("scope") or "global"),
+        "updated_at": _memory_wiki_timestamp(detail.get("updated_at") or detail.get("created_at")),
+    }
+    lines = ["---"]
+    for key, value in frontmatter.items():
+        if value:
+            lines.append(f"{key}: {value}")
+    lines.extend(["---", "", f"# {title}", ""])
+    if body:
+        lines.append(body)
+    else:
+        lines.append("_暂无正文。_")
     if evidence:
-        lines.extend(["", "## Evidence", ""])
+        lines.extend(["", "## 证据", ""])
         for item in evidence:
-            prefix = item.get("kind") or "evidence"
-            summary = str(item.get("summary") or item.get("reason") or "").strip() or "No summary."
-            lines.append(f"- **{prefix}**: {summary}")
+            prefix = _memory_wiki_evidence_label(str(item.get("kind") or "evidence"))
+            summary = str(item.get("summary") or item.get("reason") or "").strip()
+            if summary:
+                lines.append(f"- {prefix}: {summary}")
     return "\n".join(lines)
+
+
+def _memory_wiki_title(detail: dict[str, Any], *, dimension: str) -> str:
+    title = str(detail.get("title") or "").strip()
+    summary = str(detail.get("summary") or "").strip()
+    if title and title != summary:
+        return title
+    label = _MEMORY_DIMENSION_LABELS.get(dimension, dimension)
+    if detail.get("type") == "candidate":
+        return f"{label}候选"
+    return label
+
+
+def _memory_wiki_confidence(value: Any) -> str:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        return ""
+    return f"{confidence:.2f}".rstrip("0").rstrip(".")
+
+
+def _memory_wiki_timestamp(value: Any) -> str:
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return ""
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).date().isoformat()
+
+
+def _memory_wiki_evidence_label(kind: str) -> str:
+    normalized = "_".join(kind.strip().lower().replace("-", "_").split())
+    return _MEMORY_EVIDENCE_LABELS.get(normalized, normalized or "证据")
 
 
 def _memory_display_title(value: str) -> str:

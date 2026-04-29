@@ -180,7 +180,7 @@ dimension_exposure:
 - 写入：所有长期候选都经过 `MemoryEngine.write_candidate()`，维度必须归一到十维本体；`profile/finance/work_style` 等历史或外部标签不能形成额外记忆桶。
 - L1：`/api/memory/ontology` 只暴露十维覆盖度、短摘要和维度 drill-down URL，不返回 item 数组、原始证据或完整正文。
 - L2：`/api/memory/dimension` 只在用户选择某一维后返回该维 active stable pages 与 open draft/review candidates 的 clipped cards。
-- L3：`/api/memory/item` 只在用户选择具体条目后返回 clipped detail 与 compact evidence/tombstone rows。
+- L3：`/api/memory/item` 只在用户选择具体条目后返回 clipped detail、compact evidence/tombstone rows，以及一篇精炼 wiki note markdown。markdown 必须是 frontmatter + 单一标题 + 正文 + 可选证据，不做 API 字段清单，不重复候选记忆正文。
 - L4：原始会话只通过显式 session/all memory search 进入，不从记忆罗盘默认展开。
 
 ### 3.4 记忆 Frontmatter Schema

@@ -38,6 +38,7 @@
 - API: `GET /api/memory/ontology` returns exactly the configured ten user-facing dimensions; historical labels such as profile, finance, or work-style must already be normalized by the API.
 - API: `GET /api/memory/dimension?dimension=<dimension>` returns L2 clipped page/candidate cards for one normalized dimension.
 - API: `GET /api/memory/item?type=page|candidate&id=<id>` returns L3 clipped item detail plus compact evidence rows and markdown detail text.
+- API: `GET /api/memory/item?type=page|candidate&id=<id>` markdown is a wiki note, not a metadata dump: frontmatter, one title, concise body, optional evidence section.
 
 ### 3. Contracts
 - The browser stores durable conversation, mission, last run, and last processed chat event ids in `localStorage`.
@@ -69,6 +70,7 @@
 - `/api/memory/ontology` is a read-only memory compass view; it must summarize ten-dimensional L1 memory coverage without provider secrets, item arrays, or unbounded raw memory bodies.
 - The memory compass must fetch L2 dimension cards only after the user selects a dimension.
 - The memory compass must fetch L3 evidence and markdown only after the user selects a memory page or candidate.
+- Memory markdown modals must render the API-provided wiki note as-is; labels, frontmatter, and de-duplicated candidate wording are backend contracts.
 - L2 and L3 memory responses are cached only in volatile runtime maps for the current browser session; they must not add browser persistence keys.
 - Enter submits the composer while Shift+Enter inserts a newline.
 - After a user submits a turn, the client renders one volatile pending assistant message until the first assistant delta, final message, run error, or stream error arrives.

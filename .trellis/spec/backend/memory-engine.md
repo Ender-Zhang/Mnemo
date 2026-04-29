@@ -160,6 +160,8 @@
 - `/api/memory/dimension` is the L2 memory disclosure endpoint: it returns active stable pages and open draft/review candidates for one normalized dimension as clipped cards with detail URLs.
 - `/api/memory/dimension` must exclude promoted, rejected, tombstoned, archived, and private-deleted candidates from the user-facing candidate list.
 - `/api/memory/item` is the L3 memory disclosure endpoint: it returns one selected page or candidate with clipped detail and compact evidence/tombstone rows.
+- `/api/memory/item` markdown must render as a compact wiki note: YAML frontmatter, one H1, one body paragraph, optional evidence bullets, and no API-style field dump.
+- `/api/memory/item` markdown uses normalized ontology dimensions in frontmatter, localized user-facing section labels in the body, and must not repeat the same candidate claim as both title and body.
 - `/api/memory/item` must only read active pages and open draft/review candidates; historical rejected/tombstoned/private records require explicit CLI or memory search paths.
 - L4 raw session recall remains available only through explicit memory/session search paths, never through the memory compass ontology, dimension, or item endpoints.
 - `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.

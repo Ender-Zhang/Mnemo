@@ -799,7 +799,11 @@ print(json.dumps({
             )
             store.upsert_memory_page("goals: mnemo", "Build a lightweight agentic system.", confidence=0.82)
             store.upsert_memory_page("user_profile: Chen", "The user profile belongs under identity.", confidence=0.75)
-            store.add_memory_candidate(run_id, "User has a monthly budget preference", dimension="finance")
+            finance_candidate_id = store.add_memory_candidate(
+                run_id,
+                "User has a monthly budget preference",
+                dimension="finance",
+            )
             store.add_memory_candidate(run_id, "User works through compact loops", dimension="work_style")
             promoted_id = store.add_memory_candidate(run_id, "Promoted entries stay out of L1 candidates", dimension="preferences")
             rejected_id = store.add_memory_candidate(run_id, "Rejected entries stay hidden", dimension="preferences")
@@ -824,6 +828,10 @@ print(json.dumps({
                     "GET",
                     f"/api/memory/item?type=page&id={preferences_page_id}",
                 )
+                candidate_status, _, candidate_body = server.request(
+                    "GET",
+                    f"/api/memory/item?type=candidate&id={finance_candidate_id}",
+                )
                 invalid_status, _, invalid_body = server.request(
                     "GET",
                     "/api/memory/dimension?dimension=random_bucket",
@@ -840,6 +848,7 @@ print(json.dumps({
             payload = json.loads(body)
             dimension_payload = json.loads(dimension_body)
             page_payload = json.loads(page_body)
+            candidate_payload = json.loads(candidate_body)
             dimensions = {item["dimension"]: item for item in payload["dimensions"]}
             self.assertEqual(status, 200)
             self.assertEqual(payload["kind"], "memory_ontology")
@@ -889,9 +898,17 @@ print(json.dumps({
             self.assertEqual(page_payload["item"]["id"], preferences_page_id)
             self.assertEqual(page_payload["item"]["dimension"], "preferences")
             self.assertTrue(page_payload["evidence"])
+            self.assertIn("---\nkind: page", page_payload["markdown"])
+            self.assertIn("dimension: preferences", page_payload["markdown"])
             self.assertIn("# reports", page_payload["markdown"])
-            self.assertIn("## Evidence", page_payload["markdown"])
+            self.assertIn("## 证据", page_payload["markdown"])
+            self.assertNotIn("- Dimension:", page_payload["markdown"])
+            self.assertNotIn("## Summary", page_payload["markdown"])
             self.assertNotIn("secret-ontology-key", page_body)
+            self.assertEqual(candidate_status, 200)
+            self.assertEqual(candidate_payload["item"]["dimension"], "preferences")
+            self.assertIn("# 偏好候选", candidate_payload["markdown"])
+            self.assertEqual(candidate_payload["markdown"].count("User has a monthly budget preference"), 1)
             self.assertEqual(invalid_status, 400)
             self.assertIn("unknown memory dimension", json.loads(invalid_body)["error"])
             self.assertEqual(missing_status, 404)
