@@ -549,6 +549,9 @@ function isInternalLearningEvent(event) {
   const action = event.data?.action || {};
   const toolName = action.title || event.data?.tool_name || event.data?.result?.name || "";
   return (
+    event.data?.internal === "learning" ||
+    event.data?.stage === "after_turn_learning" ||
+    event.data?.stage === "learning_debt_review" ||
     event.data?.tone === "learning" ||
     toolName === "learning_discard" ||
     String(event.data?.summary || "").includes("Learning evidence discarded")
@@ -1033,12 +1036,12 @@ function renderLearning(item) {
   head.className = "learning-chip-head";
   const icon = document.createElement("span");
   icon.className = "learning-icon";
-  icon.textContent = item.requires_confirmation ? "?" : "+";
+  icon.textContent = item.requires_confirmation ? "!" : "+";
   const title = document.createElement("strong");
-  title.textContent = item.requires_confirmation ? "需要确认的记忆" : "可记住的偏好";
+  title.textContent = item.requires_confirmation ? "记忆待复核" : "学习信号";
   const risk = document.createElement("span");
   risk.className = "learning-risk";
-  risk.textContent = item.requires_confirmation ? "确认" : (item.risk || item.dimension || "候选");
+  risk.textContent = item.requires_confirmation ? "复核" : (item.risk || item.dimension || "候选");
   head.append(icon, title, risk);
   const summary = document.createElement("p");
   summary.className = "learning-summary";
@@ -1047,9 +1050,9 @@ function renderLearning(item) {
   actions.className = "learning-actions";
   if (item.kind === "memory" && item.item_id) {
     actions.append(
-      actionButton(item.requires_confirmation ? "确认记住" : "以后这样", () => resolveLearningMemory(item.item_id, "accept", card), "learning-button"),
-      actionButton("这次而已", () => resolveLearningMemory(item.item_id, "this_time", card), "learning-button"),
-      actionButton("不要记", () => resolveLearningMemory(item.item_id, "reject", card), "learning-button"),
+      actionButton(item.requires_confirmation ? "记住" : "保留", () => resolveLearningMemory(item.item_id, "accept", card), "learning-button"),
+      actionButton("仅本次", () => resolveLearningMemory(item.item_id, "this_time", card), "learning-button"),
+      actionButton("忽略", () => resolveLearningMemory(item.item_id, "reject", card), "learning-button"),
     );
   }
   card.append(head, summary, actions);
@@ -1101,15 +1104,33 @@ function renderDecision(decision) {
   const actions = document.createElement("div");
   actions.className = "decision-actions";
   if (decision.item_id) {
-    actions.append(
-      actionButton("同意", () => resolveDecision(decision.item_id, "accepted", card), "decision-button"),
-      actionButton("拒绝", () => resolveDecision(decision.item_id, "rejected", card), "decision-button"),
-      actionButton("忽略", () => resolveDecision(decision.item_id, "ignored", card), "decision-button"),
-    );
+    for (const option of decisionOptions(decision)) {
+      actions.appendChild(actionButton(option.label, () => resolveDecision(decision.item_id, option.id, card), "decision-button"));
+    }
   }
   card.append(head, question, actions);
   timeline.appendChild(card);
   timelineScroll();
+}
+
+function decisionOptions(decision) {
+  const raw = Array.isArray(decision.options) && decision.options.length ? decision.options : [
+    { id: "accepted", label: "继续" },
+    { id: "rejected", label: "取消" },
+    { id: "ignored", label: "稍后" },
+  ];
+  return raw
+    .map((item) => {
+      if (typeof item === "string") return defaultDecisionOption(item);
+      return defaultDecisionOption(item?.id, item?.label);
+    })
+    .filter((item) => ["accepted", "rejected", "ignored"].includes(item.id));
+}
+
+function defaultDecisionOption(id, label) {
+  const key = ["accepted", "rejected", "ignored"].includes(id) ? id : "ignored";
+  const labels = { accepted: "继续", rejected: "取消", ignored: "稍后" };
+  return { id: key, label: label || labels[key] };
 }
 
 async function resolveDecision(itemId, resolution, card) {

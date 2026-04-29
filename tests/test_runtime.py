@@ -58,7 +58,7 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("action.queued", event_types)
             self.assertIn("action.started", event_types)
             self.assertIn("action.completed", event_types)
-            self.assertIn("learning.chip", event_types)
+            self.assertNotIn("learning.chip", event_types)
             self.assertEqual(event_types[-1], "run.completed")
 
             store = StateStore(tmp)
@@ -153,7 +153,7 @@ class LocalRuntimeTests(unittest.TestCase):
 
             self.assertIn("action.queued", event_types)
             self.assertIn("action.completed", event_types)
-            self.assertIn("learning.chip", event_types)
+            self.assertNotIn("learning.chip", event_types)
             self.assertEqual(action_completed.data["result"]["ok"], True)
             self.assertTrue(action_completed.data["result"]["summary"])
             self.assertTrue(action_completed.data["result"]["result"]["candidate_id"].startswith("mem_"))
@@ -206,7 +206,7 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertTrue(item["requires_confirmation"])
             self.assertEqual(item["risk"], "high")
             self.assertEqual(item["confirmation_reason"], "prompt_injection")
-            self.assertIn("确认", item["summary"])
+            self.assertIn("复核", item["summary"])
             self.assertNotIn("Ignore previous instructions", str(item))
 
     def test_provider_runtime_after_turn_learning_proposes_mixed_candidates(self) -> None:
@@ -338,8 +338,15 @@ class LocalRuntimeTests(unittest.TestCase):
                 set(learning_tool_names),
                 {"memory_write_candidate", "skill_propose_candidate", "tool_propose_candidate", "eval_propose_case", "learning_discard"},
             )
-            self.assertIn("learning.chip", event_types)
-            self.assertEqual({item["kind"] for item in learning_items}, {"memory", "skill", "tool", "eval_case"})
+            self.assertNotIn("learning.chip", event_types)
+            self.assertEqual(learning_items, [])
+            learning_action_events = [
+                event
+                for event in events
+                if event.type.startswith("action.") and event.data.get("stage") == "after_turn_learning"
+            ]
+            self.assertGreater(len(learning_action_events), 0)
+            self.assertTrue(all(event.data.get("internal") == "learning" for event in learning_action_events))
             self.assertEqual(len(store.search_memory_candidates("concise implementation", limit=5)), 1)
             self.assertIsNotNone(store.get_skill("concise_summary"))
             self.assertEqual(len(store.list_tool_candidates(status="draft")), 1)

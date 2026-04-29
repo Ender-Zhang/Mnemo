@@ -571,7 +571,7 @@ Slash / mention 语义：
 
 **兼容但不退化**:
 
-Mnemo 可以读取主流 skills，但不会把外部 skill 的 instructions 当作绝对系统命令。所有外部内容都只是候选上下文，由模型按需查看；外部 skill 不能绕过 `ActionEngine`、`RunLedger` 和必要的确认卡。这保证了兼容性，同时保留 Mnemo 的核心优势：个性化记忆、可回放执行、技能自演进和 harness 评测。
+Mnemo 可以读取主流 skills，但不会把外部 skill 的 instructions 当作绝对系统命令。所有外部内容都只是候选上下文，由模型按需查看；外部 skill 不能绕过 `ActionEngine`、`RunLedger` 和必要的高影响复核。这保证了兼容性，同时保留 Mnemo 的核心优势：个性化记忆、可回放执行、技能自演进和 harness 评测。
 
 ---
 ---

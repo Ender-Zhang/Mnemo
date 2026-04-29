@@ -51,7 +51,7 @@ Mnemo 必须把“多轮对话”建模为状态恢复问题，而不是把上�
 | `Turn` | 用户在 Mission 内的一次输入和系统回应 | 单轮 | 当前 turn 完整进入 |
 | `Run` | 一次模型/工具执行尝试 | 可重试、可失败、可回放 | 不直接进入，作为 ledger |
 | `Artifact` | 可复用产物，如文档、表格、diff、消息草稿 | 跨 Mission 可复用 | 摘要/选中片段进入 |
-| `Decision` | 等用户确认的高风险动作 | open 到 resolved | open decisions 必须进入 |
+| `Decision` | 等用户复核的不可逆高影响动作 | open 到 resolved | open decisions 必须进入 |
 
 多轮恢复路径：
 

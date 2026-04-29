@@ -455,8 +455,9 @@ class ProviderAgentRuntime:
                     {"call_id": call.call_id, "tool_name": call.name, "error": str(exc)},
                 )
                 continue
-            yield emit("action.queued", {"action": action, "provider_call_id": call.call_id})
-            yield emit("action.started", {"action": action})
+            learning_event_meta = {"internal": "learning", "stage": stage}
+            yield emit("action.queued", {"action": action, "provider_call_id": call.call_id, **learning_event_meta})
+            yield emit("action.started", {"action": action, **learning_event_meta})
             result = reflection_harness.execute(call, run_id=run_id, mission_id=mission_id)
             tool_results.append(result)
             learning_results.append({"name": result.name, "ok": result.ok, "summary": tool_result_summary(result)})
@@ -468,6 +469,7 @@ class ProviderAgentRuntime:
                     "summary": tool_result_summary(result),
                     "tool_name": result.name,
                     "result": tool_result_card(result),
+                    **learning_event_meta,
                 },
             )
             for projected in project_tool_result(result, emit):

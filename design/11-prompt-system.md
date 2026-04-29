@@ -570,7 +570,7 @@ Prompt 不按“所有子系统都必须首发实现”理解，而按运行时�
 | P30 | Tool Candidate Refinement Prompt | background | 只处理已提出的 tool 候选，生成 tool spec 草稿 | ToolCandidate JSON |
 | P31 | Tool Spec Generation Prompt | background | 生成 `.tool.yaml` 草稿 | ToolSpec YAML |
 | P32 | Tool Risk Review Prompt | eval-only | 判断工具权限和副作用 | RiskReview JSON |
-| P40 | Decision Card Prompt | on-demand | 高风险动作需要用户确认时转确认卡 | DecisionCard JSON |
+| P40 | Decision Card Prompt | on-demand | 不可逆高影响动作需要用户复核时转 Decision Card | DecisionCard JSON |
 | P41 | Artifact Update Prompt | on-demand | 需要结构化 artifact patch 时使用 | ArtifactPatch |
 | P42 | Learning Chip Prompt | background | 把低风险学习变成可撤销提示 | LearnedChip JSON |
 | P50 | External Context Capsule Prompt | eval-only | 给外部 runtime 最小披露任务胶囊 | ContextCapsule |

@@ -201,6 +201,8 @@ class PromptAssembler:
                 "Operate from the current mission and user turn.",
                 "Answer directly from visible prompt context when it fully resolves the turn; call retrieval tools only for missing, stale, conflicting, or evidence-detail needs.",
                 "Use tools when they materially improve accuracy, persistence, or safe execution.",
+                "Proceed without user confirmation for routine tool use, learning, and reversible work; keep those actions unobtrusive.",
+                "Use ask_user only when execution is truly blocked by missing authority, missing information, or an irreversible high-impact choice.",
                 "Prefer compact answers unless the user or task needs more detail.",
                 "When a tool has write, external, or admin risk, be explicit about the action and preserve useful results.",
             ]

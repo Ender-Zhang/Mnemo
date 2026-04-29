@@ -263,7 +263,7 @@ class LocalAgentRuntime:
                 )
             )
 
-        for question in _extract_prefixed_values(message, ["ask", "decision", "确认"]):
+        for question in _extract_prefixed_values(message, ["ask", "decision"]):
             calls.append(
                 ToolCallEnvelope(
                     call_id=new_id("call"),

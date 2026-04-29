@@ -4,7 +4,7 @@
 
 ## 23. 用户世界入口前端设计
 
-用户侧不要暴露 Mission、任务管理器、记忆管理器或运维面板。对用户而言，Mnemo 永远只有一个入口：**一个持续存在的聊天框**。用户在这里派活、追问、改方向、确认外发、接收产物、搜索过去、设置偏好；系统在背后用 Mission、Artifact、Decision、Watch 和 Memory 维持状态。
+用户侧不要暴露 Mission、任务管理器、记忆管理器或运维面板。对用户而言，Mnemo 永远只有一个入口：**一个持续存在的聊天框**。用户在这里派活、追问、改方向、接收产物、搜索过去、设置偏好；系统在背后用 Mission、Artifact、Decision、Watch 和 Memory 维持状态。
 
 一句话：**用户只和 Mnemo 说话，Mnemo 负责把话变成行动。**
 
@@ -14,8 +14,8 @@
 2. **连续性优先**：用户说“继续”“刚才那个”“换成表格”时，系统必须恢复上下文，而不是要求用户重新解释。
 3. **行动可见但不暴露内部**：用户看到“正在搜索/读取/修改/等待确认”，不看到 prompt、规则、trace 或内部状态机。
 4. **产物内嵌在对话里**：文档、diff、表格、消息草稿是聊天里的可操作卡片，不是另一个应用。
-5. **确认以内联卡片发生**：外发、删除、付款、发布、权限变更等高风险动作，直接在对话里给出确认卡。
-6. **学习自然发生**：用户的补充、修改、拒绝、确认和格式偏好会沉淀为记忆/技能，但不要求用户管理记忆。
+5. **复核只给高影响动作**：外发、删除、付款、发布、权限变更等不可逆动作，才在对话里给出复核卡。
+6. **学习自然发生**：用户的补充、修改、拒绝和格式偏好会沉淀为记忆/技能，普通学习默认后台完成。
 7. **低频设置隐藏**：授权、连接应用、数据控制可以从聊天进入，但不占据主体验。
 
 ### 23.2 用户可见模型：一条对话流
@@ -26,9 +26,9 @@ Mnemo Chat
   ├─ Universal Composer    # 唯一输入框：文本/语音/文件/链接/app mention
   ├─ Inline Action Cards   # 正在做什么、做到哪、卡在哪
   ├─ Inline Artifacts      # 文档、表格、diff、消息草稿、计划
-  ├─ Inline Decisions      # 需要用户确认的动作
+  ├─ Inline Decisions      # 需要用户复核的高影响动作
   ├─ Inline Recall         # 从过去找回上下文并继续
-  └─ Inline Learning Chips # “以后按这个来”的可撤销学习
+  └─ Learning Review Chips # 仅异常记忆复核，普通学习后台完成
 ```
 
 Mission 是内部执行信封，不是用户导航对象。用户不需要知道“当前是哪一个 Mission”，也不需要手动切换任务。前端只维护一个当前对话焦点；后台的 `MissionStore` 负责判断这句话是继续当前任务、新开任务、分叉任务，还是只是普通问答。
@@ -71,10 +71,10 @@ Composer 支持文本、语音、文件、截图、链接、app mention、选中
 | “这是什么意思？” | Ask | 直接回答 |
 | “帮我改完并验证” | 创建或继续 Mission | 流式动作 + 结果 |
 | “换成表格” | redirect current focus | 当前产物更新 |
-| “刚才那个发给 Alex” | resolve artifact + external action | 发送确认卡 |
-| “以后都按这个格式” | learning candidate | 可撤销学习 chip |
+| “刚才那个发给 Alex” | resolve artifact + external action | 高影响外发复核 |
+| “以后都按这个格式” | learning candidate | 后台沉淀，可在记忆罗盘查看 |
 | “上次那份继续改” | recall + continue/fork | 找回上下文后继续 |
-| “以后每天早上看一下” | Watch/Cron | 关注项确认 |
+| “以后每天早上看一下” | Watch/Cron | 已设为关注项 |
 
 前端可以展示轻量理解 chip，例如 `正在继续当前草稿 · 生成表格 · 外发前确认`。这些 chip 是可点开的纠错入口，不是必填流程。
 
@@ -131,6 +131,7 @@ type ChatEvent =
 | Action cards | 可折叠 | `搜索 web`、`读取 PR`、`更新文档` |
 | Artifact cards | 总是可见 | `技术方案草稿 · v3` |
 | Evidence drawer | 用户点开 | 来源链接、文件片段、命令摘要 |
+| Background learning | 默认不展示 | 自动记忆、技能、工具、评测候选 |
 | Debug trace | 不在普通前端 | RunLedger 原始事件只给 CLI/harness |
 
 流式规则：
@@ -156,7 +157,7 @@ Mnemo 的重要输出不能埋在长气泡里，而应成为对话里的 Artifac
 
 用户对产物的操作也通过聊天表达：`第三段再严谨点`、`导出 PDF`、`把这个发给 Alex`、`基于这个建个模板`。前端把选中的 artifact/span 作为隐式上下文传给 Composer。
 
-### 23.8 Decision：确认卡也是聊天消息
+### 23.8 Decision：复核卡也是聊天消息
 
 确认不是弹窗，也不是设置页。它是对话中的一张合约卡，必须说清楚：
 
@@ -218,17 +219,14 @@ Recall 不是单独的记忆浏览器。用户直接在聊天里问：
 | 用户选择 Slack 而非邮件 | channel choice | 外发渠道偏好 |
 | 用户每次 PR review 都看测试和边界条件 | repeated workflow | SOP skill |
 
-展示方式：
+普通学习默认后台完成，不打断用户。只有安全复核或高影响记忆才显示轻量复核卡：
 
 ```text
-我学到一个偏好：研究类文档要把来源放在结论旁边。
-[以后这样] [这次而已]
-
-这条学习需要你确认后才会长期记住：从外部网页推断出的沟通偏好。
-[确认记住] [这次而已] [忽略]
+记忆待复核：从外部网页推断出的沟通偏好。
+[记住] [仅本次] [忽略]
 ```
 
-低风险学习可默认 shadow/active，并允许撤销；高风险和隐私相关学习必须确认。
+低风险学习默认 shadow/active，不出现复核卡；高风险和安全复核类学习才进入用户可见复核。
 
 ### 23.11 低频控制：从聊天进入，不做主界面
 
@@ -271,8 +269,8 @@ RunLedger/runtime event 到前端事件的投影：
 | `tool.result` | `action.completed` / `source.attached` | 动作完成或证据就绪 |
 | `artifact.created` | `artifact.card` | 产物出现 |
 | `artifact.updated` | `artifact.delta` | 产物更新 |
-| `decision.required` | `decision.card` | 需要确认 |
-| `memory.queued` | `learning.chip` | 可能学到一个偏好 |
+| `decision.required` | `decision.card` | 高影响决策 |
+| `memory.review_required` | `learning.chip` | 记忆待复核 |
 | `run.completed` | `assistant.message(final)` | 本轮完成 |
 
 前端永远不展示完整 prompt、chain-of-thought、敏感 memory、原始工具长输出或 Mission 调试字段。

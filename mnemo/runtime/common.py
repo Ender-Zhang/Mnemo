@@ -109,7 +109,7 @@ def tool_result_summary(result: ToolResult) -> str:
     if not result.ok:
         decision = result.result.get("decision")
         if isinstance(decision, dict) and decision.get("item_id"):
-            return "需要用户确认。"
+            return "需要用户复核。"
         return result.error or "Tool call failed."
     if result.name == "memory_write_candidate":
         return "记忆候选已记录，等待后续学习流程评估。"
@@ -122,7 +122,7 @@ def tool_result_summary(result: ToolResult) -> str:
     if result.name == "artifact_update":
         return "产物已更新。"
     if result.name == "ask_user":
-        return "需要用户确认。"
+        return "需要用户处理。"
     return "工具调用已完成。"
 
 
@@ -194,10 +194,8 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
             },
         )
     elif result.name == "memory_write_candidate":
-        yield emit("learning.chip", {"item": _memory_learning_item(result)})
-    elif result.name in {"skill_propose_candidate", "tool_propose_candidate", "eval_propose_case"}:
-        item = _learning_candidate_item(result)
-        if item:
+        item = _memory_learning_item(result)
+        if item["requires_confirmation"]:
             yield emit("learning.chip", {"item": item})
     elif result.name == "artifact_update":
         yield emit(
@@ -216,31 +214,6 @@ def project_tool_result(result: ToolResult, emit: EmitChatEvent) -> Iterator[Cha
             yield emit("decision.card", {"decision": decision})
 
 
-def _learning_candidate_item(result: ToolResult) -> dict[str, Any] | None:
-    if result.name == "skill_propose_candidate":
-        return {
-            "item_id": result.result.get("skill_id"),
-            "kind": "skill",
-            "status": result.result.get("status") or "draft",
-            "summary": "可能学到一个可复用技能。",
-        }
-    if result.name == "tool_propose_candidate":
-        return {
-            "item_id": result.result.get("candidate_id"),
-            "kind": "tool",
-            "status": result.result.get("status") or "draft",
-            "summary": "可能沉淀一个可复用工具。",
-        }
-    if result.name == "eval_propose_case":
-        return {
-            "item_id": result.result.get("case_id"),
-            "kind": "eval_case",
-            "status": result.result.get("status") or "draft",
-            "summary": "可能沉淀一个回放评测用例。",
-        }
-    return None
-
-
 def _memory_learning_item(result: ToolResult) -> dict[str, Any]:
     status = str(result.result.get("status") or "draft")
     safety = result.result.get("safety") if isinstance(result.result.get("safety"), dict) else {}
@@ -249,7 +222,7 @@ def _memory_learning_item(result: ToolResult) -> dict[str, Any]:
         "item_id": result.result["candidate_id"],
         "kind": "memory",
         "status": status,
-        "summary": "这条学习需要你确认后才会长期记住。" if requires_confirmation else "可能学到一个偏好或事实。",
+        "summary": "这条记忆需要复核后才会长期保留。" if requires_confirmation else "已记录为后台学习候选。",
         "requires_confirmation": requires_confirmation,
     }
     if safety.get("risk"):

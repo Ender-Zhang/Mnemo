@@ -281,7 +281,7 @@ class SenseEngine:
         3. 计算机会分数
         4. 匹配 Watch 触发条件
         5. 生成候选主动动作
-        6. 按级别分类 (静默准备/轻提醒/确认卡/自动执行)
+        6. 按级别分类 (静默准备/轻提醒/复核卡/自动执行)
         """
     
     def _enrich_context(self, event: SenseEvent) -> EnrichedEvent:
@@ -326,7 +326,7 @@ class SenseEngine:
         """
         L1 静默准备:  score < 0.4
         L2 轻推送:    0.4 ≤ score < 0.6 and risk < 0.3
-        L3 确认卡:    score ≥ 0.6 or risk ≥ 0.3
+        L3 复核卡:    score ≥ 0.6 or risk ≥ 0.3
         L4 自动执行:  score ≥ 0.85 and risk < 0.1 and user_policy_allows
         """
 ```
@@ -346,13 +346,13 @@ class SenseEngine:
 #    → interruption_cost=0 (step=WALKING, time=12:15=午餐时间窗口)
 #    → disclosure_cost=0.2 (只需分享口味偏好，不涉及敏感信息)
 #    → urgency=0.3 (用餐窗口)
-#    → score = 0.7 - 0 - 0.2 + 0.3 = 0.8 → L3 确认卡
+#    → score = 0.7 - 0 - 0.2 + 0.3 = 0.8 → L3 复核卡
 # 4. WatchMatcher:
 #    → 匹配 watch: "dining-assist" (type=context_trigger, keywords=[餐厅,WiFi])
 # 5. 生成主动动作:
 #    → 载入 wiki/preferences/dining.md (忌口、偏好、预算)
 #    → 生成最小披露胶囊
-#    → 推送确认卡到手机
+#    → 推送复核卡到手机
 
 ACTION_DECISION = ProactiveAction(
     level=ActionLevel.L3_CONFIRMATION_CARD,

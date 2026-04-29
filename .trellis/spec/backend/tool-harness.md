@@ -81,10 +81,12 @@
 - `memory_write_candidate` must call `MemoryEngine.write_candidate()` so taint scanning and prompt-injection review gates apply consistently.
 - `memory_write_candidate` returns `candidate_id`, candidate `status`, and compact `safety` metadata.
 - Compact `memory_write_candidate` evidence includes candidate id, status, and compact safety metadata, never raw external evidence text.
-- Review-gated `memory_write_candidate` results project `learning.chip.item.requires_confirmation=true` with compact risk/reason metadata and no raw evidence text.
-- `skill_propose_candidate`, `tool_propose_candidate`, and `eval_propose_case` return compact candidate evidence and can project unified `learning.chip` events.
+- Normal `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, and `eval_propose_case` results are unobtrusive: they persist candidates and compact tool evidence without visible confirmation chips.
+- Review-gated `memory_write_candidate` results may project `learning.chip.item.requires_confirmation=true` with compact risk/reason metadata and no raw evidence text.
+- After-turn learning reflection action events are marked as internal learning events so Web clients can suppress background housekeeping from the main timeline.
 - `ask_user` is `write` risk because it persists an Inbox decision item.
-- `ask_user` returns compact decision data with `item_id`, question, reason, status, and options; streamed `decision.card` events must not contain raw tool traces.
+- `ask_user` is a last-resort tool for blocked authority, missing information, or irreversible high-impact choices; it must not be used for routine confirmations.
+- `ask_user` returns compact decision data with `item_id`, question, reason, status, and natural-language option labels; streamed `decision.card` events must not contain raw tool traces.
 - `watch_feedback(item_id, outcome, decision?)` is `write` risk because it mutates scheduled Watch metadata and may alter schedule/status.
 - `watch_feedback` records compact outcome counts/streaks and applies only explicit model/user policy decisions such as `keep`, `sparsify`, `pause`, or `disable`.
 - Compact `watch_feedback` results include item id/title, outcome, decision action, status, and schedule, not raw notification bodies or full run traces.
@@ -136,7 +138,9 @@
 | Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
 | Memory write safety scan | External prompt-injection evidence is stored as `needs_review:prompt_injection` with compact safety evidence | `tests/test_tools.py` |
-| Review memory learning chip | Review-gated memory candidates stream a `learning.chip` that requires confirmation and omits raw evidence | `tests/test_runtime.py` |
+| Normal learning candidate | Persists candidate/evidence without a visible confirmation chip | `tests/test_runtime.py` |
+| Review memory learning chip | Review-gated memory candidates may stream a `learning.chip` that requires review and omits raw evidence | `tests/test_runtime.py` |
+| Internal learning actions | After-turn learning action events are marked internal for Web suppression | `tests/test_runtime.py`, `tests/test_web.py` |
 | After-turn mixed learning | Provider reflection can propose memory/skill/tool/eval candidates from one compact packet | `tests/test_runtime.py` |
 | Low-signal learning skip | Zero/low-tool turns skip the second provider learning call and persist a skip reason | `tests/test_runtime.py` |
 | Learning debt review | Recent no-learning completed turns trigger one compact multi-run review through `learning.v1`, then wait behind a debt-review barrier | `tests/test_runtime.py` |
@@ -192,7 +196,9 @@
 - Recall search: assert compact cards include `kind`, `item_id`, `title`, `summary`, provenance ids, and action hints while omitting full bodies/transcripts.
 - Working note retention metadata: assert stored metadata and compact result remain small.
 - Memory write safety scan: assert status, safety risk, review flag, and compact evidence shape.
+- Normal learning candidate: assert no visible confirmation chip is streamed for ordinary candidate writes.
 - Review memory learning chip: assert `requires_confirmation`, risk/reason metadata, and omission of raw evidence text.
+- Internal learning actions: assert background reflection action events carry internal learning metadata for client suppression.
 - Skill review: assert status is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.
 - Skill patch: assert draft status is persisted and compact result omits full skill body.

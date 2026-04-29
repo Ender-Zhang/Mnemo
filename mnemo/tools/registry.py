@@ -257,7 +257,10 @@ CORE_TOOL_SPECS = [
     ),
     ToolSpec(
         name="ask_user",
-        description="Create a concise user decision request when the model cannot proceed safely.",
+        description=(
+            "Create a concise user decision only when execution is blocked by missing authority, missing "
+            "information, or an irreversible high-impact choice; do not use for routine confirmations."
+        ),
         risk="write",
         input_schema=_schema(
             ["question"],
@@ -806,9 +809,9 @@ class ToolRegistry:
             action_type="choose",
             action_data={
                 "options": [
-                    {"id": "accepted", "label": "Approve"},
-                    {"id": "rejected", "label": "Reject"},
-                    {"id": "ignored", "label": "Ignore"},
+                    {"id": "accepted", "label": "继续"},
+                    {"id": "rejected", "label": "取消"},
+                    {"id": "ignored", "label": "稍后"},
                 ],
                 "source": "ask_user",
             },
@@ -820,7 +823,11 @@ class ToolRegistry:
                 "question": question,
                 "reason": reason,
                 "status": "open",
-                "options": ["accepted", "rejected", "ignored"],
+                "options": [
+                    {"id": "accepted", "label": "继续"},
+                    {"id": "rejected", "label": "取消"},
+                    {"id": "ignored", "label": "稍后"},
+                ],
             }
         }
 
@@ -1239,7 +1246,7 @@ def _tool_summary(result: ToolResult) -> str:
     if not result.ok:
         decision = result.result.get("decision")
         if isinstance(decision, dict) and decision.get("item_id"):
-            return f"Tool requires user approval: {decision.get('item_id')} ({result.error or 'not allowed'})."
+            return f"Tool requires user review: {decision.get('item_id')} ({result.error or 'not allowed'})."
         return result.error or "Tool call failed."
     if result.name == "memory_write_candidate":
         status = str(result.result.get("status") or "draft")
@@ -1279,7 +1286,7 @@ def _tool_summary(result: ToolResult) -> str:
     if result.name == "artifact_update":
         return "Artifact updated."
     if result.name == "ask_user":
-        return "User decision requested."
+        return "User review requested."
     if result.name == "watch_feedback":
         item = result.result.get("item") or {}
         feedback = result.result.get("feedback") or {}
@@ -1328,7 +1335,7 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
                 {
                     "kind": "decision",
                     "id": str(decision.get("item_id") or ""),
-                    "title": str(decision.get("question") or "Tool approval required"),
+                    "title": str(decision.get("question") or "Tool review required"),
                     "status": decision.get("status") or "open",
                     "tool_name": result.name,
                     "risk": decision.get("risk"),
@@ -1619,7 +1626,7 @@ def _approval_decision_for_denied_tool(
 ) -> dict[str, Any] | None:
     if spec.risk not in {"external", "admin"}:
         return None
-    question = f"Approve {spec.name}?"
+    question = f"Review {spec.name}?"
     item_id = store.add_inbox_item(
         category="decision",
         title=question,
@@ -1628,9 +1635,9 @@ def _approval_decision_for_denied_tool(
         action_type="tool_approval",
         action_data={
             "options": [
-                {"id": "accepted", "label": "Approve"},
-                {"id": "rejected", "label": "Reject"},
-                {"id": "ignored", "label": "Ignore"},
+                {"id": "accepted", "label": "执行一次"},
+                {"id": "rejected", "label": "跳过"},
+                {"id": "ignored", "label": "稍后"},
             ],
             "source": "tool_policy",
             "tool_call": {
@@ -1648,7 +1655,11 @@ def _approval_decision_for_denied_tool(
         "question": question,
         "reason": permission.reason,
         "status": "open",
-        "options": ["accepted", "rejected", "ignored"],
+        "options": [
+            {"id": "accepted", "label": "执行一次"},
+            {"id": "rejected", "label": "跳过"},
+            {"id": "ignored", "label": "稍后"},
+        ],
         "action_type": "tool_approval",
         "tool_name": spec.name,
         "risk": spec.risk,

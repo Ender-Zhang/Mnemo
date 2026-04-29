@@ -50,7 +50,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
 - [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
-- [~] Lightweight permission gate for read/write/external/admin exists; default runtime policy allows all built-in risk levels for smoother single-chat execution, while explicitly stricter policies can still create compact `tool_approval` Decision Cards and accepted approvals execute once through ToolHarness; side-effect flags and sandbox profile enforcement are not complete.
+- [~] Lightweight permission gate for read/write/external/admin exists; default runtime policy allows all built-in risk levels for smoother single-chat execution, while explicitly stricter policies can still create compact `tool_approval` Decision Cards with natural labels and accepted approvals execute once through ToolHarness; side-effect flags and sandbox profile enforcement are not complete.
 - [x] Tool result compression and evidence cards.
 - [x] User file operations default to a per-state user workspace at `<state-dir>/workspace` instead of the process cwd or source repository root.
 - [~] Generated tool lifecycle and evaluation gate: draft candidates, eval result recording, readiness gate, safe alias installation, and explicit rollback exist; shadow dry-run, extension packaging, and richer eval gates are not complete.
@@ -115,12 +115,12 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Web chat assistant output renders safe DOM-built Markdown after streaming/replay.
 - [x] Web chat replays historical user prompts from `turn.started` and shows compact browser continuity context.
 - [x] Web activity panel de-duplicates action lifecycle updates into stable rows.
-- [x] Web activity hides internal learning housekeeping such as `learning_discard` and learning-tone status updates.
+- [x] Web activity hides internal learning housekeeping such as after-turn learning tool events, `learning_discard`, and learning-tone status updates.
 - [x] Web composer sends on Enter, preserves Shift+Enter newline, and shows a volatile "回复中" pending assistant indicator while waiting for model output.
 - [x] Web tool action cards show compact call arguments and completed results in one card while suppressing duplicate tool-result source cards.
 - [x] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
 - [x] Recall result cards compact repeated title/summary text.
-- [x] Learning chips can resolve memory candidates with "以后这样", "这次而已", reject, undo, and review-gated confirmation actions.
+- [x] Ordinary learning candidates stay unobtrusive; exceptional review-gated memory chips can resolve with "记住", "仅本次", "忽略", and undo actions.
 - [x] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, ten-dimensional memory inspection, and data controls.
 - [~] Artifact operations beyond open/view: web artifact cards now support continue edit, export, compare related artifacts, send draft, and diff apply/revert composer intents; direct apply/revert/send execution remains tool/model-led.
 
@@ -175,6 +175,7 @@ This file tracks implementation status against the design package. Keep it updat
 ## Recently Landed Trellis Tasks
 
 - [x] `04-30-memory-quality-signal`: Memory candidate writes now attach compact quality scores for specificity, personalization, persistence, actionability, and verifiability, and Dream fallback rejects explicit discard-quality candidates before stable-page promotion.
+- [x] `04-30-unobtrusive-learning-confirmations`: Normal memory/skill/tool/eval learning candidates now persist silently without visible confirmation chips, after-turn learning action events are marked internal for Web suppression, and rare decision cards use natural option labels.
 - [x] `04-30-memory-near-duplicate-reinforcement`: Dream consolidation now treats conservative same-dimension, same-polarity near-duplicate candidates as reinforcement of existing active pages, preventing paraphrased stable memories from duplicating.
 - [x] `04-29-memory-l1-association-index`: L1 memory snapshots now compile compact alias pointers and association hubs from active pages, metadata associations, and memory links, and prompt/query planning can use those low-token routes before reading full pages.
 - [x] `04-29-memory-wiki-metadata-associations`: Memory recall now resolves active wiki metadata aliases, links, and associations, materializes them into compact markdown frontmatter, carries `why_relevant` into linked context cards, and counts metadata connections in memory health.

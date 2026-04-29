@@ -150,7 +150,7 @@ Mnemo 的核心循环由模型通过工具和上下文自由展开。规则只�
 | 场景 | 是否显式生成 | 原因 |
 |------|--------------|------|
 | 普通聊天/执行 | 否，RunLedger 从 tool calls 和 prompt blocks 重建 | 减少一次模型调用和 token |
-| 高风险 external/admin 动作 | 是 | 需要确认卡、风险说明和可审计依据 |
+| 不可逆或越权的 external/admin 动作 | 是 | 需要复核卡、风险说明和可审计依据 |
 | 外部 runtime / sub-agent | 是 | 需要 context capsule 和边界契约 |
 | 长任务压缩 / mission fork | 是 | 需要 checkpoint 和 continuation reason |
 | harness / ablation eval | 是 | 需要比较 selected/rejected context |
@@ -262,7 +262,7 @@ class AgentErrorEscalation:
     MAX_TOTAL_ITERATIONS = 90     # 硬上限: 防止无限循环
     DEPTH_LIMIT_SUBAGENT = 3      # 子 Agent 最大嵌套深度
     
-    DANGEROUS_COMMAND_PATTERNS = [  # 需要用户确认才能执行
+    DANGEROUS_COMMAND_PATTERNS = [  # 需要阻断或复核的不可逆操作
         r'rm\s+-rf\s+[^/]',
         r'DROP\s+TABLE',
         r'git\s+push\s+--force',
@@ -276,8 +276,8 @@ class AgentErrorEscalation:
         """
         危险命令检测 (来自 Hermes tools/approval.py 设计):
         SAFE     → 直接执行
-        WARN     → 展示预览，询问用户
-        BLOCK    → 须显式 --confirm 标志才执行
+        WARN     → 展示紧凑预览，模型可继续选择更安全路径
+        BLOCK    → 需要明确授权或改用安全工具
         """
 ```
 
@@ -523,7 +523,7 @@ class PromptCachingStrategy:
 | 触发条件 | 是否重新编译 L1 | 是否使缓存失效 |
 |---------|---------------|--------------|
 | L2 页面内容变化 | ✅ 是（下次 daily_compile） | 下一天起 |
-| 用户确认新事实写入 L2 | ✅ 是（延迟至 daily_compile） | 下一天起 |
+| 用户复核/工具验证的新事实写入 L2 | ✅ 是（延迟至 daily_compile） | 下一天起 |
 | 置信度衰减 | ✅ 是（daily_compile） | 下一天起 |
 | 当前会话结束 | ❌ 否（当日 L1 仍有效） | 不失效 |
 | `mnemo compile` 手动触发 | ✅ 立即 | 立即失效 |

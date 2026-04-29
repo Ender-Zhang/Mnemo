@@ -32,8 +32,9 @@
 - Tool action cards should show one compact call/result surface; duplicate `tool_result` source cards are suppressed in the main timeline.
 - Recall cards should stay inline in the timeline, show compact result items, and use existing artifact/decision/composer actions.
 - Recall item titles and summaries should not repeat the same text.
-- Learning chips should stay inline in the timeline and resolve or undo memory candidates through `/api/learning/memory`.
-- Learning chips with `requires_confirmation=true` should use explicit confirmation wording before durable memory promotion.
+- Normal learning candidates should stay unobtrusive: background learning writes are not visible confirmation chips in the main timeline.
+- Learning chips are reserved for exceptional review-gated memory candidates and resolve or undo memory candidates through `/api/learning/memory`.
+- Learning chips with `requires_confirmation=true` should use review wording, not routine confirmation wording, before durable memory promotion.
 - The settings view renders compact connected-app, permission, quiet-hours, runtime provider/model, preference, and data-control summaries from `/api/settings`.
 - Settings provider tiles may prefill the Provider form, but they must not save runtime changes until the normal settings submit path runs.
 - Settings provider tiles and the Provider select must stay visually synchronized before save.
@@ -44,7 +45,7 @@
 - Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.
 - Replayed `turn.started` events should render the historical user prompt when the client is not actively streaming a new turn.
 - Tool activity rows should upsert by stable event/action keys so queued, started, and completed action events update one compact card.
-- Internal learning housekeeping, including `learning_discard` action lifecycle events and learning-tone status updates, should not appear as visible Activity rows.
+- Internal learning housekeeping, including after-turn learning action lifecycle events, `learning_discard`, and learning-tone status updates, should not appear as visible Activity rows.
 - Buttons must have clear text or `title` attributes when their action is not obvious.
 - Text containers must use wrapping constraints so long ids, URLs, and tool names do not overflow.
 
@@ -58,7 +59,8 @@
 | Decision card | Shows compact decision text and approve/reject/ignore actions | `tests/test_web.py` |
 | Tool approval card | Denied external/admin tool calls project through the existing decision card path and accepted approvals show compact tool results | `tests/test_web.py`, `tests/test_runtime.py` |
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
-| Learning chip | Shows compact learning text, high-risk confirmation wording, accept/this-turn/reject, and post-resolution undo actions | `tests/test_web.py`, `tests/test_runtime.py` |
+| Normal learning candidate | Does not render a visible confirmation chip for ordinary background learning | `tests/test_runtime.py` |
+| Learning chip | Shows compact review text, accept/this-turn/reject, and post-resolution undo actions for exceptional review-gated memory | `tests/test_web.py`, `tests/test_runtime.py` |
 | Settings page | Shows compact low-frequency settings, saves quiet hours and runtime provider preferences without raw secrets | `tests/test_web.py` |
 | Memory compass page | Loads compact L1 coverage, then L2/L3 memory detail and markdown on demand without raw secrets | `tests/test_web.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
@@ -88,7 +90,7 @@
 - Good: keep evidence chains behind explicit item selection.
 - Good: use `document.createElement`, `textContent`, and `replaceChildren` for Markdown blocks and inline marks.
 - Good: store streaming Markdown source in `dataset.rawText` before final formatting.
-- Good: filter internal learning maintenance by event metadata such as tool name and status tone.
+- Good: filter internal learning maintenance by `internal="learning"` or status tone metadata before rendering Activity rows.
 - Base: small helper functions can create DOM nodes directly.
 - Bad: `element.innerHTML = modelOutput`.
 - Bad: adding a second operations dashboard for normal user workflows.
@@ -101,9 +103,9 @@
 - For decision actions, assert the asset calls `/api/inbox/resolve` and disables buttons while resolving.
 - For recall cards, assert the asset handles `recall.card` and does not require a separate dashboard route.
 - For recall cards, assert repeated title/summary text is compacted.
-- For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses confirmation wording for review-gated items.
+- For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses review wording for review-gated items.
 - For settings, assert the asset calls `/api/settings`, renders the settings view, saves provider/runtime and quiet-hours settings, and never exposes raw provider secrets.
 - For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory compass assets expose progressive L1/L2/L3 disclosure and markdown modal viewing.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
 - For activity rows, assert `activityRows`, `activityActionId`, and compact tool-card upsert behavior are present.
-- For internal learning housekeeping, assert `isInternalLearningEvent`, `tone === "learning"`, and `learning_discard` filters are present.
+- For internal learning housekeeping, assert `isInternalLearningEvent`, `internal === "learning"`, `tone === "learning"`, and `learning_discard` filters are present.

@@ -460,7 +460,7 @@ class WorkingMemory:
     
     draft_facts:   用户在本次对话中提及但尚未确认的新事实
                    → 示例: "顺便一提我换工作了" → draft: identity/job
-                   → Mission 结束或 DreamCycle 时通过 stale_review_prompt 请求用户确认
+                   → Mission 结束或 DreamCycle 时通过 stale_review_prompt 请求用户复核
                    → 确认后 → L2; 拒绝后 → 丢弃
     """
     
@@ -756,7 +756,7 @@ Dream 的 less-is-more 分工：
 
 系统不把每天维护写死成必须完整跑完的流水线。模型拿到 delta、预算和工具后，自主决定本轮优先级；预算不足时宁可少做，也不全量扫库。
 
-当 health cards 显示存在过期或衰减候选时，Dream plan 可以把 `memory_decay_stale_pages` 作为可选工具暴露给模型。模型可以选择执行、先读取证据、请求用户确认，或跳过并记录原因。
+当 health cards 显示存在过期或衰减候选时，Dream plan 可以把 `memory_decay_stale_pages` 作为可选工具暴露给模型。模型可以选择执行、先读取证据、请求用户复核，或跳过并记录原因。
 
 Dream report 可以携带模型显式提出的 maintenance actions，形态兼容原生 tool call：
 
@@ -779,7 +779,7 @@ Dream maintenance run
   5. compile changed anchors       # 只重编受影响 L0/L1/cache anchors
   6. optional mine skill/tool      # 只有高信号重复轨迹才处理
   7. optional replay smoke         # 只对关键 patch 跑轻量 eval
-  8. inbox digest                  # 只把需要用户确认的少数事项写 Inbox
+  8. inbox digest                  # 只把需要用户复核的少数事项写 Inbox
 ```
 
 **预算与降级**:

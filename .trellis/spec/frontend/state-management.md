@@ -50,6 +50,7 @@
 - `turn.started` replay should restore the user prompt into the timeline when the client is not busy.
 - `mnemo.last_user_intent` stores only a compact recent prompt summary for the browser-local context panel.
 - Tool activity rows are volatile browser state and must be rebuilt from stream/replay events, not stored in `localStorage`.
+- Background learning action events marked with `internal="learning"` are ignored by the visible activity timeline.
 - Reset clears all persisted chat continuity keys and the rendered-event set.
 - Reset is disabled and guarded while `state.busy` is true; active turns should use Stop instead.
 - Artifact cards render from streamed metadata and fetch artifact body content only when opened.
@@ -61,7 +62,8 @@
 - Related artifact metadata is cached in `state.artifactRelated` for the current browser session.
 - Decision cards resolve persisted Inbox items by id and keep status local to the card.
 - Tool approval cards use the same decision resolution path and render any returned compact `tool_result` as an inline action/error card without adding browser persistence keys.
-- Learning chips resolve or undo persisted memory candidates by id and keep status local to the card.
+- Ordinary learning candidates do not create visible confirmation chips.
+- Learning chips resolve or undo persisted review-gated memory candidates by id and keep status local to the card.
 - Review-gated learning chips use `requires_confirmation` only for local presentation; they do not add browser persistence keys or a separate workflow.
 - `/api/settings` can seed read-only chat glance cards on page load and hydrate the settings view on open; it is not persisted in browser storage except lightweight local UI toggles.
 - Settings view can update quiet hours and runtime provider preferences through `/api/settings`; raw API keys must never be sent or stored, only an environment variable name.
@@ -97,7 +99,8 @@
 | Recall card asset | Handles `recall.card`, compact item rendering, artifact open, decision resolve, and composer prefill hooks | `tests/test_web.py` |
 | Inbox decision resolve | Resolves a persisted decision item and returns JSON errors for missing/invalid input | `tests/test_web.py` |
 | Tool approval card | Uses the same decision resolution path, renders compact approval results, and adds no browser state keys | `tests/test_web.py`, `tests/test_runtime.py` |
-| Learning memory action | Promotes, rejects, or undoes a persisted memory candidate and renders review-gated candidates as confirmation chips | `tests/test_web.py`, `tests/test_runtime.py` |
+| Normal learning candidate | Ordinary memory/skill/tool/eval candidate writes remain background events without visible confirmation chips | `tests/test_runtime.py` |
+| Learning memory action | Promotes, rejects, or undoes a persisted memory candidate and renders review-gated candidates as review chips | `tests/test_web.py`, `tests/test_runtime.py` |
 | Settings summary | Returns compact connected app, permission, quiet-hours, runtime, preference, and data-control data without secrets | `tests/test_web.py` |
 | Settings update | Saves valid quiet-hours/runtime settings and rejects invalid time or secret-bearing payloads with JSON errors | `tests/test_web.py` |
 | Settings asset | Opens a settings view and preloads settings through `/api/settings` | `tests/test_web.py` |
@@ -154,7 +157,7 @@
 - Inbox API covers listing and resolution, including missing and invalid resolution errors.
 - Frontend asset includes inline decision resolution hooks.
 - Learning memory API covers accept, this-turn-only, reject, undo, missing candidate, and invalid action errors.
-- Frontend asset includes inline learning resolution hooks and review-gated confirmation wording.
+- Frontend asset includes inline learning resolution hooks and review-gated review wording.
 - Frontend asset includes Enter-to-send handling and volatile pending assistant cleanup.
 - Frontend asset includes `/api/memory/ontology`, `/api/memory/dimension`, and `/api/memory/item` memory compass loading.
 - Memory ontology API covers ten dimensions, L1-only payload shape, and compact body/secret behavior.

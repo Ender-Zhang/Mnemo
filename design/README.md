@@ -29,7 +29,7 @@
 Mnemo 的 less is more 不是少能力，而是少固定路径：
 
 - 默认不定义业务 workflow。系统只提供 Mission 状态、记忆检索、skill 索引、工具卡、权限边界和回放账本。
-- 模型在每轮 agentic loop 中自己决定是否查记忆、加载 skill、调用工具、继续探索、交付结果或请求用户确认。
+- 模型在每轮 agentic loop 中自己决定是否查记忆、加载 skill、调用工具、继续探索、交付结果或在高影响场景请求用户复核。
 - 工具调用优先使用 OpenAI / Anthropic 等 provider 的原生 tool-call 机制；Mnemo 只定义工具 schema、处理调用、压缩结果和写账本。
 - 关键选择只在需要审计时写成 RunLedger 的 `decision.recorded` 事件；普通任务从 prompt blocks、tool calls、skill views 和 memory searches 还原。
 - Registry、Search、boundary filters 只生成候选和边界，不替模型做语义选择。

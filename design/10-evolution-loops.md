@@ -1,6 +1,6 @@
 # Evolution Loops
 
-> Mnemo 的三条自演进闭环：Memory、Skills、Tools。它们共享同一套原则：模型做语义判断，RunLedger 保留证据，Harness 验证收益，低风险自动推进，高风险进入用户确认。
+> Mnemo 的三条自演进闭环：Memory、Skills、Tools。它们共享同一套原则：模型做语义判断，RunLedger 保留证据，Harness 验证收益，低风险自动推进，高影响异常才进入用户复核。
 
 ## 1. 总览
 

@@ -785,8 +785,8 @@ CREATE INDEX idx_eval_results_variant ON harness_eval_results(variant, created_a
 | `task.flow.updated` | 多步任务状态、revision、cancel intent 变化 | 否 |
 | `artifact.created` | 文档、diff、表格、消息草稿等产物创建 | 否 |
 | `artifact.updated` | 产物流式更新或版本变化 | 否 |
-| `decision.required` | 高风险动作需要用户确认 | 否 |
-| `decision.resolved` | 用户批准、拒绝或编辑确认项 | 否 |
+| `decision.required` | 不可逆高影响动作需要用户复核 | 否 |
+| `decision.resolved` | 用户继续、取消或编辑复核项 | 否 |
 | `dream.started` | DreamCycle 空闲维护任务开始，记录预算和 delta 范围 | 否 |
 | `dream.delta_collected` | 收集到的 W0、recent runs、changed pages 摘要 | 否 |
 | `dream.completed` | DreamCycle 输出、跳过项、耗时、token/cost | 否 |
@@ -891,8 +891,8 @@ exposure_policy:
     - relationships/personal
     - patterns/sensitive
     
-  # 高置信度写入需要用户确认
-  require_confirmation_above: 0.85
+  # 高影响写入需要用户复核
+  require_review_for_high_impact: true
   
   # 审计日志
   audit_all_reads: true

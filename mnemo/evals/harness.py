@@ -424,7 +424,7 @@ class EvalHarness:
                 EvalStep(
                     message=message,
                     expect_tool_names=("memory_write_candidate",),
-                    expect_event_types=("learning.chip", "run.completed"),
+                    expect_event_types=("run.completed",),
                 ),
                 state_dir=state_dir,
                 run_id=result["run_id"],
@@ -1987,7 +1987,7 @@ _PERSONALIZATION_CORE = (
                 message="remember: User prefers concise engineering updates",
                 expect_response_contains=("记忆候选",),
                 expect_tool_names=("memory_write_candidate",),
-                expect_event_types=("learning.chip", "run.completed"),
+                expect_event_types=("run.completed",),
             ),
         ),
     ),
@@ -1998,7 +1998,7 @@ _PERSONALIZATION_CORE = (
             EvalStep(
                 message="remember: User prefers direct answers",
                 expect_tool_names=("memory_write_candidate",),
-                expect_event_types=("learning.chip",),
+                expect_event_types=("run.completed",),
             ),
             EvalStep(
                 message="search: direct answers",
@@ -2029,7 +2029,7 @@ _PERSONALIZATION_CORE = (
             EvalStep(
                 message="remember: User prefers Zephyr recall cards",
                 expect_tool_names=("memory_write_candidate",),
-                expect_event_types=("learning.chip",),
+                expect_event_types=("run.completed",),
             ),
             EvalStep(
                 message="artifact: Zephyr launch notes",
