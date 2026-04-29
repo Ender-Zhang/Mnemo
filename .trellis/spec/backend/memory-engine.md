@@ -72,6 +72,17 @@
 - MCP tool: `mnemo_dream_schedule(schedule="daily", next_run_at=None, limit=20, min_confidence=0.7, source="mcp")`
 
 ### 3. Contracts
+- `mnemo/memory/engine.py` is a compatibility facade only; domain behavior lives in focused modules under `mnemo/memory/`.
+- Memory module ownership:
+  - `base.py`: shared store lookup helpers.
+  - `recall.py`: query planning facade, memory/session search, prompt context cards, associative page expansion.
+  - `learning.py`: W0 ingestion, candidate writes, promotion/rejection/undo, L1 snapshot, deterministic consolidation.
+  - `curation.py`: tombstone, replacement links, harmful eval case routing, private delete redaction.
+  - `health.py`: memory health cards, score, stale/decay decisions.
+  - `dream.py`: Dream delta, model action execution, persisted reports, Dream status.
+  - `cards.py`: compact read-model/result shape builders.
+  - `utils.py` and `constants.py`: dependency-free shared helpers/constants.
+- Public imports continue to use `from mnemo.memory import MemoryEngine`; direct engine constants such as `W0_MEMORY_RETENTION` remain re-exported by `mnemo/memory/engine.py` for compatibility.
 - Normal tools write memory candidates, not stable pages.
 - Normal tools and W0 ingestion write memory candidates through `MemoryEngine.write_candidate()`.
 - `MemoryEngine.write_candidate()` normalizes every durable candidate dimension into the configured memory ontology; non-standard labels such as `finance`, `profile`, or `work_style` must not persist as separate user-facing buckets.

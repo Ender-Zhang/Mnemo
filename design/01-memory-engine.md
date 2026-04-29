@@ -42,6 +42,10 @@ Not Source of Truth = embedding vectors, model hidden state, prompt cache
 - 迁移到其他模型或 runtime 时，记忆仍然成立。
 - 用户否认或删除的事实必须进入 tombstone，而不是只从索引里删掉。
 
+**实现分层**：
+
+`MemoryEngine` 是兼容门面，不承载大段业务逻辑。实现按职责拆到 `mnemo/memory/`：`recall.py` 管检索与联想扩展，`learning.py` 管候选写入、W0、L1 和确定性 consolidation，`curation.py` 管 tombstone/private delete，`health.py` 管健康度和衰减，`dream.py` 管 Dream delta/action/report，`cards.py` 管紧凑返回形态，`utils.py/constants.py` 管共享纯函数与常量。
+
 ### 3.2 十维个人本体
 
 Mnemo 的长期记忆不是自由文本池，而是关于一个人的十维本体。十维结构的价值在于：它让 Agent 不只是“检索到事实”，而是能形成可行动的人格模型。
