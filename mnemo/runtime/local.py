@@ -111,7 +111,7 @@ class LocalAgentRuntime:
             tool_specs=tool_bundle.specs,
             soul_context=bootstrap.soul,
             workspace_context=bootstrap.workspace,
-            memory_snapshot=memory_engine.load_l1_snapshot(),
+            memory_snapshot=memory_engine.load_or_compile_l1_snapshot(),
             memory_cards=memory_engine.context_cards(request.message, limit=5),
             skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
             mode=request.prompt_mode,

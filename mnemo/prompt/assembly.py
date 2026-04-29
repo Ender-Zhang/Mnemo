@@ -199,6 +199,7 @@ class PromptAssembler:
         content = "\n".join(
             [
                 "Operate from the current mission and user turn.",
+                "Answer directly from visible prompt context when it fully resolves the turn; call retrieval tools only for missing, stale, conflicting, or evidence-detail needs.",
                 "Use tools when they materially improve accuracy, persistence, or safe execution.",
                 "Prefer compact answers unless the user or task needs more detail.",
                 "When a tool has write, external, or admin risk, be explicit about the action and preserve useful results.",
@@ -273,6 +274,7 @@ class PromptAssembler:
     def _memory_index(self, cards: Sequence[dict[str, Any]]) -> PromptBlock:
         lines = [
             "Relevant memory index:",
+            "If these cards fully answer the user, answer directly without a retrieval tool.",
             "Use memory_search or memory_read if you need details beyond these cards.",
         ]
         lines.extend(f"- {_memory_card_text(card)}" for card in cards)
@@ -295,6 +297,7 @@ class PromptAssembler:
         page_count = snapshot.get("page_count")
         lines = [
             "Daily compiled memory snapshot:",
+            "If this snapshot fully answers the user, answer directly without a retrieval tool.",
             "Use memory_search or memory_read for details beyond this snapshot.",
         ]
         if isinstance(page_count, int) and page_count > len(visible_items):

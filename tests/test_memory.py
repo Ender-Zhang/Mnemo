@@ -479,6 +479,22 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertIn({"route": "dimension", "query": "preferences"}, metadata["routes"])
             self.assertIn({"route": "lexical", "query": "recent testing preference"}, metadata["routes"])
 
+    def test_chinese_identity_queries_expand_to_name_routes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            store.upsert_memory_page(
+                "personal_profile: The user says their name is 陈大鬼",
+                "The user says their name is 陈大鬼 and prefers to be addressed by that name.",
+                confidence=0.95,
+            )
+
+            search = MemoryEngine(store).search_with_plan("我叫什么", limit=5)
+
+            self.assertEqual(search["query_plan"]["dimensions"], ["identity"])
+            self.assertIn({"route": "lexical", "query": "name"}, search["query_plan"]["routes"])
+            self.assertGreaterEqual(len(search["matches"]), 1)
+            self.assertIn("陈大鬼", search["matches"][0]["title"])
+
     def test_search_uses_query_plan_dimension_route_and_annotations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, _run_id = _store_with_run(tmp)
@@ -1048,6 +1064,20 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(loaded["page_count"], 1)
             path.write_text("{", encoding="utf-8")
             self.assertIsNone(engine.load_l1_snapshot())
+
+    def test_load_or_compile_l1_snapshot_materializes_missing_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            engine = MemoryEngine(store)
+
+            self.assertIsNone(engine.load_or_compile_l1_snapshot())
+            page_id = store.upsert_memory_page("identity: name", "User name is Chen.", confidence=0.9)
+
+            snapshot = engine.load_or_compile_l1_snapshot(limit=10)
+
+            self.assertIsNotNone(snapshot)
+            self.assertEqual(snapshot["items"][0]["id"], page_id)
+            self.assertTrue((store.state_dir / "wiki" / "l1-memory-snapshot.json").exists())
 
 
 def _store_with_run(tmp: str) -> tuple[StateStore, str]:

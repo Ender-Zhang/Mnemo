@@ -30,6 +30,7 @@
 - `MemoryEngine.load_dream_report(report_id: str | None = None, *, latest: bool = False) -> dict[str, Any] | None`
 - `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7, *, candidate_ids: list[str] | set[str] | None = None, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
 - `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
+- `MemoryEngine.load_or_compile_l1_snapshot(limit: int = 50) -> dict[str, Any] | None`
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
 - `EvalHarness.run_suite("memory-safety") -> SuiteReport`
 - `EvalHarness.run_suite("memory-health") -> SuiteReport`
@@ -113,6 +114,7 @@
 - `mnemo dream report --latest` must load the latest persisted report without recomputing memory maintenance.
 - L1 snapshots contain active memory page cards only: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.
 - L1 snapshots are stored at `wiki/l1-memory-snapshot.json`.
+- Runtime prompt assembly may call `load_or_compile_l1_snapshot()` to materialize a missing L1 snapshot when active memory pages exist; an empty memory store still omits L1.
 - Prompt-facing snapshots must omit raw evidence and full page content.
 - Stable memory pages may carry compact `metadata` for maintenance hints such as `expires`, `expires_at`, `decay_days`, `last_verified_at`, and `verified_at`.
 - `MemoryEngine.decay_stale_pages()` inspects active pages only and applies bounded metadata-driven maintenance; pages without expiry or decay metadata are skipped.
@@ -134,6 +136,7 @@
 - `MemoryEngine.search_with_plan()` includes compact `recall_policy.tombstone_filter` metadata for session searches: enabled flag, tombstone count, suppressed count, and bounded suppressed item provenance.
 - `MemoryEngine.plan_query()` returns a compact deterministic plan with original, lexical, semantic, alias, temporal, dimension, clarification, and route fields.
 - Query planning preserves the original user language and exact proper nouns as lexical routes.
+- Query planning maps common Chinese identity/name questions such as `我叫什么`, `我的名字是什么`, and `我是谁` to the `identity` dimension and compact name/profile lexical routes.
 - The first QueryPlanner implementation is deterministic and dependency-free; vector embedding, reranking, and model-led spreading activation remain extensions.
 - `MemoryEngine.search_with_plan()` returns `query_plan` plus `matches`; `MemoryEngine.search()` preserves the list-only compatibility wrapper.
 - Multi-route page, candidate, and session retrieval is fused by reciprocal-rank-style scoring and compact de-duplication.
@@ -211,10 +214,12 @@
 | CLI memory read | Candidate and page ids return typed memory payloads | `tests/test_cli.py` |
 | CLI memory links | Outgoing and incoming links can be inspected by id | `tests/test_cli.py` |
 | CLI memory snapshot | Existing L1 snapshot can be inspected without full page bodies | `tests/test_cli.py` |
+| Missing L1 snapshot at runtime | First prompt materializes a compact L1 snapshot when active pages exist | `tests/test_runtime.py`, `tests/test_memory.py` |
 | Memory safety eval suite | `harness eval memory-safety --json` passes with deterministic local cases | `tests/test_harness.py`, `tests/test_cli.py` |
 | Memory health eval suite | `harness eval memory-health --json` passes and release gates include it | `tests/test_harness.py`, `tests/test_cli.py` |
 | Prompt injection safety eval | Memory-safety suite includes a no-promotion injected external evidence case | `tests/test_harness.py` |
 | Query planning | Plan reports routes, dimensions, and temporal hints without external dependencies | `tests/test_memory.py` |
+| Chinese identity query | `我叫什么` maps to identity/name routes and finds profile memory | `tests/test_memory.py` |
 | Fused retrieval | Dimension routes can recover relevant pages and annotate matched routes | `tests/test_memory.py` |
 | Tombstone annotation | Rejected/tombstoned candidates are marked advisory tombstones | `tests/test_memory.py` |
 | Candidate rejection tombstone | Rejected candidates get durable tombstone rows | `tests/test_memory.py` |

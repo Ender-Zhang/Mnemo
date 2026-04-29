@@ -123,7 +123,12 @@ def build_memory_query_plan(query: str, *, l1_snapshot: dict[str, Any] | None = 
     tokens = _query_tokens(original)
     dimensions = tuple(_detect_dimensions(original, tokens))
     temporal = _detect_temporal(original)
-    lexical = tuple(_bounded_unique([original, *_proper_like_terms(original), *tokens], limit=8))
+    lexical = tuple(
+        _bounded_unique(
+            [original, *_proper_like_terms(original), *_dimension_query_terms(dimensions), *tokens],
+            limit=12,
+        )
+    )
     semantic = tuple(_semantic_queries(original, tokens, dimensions, temporal))
     aliases = tuple(_snapshot_aliases(tokens, l1_snapshot))
     return MemoryQueryPlan(
@@ -252,6 +257,13 @@ def _semantic_queries(
     return _bounded_unique(queries, limit=4)
 
 
+def _dimension_query_terms(dimensions: tuple[str, ...]) -> list[str]:
+    terms: list[str] = []
+    if "identity" in dimensions:
+        terms.extend(["identity", "name", "名字", "姓名", "personal_profile", "user_profile"])
+    return _bounded_unique(terms, limit=8)
+
+
 def _detect_dimensions(query: str, tokens: list[str]) -> list[str]:
     text = f" {query.casefold()} "
     token_set = {token.casefold() for token in tokens}
@@ -367,7 +379,7 @@ _DIMENSION_WORDS = set(CONTENT_DIMENSIONS) | {
 }
 
 _DIMENSION_MARKERS = {
-    "identity": (" identity ", " who i am ", "身份", "自我"),
+    "identity": (" identity ", " who i am ", " name ", "身份", "自我", "我是谁", "我叫什么", "叫什么", "名字", "姓名"),
     "cognition": (" cognition ", " thinking ", " learn ", " learning ", "思考", "学习方式"),
     "values": (" values ", " principle ", " principles ", "价值观", "原则"),
     "goals": (" goal ", " goals ", " objective ", "目标", "计划"),

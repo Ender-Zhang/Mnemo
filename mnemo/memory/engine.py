@@ -289,6 +289,14 @@ class MemoryEngine:
         path.write_text(dumps(snapshot), encoding="utf-8")
         return snapshot
 
+    def load_or_compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any] | None:
+        snapshot = self.load_l1_snapshot()
+        if snapshot is not None:
+            return snapshot
+        if not self.store.list_memory_pages(status="active", limit=1):
+            return None
+        return self.compile_l1_snapshot(limit=limit)
+
     def load_l1_snapshot(self) -> dict[str, Any] | None:
         path = self._l1_snapshot_path()
         try:

@@ -32,6 +32,8 @@
 - Prompt/bootstrap and memory-write scanning share `mnemo.core.injection.injection_warnings()` for warning label consistency.
 - `memory.l1_snapshot` is daily-cache context and must appear before turn-scoped `memory.index`.
 - `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
+- Runtime may materialize a missing `memory.l1_snapshot` from active pages before assembly so basic identity/preferences can be answered from the progressive memory layer without immediate tool lookup.
+- Prompt text should tell the model to answer directly from visible Soul/L1/memory index context when it fully resolves the turn, and reserve retrieval tools for missing, stale, conflicting, or evidence-detail needs.
 - `memory.index` consumes `MemoryEngine.context_cards()` output; rejected, tombstoned, archived, private-deleted, and review-gated memory candidates must be filtered before prompt assembly.
 - CLI inspection of the same compiled context is read-only: `mnemo memory snapshot`.
 - Tool schemas still travel through provider-native tool definitions; dropping `tools.cards` must not remove actual tool availability.
@@ -59,6 +61,7 @@
 | Workspace bootstrap present | Inject bounded quoted `workspace.bootstrap.*` blocks with daily cache policy | `tests/test_prompt.py`, `tests/test_runtime.py`, `tests/test_cli.py`, `tests/test_web.py` |
 | Suspicious bootstrap content | Preserve warning labels in metadata without raw content | `tests/test_prompt.py` |
 | L1 snapshot present | Add `memory.l1_snapshot` with `daily_context` cache segment before `memory.index` | `tests/test_prompt.py` |
+| Missing runtime L1 snapshot | Runtime compiles one from active pages and injects it before `memory.index` | `tests/test_runtime.py` |
 | Empty L1 snapshot | Do not inject `memory.l1_snapshot` | `tests/test_prompt.py` |
 | Memory index cards | Prompt-facing memory cards exclude rejected/tombstoned/review-gated candidates | `tests/test_memory.py`, `tests/test_runtime.py` |
 | CLI snapshot inspection | Existing compiled snapshot is inspectable without full page bodies | `tests/test_cli.py` |

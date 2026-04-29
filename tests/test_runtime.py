@@ -474,6 +474,29 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertIn("writer [active]", prompt_text)
             self.assertNotIn("Full skill body", prompt_text)
 
+    def test_provider_runtime_materializes_missing_l1_snapshot_for_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("identity")
+            store.upsert_memory_page(
+                "identity: name",
+                "The user says their name is Chen.",
+                confidence=0.94,
+            )
+            provider = FakeProvider([[ProviderEvent(type="text_delta", text="Ready"), ProviderEvent(type="completed")]])
+
+            list(
+                ProviderAgentRuntime(provider).stream(
+                    RunRequest(message="我叫什么", state_dir=tmp, conversation_id=conversation_id)
+                )
+            )
+
+            prompt_text = "\n".join(message["content"] for message in provider.requests[0].messages)
+            self.assertIn("Daily compiled memory snapshot", prompt_text)
+            self.assertIn("The user says their name is Chen.", prompt_text)
+            self.assertTrue((Path(tmp) / "wiki" / "l1-memory-snapshot.json").exists())
+
     def test_provider_runtime_minimal_prompt_mode_limits_disclosure_and_write_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
