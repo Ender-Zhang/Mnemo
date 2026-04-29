@@ -72,7 +72,7 @@
 - `/api/memory/ontology` is a read-only memory compass view; it must summarize ten-dimensional L1 memory coverage without provider secrets, item arrays, or unbounded raw memory bodies.
 - The memory compass must fetch L2 dimension cards only after the user selects a dimension.
 - The memory compass must fetch L3 evidence and markdown only after the user selects a memory page or candidate.
-- Memory markdown modals must render the API-provided wiki note as-is; labels, frontmatter, and de-duplicated candidate wording are backend contracts.
+- Memory markdown detail panels must render the API-provided wiki note in the memory page itself; labels, frontmatter, and de-duplicated candidate wording are backend contracts.
 - L2 and L3 memory responses are cached only in volatile runtime maps for the current browser session; they must not add browser persistence keys.
 - Enter submits the composer while Shift+Enter inserts a newline.
 - After a user submits a turn, the client renders one volatile pending assistant message until the first assistant delta, final message, run error, or stream error arrives.

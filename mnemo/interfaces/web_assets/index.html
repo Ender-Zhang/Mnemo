@@ -160,7 +160,7 @@
             </div>
             <div class="page-actions">
               <button id="memoryRefresh" class="quiet-button" type="button">刷新</button>
-              <button class="quiet-button sheet-close" type="button" data-close-sheet aria-label="关闭记忆罗盘">关闭</button>
+              <button class="quiet-button" type="button" data-view="chat">回到对话</button>
             </div>
           </header>
 
@@ -175,12 +175,22 @@
               <div class="panel-heading">
                 <div>
                   <h2>罗盘总览</h2>
-                  <p>点击维度查看摘要与证据，单条详情会在弹窗中打开。</p>
+                  <p>点击维度查看摘要与证据，单条记忆会在本页展开 Wiki Markdown。</p>
                 </div>
                 <span id="memoryCountBadge" class="context-chip">未加载</span>
               </div>
               <div id="memoryCompass" class="memory-compass"></div>
               <div id="memoryLayerDetail" class="memory-layer-detail"></div>
+              <section id="memoryMarkdownPanel" class="memory-markdown-panel" hidden>
+                <header>
+                  <div>
+                    <p class="eyebrow">Memory Wiki</p>
+                    <h2 id="memoryMarkdownTitle">记忆详情</h2>
+                  </div>
+                  <span class="context-chip muted">本页查看</span>
+                </header>
+                <article id="memoryMarkdownBody" class="markdown-body"></article>
+              </section>
             </section>
           </div>
         </section>
@@ -298,19 +308,6 @@
     </main>
 
     <div class="sheet-backdrop" data-close-sheet aria-hidden="true"></div>
-
-    <div id="memoryMarkdownModal" class="modal-backdrop" hidden>
-      <section class="markdown-modal" role="dialog" aria-modal="true" aria-labelledby="memoryMarkdownTitle">
-        <header>
-          <div>
-            <p class="eyebrow">Memory Markdown</p>
-            <h2 id="memoryMarkdownTitle">记忆详情</h2>
-          </div>
-          <button id="memoryMarkdownClose" class="quiet-button" type="button">关闭</button>
-        </header>
-        <article id="memoryMarkdownBody" class="markdown-body"></article>
-      </section>
-    </div>
 
     <script src="/app.js"></script>
   </body>

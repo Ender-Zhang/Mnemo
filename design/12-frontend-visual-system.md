@@ -7,9 +7,9 @@
 | Image | Role | Adopted Ideas |
 |------|------|---------------|
 | `assets/frontend-redesign/chat-desktop.png` | 桌面聊天主界面 | 白色产品壳、左侧极窄导航、主聊天流、右侧实时活动和长期记忆摘要 |
-| `assets/frontend-redesign/memory-drawer.png` | 长期记忆抽屉 | 十维记忆列表、覆盖度、选中记忆详情、证据链、引用/更新/忘记操作 |
+| `assets/frontend-redesign/memory-drawer.png` | 记忆罗盘页面参考 | 十维记忆列表、覆盖度、选中记忆详情、证据链、引用/更新/忘记操作 |
 | `assets/frontend-redesign/settings-drawer.png` | 设置抽屉 | 聊天背景轻遮罩、右侧配置抽屉、模型/工具权限/记忆/Dream/工作区/外观/数据 |
-| `assets/frontend-redesign/mobile-sheets.png` | 移动端 | 仍然只有一个聊天入口；记忆和设置变成 bottom sheet |
+| `assets/frontend-redesign/mobile-sheets.png` | 移动端 | 仍然只有一个聊天入口；记忆作为独立页面，设置可保持 bottom sheet |
 | `assets/frontend-redesign/chat-annotated.png` | 信息层级 | streaming answer、action in progress、memory candidate、decision needed、artifact preview、composer 的层级 |
 
 ## 2. Design Direction
@@ -21,7 +21,7 @@ Mnemo 的界面要像一个安静但能行动的个人工作台：
 - **紧凑动作可见**：工具调用以内联 action strip/card 展示，默认只显示工具名、状态、摘要；参数和结果折叠。
 - **记忆像上下文，不像数据库**：右侧显示“偏好与长期记忆”的少量摘要；完整维度化记忆以「记忆罗盘」呈现。
 - **配置像用户设置，不像控制面板**：设置抽屉只处理模型连接、工具权限、记忆学习、Dream 整理、工作区、外观密度和数据控制。
-- **移动端同一心智**：聊天不变；活动、记忆、设置从侧栏降级为 bottom sheet。
+- **移动端同一心智**：聊天不变；记忆罗盘是独立浏览页，设置从侧栏降级为 bottom sheet。
 
 ## 3. Layout
 
@@ -194,7 +194,7 @@ Implementation scope for current lightweight frontend:
 - Show every dimension row with a progress bar and count.
 - Fetch `/api/memory/dimension` only after a dimension is selected, then show clipped stable-memory and candidate cards.
 - Fetch `/api/memory/item` only after an item is selected, then show clipped detail and compact evidence rows.
-- Never dump raw session transcripts, raw evidence blobs, provider payloads, or all memory pages into the drawer.
+- Never dump raw session transcripts, raw evidence blobs, provider payloads, or all memory pages into the memory page.
 - Footer actions prefill the single composer; browser does not directly mutate memory except existing learning-chip APIs.
 
 ## 8. Settings Drawer
@@ -204,7 +204,7 @@ Opened by the `设置` rail button.
 Sections:
 - **模型**：provider/model connection summary, never API keys.
 - **工具权限**：default policy and open decisions. Keep simple: default open / needs confirmation.
-- **记忆**：learned preferences summary, memory learning review action, link to memory drawer.
+- **记忆**：learned preferences summary, memory learning review action, link to memory page.
 - **Dream 整理**：quiet-hour style controls and schedule summary when available.
 - **工作区**：workspace/app connection summary.
 - **外观**：density/theme placeholders can prefill composer until backed by API.

@@ -3,7 +3,7 @@
 ## Design Assets
 
 - [x] Generate desktop chat UI reference.
-- [x] Generate memory drawer UI reference.
+- [x] Generate memory page UI reference.
 - [x] Generate settings drawer UI reference.
 - [x] Generate mobile sheet UI reference.
 - [x] Save references under `design/assets/frontend-redesign/`.
@@ -44,13 +44,14 @@
 - [x] Restyle right activity rail as a user-facing timeline.
 - [x] Keep hidden internal learning events hidden.
 
-## Memory Drawer
+## Memory Page
 
 - [x] Add `记忆` rail entry.
-- [x] Open memory-focused drawer through the existing overlay.
+- [x] Open memory as a standalone `#memory` page instead of a drawer/sheet overlay.
 - [x] Fetch `/api/memory/ontology` on open as L1 coverage only.
 - [x] Fetch `/api/memory/dimension` after a dimension is selected.
 - [x] Fetch `/api/memory/item` after a memory item is selected.
+- [x] Render selected memory Wiki Markdown inline on the memory page, not in a modal.
 - [x] Use `记忆罗盘` as the user-facing name instead of `十维记忆`.
 - [x] Show dimensional coverage rows with bars and counts.
 - [x] Show clipped memory summaries first, then evidence rows only after item selection.
@@ -62,12 +63,12 @@
 - [x] Group sections as 模型 / 工具权限 / 记忆 / Dream / 工作区 / 外观 / 数据.
 - [x] Preserve quiet-hours save behavior.
 - [x] Never expose provider secrets or raw payloads.
-- [x] Include a path from settings to memory drawer.
+- [x] Include a path from settings to memory page.
 
 ## Responsive
 
 - [x] Hide context rail below tablet width.
-- [x] Turn drawers into full-width/mobile sheets.
+- [x] Keep memory as a full page; settings can use full-width/mobile sheet behavior.
 - [x] Keep composer usable on mobile.
 - [x] Prevent overflow in long ids, URLs, markdown tables and tool payloads.
 

@@ -367,7 +367,6 @@ body.drawer-open .sheet-backdrop {
   backdrop-filter: blur(10px);
 }
 
-.memory-view.drawer-active,
 .settings-view.drawer-active {
   position: fixed;
   top: 0;
@@ -386,10 +385,6 @@ body.drawer-open .sheet-backdrop {
   animation: drawer-slide 180ms ease both;
 }
 
-.memory-view.drawer-active {
-  width: min(900px, calc(100vw - 128px));
-}
-
 .settings-view.drawer-active {
   width: min(580px, calc(100vw - 128px));
 }
@@ -401,12 +396,6 @@ body.drawer-open .sheet-backdrop {
 
 .drawer-active .page-header {
   padding: 28px 28px 16px;
-}
-
-.drawer-active .memory-layout {
-  grid-template-columns: minmax(320px, 0.92fr) minmax(300px, 1fr);
-  gap: 16px;
-  padding: 0 28px 28px;
 }
 
 .drawer-active .settings-layout {
@@ -421,27 +410,6 @@ body.drawer-open .sheet-backdrop {
 
 .drawer-active .provider-tiles {
   grid-template-columns: 1fr;
-}
-
-.drawer-active .avatar-panel {
-  min-height: 560px;
-}
-
-.drawer-active .memory-avatar-canvas {
-  width: min(100%, 500px);
-}
-
-.drawer-active .memory-orbit {
-  inset: 20px;
-}
-
-.drawer-active .memory-stats {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  right: 18px;
-}
-
-.drawer-active .memory-stats div {
-  min-width: 0;
 }
 
 .chat-view {
@@ -2046,34 +2014,23 @@ h1 {
   font-size: 12px;
 }
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgba(21, 24, 23, 0.28);
-  backdrop-filter: blur(12px);
-  z-index: 10;
-}
-
-.modal-backdrop[hidden] {
-  display: none;
-}
-
-.markdown-modal {
+.memory-markdown-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(880px, 100%);
-  max-height: min(820px, calc(100vh - 48px));
+  min-height: 320px;
+  margin-top: 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
+  background: rgba(255, 253, 249, 0.84);
+  box-shadow: var(--shadow-small);
   overflow: hidden;
 }
 
-.markdown-modal header {
+.memory-markdown-panel[hidden] {
+  display: none;
+}
+
+.memory-markdown-panel header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2082,7 +2039,7 @@ h1 {
   border-bottom: 1px solid var(--line);
 }
 
-.markdown-modal h2 {
+.memory-markdown-panel h2 {
   margin-bottom: 0;
 }
 
@@ -2431,7 +2388,6 @@ h1 {
     min-height: calc(100dvh - 60px);
   }
 
-  .memory-view.sheet-active,
   .settings-view.sheet-active {
     position: fixed;
     left: 0;
@@ -2455,7 +2411,6 @@ h1 {
     animation: sheet-rise 170ms ease both;
   }
 
-  .memory-view.sheet-active::before,
   .settings-view.sheet-active::before {
     content: "";
     position: absolute;
@@ -2682,18 +2637,17 @@ h1 {
     padding: 0 12px calc(112px + env(safe-area-inset-bottom));
   }
 
-  .sheet-active .memory-layout,
   .sheet-active .settings-layout {
     overflow: auto;
     padding-bottom: 24px;
   }
 
-  .sheet-active .memory-layout {
+  .memory-layout {
     display: flex;
     flex-direction: column;
   }
 
-  .sheet-active .memory-panel {
+  .memory-panel {
     order: 1;
     flex: 0 0 auto;
     min-height: auto;
@@ -2712,18 +2666,18 @@ h1 {
     white-space: normal;
   }
 
-  .sheet-active .avatar-panel {
+  .avatar-panel {
     order: 2;
     min-height: 270px;
     max-height: 300px;
     margin-bottom: 14px;
   }
 
-  .sheet-active .memory-avatar-canvas {
+  .memory-avatar-canvas {
     width: min(100%, 280px);
   }
 
-  .sheet-active .memory-orbit {
+  .memory-orbit {
     display: none;
   }
 

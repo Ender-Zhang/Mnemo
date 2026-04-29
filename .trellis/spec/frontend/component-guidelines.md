@@ -105,7 +105,7 @@
 - For recall cards, assert repeated title/summary text is compacted.
 - For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses review wording for review-gated items.
 - For settings, assert the asset calls `/api/settings`, renders the settings view, saves provider/runtime and quiet-hours settings, and never exposes raw provider secrets.
-- For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory compass assets expose progressive L1/L2/L3 disclosure and markdown modal viewing.
+- For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory compass assets expose progressive L1/L2/L3 disclosure with in-page markdown detail viewing.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
 - For activity rows, assert `activityRows`, `activityActionId`, and compact tool-card upsert behavior are present.
 - For internal learning housekeeping, assert `isInternalLearningEvent`, `internal === "learning"`, `tone === "learning"`, and `learning_discard` filters are present.

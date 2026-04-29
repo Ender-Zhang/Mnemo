@@ -134,8 +134,7 @@ const streamMarkdown = document.querySelector("#streamMarkdown");
 const saveExperience = document.querySelector("#saveExperience");
 const settingsStatus = document.querySelector("#settingsStatus");
 const settingsSummary = document.querySelector("#settingsSummary");
-const memoryMarkdownModal = document.querySelector("#memoryMarkdownModal");
-const memoryMarkdownClose = document.querySelector("#memoryMarkdownClose");
+const memoryMarkdownPanel = document.querySelector("#memoryMarkdownPanel");
 const memoryMarkdownTitle = document.querySelector("#memoryMarkdownTitle");
 const memoryMarkdownBody = document.querySelector("#memoryMarkdownBody");
 
@@ -250,17 +249,8 @@ saveExperience.addEventListener("click", () => {
   saveSettings({ quietOnly: true });
 });
 
-memoryMarkdownClose.addEventListener("click", closeMemoryMarkdown);
-memoryMarkdownModal.addEventListener("click", (event) => {
-  if (event.target === memoryMarkdownModal) closeMemoryMarkdown();
-});
-
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (!memoryMarkdownModal.hidden) {
-    closeMemoryMarkdown();
-    return;
-  }
   if (document.body.classList.contains("mobile-sheet-open") || document.body.classList.contains("drawer-open")) {
     switchView("chat", { updateLocation: true });
   }
@@ -322,11 +312,11 @@ function switchView(name, options = {}) {
 }
 
 function isMobileSheetTarget(target) {
-  return target !== "chat" && mobileSheetQuery.matches;
+  return target === "settings" && mobileSheetQuery.matches;
 }
 
 function isDesktopDrawerTarget(target) {
-  return target !== "chat" && !mobileSheetQuery.matches;
+  return target === "settings" && !mobileSheetQuery.matches;
 }
 
 function viewFromLocation() {
@@ -1278,6 +1268,7 @@ async function loadMemoryDimension(dimensionName) {
 }
 
 function renderMemoryDimensionDetail(payload) {
+  hideMemoryMarkdown();
   const header = document.createElement("div");
   header.className = "memory-layer-header";
   const title = document.createElement("strong");
@@ -1378,18 +1369,19 @@ function renderMemoryItemDetail(payload) {
     actionButton("引用到当前任务", () => prefillMemoryAction("use", payload), "primary-button small"),
     actionButton("更新", () => prefillMemoryAction("update", payload), "secondary-button small"),
     actionButton("忘记", () => prefillMemoryAction("forget", payload), "secondary-button small danger-button"),
-    actionButton("查看详情", () => openMemoryMarkdown(payload), "secondary-button small"),
+    actionButton("查看 Wiki", () => openMemoryMarkdown(payload), "secondary-button small"),
   );
   panel.append(title, summary, meta, evidence, actions);
   const existing = memoryLayerDetail.querySelector(".memory-item-panel");
   if (existing) existing.replaceWith(panel);
   else memoryLayerDetail.appendChild(panel);
+  openMemoryMarkdown(payload, { scroll: false });
   revealMemoryItemPanel(panel);
 }
 
 function revealMemoryItemPanel(panel) {
   window.requestAnimationFrame(() => {
-    panel.scrollIntoView({ block: document.body.classList.contains("mobile-sheet-open") ? "center" : "nearest" });
+    panel.scrollIntoView({ block: "nearest" });
   });
 }
 
@@ -1452,15 +1444,20 @@ function isTechnicalToken(value) {
   return /^[a-z0-9_.:-]+$/i.test(String(value || "").trim());
 }
 
-function openMemoryMarkdown(payload) {
+function openMemoryMarkdown(payload, options = {}) {
+  if (!memoryMarkdownPanel || !memoryMarkdownTitle || !memoryMarkdownBody) return;
   const item = payload.item || {};
   memoryMarkdownTitle.textContent = item.title || "记忆详情";
   renderMarkdownInto(memoryMarkdownBody, payload.markdown || memoryPayloadMarkdown(payload));
-  memoryMarkdownModal.hidden = false;
+  memoryMarkdownPanel.hidden = false;
+  if (options.scroll === false) return;
+  window.requestAnimationFrame(() => {
+    memoryMarkdownPanel.scrollIntoView({ block: "nearest" });
+  });
 }
 
-function closeMemoryMarkdown() {
-  memoryMarkdownModal.hidden = true;
+function hideMemoryMarkdown() {
+  if (memoryMarkdownPanel) memoryMarkdownPanel.hidden = true;
 }
 
 function memoryPayloadMarkdown(payload) {

@@ -121,7 +121,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Recall in chat for past work, artifacts, decisions, and knowledge with actionable result cards.
 - [x] Recall result cards compact repeated title/summary text.
 - [x] Ordinary learning candidates stay unobtrusive; exceptional review-gated memory chips can resolve with "记住", "仅本次", "忽略", and undo actions.
-- [x] Minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, ten-dimensional memory inspection, and data controls.
+- [x] Standalone memory page for ten-dimensional memory inspection, plus minimal settings drawer for connected apps, permissions, quiet hours, learned preferences, and data controls.
 - [~] Artifact operations beyond open/view: web artifact cards now support continue edit, export, compare related artifacts, send draft, and diff apply/revert composer intents; direct apply/revert/send execution remains tool/model-led.
 
 ## Provider And Model Integration

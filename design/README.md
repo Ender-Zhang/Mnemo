@@ -51,7 +51,7 @@ Mnemo 的 less is more 不是少能力，而是少固定路径：
 | [09-roadmap-principles.md](09-roadmap-principles.md) | 开发路线图、Extension Packs、核心原则和组件速查 |
 | [10-evolution-loops.md](10-evolution-loops.md) | Memory / Skills / Tools 三条自演进闭环和统一治理 |
 | [11-prompt-system.md](11-prompt-system.md) | Prompt catalog、OpenClaw/Hermes 借鉴、PromptBlock、JSON/XML 边界策略、KV cache-first 组装、token/cache 预算和模板 |
-| [12-frontend-visual-system.md](12-frontend-visual-system.md) | 生成 UI 参考图沉淀后的前端视觉系统、桌面/移动布局、记忆抽屉和设置抽屉设计 |
+| [12-frontend-visual-system.md](12-frontend-visual-system.md) | 生成 UI 参考图沉淀后的前端视觉系统、桌面/移动布局、记忆罗盘页面和设置抽屉设计 |
 | [frontend-redesign-checklist.md](frontend-redesign-checklist.md) | 前端视觉重构执行 checklist |
 
 ## 推荐阅读路径
