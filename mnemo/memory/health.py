@@ -12,6 +12,7 @@ from .utils import (
     _non_negative_float,
     _truncate,
 )
+from .wiki import materialize_memory_page
 
 
 class MemoryHealthMixin:
@@ -125,9 +126,11 @@ class MemoryHealthMixin:
                 continue
 
             page_id = str(page["id"])
+            changed = False
             if decision.get("decayed"):
                 self.store.update_memory_page_confidence(page_id, decision["confidence"])
                 decayed.append(_compact_decay_change(page, decision))
+                changed = True
 
             if decision.get("stale"):
                 self.store.update_memory_page_status(page_id, decision["status"])
@@ -136,6 +139,12 @@ class MemoryHealthMixin:
                 staled.append(stale_item)
                 updated_page = self._get_page(page_id) or {**page, "status": decision["status"]}
                 review_cards.append(_page_review_card("verify_stale", updated_page))
+                materialize_memory_page(self.store.state_dir, updated_page)
+                changed = False
+
+            if changed:
+                updated_page = self._get_page(page_id) or page
+                materialize_memory_page(self.store.state_dir, updated_page)
 
         return {
             "kind": "memory_decay_report",

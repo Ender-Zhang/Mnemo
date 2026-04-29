@@ -21,6 +21,7 @@ from .utils import (
     _status_reason,
     _truncate,
 )
+from .wiki import materialize_memory_page, materialize_memory_pages
 
 
 class MemoryLearningMixin:
@@ -112,6 +113,7 @@ class MemoryLearningMixin:
 
     def compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any]:
         pages = self.store.list_memory_pages(status="active", limit=max(0, int(limit)))
+        materialize_memory_pages(self.store.state_dir, pages)
         items = [_snapshot_item(page) for page in pages]
         snapshot = {
             "kind": "l1_memory_snapshot",
@@ -166,11 +168,13 @@ class MemoryLearningMixin:
         self.store.update_memory_candidate_status(candidate_id, "promoted")
         self.store.add_memory_link(candidate_id, page_id, "promoted_to", weight=1.0)
         page = self._get_page(page_id)
+        wiki = materialize_memory_page(self.store.state_dir, page) if page else None
         return {
             "candidate_id": candidate_id,
             "page_id": page_id,
             "status": "promoted",
             "page": page,
+            "wiki": wiki,
         }
 
     def reject_candidate(self, candidate_id: str, reason: str) -> dict[str, Any]:

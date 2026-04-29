@@ -92,6 +92,11 @@
 - Candidate claim/evidence text is scanned for prompt override, secret request, and tool-call injection markers through the shared injection warning helper.
 - Candidate writes with injection warnings are marked `needs_review:prompt_injection` and must not be promoted by Dream consolidation.
 - Stable memory pages are created through promotion or explicit curation.
+- Active stable memory pages are materialized as deterministic wiki markdown files under `wiki/<dimension>/<page_id>.md`; stale, archived, and tombstoned pages move to `wiki/_archive/<page_id>.md`, and private-deleted pages move to `wiki/_redacted/<page_id>.md`.
+- Wiki markdown materialization is triggered by promotion, L1 snapshot compilation, stale/decay status changes, tombstone/archive curation, and private-delete redaction.
+- Wiki markdown frontmatter must include compact page metadata: `id`, normalized content `dimension`, `status`, `confidence`, `scope`, timestamps, source candidate id when present, and a content hash.
+- Wiki markdown writes must be atomic and must remove older same-page wiki files from previous dimension/status folders so active recall cannot be visually contradicted by stale files.
+- Private-delete redaction must overwrite/remove any pre-existing wiki markdown containing the deleted page id; managed wiki files must not retain the deleted raw body.
 - User-facing learning undo uses `MemoryEngine.undo_candidate()` to tombstone the promoted page and candidate through existing curation records.
 - W0 working notes are mission-scoped scratchpad entries.
 - DreamCycle only turns W0 notes into memory candidates when the note metadata has `retention="memory_candidate"`.

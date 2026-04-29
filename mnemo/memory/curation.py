@@ -15,6 +15,7 @@ from .utils import (
     _status_reason,
     _truncate,
 )
+from .wiki import materialize_memory_page
 
 
 class MemoryCurationMixin:
@@ -69,6 +70,8 @@ class MemoryCurationMixin:
                     scope=page.get("scope"),
                     replacement=replacement,
                 )
+                updated_page = self._get_page(memory_id)
+                wiki = materialize_memory_page(self.store.state_dir, updated_page) if updated_page else None
                 return {
                     "memory_id": memory_id,
                     "target_type": "page",
@@ -79,7 +82,8 @@ class MemoryCurationMixin:
                     "replacement": replacement,
                     "replacement_link_id": replacement_link_id,
                     "eval_case": eval_case,
-                    "memory": self._get_page(memory_id),
+                    "memory": updated_page,
+                    "wiki": wiki,
                 }
 
         if normalized_target_type in {"auto", "candidate"}:
@@ -289,6 +293,8 @@ class MemoryCurationMixin:
                     redact_promoted_pages=False,
                 )
             )
+        updated_page = self._get_page(page_id)
+        wiki = materialize_memory_page(self.store.state_dir, updated_page) if updated_page else None
 
         return {
             "kind": "memory_private_delete",
@@ -300,7 +306,8 @@ class MemoryCurationMixin:
             "tombstone_id": tombstone_id,
             "target_hash": target_hash,
             "redacted": True,
-            "memory": self._get_page(page_id),
+            "memory": updated_page,
+            "wiki": wiki,
             "related_redactions": _compact_private_redactions(related_redactions),
         }
 

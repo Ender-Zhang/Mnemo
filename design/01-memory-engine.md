@@ -46,6 +46,10 @@ Not Source of Truth = embedding vectors, model hidden state, prompt cache
 
 `MemoryEngine` 是兼容门面，不承载大段业务逻辑。实现按职责拆到 `mnemo/memory/`：`recall.py` 管检索与联想扩展，`learning.py` 管候选写入、W0、L1 和确定性 consolidation，`curation.py` 管 tombstone/private delete，`health.py` 管健康度和衰减，`dream.py` 管 Dream delta/action/report，`cards.py` 管紧凑返回形态，`utils.py/constants.py` 管共享纯函数与常量。
 
+**Wiki materialization**：
+
+稳定页写入后必须落成可审计 markdown：active 页面位于 `wiki/<dimension>/<page_id>.md`，stale/archived/tombstoned 页面位于 `wiki/_archive/<page_id>.md`，private-delete 页面位于 `wiki/_redacted/<page_id>.md`。文件 frontmatter 只放紧凑元数据和 content hash，正文放已蒸馏事实；状态变化时旧路径要被清理，避免同一记忆同时以 active/stale 两种形态存在。
+
 ### 3.2 十维个人本体
 
 Mnemo 的长期记忆不是自由文本池，而是关于一个人的十维本体。十维结构的价值在于：它让 Agent 不只是“检索到事实”，而是能形成可行动的人格模型。
