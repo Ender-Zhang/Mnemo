@@ -175,6 +175,65 @@ class SkillFilesystemTests(unittest.TestCase):
             self.assertNotIn("body", cards[0])
             self.assertIn("Full body should only be loaded by skill_view.", viewed["body"])
 
+    def test_install_local_skill_dir_copies_files_and_activates_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "external" / "writer"
+            references = source / "references"
+            references.mkdir(parents=True)
+            (source / "SKILL.md").write_text(
+                "---\nname: writer\ndescription: Write concise notes\n---\nUse short notes.",
+                encoding="utf-8",
+            )
+            (references / "style.md").write_text("Keep it compact.", encoding="utf-8")
+            store = StateStore(root / "state")
+            store.initialize()
+
+            result = SkillService(store).install(source)
+
+            installed = result["skills"][0]
+            installed_path = Path(installed["path"])
+            stored = store.get_skill("writer")
+            self.assertEqual(result["kind"], "skill_install_result")
+            self.assertEqual(result["count"], 1)
+            self.assertEqual(installed["status"], "active")
+            self.assertEqual(stored["status"], "active")
+            self.assertEqual(stored["source"], f"installed:{source}")
+            self.assertEqual(Path(stored["path"]), installed_path)
+            self.assertTrue(installed_path.exists())
+            self.assertEqual((installed_path.parent / "references" / "style.md").read_text(encoding="utf-8"), "Keep it compact.")
+
+    def test_install_multi_skill_root_and_duplicate_guard(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "bundle"
+            alpha = source / "alpha"
+            beta = source / "nested" / "beta"
+            alpha.mkdir(parents=True)
+            beta.mkdir(parents=True)
+            (alpha / "SKILL.md").write_text(
+                "---\nname: alpha\ndescription: Alpha helper\n---\nUse alpha helper body.",
+                encoding="utf-8",
+            )
+            (beta / "SKILL.md").write_text(
+                "---\nname: beta\ndescription: Beta helper\n---\nUse beta helper body.",
+                encoding="utf-8",
+            )
+            store = StateStore(root / "state")
+            store.initialize()
+            service = SkillService(store)
+
+            result = service.install(source)
+
+            self.assertEqual([skill["name"] for skill in result["skills"]], ["alpha", "beta"])
+            self.assertEqual(store.get_skill("alpha")["status"], "active")
+            self.assertEqual(store.get_skill("beta")["status"], "active")
+            with self.assertRaisesRegex(ValueError, "Skill already exists: alpha"):
+                service.install(source)
+
+            forced = service.install(source, force=True)
+            self.assertEqual(forced["count"], 2)
+
     def test_skill_context_cards_include_usage_stats_and_rank_by_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

@@ -375,6 +375,11 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(skills_scan_parser)
     skills_scan_parser.add_argument("--root", action="append", default=[], help="Additional skill root")
     skills_scan_parser.add_argument("--json", action="store_true")
+    skills_install_parser = skills_subparsers.add_parser("install", help="Install Agent Skills from a local path or git URL")
+    _add_state_dir(skills_install_parser)
+    skills_install_parser.add_argument("source", help="Skill directory, SKILL.md file, multi-skill root, or git URL")
+    skills_install_parser.add_argument("--force", action="store_true", help="Replace an existing installed skill with the same name")
+    skills_install_parser.add_argument("--json", action="store_true")
     skills_list_parser = skills_subparsers.add_parser("list", help="List known skills")
     _add_state_dir(skills_list_parser)
     skills_list_parser.add_argument("--json", action="store_true")
@@ -1782,6 +1787,8 @@ def _cmd_skills(args: argparse.Namespace) -> int:
     try:
         if args.skills_command == "scan":
             result = {"skills": service.scan()}
+        elif args.skills_command == "install":
+            result = service.install(args.source, force=args.force)
         elif args.skills_command == "list":
             result = {"skills": service.list()}
         elif args.skills_command == "usage":
@@ -1821,6 +1828,10 @@ def _cmd_skills(args: argparse.Namespace) -> int:
 
 
 def _print_skills_result(result: dict) -> None:
+    if result.get("kind") == "skill_install_result":
+        for skill in result.get("skills", []):
+            print(f"Installed skill {skill['name']} -> {skill['path']}")
+        return
     if "skills" in result:
         for skill in result["skills"]:
             print(f"{skill['name']} [{skill.get('status', 'scanned')}]: {skill.get('description', '')}")

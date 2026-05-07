@@ -11,6 +11,7 @@
 - `StateStore.list_skill_usage(skill_name: str | None = None, *, limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.skill_usage_stats() -> dict[str, dict[str, Any]]`
 - `StateStore.list_eval_cases(status: str | None = None, *, tool_name: str | None = None, skill_name: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
+- `SkillService.install(source: str | Path, *, force: bool = False) -> dict[str, Any]`
 - `SkillService.context_cards(limit: int = 12) -> list[dict[str, Any]]`
 - `SkillService.crystallize_from_run(run_id: str, name: str, *, description: str | None = None, notes: str | None = None) -> dict[str, Any]`
 - `SkillService.patch_candidate(source_name: str, name: str, replacements: Any, *, description: str | None = None, replace_all: Any = False) -> dict[str, Any]`
@@ -22,6 +23,7 @@
 - Tool: `skill_patch_candidate(source_name: str, name: str, replacements: [{old: str, new: str}], description?: str, replace_all?: bool)`
 - Tool: `skill_run_eval_case(case_id: str)`
 - Tool: `skill_review_candidate(name: str)`
+- CLI: `mnemo skills install <source> [--force] [--state-dir DIR] [--json]`
 - CLI: `mnemo skills usage [name] [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo evals create <run_id> <name> --case-json OBJECT [--state-dir DIR] [--json]`
 - CLI: `mnemo evals list [--status STATUS] [--skill-name NAME] [--state-dir DIR] [--json]`
@@ -36,6 +38,10 @@
 - Default skill roots include Mnemo state skills, workspace `.mnemo/skills`, workspace `.agents/skills`, workspace `.claude/skills`, workspace `.hermes/skills`, workspace `.openclaw/skills`, and home `.claude/.hermes/.openclaw` skills.
 - Default skill roots must be de-duplicated while preserving first-seen order.
 - Explicit `skills scan --root` paths are additive to default roots.
+- `SkillService.install()` accepts a local `SKILL.md`, a single-skill directory, a multi-skill root, or a git URL, copies skill directories into `<state_dir>/skills/_installed/<slug>/`, and upserts installed skills as `active`.
+- Installed skills copy their source directory so companion `references/`, `scripts/`, and `assets/` files stay available; `.git`, `__pycache__`, pyc files, and `.DS_Store` are ignored.
+- Existing skill names and existing installed target directories are rejected unless `force=True`.
+- Git source install uses a temporary shallow clone and fails with a compact normalized service error when clone fails or git is unavailable.
 - Evidence is stored as JSON and returned only through explicit usage inspection APIs, not prompt cards.
 - `mnemo skills usage` is read-only and returns usage events plus aggregate stats from `StateStore`.
 - `skill_crystallize_from_run` is model-directed: the model decides when to call it and supplies the name/description.
@@ -64,6 +70,8 @@
 | --- | --- | --- |
 | `skill_view` missing skill | Return `NotFoundError`; no usage event | `tests/test_tools.py` |
 | `skill_view` existing skill | Record `viewed` event | `tests/test_tools.py` |
+| Local skill install | Copy source skill files into state skills and upsert an active skill | `tests/test_skills_filesystem.py`, `tests/test_cli.py` |
+| Duplicate skill install | Reject existing names unless `--force` is supplied | `tests/test_skills_filesystem.py` |
 | Outcome score omitted | Default by outcome: success=1, failure=-1, neutral=0 | `tests/test_tools.py` |
 | Outcome score out of range | Tool failure | `tests/test_tools.py` |
 | Valid draft review | Mark skill `ready` | `tests/test_skills_filesystem.py` |
@@ -93,6 +101,7 @@
 
 ### 5. Good/Base/Bad Cases
 - Good: model calls `skill_record_outcome` after observing whether a skill helped.
+- Good: install external skills into the state-managed `_installed` root instead of mutating upstream source directories.
 - Good: model calls `skill_crystallize_from_run` after a repeated or high-value successful run, then proposes evals before promotion.
 - Good: model calls `skill_patch_candidate` to create a bounded draft revision from a useful existing skill, then evaluates and reviews it.
 - Good: model proposes an eval case, calls `skill_run_eval_case`, then reviews the candidate.
@@ -106,6 +115,7 @@
 
 ### 6. Tests Required
 - Storage round-trip for usage events and aggregate stats.
+- Skill install tests for local skill dirs, copied companion files, duplicate rejection, and CLI output.
 - Tool harness test for `skill_view` and `skill_record_outcome`.
 - Tool harness test for `skill_crystallize_from_run`.
 - Tool harness test for `skill_patch_candidate`.

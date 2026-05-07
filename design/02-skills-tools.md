@@ -520,7 +520,7 @@ mnemo skills list                         # catalog: name, description, source, 
 mnemo skills search "github pr"           # semantic + lexical candidate search
 mnemo skills show github-pr-review        # show SKILL.md metadata and body
 mnemo skills activate github-pr-review -- target=123
-mnemo skills install <git-or-dir>          # install into ~/.mnemo/skills or vendor cache
+mnemo skills install <git-or-dir>          # copy into state skills/_installed and activate
 mnemo skills import ~/.claude/skills/foo   # copy or shadow external skill
 mnemo skills export foo --target agentskills
 mnemo skills enable foo

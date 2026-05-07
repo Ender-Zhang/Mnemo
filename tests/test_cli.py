@@ -1324,6 +1324,29 @@ class CliTests(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(path.name, "SKILL.md")
 
+    def test_skills_install_command_copies_local_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "external" / "researcher"
+            source.mkdir(parents=True)
+            (source / "SKILL.md").write_text(
+                "---\nname: researcher\ndescription: Find compact sources\n---\nUse compact source notes.",
+                encoding="utf-8",
+            )
+
+            install = _run_cli(["skills", "install", str(source), "--state-dir", tmp, "--json"])
+            self.assertEqual(install.returncode, 0, install.stderr)
+            payload = json.loads(install.stdout)
+            self.assertEqual(payload["kind"], "skill_install_result")
+            self.assertEqual(payload["skills"][0]["name"], "researcher")
+            installed_path = Path(payload["skills"][0]["path"])
+            self.assertTrue(installed_path.exists())
+            self.assertIn("_installed", installed_path.parts)
+
+            view = _run_cli(["skills", "view", "researcher", "--state-dir", tmp, "--json"])
+            self.assertEqual(view.returncode, 0, view.stderr)
+            self.assertEqual(json.loads(view.stdout)["skill"]["status"], "active")
+
     def test_skills_usage_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)
@@ -1360,10 +1383,14 @@ class CliTests(unittest.TestCase):
 
     def test_skill_service_errors_are_normalized(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            install = _run_cli(["skills", "install", str(Path(tmp) / "missing"), "--state-dir", tmp])
             promote = _run_cli(["skills", "promote", "missing", "--state-dir", tmp])
             eval_run = _run_cli(["skills", "eval", "case_missing", "--state-dir", tmp])
             crystallize = _run_cli(["skills", "crystallize", "run_missing", "draft", "--state-dir", tmp])
 
+            self.assertEqual(install.returncode, 1)
+            self.assertIn("mnemo: Skill source not found:", install.stderr)
+            self.assertNotIn("Traceback", install.stderr)
             self.assertEqual(promote.returncode, 1)
             self.assertIn("mnemo: Skill not found: missing", promote.stderr)
             self.assertNotIn("Traceback", promote.stderr)

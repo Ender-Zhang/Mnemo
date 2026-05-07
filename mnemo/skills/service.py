@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import tempfile
 from typing import Any
 
 from ..core.text_patch import apply_exact_replacements, normalize_text_replacements, optional_bool
 from ..storage import StateStore
-from .filesystem import SkillFile, load_skill_metadata, scan_skill_files
+from .filesystem import SkillFile, load_skill_file, load_skill_metadata, scan_skill_files
 
 
 _WORKSPACE_SKILL_ROOTS = (
@@ -52,6 +57,65 @@ class SkillService:
 
     def view(self, name: str) -> dict[str, Any] | None:
         return self.store.get_skill(name)
+
+    def install(self, source: str | Path, *, force: bool = False) -> dict[str, Any]:
+        source_text = str(source).strip()
+        if not source_text:
+            raise ValueError("Skill source is required")
+
+        with _materialized_skill_source(source_text) as source_path:
+            installables = _installable_skills(source_path)
+            if not installables:
+                raise ValueError(f"No SKILL.md files found in skill source: {source_text}")
+            _validate_installable_names(installables)
+
+            target_root = self.store.state_dir / "skills" / "_installed"
+            for skill, _copy_root, _file_only in installables:
+                existing = self.store.get_skill(skill.name)
+                if existing and not force:
+                    raise ValueError(f"Skill already exists: {skill.name}")
+                target_dir = target_root / _slug(skill.name)
+                if target_dir.exists() and not force:
+                    raise ValueError(f"Installed skill target already exists: {target_dir}")
+
+            installed: list[dict[str, Any]] = []
+            for skill, copy_root, file_only in installables:
+                target_dir = target_root / _slug(skill.name)
+                target_path = target_dir / "SKILL.md"
+                if target_dir.exists():
+                    shutil.rmtree(target_dir)
+                target_dir.mkdir(parents=True, exist_ok=True)
+                if file_only:
+                    shutil.copy2(skill.path, target_path)
+                else:
+                    _copy_skill_tree(copy_root, target_dir)
+
+                skill_id = self.store.upsert_skill(
+                    skill.name,
+                    skill.description,
+                    skill.body,
+                    source=f"installed:{source_text}",
+                    status="active",
+                    path=str(target_path),
+                )
+                installed.append(
+                    {
+                        "skill_id": skill_id,
+                        "name": skill.name,
+                        "description": skill.description,
+                        "status": "active",
+                        "path": str(target_path),
+                        "source": source_text,
+                    }
+                )
+
+            return {
+                "kind": "skill_install_result",
+                "source": source_text,
+                "target_root": str(target_root),
+                "count": len(installed),
+                "skills": installed,
+            }
 
     def run_eval_case(self, case_id: str) -> dict[str, Any]:
         eval_case = self.store.get_eval_case(case_id)
@@ -267,6 +331,81 @@ def _path_key(path: Path) -> str:
         return str(path.expanduser().resolve(strict=False))
     except OSError:
         return str(path.expanduser())
+
+
+@contextmanager
+def _materialized_skill_source(source: str) -> Iterator[Path]:
+    path = Path(source).expanduser()
+    if path.exists():
+        yield path
+        return
+
+    if not _looks_like_git_source(source):
+        raise ValueError(f"Skill source not found: {source}")
+
+    git = shutil.which("git")
+    if not git:
+        raise ValueError("git is required to install remote skill sources")
+
+    with tempfile.TemporaryDirectory(prefix="mnemo-skill-install-") as tmp:
+        target = Path(tmp) / "repo"
+        result = subprocess.run(
+            [git, "clone", "--depth", "1", source, str(target)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = _compact_text(result.stderr or result.stdout, limit=300)
+            raise ValueError(f"Failed to clone skill source: {detail}")
+        yield target
+
+
+def _looks_like_git_source(source: str) -> bool:
+    text = source.strip()
+    return (
+        text.startswith(("https://", "http://", "ssh://", "git://"))
+        or text.startswith("git@")
+        or text.endswith(".git")
+    )
+
+
+def _installable_skills(source_path: Path) -> list[tuple[SkillFile, Path, bool]]:
+    if source_path.is_file():
+        if source_path.name != "SKILL.md":
+            raise ValueError("Skill file must be named SKILL.md")
+        return [(load_skill_file(source_path, source_root=source_path.parent), source_path.parent, True)]
+
+    if not source_path.is_dir():
+        raise ValueError(f"Skill source is not a file or directory: {source_path}")
+
+    root_skill = source_path / "SKILL.md"
+    if root_skill.is_file():
+        return [(load_skill_file(root_skill, source_root=source_path), source_path, False)]
+
+    return [(skill, skill.path.parent, False) for skill in scan_skill_files([source_path])]
+
+
+def _validate_installable_names(installables: list[tuple[SkillFile, Path, bool]]) -> None:
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for skill, _copy_root, _file_only in installables:
+        if skill.name in seen:
+            duplicates.add(skill.name)
+        seen.add(skill.name)
+    if duplicates:
+        names = ", ".join(sorted(duplicates))
+        raise ValueError(f"Duplicate skill names in source: {names}")
+
+
+def _copy_skill_tree(source_dir: Path, target_dir: Path) -> None:
+    shutil.copytree(
+        source_dir,
+        target_dir,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc", ".DS_Store"),
+    )
 
 
 def _skill_file_as_dict(skill: SkillFile) -> dict[str, Any]:

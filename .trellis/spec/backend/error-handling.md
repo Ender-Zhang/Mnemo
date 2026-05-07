@@ -93,7 +93,7 @@
 - `mnemo artifacts read` normalizes missing artifact ids this way.
 - `mnemo inbox show` and `mnemo inbox resolve` normalize missing item ids this way.
 - `mnemo schedule feedback`, `pause`, `resume`, and `disable` normalize missing scheduled item ids and invalid Watch feedback policy this way.
-- `mnemo skills review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
+- `mnemo skills install`, `review`, `eval`, `promote`, and `crystallize` normalize expected service errors this way.
 - `mnemo tools review`, `install`, `uninstall`, and `rollback` normalize missing candidate/generated-tool errors this way.
 - `mnemo evals create` and `record` normalize missing runs/eval cases and invalid JSON payloads this way.
 - `mnemo config smoke` uses the existing config/env resolver and provider validation.
@@ -149,7 +149,7 @@
 | Missing artifact id in CLI read | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing Inbox item in CLI show/resolve | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing scheduled item in CLI status/feedback commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
-| Missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Missing skill source or missing skill/eval/run in CLI skill commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing tool candidate/generated tool in CLI lifecycle commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run/eval case or invalid JSON in CLI eval commands | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Unknown harness suite or variant | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -196,7 +196,7 @@
 - CLI artifact read tests for missing ids without tracebacks.
 - CLI Inbox show/resolve tests for missing item ids without tracebacks.
 - CLI schedule feedback/pause/resume/disable tests for missing item ids without tracebacks.
-- CLI skill command tests for missing skill, eval case, and crystallization run errors without tracebacks.
+- CLI skill command tests for missing install source, skill, eval case, and crystallization run errors without tracebacks.
 - CLI tool lifecycle tests for missing candidate and generated tool errors without tracebacks.
 - CLI eval tests for missing runs/eval cases and invalid JSON without tracebacks.
 
