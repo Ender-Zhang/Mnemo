@@ -375,9 +375,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_state_dir(skills_scan_parser)
     skills_scan_parser.add_argument("--root", action="append", default=[], help="Additional skill root")
     skills_scan_parser.add_argument("--json", action="store_true")
-    skills_install_parser = skills_subparsers.add_parser("install", help="Install Agent Skills from a local path, ClawHub slug, zip URL, or git URL")
+    skills_install_parser = skills_subparsers.add_parser(
+        "install",
+        help="Install Agent Skills from a local path, ClawHub source, zip URL, raw SKILL.md URL, or git URL",
+    )
     _add_state_dir(skills_install_parser)
-    skills_install_parser.add_argument("source", help="Skill directory, SKILL.md file, multi-skill root, ClawHub slug/URL, zip URL, or git URL")
+    skills_install_parser.add_argument(
+        "source",
+        help="Skill directory, SKILL.md file, multi-skill root, ClawHub slug/URL, zip URL, raw SKILL.md URL, or git URL",
+    )
     skills_install_parser.add_argument("--force", action="store_true", help="Replace an existing installed skill with the same name")
     skills_install_parser.add_argument("--json", action="store_true")
     skills_list_parser = skills_subparsers.add_parser("list", help="List known skills")

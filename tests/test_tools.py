@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from pathlib import Path
 
 from mnemo.core.models import ToolCallEnvelope, ToolExecutionPolicy, ToolSpec
 from mnemo.memory import MemoryEngine
@@ -34,6 +35,8 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
         self.assertNotIn("input_schema", str(first.metadata()))
         self.assertIn("memory_private_delete", first.tool_names)
         self.assertNotIn("memory_private_delete", minimal.tool_names)
+        self.assertIn("skill_install", first.tool_names)
+        self.assertNotIn("skill_install", minimal.tool_names)
 
     def test_tool_search_and_expand_schema_are_compact_read_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -724,6 +727,38 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertEqual(store.list_skill_usage("missing"), [])
+
+    def test_skill_install_tool_installs_from_source_with_compact_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "external" / "chat-installer"
+            source.mkdir(parents=True)
+            (source / "SKILL.md").write_text(
+                "---\nname: chat-installer\ndescription: Install from chat requests\n---\nPRIVATE SKILL BODY SHOULD STAY STORED.",
+                encoding="utf-8",
+            )
+            store, run_id, mission_id = _store_with_run(str(root / "state"))
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            result = harness.execute(
+                ToolCallEnvelope(
+                    name="skill_install",
+                    arguments={"source": str(source)},
+                    call_id="call_skill_install",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            compact = compact_tool_result(result)
+            stored = store.get_skill("chat-installer")
+            self.assertTrue(result.ok)
+            self.assertEqual(stored["status"], "active")
+            self.assertIn("Installed 1 skills", compact["summary"])
+            self.assertEqual(compact["evidence"][0]["kind"], "skill_install")
+            self.assertEqual(compact["evidence"][0]["title"], "chat-installer")
+            self.assertNotIn("PRIVATE SKILL BODY", str(compact))
 
     def test_skill_record_outcome_defaults_score_from_outcome(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

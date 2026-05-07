@@ -106,6 +106,8 @@
 - Approval execution appends `tool.approval.executing` and `tool.approval.executed` around the normal `tool.called` / `tool.result` ledger events and returns compact `tool_result` metadata to CLI/Web callers.
 - Skill crystallization is exposed as a normal provider-native tool call; the harness only validates policy, executes the handler, and returns compact summary/evidence.
 - `compact_tool_result` for crystallization must not include the generated skill body or raw source run payloads.
+- `skill_install(source, force=false)` is exposed as a normal write-risk provider-native tool call; it installs only validated skill directories, zip archives, ClawHub sources, raw `SKILL.md`/Markdown URLs, or git sources through `SkillService.install()`.
+- Compact `skill_install` evidence includes installed skill ids, names, statuses, and paths only; it must not include full skill bodies or companion asset contents.
 - `skill_patch_candidate` is exposed as a normal provider-native tool call and returns patch metadata, not the patched skill body.
 - Active generated tools are loaded from `StateStore.list_generated_tools(status="active")`.
 - Generated tools are normal provider-native tools once loaded into `ToolRegistry`.
@@ -158,6 +160,7 @@
 | Low-signal learning skip | Zero/low-tool turns skip the second provider learning call and persist a skip reason | `tests/test_runtime.py` |
 | Learning debt review | Recent no-learning completed turns trigger one compact multi-run review through `learning.v1`, then wait behind a debt-review barrier | `tests/test_runtime.py` |
 | Skill candidate review | Return compact review status/evidence without body | `tests/test_tools.py` |
+| Skill install tool | Install a skill through ToolHarness/ProviderRuntime without a decision card under default write policy and omit skill body from compact evidence | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Skill crystallization | Return compact crystallization evidence without body/raw payloads | `tests/test_tools.py` |
 | Skill patch candidate | Return compact patch evidence without body and leave source skill unchanged | `tests/test_tools.py`, `tests/test_skills_filesystem.py` |
 | Skill eval case run | Return compact eval status/evidence without body | `tests/test_tools.py` |
@@ -215,6 +218,7 @@
 - Review memory learning chip: assert `requires_confirmation`, risk/reason metadata, and omission of raw evidence text.
 - Internal learning actions: assert background reflection action events carry internal learning metadata for client suppression.
 - Skill review: assert status is persisted and compact result omits full skill body.
+- Skill install: assert active skill state is persisted and compact result omits full skill body.
 - Skill crystallization: assert draft status is persisted and compact result omits raw source payload.
 - Skill patch: assert draft status is persisted and compact result omits full skill body.
 - Skill eval case: assert eval status is persisted and compact result omits full skill body.

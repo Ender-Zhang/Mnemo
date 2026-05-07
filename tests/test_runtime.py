@@ -209,6 +209,45 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")
             self.assertEqual(provider.requests[2].metadata["stage"], "after_turn_learning")
 
+    def test_provider_runtime_can_install_skill_from_chat_tool_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "external" / "chat-skill"
+            source.mkdir(parents=True)
+            (source / "SKILL.md").write_text(
+                "---\nname: chat-skill\ndescription: Installed by provider tool call\n---\nUse this skill after chat installs it.",
+                encoding="utf-8",
+            )
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="skill_install",
+                                arguments={"source": str(source)},
+                                call_id="call_skill_install",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="text_delta", text="Installed."), ProviderEvent(type="completed")],
+                ]
+            )
+
+            events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="install this skill", state_dir=tmp)))
+            store = StateStore(tmp)
+            tool_result = events[-1].data["result"]["tool_results"][0]
+
+            self.assertIn("skill_install", [tool.name for tool in provider.requests[0].tools])
+            self.assertNotIn("decision.card", [event.type for event in events])
+            self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")
+            self.assertEqual(tool_result["name"], "skill_install")
+            self.assertTrue(tool_result["ok"])
+            self.assertEqual(store.get_skill("chat-skill")["status"], "active")
+
     def test_provider_runtime_finalizes_when_tool_budget_is_exhausted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider(

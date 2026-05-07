@@ -267,6 +267,18 @@ CORE_TOOL_SPECS = [
         input_schema=_schema(["name"], {"name": {"type": "string"}}),
     ),
     ToolSpec(
+        name="skill_install",
+        description="Install Agent Skills from a local path, ClawHub slug or URL, zip URL, raw SKILL.md URL, or git URL.",
+        risk="write",
+        input_schema=_schema(
+            ["source"],
+            {
+                "source": {"type": "string"},
+                "force": {"type": "boolean", "default": False},
+            },
+        ),
+    ),
+    ToolSpec(
         name="artifact_update",
         description="Create or update a mission artifact such as a document, plan, draft, or patch proposal.",
         risk="write",
@@ -536,6 +548,7 @@ class ToolRegistry:
             "working_note": self._working_note,
             "skills_list": self._skills_list,
             "skill_view": self._skill_view,
+            "skill_install": self._skill_install,
             "artifact_update": self._artifact_update,
             "ask_user": self._ask_user,
             "watch_feedback": self._watch_feedback,
@@ -828,6 +841,12 @@ class ToolRegistry:
             evidence=[{"kind": "tool_call", "call": "skill_view"}],
         )
         return {"skill": skill}
+
+    def _skill_install(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        return SkillService(context.store).install(
+            _require_str(args, "source"),
+            force=optional_bool(args.get("force"), default=False),
+        )
 
     def _artifact_update(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         title = _require_str(args, "title")
@@ -1327,6 +1346,8 @@ def _tool_summary(result: ToolResult) -> str:
     if result.name == "skill_view":
         skill = result.result.get("skill") or {}
         return f"Loaded skill: {skill.get('name', 'unknown')}."
+    if result.name == "skill_install":
+        return f"Installed {result.result.get('count', 0)} skills."
     if result.name == "artifact_update":
         return "Artifact updated."
     if result.name == "ask_user":
@@ -1402,6 +1423,18 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
         evidence = _evidence("skill_candidate", result.result.get("skill_id"), "Skill candidate")
         evidence["status"] = result.result.get("status")
         return [evidence]
+    if result.name == "skill_install":
+        return [
+            {
+                "kind": "skill_install",
+                "id": str(skill.get("skill_id") or skill.get("name") or ""),
+                "title": str(skill.get("name") or "Installed skill"),
+                "status": skill.get("status"),
+                "path": skill.get("path"),
+            }
+            for skill in result.result.get("skills", [])[:5]
+            if isinstance(skill, dict)
+        ]
     if result.name == "tool_propose_candidate":
         evidence = _evidence("tool_candidate", result.result.get("candidate_id"), "Tool candidate")
         evidence["status"] = result.result.get("status")

@@ -520,7 +520,7 @@ mnemo skills list                         # catalog: name, description, source, 
 mnemo skills search "github pr"           # semantic + lexical candidate search
 mnemo skills show github-pr-review        # show SKILL.md metadata and body
 mnemo skills activate github-pr-review -- target=123
-mnemo skills install <clawhub-slug|git-or-dir|zip-url> # copy into state skills/_installed and activate
+mnemo skills install <clawhub-slug|git-or-dir|zip-url|raw-skill-url> # copy into state skills/_installed and activate
 mnemo skills import ~/.claude/skills/foo   # copy or shadow external skill
 mnemo skills export foo --target agentskills
 mnemo skills enable foo
@@ -538,6 +538,7 @@ MCP / tool surface mirrors mainstream clients:
 interface SkillTools {
   skills_list(scope?: string): Promise<SkillIndexEntry[]>;
   skill_view(name: string, path?: string): Promise<SkillContent>;
+  skill_install(source: string, force?: boolean): Promise<SkillInstallResult>;
   skill_activate(name: string, args?: Record<string, unknown>): Promise<SkillActivation>;
   skill_manage(action: "create" | "patch" | "edit" | "delete" | "write_file" | "remove_file", payload: SkillManagePayload): Promise<SkillManageResult>;
   skill_eval(name: string, caseId?: string): Promise<SkillEvalReport>;

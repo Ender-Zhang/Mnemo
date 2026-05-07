@@ -31,6 +31,7 @@ _HOME_SKILL_ROOTS = (
     (".openclaw", "skills"),
 )
 _CLAWHUB_DOWNLOAD_BASE = "https://wry-manatee-359.convex.site/api/v1/download"
+_MAX_SKILL_SOURCE_BYTES = 25 * 1024 * 1024
 
 
 class SkillService:
@@ -366,26 +367,39 @@ def _materialized_skill_source(source: str) -> Iterator[tuple[Path, str]]:
             yield extracted, f"archive:{source}"
         return
 
-    if not _looks_like_git_source(source):
-        raise ValueError(f"Skill source not found: {source}")
+    if _looks_like_url_source(source) and _looks_like_direct_skill_url(source):
+        with tempfile.TemporaryDirectory(prefix="mnemo-skill-url-") as tmp:
+            materialized = _download_generic_skill_source(source, Path(tmp))
+            yield materialized, f"url:{source}"
+        return
 
-    git = shutil.which("git")
-    if not git:
-        raise ValueError("git is required to install remote skill sources")
+    if _looks_like_git_source(source):
+        git = shutil.which("git")
+        if not git:
+            raise ValueError("git is required to install remote skill sources")
 
-    with tempfile.TemporaryDirectory(prefix="mnemo-skill-install-") as tmp:
-        target = Path(tmp) / "repo"
-        result = subprocess.run(
-            [git, "clone", "--depth", "1", source, str(target)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = _compact_text(result.stderr or result.stdout, limit=300)
-            raise ValueError(f"Failed to clone skill source: {detail}")
-        yield target, f"git:{source}"
+        with tempfile.TemporaryDirectory(prefix="mnemo-skill-install-") as tmp:
+            target = Path(tmp) / "repo"
+            result = subprocess.run(
+                [git, "clone", "--depth", "1", source, str(target)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = _compact_text(result.stderr or result.stdout, limit=300)
+                raise ValueError(f"Failed to clone skill source: {detail}")
+            yield target, f"git:{source}"
+        return
+
+    if _looks_like_url_source(source):
+        with tempfile.TemporaryDirectory(prefix="mnemo-skill-url-") as tmp:
+            materialized = _download_generic_skill_source(source, Path(tmp))
+            yield materialized, f"url:{source}"
+        return
+
+    raise ValueError(f"Skill source not found: {source}")
 
 
 def _looks_like_git_source(source: str) -> bool:
@@ -396,6 +410,11 @@ def _looks_like_git_source(source: str) -> bool:
     if parsed.scheme in {"ssh", "git"}:
         return True
     if parsed.scheme not in {"http", "https"}:
+        return False
+    if parsed.netloc.casefold() in {"raw.githubusercontent.com"}:
+        return False
+    path = parsed.path.casefold()
+    if "/blob/" in path or "/raw/" in path or "/-/blob/" in path or "/-/raw/" in path:
         return False
     return parsed.netloc.casefold() in {"github.com", "gitlab.com", "bitbucket.org"}
 
@@ -431,6 +450,10 @@ def _looks_like_archive_source(source: str) -> bool:
     return parsed.path.lower().endswith(".zip") or bool(_download_query_slug(parsed))
 
 
+def _looks_like_url_source(source: str) -> bool:
+    return urllib.parse.urlparse(source.strip()).scheme in {"http", "https", "file"}
+
+
 def _download_query_slug(parsed: urllib.parse.ParseResult) -> str:
     values = urllib.parse.parse_qs(parsed.query).get("slug", [])
     if not values:
@@ -441,10 +464,45 @@ def _download_query_slug(parsed: urllib.parse.ParseResult) -> str:
 def _download_and_extract_skill_archive(source_url: str, temp_root: Path, *, error_prefix: str) -> Path:
     archive_path = temp_root / "skill.zip"
     extract_dir = temp_root / "extracted"
+    _download_url_to_file(source_url, archive_path, error_prefix=error_prefix)
+
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    _extract_zip_safely(archive_path, extract_dir)
+    return extract_dir
+
+
+def _download_generic_skill_source(source_url: str, temp_root: Path) -> Path:
+    payload_path = temp_root / "source"
+    download_url = _normalized_skill_download_url(source_url)
+    content_type = _download_url_to_file(download_url, payload_path, error_prefix="Failed to download skill source")
+    if _is_zip_archive(payload_path, content_type):
+        extract_dir = temp_root / "extracted"
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        _extract_zip_safely(payload_path, extract_dir)
+        return extract_dir
+    if _is_skill_markdown_source(source_url, payload_path, content_type):
+        raw_dir = temp_root / "raw"
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(payload_path, raw_dir / "SKILL.md")
+        return raw_dir
+    raise ValueError("Downloaded skill source is not a zip archive or SKILL.md")
+
+
+def _download_url_to_file(source_url: str, target_path: Path, *, error_prefix: str) -> str:
     try:
         with urllib.request.urlopen(source_url, timeout=30) as response:
-            with archive_path.open("wb") as handle:
-                shutil.copyfileobj(response, handle)
+            content_type = str(response.headers.get("Content-Type") or "")
+            total = 0
+            with target_path.open("wb") as handle:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > _MAX_SKILL_SOURCE_BYTES:
+                        raise ValueError(f"{error_prefix}: source exceeds {_MAX_SKILL_SOURCE_BYTES} bytes")
+                    handle.write(chunk)
+            return content_type
     except urllib.error.HTTPError as exc:
         raise ValueError(f"{error_prefix}: HTTP {exc.code}") from exc
     except urllib.error.URLError as exc:
@@ -452,9 +510,63 @@ def _download_and_extract_skill_archive(source_url: str, temp_root: Path, *, err
     except OSError as exc:
         raise ValueError(f"{error_prefix}: {exc}") from exc
 
-    extract_dir.mkdir(parents=True, exist_ok=True)
-    _extract_zip_safely(archive_path, extract_dir)
-    return extract_dir
+
+def _is_zip_archive(path: Path, content_type: str) -> bool:
+    if "zip" in content_type.casefold():
+        return True
+    try:
+        with path.open("rb") as handle:
+            return handle.read(4).startswith(b"PK\x03\x04")
+    except OSError:
+        return False
+
+
+def _is_skill_markdown_source(source_url: str, path: Path, content_type: str) -> bool:
+    parsed = urllib.parse.urlparse(source_url)
+    filename = Path(urllib.parse.unquote(parsed.path)).name.casefold()
+    content_type_lower = content_type.casefold()
+    if "text/" not in content_type_lower and "markdown" not in content_type_lower:
+        return False
+    try:
+        preview = path.read_text(encoding="utf-8")[:4096]
+    except (OSError, UnicodeDecodeError):
+        return False
+    stripped = preview.lstrip().casefold()
+    if stripped.startswith("<!doctype html") or stripped.startswith("<html"):
+        return False
+    if filename == "skill.md":
+        return True
+    lines = preview.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return False
+    return any(line.strip() == "---" for line in lines[1:]) and "name:" in preview
+
+
+def _looks_like_direct_skill_url(source_url: str) -> bool:
+    parsed = urllib.parse.urlparse(source_url.strip())
+    if parsed.scheme not in {"http", "https", "file"}:
+        return False
+    if parsed.scheme == "file":
+        return True
+    path = parsed.path.casefold()
+    if path.endswith("/skill.md") or path.endswith(".md") or path.endswith(".txt"):
+        return True
+    return "/blob/" in path or "/raw/" in path or "/-/blob/" in path or "/-/raw/" in path
+
+
+def _normalized_skill_download_url(source_url: str) -> str:
+    parsed = urllib.parse.urlparse(source_url.strip())
+    netloc = parsed.netloc.casefold()
+    parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+    if parsed.scheme in {"http", "https"} and netloc == "github.com" and len(parts) >= 5:
+        owner, repo, marker, ref = parts[:4]
+        rest = parts[4:]
+        if marker in {"blob", "raw"} and rest:
+            raw_path = "/".join(urllib.parse.quote(part, safe="") for part in [owner, repo, ref, *rest])
+            return urllib.parse.urlunparse(("https", "raw.githubusercontent.com", f"/{raw_path}", "", "", ""))
+    if parsed.scheme in {"http", "https"} and netloc.endswith("gitlab.com") and "/-/blob/" in parsed.path:
+        return source_url.replace("/-/blob/", "/-/raw/", 1)
+    return source_url
 
 
 def _extract_zip_safely(archive_path: Path, target_dir: Path) -> None:

@@ -6,7 +6,7 @@ from pathlib import Path
 import zipfile
 
 from mnemo.skills import SkillService, default_skill_roots, load_skill_file, scan_skill_files
-from mnemo.skills.service import _clawhub_download_url, _clawhub_slug_from_source
+from mnemo.skills.service import _clawhub_download_url, _clawhub_slug_from_source, _normalized_skill_download_url
 from mnemo.storage import StateStore
 
 
@@ -261,6 +261,37 @@ class SkillFilesystemTests(unittest.TestCase):
                 "find-skills-for-clawhub",
             )
             self.assertIn("slug=find-skills-for-clawhub", _clawhub_download_url("find-skills-for-clawhub"))
+
+    def test_install_raw_skill_url_and_reject_non_skill_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw_skill = root / "remote.txt"
+            raw_skill.write_text(
+                "---\nname: raw-url-skill\ndescription: Installed from a raw skill URL\n---\nUse raw URL skill body.",
+                encoding="utf-8",
+            )
+            html_page = root / "page.html"
+            html_page.write_text("<html><body>not a skill</body></html>", encoding="utf-8")
+            html_skill = root / "bad" / "SKILL.md"
+            html_skill.parent.mkdir()
+            html_skill.write_text("<html><body>not a skill</body></html>", encoding="utf-8")
+            store = StateStore(root / "state")
+            store.initialize()
+            service = SkillService(store)
+
+            result = service.install(raw_skill.as_uri())
+
+            self.assertEqual(result["skills"][0]["name"], "raw-url-skill")
+            self.assertEqual(store.get_skill("raw-url-skill")["status"], "active")
+            self.assertTrue(Path(result["skills"][0]["path"]).exists())
+            with self.assertRaisesRegex(ValueError, "not a zip archive or SKILL.md"):
+                service.install(html_page.as_uri())
+            with self.assertRaisesRegex(ValueError, "not a zip archive or SKILL.md"):
+                service.install(html_skill.as_uri())
+            self.assertEqual(
+                _normalized_skill_download_url("https://github.com/acme/skills/blob/main/SKILL.md"),
+                "https://raw.githubusercontent.com/acme/skills/main/SKILL.md",
+            )
 
     def test_skill_context_cards_include_usage_stats_and_rank_by_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

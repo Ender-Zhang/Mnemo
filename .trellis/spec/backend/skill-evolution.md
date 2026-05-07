@@ -18,6 +18,7 @@
 - `SkillService.run_eval_case(case_id: str) -> dict[str, Any]`
 - `SkillService.review(name: str) -> dict[str, Any]`
 - `default_skill_roots(state_dir: str | Path, workspace: str | Path | None = None, home: str | Path | None = None) -> list[Path]`
+- Tool: `skill_install(source: str, force?: bool = false)`
 - Tool: `skill_record_outcome(name: str, outcome: success|failure|neutral, score?: -1..1, evidence?: object[])`
 - Tool: `skill_crystallize_from_run(run_id: str, name: str, description?: str, notes?: str)`
 - Tool: `skill_patch_candidate(source_name: str, name: str, replacements: [{old: str, new: str}], description?: str, replace_all?: bool)`
@@ -38,10 +39,13 @@
 - Default skill roots include Mnemo state skills, workspace `.mnemo/skills`, workspace `.agents/skills`, workspace `.claude/skills`, workspace `.hermes/skills`, workspace `.openclaw/skills`, and home `.claude/.hermes/.openclaw` skills.
 - Default skill roots must be de-duplicated while preserving first-seen order.
 - Explicit `skills scan --root` paths are additive to default roots.
-- `SkillService.install()` accepts a local `SKILL.md`, a single-skill directory, a multi-skill root, a ClawHub slug/detail URL, a zip URL, or a git URL, copies skill directories into `<state_dir>/skills/_installed/<slug>/`, and upserts installed skills as `active`.
+- `skill_install` exposes `SkillService.install()` as a normal write-risk provider-native tool so a chat turn can install a model-selected skill source without a separate CLI handoff.
+- `SkillService.install()` accepts a local `SKILL.md`, a single-skill directory, a multi-skill root, a ClawHub slug/detail URL, a zip URL, a raw `SKILL.md`/Markdown URL, or a git URL, copies skill directories into `<state_dir>/skills/_installed/<slug>/`, and upserts installed skills as `active`.
 - Installed skills copy their source directory so companion `references/`, `scripts/`, and `assets/` files stay available; `.git`, `__pycache__`, pyc files, and `.DS_Store` are ignored.
 - Existing skill names and existing installed target directories are rejected unless `force=True`.
 - ClawHub sources resolve through the registry download endpoint and are extracted as zip archives with path traversal checks before scanning.
+- Generic URL sources are downloaded only as bounded zip archives or UTF-8 skill Markdown; ordinary HTML pages are rejected instead of being installed.
+- Common GitHub/GitLab blob-style `SKILL.md` links are normalized to raw download URLs before validation.
 - Git source install uses a temporary shallow clone and fails with a compact normalized service error when clone fails or git is unavailable.
 - Evidence is stored as JSON and returned only through explicit usage inspection APIs, not prompt cards.
 - `mnemo skills usage` is read-only and returns usage events plus aggregate stats from `StateStore`.
@@ -73,6 +77,8 @@
 | `skill_view` existing skill | Record `viewed` event | `tests/test_tools.py` |
 | Local skill install | Copy source skill files into state skills and upsert an active skill | `tests/test_skills_filesystem.py`, `tests/test_cli.py` |
 | Archive/ClawHub skill install | Extract zip archives safely and resolve ClawHub slugs/detail URLs to download URLs | `tests/test_skills_filesystem.py` |
+| Raw skill URL install | Download bounded raw Markdown, normalize common source-host file URLs, and reject ordinary HTML | `tests/test_skills_filesystem.py` |
+| Chat skill install tool | Execute `skill_install` through ToolHarness/ProviderRuntime and return compact evidence without body text | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Duplicate skill install | Reject existing names unless `--force` is supplied | `tests/test_skills_filesystem.py` |
 | Outcome score omitted | Default by outcome: success=1, failure=-1, neutral=0 | `tests/test_tools.py` |
 | Outcome score out of range | Tool failure | `tests/test_tools.py` |
@@ -118,7 +124,7 @@
 ### 6. Tests Required
 - Storage round-trip for usage events and aggregate stats.
 - Skill install tests for local skill dirs, copied companion files, duplicate rejection, and CLI output.
-- Tool harness test for `skill_view` and `skill_record_outcome`.
+- Tool harness test for `skill_install`, `skill_view`, and `skill_record_outcome`.
 - Tool harness test for `skill_crystallize_from_run`.
 - Tool harness test for `skill_patch_candidate`.
 - Tool harness test for `skill_run_eval_case`.
