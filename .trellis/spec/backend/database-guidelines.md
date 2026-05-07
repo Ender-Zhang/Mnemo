@@ -63,6 +63,7 @@
 - `StateStore.get_memory_page(page_id: str) -> dict[str, Any] | None`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
+- `StateStore.update_memory_page(page_id: str, *, title: str, content: str, scope: str = "global", source_candidate_id: str | None = None, confidence: float = 0.7, status: str = "active", metadata: dict[str, Any] | None = None) -> None`
 - `StateStore.redact_memory_candidate(candidate_id: str, *, claim: str, status: str, evidence: Iterable[dict[str, Any]] | None = None, confidence: float = 0.0) -> None`
 - `StateStore.redact_memory_page(page_id: str, *, title: str, content: str, status: str, metadata: dict[str, Any] | None = None, confidence: float = 0.0) -> None`
 - `StateStore.add_memory_tombstone(target_id: str, target_type: str, reason: str, *, summary: str = "", target_hash: str | None = None, evidence_run_id: str | None = None, rule: str | None = None, metadata: dict[str, Any] | None = None) -> str`
@@ -148,6 +149,7 @@
 - CLI W0 inspection must use the read API and remain read-only: `mnemo memory notes`.
 - `memory_pages.metadata_json` stores compact maintenance hints and must round-trip as `page["metadata"]`.
 - `upsert_memory_page(..., metadata=None)` preserves existing metadata on updates; passing a metadata dict replaces the page metadata.
+- `update_memory_page()` updates an existing stable page by id for semantic topic merges and title/path normalization; callers must pass the full compact body and metadata they want to preserve.
 - Memory page metadata is for page-local maintenance hints such as `expires`, `decay_days`, and verification timestamps, not raw evidence or large bodies.
 - `memory_links` can be read by source or target id; both directions return the same link shape ordered by weight and recency.
 - CLI graph inspection must use these read APIs and remain read-only: `mnemo memory links <memory_id>`.
@@ -200,6 +202,7 @@
 | Scheduled processing | Due watch/cron items enqueue normal daemon queue work, due dream items run compact Dream maintenance, advance/complete schedule, and apply model-supplied Watch feedback policy | `tests/test_scheduler.py`, `tests/test_daemon.py`, `tests/test_cli.py` |
 | CLI working notes | Open and processed W0 notes are exposed without storage mutation | `tests/test_cli.py` |
 | Memory page metadata | Page metadata round-trips and legacy rows default to `{}` after migration | `tests/test_memory.py`, `tests/test_storage.py` |
+| Memory page topic merge | Updating a selected page by id preserves one semantic page while promotion appends related facts | `tests/test_memory.py` |
 | Memory backlinks | Reverse link lookup supports associative memory recall | `tests/test_memory.py` |
 | CLI memory links | Link/backlink lookup is exposed without storage mutation | `tests/test_cli.py` |
 | Memory tombstones | Tombstone table initializes, round-trips metadata, filters by target, and hashes compact summaries | `tests/test_storage.py` |

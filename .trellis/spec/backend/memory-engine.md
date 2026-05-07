@@ -14,6 +14,7 @@
 - `MemoryEngine.write_candidate(run_id: str, claim: str, *, dimension: str | None = None, scope: str = "global", confidence: float = 0.5, evidence: list[dict[str, Any]] | None = None) -> dict[str, Any]`
 - `MemoryEngine.ingest_working_notes(limit: int = 20, *, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
 - `MemoryEngine.promote_candidate(candidate_id: str) -> dict[str, Any]`
+- `MemoryEngine.review_candidate_for_promotion(candidate_id: str, min_confidence: float = 0.7) -> dict[str, Any]`
 - `MemoryEngine.reject_candidate(candidate_id: str, reason: str) -> dict[str, Any]`
 - `MemoryEngine.undo_candidate(candidate_id: str, reason: str = "user undo") -> dict[str, Any]`
 - `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto", replacement_id: str | None = None, eval_run_id: str | None = None) -> dict[str, Any]`
@@ -38,6 +39,7 @@
 - CLI: `mnemo harness eval memory-health --json`
 - `StateStore.update_memory_page_confidence(page_id: str, confidence: float) -> None`
 - `StateStore.update_memory_page_status(page_id: str, status: str) -> None`
+- `StateStore.update_memory_page(page_id: str, *, title: str, content: str, scope: str = "global", source_candidate_id: str | None = None, confidence: float = 0.7, status: str = "active", metadata: dict[str, Any] | None = None) -> None`
 - `StateStore.upsert_memory_page(title: str, content: str, *, scope: str = "global", source_candidate_id: str | None = None, confidence: float = 0.7, status: str = "active", metadata: dict[str, Any] | None = None) -> str`
 - `StateStore.list_memory_pages(status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_candidates(status: str | None = None, limit: int = 50) -> list[dict[str, Any]]`
@@ -63,8 +65,8 @@
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory forget <memory_id> [--reason REASON] [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
-- CLI: `mnemo dream run [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
-- CLI: `mnemo dream --now [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream run [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--provider PROVIDER] [--base-url URL] [--model MODEL] [--api-key-env ENV] [--max-tool-rounds N] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream --now [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--provider PROVIDER] [--base-url URL] [--model MODEL] [--api-key-env ENV] [--max-tool-rounds N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream status [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
 - CLI: `mnemo schedule add --kind dream [--schedule SCHEDULE] [--next-run-at TIME] [--dream-limit N] [--dream-min-confidence FLOAT] [--state-dir DIR] [--json]`; omitted `--schedule` defaults to `daily`.
@@ -97,6 +99,9 @@
 - Dream consolidation must not promote candidates whose stored quality signal recommends `discard`; these candidates become `rejected:low_quality` with compact quality metadata in the result.
 - Dream consolidation may route quality `draft` recommendations to `needs_review:low_quality` instead of promoting them; candidates without a stored quality signal keep the existing compatibility behavior.
 - Stable memory pages are created through promotion or explicit curation.
+- Candidate promotion must first inspect the active stable page/wiki catalog for the target ontology dimension, including title-derived wiki paths, then select an existing semantic topic page when the new fact belongs there; it creates a new page only when no suitable topic page exists.
+- Stable memory page titles/files represent durable topics, not individual claims. Related facts such as user name, birth date, role, and location aggregate under one identity profile page; each promoted candidate remains individually traceable through `promoted_to` links and compact page metadata.
+- Merging a candidate into an existing topic page must append a de-duplicated fact to the page body, preserve existing facts, update confidence conservatively, re-materialize the same wiki file path, and avoid replacing the page with only the newest claim.
 - Active stable memory pages are materialized as deterministic wiki markdown files under `wiki/<dimension>/<title-slug>.md`; stale, archived, and tombstoned pages move to `wiki/_archive/<title-slug>.md`, and private-deleted pages move to `wiki/_redacted/<title-slug>.md`.
 - Wiki markdown filenames must be derived from the user-facing page title instead of the opaque page id so file-list disclosure remains semantic; title collisions may append a short id suffix for uniqueness.
 - Wiki markdown materialization is triggered by promotion, L1 snapshot compilation, stale/decay status changes, tombstone/archive curation, and private-delete redaction.
@@ -120,17 +125,18 @@
 - Conflicting candidates are marked `needs_review:conflict` and linked with `conflicts_with`.
 - Dream consolidation returns `w0`, `promoted`, `rejected`, `skipped`, `conflicts`, and a compact L1 `snapshot`.
 - Dream delta collection returns only bounded W0 notes, draft/review candidates, changed pages, tombstones, recent runs, and health cards since the last persisted Dream report when available.
-- Dream plans are model-facing decision surfaces with `decision_owner="model"` and allowed candidate tools; they are advisory and must not encode a mandatory maintenance workflow.
-- Dream maintenance may use local deterministic consolidation as fallback, but fallback processing is restricted to collected draft candidate ids and W0 note ids when a delta set is provided.
+- Dream plans are model-facing decision surfaces with `decision_owner="model"` and allowed maintenance tools; they are advisory and must not encode a mandatory maintenance workflow.
+- Dream maintenance must not use deterministic candidate consolidation as fallback. Without a provider-selected tool call or explicit model-proposed action input, it records a compact `model_required` no-op report and refreshes derived snapshots only.
+- `MemoryEngine.review_candidate_for_promotion()` is a validation gate for a model-selected draft candidate; it may promote, reject duplicate/low-quality/empty candidates, route conflicts to review, or skip below-threshold candidates, but it must not choose candidates on its own.
 - Dream maintenance may accept explicit model-proposed action objects through `actions` or `plan.actions` / `plan.maintenance_actions` / native-style `plan.tool_calls`.
 - Dream action objects support provider-native shapes (`{"function": {"name": ..., "arguments": ...}}`, `{"type": "tool_use", "name": ..., "input": {...}}`) and compact direct shapes (`{"tool": ..., "arguments": {...}}`).
-- `MemoryEngine.apply_dream_actions()` is a bounded executor for safe memory maintenance tools only: `memory_tombstone` and `memory_decay_stale_pages`.
+- `MemoryEngine.apply_dream_actions()` is a bounded executor for safe memory maintenance tools only: `memory_promote_candidate`, `memory_reject_candidate`, `memory_tombstone`, and `memory_decay_stale_pages`.
 - Dream action execution must call existing MemoryEngine primitives and must not implement a separate workflow router.
 - Unsupported, malformed, missing-id, or service-error Dream actions are recorded under `execution.result.actions.skipped` with compact error metadata and must not abort the Dream report.
 - Dream `memory_tombstone` actions support low-usefulness archival, harmful tombstone eval routing, and replacement links through `tombstone_memory()`.
 - Dream action result payloads must contain ids, statuses, counts, and compact eval/replacement metadata only; they must not copy full memory bodies or raw transcripts.
 - Dream reports are compact JSON documents persisted under `runs/dream-reports/` with `delta`, `plan`, `execution`, and `health_after`.
-- Due Dream scheduled items run `MemoryEngine.dream_maintenance()` with compact budget metadata and persist the latest report card on the scheduled item.
+- Due Dream scheduled items run model-led Dream maintenance when a provider-backed runner is supplied; otherwise they call `MemoryEngine.dream_maintenance()` only to persist a `model_required` no-op report. They persist the latest report card on the scheduled item.
 - MCP Dream registration is a thin facade over `ScheduleService.add_dream()` and must not bypass the scheduled maintenance path.
 - SDK/HTTP Dream registration is the same kind of thin facade; due execution remains `ScheduleService.tick()`.
 - Dream scheduled ticks refresh the L1 snapshot through the normal Dream execution result, and tick/report payloads expose only snapshot counts and report ids.
@@ -232,6 +238,7 @@
 | Obvious contradiction | Mark `needs_review:conflict`, add `conflicts_with` link, do not promote | `tests/test_memory.py` |
 | Low confidence non-conflict | Keep `draft`, return skipped entry | `tests/test_memory.py` |
 | High confidence non-conflict | Promote to active memory page | `tests/test_memory.py` |
+| Related identity facts | Promote multiple name/birth/profile candidates into one semantic profile page/file instead of creating one file per fact | `tests/test_memory.py` |
 | Learning undo | Tombstone an accepted candidate and its linked stable page | `tests/test_memory.py`, `tests/test_web.py` |
 | W0 note with memory retention | Create candidate, mark note `candidate_created`, continue normal consolidation | `tests/test_memory.py` |
 | W0 note without memory retention | Mark note `skipped:ephemeral`, create no candidate | `tests/test_memory.py` |

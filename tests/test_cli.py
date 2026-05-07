@@ -235,22 +235,48 @@ class CliTests(unittest.TestCase):
             self.assertEqual(search_before.returncode, 0, search_before.stderr)
             before_payload = json.loads(search_before.stdout)
             self.assertEqual(before_payload["matches"][0]["type"], "candidate")
+            candidate_id = before_payload["matches"][0]["id"]
 
             dream = _run_cli(["dream", "run", "--state-dir", tmp, "--min-confidence", "0.7", "--json"])
             self.assertEqual(dream.returncode, 0, dream.stderr)
             dream_payload = json.loads(dream.stdout)
             self.assertEqual(dream_payload["kind"], "dream_report")
             self.assertEqual(dream_payload["plan"]["decision_owner"], "model")
-            self.assertEqual(len(dream_payload["execution"]["result"]["promoted"]), 1)
+            self.assertEqual(dream_payload["execution"]["mode"], "model_required")
+            self.assertEqual(dream_payload["execution"]["result"]["actions"]["counts"]["applied"], 0)
+
+            actions_json = json.dumps(
+                [
+                    {
+                        "tool": "memory_promote_candidate",
+                        "arguments": {"id": candidate_id, "min_confidence": 0.7},
+                    }
+                ]
+            )
+            promote = _run_cli(
+                [
+                    "dream",
+                    "run",
+                    "--state-dir",
+                    tmp,
+                    "--actions-json",
+                    actions_json,
+                    "--json",
+                ]
+            )
+            self.assertEqual(promote.returncode, 0, promote.stderr)
+            promote_payload = json.loads(promote.stdout)
+            self.assertEqual(promote_payload["execution"]["mode"], "model_actions")
+            self.assertEqual(promote_payload["execution"]["result"]["actions"]["counts"]["applied"], 1)
 
             status = _run_cli(["dream", "status", "--state-dir", tmp, "--json"])
             self.assertEqual(status.returncode, 0, status.stderr)
             status_payload = json.loads(status.stdout)
-            self.assertEqual(status_payload["latest"]["id"], dream_payload["id"])
+            self.assertEqual(status_payload["latest"]["id"], promote_payload["id"])
 
             report = _run_cli(["dream", "report", "--latest", "--state-dir", tmp, "--json"])
             self.assertEqual(report.returncode, 0, report.stderr)
-            self.assertEqual(json.loads(report.stdout)["id"], dream_payload["id"])
+            self.assertEqual(json.loads(report.stdout)["id"], promote_payload["id"])
 
             missing_report = _run_cli(["dream", "report", "missing-report", "--state-dir", tmp, "--json"])
             self.assertEqual(missing_report.returncode, 1)
@@ -324,7 +350,7 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(dream.returncode, 0, dream.stderr)
             payload = json.loads(dream.stdout)
-            self.assertEqual(payload["execution"]["mode"], "model_actions+local_fallback")
+            self.assertEqual(payload["execution"]["mode"], "model_actions")
             self.assertEqual(payload["execution"]["result"]["actions"]["counts"]["applied"], 1)
             self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "archived:low_usefulness")
             self.assertEqual(plain.returncode, 0, plain.stderr)
@@ -2275,12 +2301,14 @@ print(json.dumps({
             tick_payload = json.loads(tick.stdout)
             processed = tick_payload["processed"][0]
             self.assertEqual(processed["status"], "dream_completed")
-            self.assertEqual(processed["dream_report"]["promoted"], 1)
-            self.assertEqual(processed["dream_report"]["snapshot_items"], 1)
+            self.assertEqual(processed["dream_report"]["mode"], "model_required")
+            self.assertEqual(processed["dream_report"]["promoted"], 0)
+            self.assertEqual(processed["dream_report"]["actions_applied"], 0)
+            self.assertEqual(processed["dream_report"]["snapshot_items"], 0)
             self.assertEqual(tick_payload["queue"]["total"], 0)
             self.assertEqual(status.returncode, 0, status.stderr)
             self.assertEqual(json.loads(status.stdout)["scheduled"]["counts"]["dream"]["completed"], 1)
-            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "promoted")
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "draft")
 
     def test_schedule_add_dream_defaults_to_daily(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

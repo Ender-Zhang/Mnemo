@@ -5,7 +5,7 @@ import time
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
-from .cards import _candidate_title, _skip_working_note
+from .cards import _skip_working_note
 from .constants import DEFAULT_W0_CONFIDENCE, L1_SNAPSHOT_FILENAME, MIN_W0_CANDIDATE_CHARS, W0_MEMORY_RETENTION
 from .quality import (
     append_quality_evidence,
@@ -29,11 +29,44 @@ from .utils import (
     _status_reason,
     _truncate,
 )
-from .wiki import materialize_memory_page, materialize_memory_pages
+from .wiki import materialize_memory_page, materialize_memory_pages, memory_page_dimension, memory_page_slug, memory_page_wiki_ref
 
 
 NEAR_DUPLICATE_JACCARD_THRESHOLD = 0.72
 NEAR_DUPLICATE_CONTAINMENT_THRESHOLD = 0.82
+
+_DIMENSION_DEFAULT_TOPICS = {
+    "identity": "个人资料",
+    "cognition": "知识与技能",
+    "values": "价值观",
+    "goals": "目标",
+    "preferences": "服务偏好",
+    "relationships": "关系网络",
+    "context": "当前语境",
+    "history": "经历历史",
+    "patterns": "行为模式",
+    "boundaries": "边界",
+}
+
+_TOPIC_PATTERNS = {
+    "cognition": [
+        ("编程语言", ("python", "rust", "javascript", "typescript", "go", "语言", "编程")),
+        ("AI Agent 研发", ("agent", "llm", "ai ", "模型", "智能体", "机器学习")),
+    ],
+    "preferences": [
+        ("沟通风格", ("沟通", "交流", "回答", "语气", "幽默", "直接", "concise", "direct", "update", "report")),
+        ("工具偏好", ("工具", "编辑器", "ide", "cli", "terminal", "browser", "tool")),
+        ("预算偏好", ("预算", "花费", "价格", "月预算", "budget", "cost", "price")),
+        ("审美偏好", ("设计", "审美", "界面", "ui", "颜色", "diagram", "visual")),
+    ],
+    "context": [
+        ("旅行语境", ("旅行", "旅游", "行程", "攻略", "新疆", "trip", "travel")),
+        ("项目语境", ("项目", "代码库", "repo", "mnemo", "workspace")),
+    ],
+    "goals": [
+        ("当前目标", ("目标", "计划", "想要", "希望", "goal", "plan")),
+    ],
+}
 
 
 class MemoryLearningMixin:
@@ -167,13 +200,45 @@ class MemoryLearningMixin:
         if not claim:
             raise ValueError(f"Memory candidate is empty: {candidate_id}")
 
-        page_id = self.store.upsert_memory_page(
-            _candidate_title(candidate),
-            claim,
-            scope=candidate.get("scope") or "global",
-            source_candidate_id=candidate_id,
-            confidence=float(candidate.get("confidence", 0.7)),
-        )
+        route = self._promotion_page_route(candidate)
+        target_page = route.get("page")
+        page_title = str(route["title"])
+        page_scope = str(target_page.get("scope") if target_page else candidate.get("scope") or "global")
+        page_content = _merged_page_content(target_page.get("content", "") if target_page else "", claim)
+        confidence = _merged_page_confidence(target_page, candidate)
+        metadata = _merged_page_metadata(target_page, candidate, dimension=str(route["dimension"]), topic=str(route["topic"]))
+        if target_page:
+            page_id = str(target_page["id"])
+            update_page = getattr(self.store, "update_memory_page", None)
+            if update_page:
+                update_page(
+                    page_id,
+                    title=page_title,
+                    content=page_content,
+                    scope=page_scope,
+                    source_candidate_id=None,
+                    confidence=confidence,
+                    status=str(target_page.get("status") or "active"),
+                    metadata=metadata,
+                )
+            else:
+                page_id = self.store.upsert_memory_page(
+                    page_title,
+                    page_content,
+                    scope=page_scope,
+                    source_candidate_id=None,
+                    confidence=confidence,
+                    metadata=metadata,
+                )
+        else:
+            page_id = self.store.upsert_memory_page(
+                page_title,
+                page_content,
+                scope=page_scope,
+                source_candidate_id=candidate_id,
+                confidence=confidence,
+                metadata=metadata,
+            )
         self.store.update_memory_candidate_status(candidate_id, "promoted")
         self.store.add_memory_link(candidate_id, page_id, "promoted_to", weight=1.0)
         page = self._get_page(page_id)
@@ -184,6 +249,25 @@ class MemoryLearningMixin:
             "status": "promoted",
             "page": page,
             "wiki": wiki,
+        }
+
+    def _promotion_page_route(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        claim = _normalize_space(candidate.get("claim", ""))
+        dimension = normalize_memory_dimension(candidate.get("dimension"), fallback="context")
+        topic = _candidate_page_topic(dimension, claim)
+        title = f"{dimension}: {topic}"
+        target_page = _select_existing_topic_page(
+            self.store.list_memory_pages(status="active", limit=200),
+            state_dir=self.store.state_dir,
+            dimension=dimension,
+            topic=topic,
+            claim=claim,
+        )
+        return {
+            "dimension": dimension,
+            "topic": topic,
+            "title": title,
+            "page": target_page,
         }
 
     def reject_candidate(self, candidate_id: str, reason: str) -> dict[str, Any]:
@@ -213,6 +297,26 @@ class MemoryLearningMixin:
                     "scope": candidate.get("scope"),
                 },
             )
+        return result
+
+    def review_candidate_for_promotion(self, candidate_id: str, min_confidence: float = 0.7) -> dict[str, Any]:
+        candidate = self._get_candidate(candidate_id)
+        if not candidate:
+            raise ValueError(f"Memory candidate not found: {candidate_id}")
+        if candidate.get("status") != "draft":
+            return {
+                "candidate_id": candidate_id,
+                "status": candidate.get("status"),
+                "decision": "skipped",
+                "reason": "candidate_not_draft",
+            }
+
+        result = self._review_draft_candidate_for_promotion(
+            candidate,
+            min_confidence=min_confidence,
+            seen_claims=set(),
+        )
+        result["snapshot"] = self.compile_l1_snapshot(limit=50)
         return result
 
     def undo_candidate(self, candidate_id: str, reason: str = "user undo") -> dict[str, Any]:
@@ -300,57 +404,20 @@ class MemoryLearningMixin:
             candidates,
             key=lambda item: (item.get("created_at", 0), item["id"]),
         ):
-            claim = _normalize_space(candidate.get("claim", ""))
-            fingerprint = _fingerprint(claim)
-
-            if not claim:
-                rejected.append(self.reject_candidate(candidate["id"], "empty"))
-                continue
-
-            quality = candidate_quality_signal(candidate)
-            quality_status = low_quality_status(quality)
-            if quality_status == "rejected":
-                result = self.reject_candidate(candidate["id"], "low_quality")
-                result["quality"] = compact_quality_signal(quality)
+            result = self._review_draft_candidate_for_promotion(
+                candidate,
+                min_confidence=min_confidence,
+                seen_claims=seen_claims,
+            )
+            decision = result.get("decision")
+            if decision == "promoted":
+                promoted.append(result)
+            elif decision == "rejected":
                 rejected.append(result)
-                continue
-            if quality_status == "needs_review":
-                status = "needs_review:low_quality"
-                self.store.update_memory_candidate_status(candidate["id"], status)
-                skipped.append(
-                    {
-                        "candidate_id": candidate["id"],
-                        "status": status,
-                        "reason": "below_quality_threshold",
-                        "quality": compact_quality_signal(quality),
-                    }
-                )
-                continue
-
-            duplicate_page = self._find_duplicate_page(candidate)
-            if fingerprint in seen_claims or duplicate_page:
-                if duplicate_page:
-                    self._reinforce_page(candidate, duplicate_page)
-                rejected.append(self.reject_candidate(candidate["id"], "duplicate"))
-                continue
-
-            seen_claims.add(fingerprint)
-            confidence = float(candidate.get("confidence", 0.0))
-            conflict_page = self._find_conflicting_page(candidate)
-            if conflict_page:
-                conflicts.append(self._mark_conflict(candidate, conflict_page))
-                continue
-
-            if confidence >= min_confidence:
-                promoted.append(self.promote_candidate(candidate["id"]))
+            elif decision == "conflict":
+                conflicts.append(result)
             else:
-                skipped.append(
-                    {
-                        "candidate_id": candidate["id"],
-                        "status": candidate.get("status", "draft"),
-                        "reason": "below_confidence_threshold",
-                    }
-                )
+                skipped.append(result)
 
         return {
             "w0": w0,
@@ -359,6 +426,80 @@ class MemoryLearningMixin:
             "skipped": skipped,
             "conflicts": conflicts,
             "snapshot": self.compile_l1_snapshot(limit=50),
+        }
+
+    def _review_draft_candidate_for_promotion(
+        self,
+        candidate: dict[str, Any],
+        *,
+        min_confidence: float,
+        seen_claims: set[str],
+    ) -> dict[str, Any]:
+        claim = _normalize_space(candidate.get("claim", ""))
+        fingerprint = _fingerprint(claim)
+
+        if not claim:
+            result = self.reject_candidate(candidate["id"], "empty")
+            result["decision"] = "rejected"
+            return result
+
+        quality = candidate_quality_signal(candidate)
+        quality_status = low_quality_status(quality)
+        if quality_status == "rejected":
+            result = self.reject_candidate(candidate["id"], "low_quality")
+            result["decision"] = "rejected"
+            result["quality"] = compact_quality_signal(quality)
+            return result
+        if quality_status == "needs_review":
+            status = "needs_review:low_quality"
+            self.store.update_memory_candidate_status(candidate["id"], status)
+            return {
+                "candidate_id": candidate["id"],
+                "status": status,
+                "decision": "skipped",
+                "reason": "below_quality_threshold",
+                "quality": compact_quality_signal(quality),
+            }
+
+        duplicate_page = self._find_duplicate_page(candidate)
+        if fingerprint in seen_claims or duplicate_page:
+            if duplicate_page:
+                self._reinforce_page(candidate, duplicate_page)
+            result = self.reject_candidate(candidate["id"], "duplicate")
+            result["decision"] = "rejected"
+            return result
+
+        seen_claims.add(fingerprint)
+        confidence = float(candidate.get("confidence", 0.0))
+        conflict_page = self._find_conflicting_page(candidate)
+        if conflict_page:
+            result = self._mark_conflict(candidate, conflict_page)
+            result["decision"] = "conflict"
+            return result
+
+        if confidence < min_confidence:
+            return {
+                "candidate_id": candidate["id"],
+                "status": candidate.get("status", "draft"),
+                "decision": "skipped",
+                "reason": "below_confidence_threshold",
+            }
+
+        promoted = self.promote_candidate(candidate["id"])
+        page = promoted.get("page") if isinstance(promoted.get("page"), dict) else {}
+        wiki = promoted.get("wiki") if isinstance(promoted.get("wiki"), dict) else {}
+        return {
+            "candidate_id": candidate["id"],
+            "status": "promoted",
+            "decision": "promoted",
+            "page_id": promoted.get("page_id"),
+            "page": {
+                "id": page.get("id"),
+                "title": page.get("title"),
+                "status": page.get("status"),
+                "confidence": page.get("confidence"),
+            },
+            "wiki": wiki,
         }
 
     def _l1_snapshot_path(self) -> Path:
@@ -371,7 +512,7 @@ class MemoryLearningMixin:
             (
                 page
                 for page in matches
-                if _fingerprint(page.get("content", "")) == _fingerprint(claim)
+                if _page_contains_claim(page, claim)
             ),
             None,
         )
@@ -385,7 +526,7 @@ class MemoryLearningMixin:
                 page
                 for page in candidates
                 if _same_memory_dimension(candidate_dimension, page)
-                and _is_near_duplicate_claim(claim, str(page.get("content") or ""))
+                and _page_has_near_duplicate_claim(page, claim)
             ),
             None,
         )
@@ -459,11 +600,174 @@ class MemoryLearningMixin:
         }
 
 
+def _candidate_page_topic(dimension: str, claim: str) -> str:
+    text = f" {_normalize_space(claim).casefold()} "
+    for topic, markers in _TOPIC_PATTERNS.get(dimension, []):
+        if any(marker.casefold() in text for marker in markers):
+            return topic
+    return _DIMENSION_DEFAULT_TOPICS.get(dimension, _DIMENSION_DEFAULT_TOPICS["context"])
+
+
+def _select_existing_topic_page(
+    pages: list[dict[str, Any]],
+    *,
+    state_dir: str | Path,
+    dimension: str,
+    topic: str,
+    claim: str,
+) -> dict[str, Any] | None:
+    same_dimension = [page for page in pages if _same_memory_dimension(dimension, page)]
+    scored = [
+        (_topic_page_score(page, state_dir=state_dir, dimension=dimension, topic=topic, claim=claim), page)
+        for page in same_dimension
+    ]
+    scored = [(score, page) for score, page in scored if score > 0]
+    if not scored:
+        return None
+    scored.sort(
+        key=lambda item: (
+            -item[0],
+            -float(item[1].get("updated_at") or item[1].get("created_at") or 0.0),
+            str(item[1].get("id") or ""),
+        )
+    )
+    score, page = scored[0]
+    return page if score >= 50 else None
+
+
+def _topic_page_score(
+    page: dict[str, Any],
+    *,
+    state_dir: str | Path,
+    dimension: str,
+    topic: str,
+    claim: str,
+) -> int:
+    score = 0
+    if _page_topic(page) == topic:
+        score += 100
+    page_keys = _page_topic_keys(page, state_dir=state_dir)
+    if _topic_key(topic) in page_keys:
+        score += 70
+    if dimension == "identity" and topic == _DIMENSION_DEFAULT_TOPICS["identity"]:
+        score += 60
+    overlap = set(_keywords(claim)) & set(_keywords(f"{page.get('title', '')} {page.get('content', '')}"))
+    if overlap:
+        score += min(30, 10 * len(overlap))
+    return score
+
+
+def _page_topic(page: dict[str, Any]) -> str:
+    metadata = page.get("metadata") if isinstance(page.get("metadata"), dict) else {}
+    topic = _normalize_space(str(metadata.get("topic") or ""))
+    if topic:
+        return topic
+    title = _normalize_space(str(page.get("title") or ""))
+    if ":" in title:
+        return title.split(":", 1)[1].strip()
+    return title
+
+
+def _page_topic_keys(page: dict[str, Any], *, state_dir: str | Path) -> set[str]:
+    keys = {_topic_key(_page_topic(page)), _topic_key(str(page.get("title") or "")), _topic_key(memory_page_slug(page))}
+    try:
+        keys.add(_topic_key(memory_page_wiki_ref(state_dir, page)))
+    except ValueError:
+        pass
+    return {key for key in keys if key}
+
+
+def _topic_key(value: str) -> str:
+    return "".join(ch for ch in _normalize_space(value).casefold() if ch.isalnum())
+
+
+def _merged_page_content(existing_content: str, claim: str) -> str:
+    facts = _memory_fact_texts(existing_content)
+    claim_text = _normalize_space(claim)
+    seen = {_fingerprint(fact) for fact in facts}
+    if claim_text and _fingerprint(claim_text) not in seen:
+        facts.append(claim_text)
+    return "\n".join(f"- {fact}" for fact in facts) or claim_text
+
+
+def _memory_fact_texts(content: str) -> list[str]:
+    facts: list[str] = []
+    seen: set[str] = set()
+    for raw_line in str(content or "").splitlines():
+        line = raw_line.strip()
+        if not line or line == "_No memory body._" or line.startswith("#"):
+            continue
+        if line.startswith(("- ", "* ")):
+            line = line[2:].strip()
+        if not line:
+            continue
+        fingerprint = _fingerprint(line)
+        if fingerprint in seen:
+            continue
+        facts.append(line)
+        seen.add(fingerprint)
+    return facts
+
+
+def _page_contains_claim(page: dict[str, Any], claim: str) -> bool:
+    claim_fingerprint = _fingerprint(claim)
+    return any(_fingerprint(fact) == claim_fingerprint for fact in _memory_fact_texts(str(page.get("content") or "")))
+
+
+def _page_has_near_duplicate_claim(page: dict[str, Any], claim: str) -> bool:
+    facts = _memory_fact_texts(str(page.get("content") or ""))
+    if not facts:
+        facts = [str(page.get("content") or "")]
+    return any(_is_near_duplicate_claim(claim, fact) for fact in facts)
+
+
+def _merged_page_confidence(target_page: dict[str, Any] | None, candidate: dict[str, Any]) -> float:
+    candidate_confidence = float(candidate.get("confidence", 0.7))
+    if not target_page:
+        return candidate_confidence
+    page_confidence = float(target_page.get("confidence", 0.0))
+    return min(1.0, max(page_confidence, candidate_confidence))
+
+
+def _merged_page_metadata(
+    target_page: dict[str, Any] | None,
+    candidate: dict[str, Any],
+    *,
+    dimension: str,
+    topic: str,
+) -> dict[str, Any]:
+    metadata = dict(target_page.get("metadata") or {}) if target_page else {}
+    metadata["dimension"] = dimension
+    metadata["topic"] = topic
+    source_ids = _string_list(metadata.get("source_candidate_ids"))
+    if target_page and target_page.get("source_candidate_id"):
+        source_ids.append(str(target_page["source_candidate_id"]))
+    source_ids.append(str(candidate.get("id") or ""))
+    metadata["source_candidate_ids"] = _dedupe_strings(source_ids, limit=50)
+    return metadata
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item or "").strip()]
+
+
+def _dedupe_strings(values: list[str], *, limit: int) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        result.append(value)
+        seen.add(value)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def _same_memory_dimension(candidate_dimension: str, page: dict[str, Any]) -> bool:
-    title = str(page.get("title") or "")
-    title_head = title.split(":", 1)[0] if ":" in title else ""
-    page_dimension = normalize_memory_dimension(title_head or page.get("scope"), fallback="context")
-    return page_dimension == candidate_dimension
+    return memory_page_dimension(page) == candidate_dimension
 
 
 def _is_near_duplicate_claim(left: str, right: str) -> bool:

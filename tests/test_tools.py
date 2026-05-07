@@ -416,6 +416,52 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact["evidence"][0]["kind"], "memory_tombstone")
             self.assertEqual(compact["evidence"][0]["replacement_id"], replacement_id)
 
+    def test_memory_promote_and_reject_candidate_tools_are_model_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            promote_id = store.add_memory_candidate(
+                run_id,
+                "User prefers model-selected memory promotion",
+                dimension="preferences",
+                confidence=0.9,
+            )
+            reject_id = store.add_memory_candidate(
+                run_id,
+                "User has a non-personal maintenance scratchpad",
+                dimension="context",
+                confidence=0.8,
+            )
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            promoted = harness.execute(
+                ToolCallEnvelope(
+                    name="memory_promote_candidate",
+                    arguments={"id": promote_id, "min_confidence": 0.7},
+                    call_id="call_memory_promote",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            rejected = harness.execute(
+                ToolCallEnvelope(
+                    name="memory_reject_candidate",
+                    arguments={"id": reject_id, "reason": "non_personal_memory"},
+                    call_id="call_memory_reject",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            self.assertTrue(promoted.ok)
+            self.assertTrue(rejected.ok)
+            self.assertEqual(promoted.result["decision"], "promoted")
+            self.assertEqual(store.get_memory_candidate(promote_id)["status"], "promoted")
+            self.assertEqual(compact_tool_result(promoted)["evidence"][0]["kind"], "memory_candidate_review")
+            self.assertEqual(store.get_memory_candidate(reject_id)["status"], "rejected:non_personal_memory")
+            self.assertEqual(compact_tool_result(rejected)["evidence"][0]["kind"], "memory_candidate_rejection")
+
     def test_memory_tombstone_tool_routes_harmful_memory_to_eval_case(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

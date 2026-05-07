@@ -29,7 +29,15 @@ from ..providers import (
     ProviderRunInput,
     provider_capabilities,
 )
-from ..runtime import DaemonRunner, ScheduleService, result_as_dict, run_local, run_provider, stream_local
+from ..runtime import (
+    DaemonRunner,
+    ScheduleService,
+    result_as_dict,
+    run_dream_with_provider,
+    run_local,
+    run_provider,
+    stream_local,
+)
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
@@ -328,6 +336,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     dream_parser = subparsers.add_parser("dream", help="Run idle consolidation cycles")
     _add_state_dir(dream_parser)
+    _add_workspace_root(dream_parser)
+    _add_runtime_provider_args(dream_parser)
     dream_parser.add_argument("--now", action="store_true", help="Run Dream maintenance now")
     dream_parser.add_argument("--limit", type=int, default=20)
     dream_parser.add_argument("--min-confidence", type=float, default=0.7)
@@ -336,6 +346,8 @@ def build_parser() -> argparse.ArgumentParser:
     dream_subparsers = dream_parser.add_subparsers(dest="dream_command")
     dream_run_parser = dream_subparsers.add_parser("run", help="Run Dream maintenance")
     _add_state_dir(dream_run_parser)
+    _add_workspace_root(dream_run_parser)
+    _add_runtime_provider_args(dream_run_parser)
     dream_run_parser.add_argument("--limit", type=int, default=20)
     dream_run_parser.add_argument("--min-confidence", type=float, default=0.7)
     dream_run_parser.add_argument("--actions-json", help="JSON array of model-proposed Dream maintenance tool calls")
@@ -566,6 +578,8 @@ def build_parser() -> argparse.ArgumentParser:
     schedule_list_parser.add_argument("--json", action="store_true")
     schedule_tick_parser = schedule_subparsers.add_parser("tick", help="Run due scheduled items")
     _add_state_dir(schedule_tick_parser)
+    _add_workspace_root(schedule_tick_parser)
+    _add_runtime_provider_args(schedule_tick_parser)
     schedule_tick_parser.add_argument("--now", help="Override current time for deterministic checks")
     schedule_tick_parser.add_argument("--limit", type=int, default=50)
     schedule_tick_parser.add_argument("--json", action="store_true")
@@ -752,6 +766,29 @@ def _add_workspace_root(parser: argparse.ArgumentParser) -> None:
         "--workspace-root",
         help="User workspace for local file tools and workspace bootstrap (default: <state-dir>/workspace)",
     )
+
+
+def _add_runtime_provider_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--provider",
+        choices=["local", "openai-compatible", "anthropic"],
+        default=None,
+        help="Runtime provider (default: local, or MNEMO_PROVIDER)",
+    )
+    parser.add_argument("--base-url", help="OpenAI-compatible base URL, or MNEMO_BASE_URL")
+    parser.add_argument("--model", help="Provider model name, or MNEMO_MODEL")
+    parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
+    parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
+    parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
+    parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
+    parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
+    parser.add_argument(
+        "--max-tool-rounds",
+        type=int,
+        default=None,
+        help=f"Provider tool-call round budget, or MNEMO_MAX_TOOL_ROUNDS (default: {DEFAULT_MAX_TOOL_ROUNDS})",
+    )
+    parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -1385,7 +1422,17 @@ def _cmd_dream(args: argparse.Namespace) -> int:
     engine = MemoryEngine(store)
     if args.now or args.dream_command == "run":
         actions = _parse_json_array_arg(args.actions_json, "--actions-json") if args.actions_json else None
-        result = engine.dream_maintenance(limit=args.limit, min_confidence=args.min_confidence, actions=actions)
+        config = _runtime_config_from_args(args)
+        if actions is None and config.provider != "local":
+            result = run_dream_with_provider(
+                state_dir=config.state_dir,
+                provider=_provider_adapter(args),
+                workspace_root=args.workspace_root,
+                limit=args.limit,
+                max_tool_rounds=config.max_tool_rounds,
+            )
+        else:
+            result = engine.dream_maintenance(limit=args.limit, min_confidence=args.min_confidence, actions=actions)
     elif args.dream_command == "status":
         result = engine.dream_status(limit=args.limit)
     elif args.dream_command == "report":
@@ -1424,6 +1471,7 @@ def _print_dream_result(result: dict[str, Any]) -> None:
         snapshot = execution_result.get("snapshot") if isinstance(execution_result.get("snapshot"), dict) else {}
         actions = execution_result.get("actions") if isinstance(execution_result.get("actions"), dict) else {}
         action_counts = actions.get("counts") if isinstance(actions.get("counts"), dict) else {}
+        counts = execution_result.get("counts") if isinstance(execution_result.get("counts"), dict) else {}
         print(
             "Dream report: "
             f"id={result.get('id')} "
@@ -1435,6 +1483,7 @@ def _print_dream_result(result: dict[str, Any]) -> None:
             f"conflicts={len(execution_result.get('conflicts', []))} "
             f"actions_applied={action_counts.get('applied', 0)} "
             f"actions_skipped={action_counts.get('skipped', 0)} "
+            f"tool_calls={counts.get('tool_calls', 0)} "
             f"snapshot_items={snapshot.get('page_count', 0)}"
         )
         return
@@ -2206,7 +2255,23 @@ def _cmd_schedule(args: argparse.Namespace) -> int:
             status = None if args.status == "all" else args.status
             result = {"items": service.list_items(kind=kind, status=status, limit=args.limit)}
         elif args.schedule_command == "tick":
-            result = service.tick(now=args.now, limit=args.limit)
+            config = _runtime_config_from_args(args)
+            dream_runner = None
+            if config.provider != "local":
+                adapter = _provider_adapter(args)
+
+                def dream_runner(item: dict[str, Any]) -> dict[str, Any]:
+                    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+                    dream_config = metadata.get("dream") if isinstance(metadata.get("dream"), dict) else {}
+                    return run_dream_with_provider(
+                        state_dir=config.state_dir,
+                        provider=adapter,
+                        workspace_root=args.workspace_root,
+                        limit=int(dream_config.get("limit") or 20),
+                        max_tool_rounds=config.max_tool_rounds,
+                    )
+
+            result = service.tick(now=args.now, limit=args.limit, dream_runner=dream_runner)
         elif args.schedule_command == "feedback":
             result = service.record_watch_feedback(
                 args.item_id,

@@ -1438,6 +1438,40 @@ class StateStore:
                 (confidence, time.time(), page_id),
             )
 
+    def update_memory_page(
+        self,
+        page_id: str,
+        *,
+        title: str,
+        content: str,
+        scope: str = "global",
+        source_candidate_id: str | None = None,
+        confidence: float = 0.7,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE memory_pages
+                SET title = ?, content = ?, scope = ?, confidence = ?, status = ?,
+                    source_candidate_id = COALESCE(?, source_candidate_id),
+                    metadata_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    title,
+                    content,
+                    scope,
+                    confidence,
+                    status,
+                    source_candidate_id,
+                    dumps(metadata or {}),
+                    time.time(),
+                    page_id,
+                ),
+            )
+
     def redact_memory_candidate(
         self,
         candidate_id: str,

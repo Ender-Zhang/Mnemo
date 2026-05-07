@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/memory-engine.md", "reason": "Dream contracts and memory maintenance behavior"}
+{"file": ".trellis/spec/backend/tool-harness.md", "reason": "Provider-native Dream tool execution"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI provider and Dream errors"}
+{"file": ".trellis/spec/backend/provider-capabilities.md", "reason": "Provider request metadata and tool bundles"}

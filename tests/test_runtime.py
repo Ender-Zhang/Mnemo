@@ -8,7 +8,7 @@ from mnemo.core.errors import MnemoError
 from mnemo.core.models import RunRequest, ToolCallEnvelope
 from mnemo.memory import MemoryEngine
 from mnemo.providers import ProviderEvent
-from mnemo.runtime import ProviderAgentRuntime, run_local, stream_local, stream_provider
+from mnemo.runtime import ProviderAgentRuntime, run_dream_with_provider, run_local, stream_local, stream_provider
 from mnemo.storage import StateStore
 
 
@@ -124,6 +124,49 @@ class LocalRuntimeTests(unittest.TestCase):
                 event for event in ledger_events if event["event_type"] == "learning.reflection.skipped"
             )
             self.assertEqual(skip_event["payload"]["reason"], "insufficient_structured_signal")
+
+    def test_provider_dream_uses_model_selected_candidate_promotion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            conversation_id = store.create_conversation("dream")
+            mission_id = store.create_mission(conversation_id, "dream")
+            run_id = store.create_run(conversation_id, mission_id, "remember dream preference")
+            candidate_id = store.add_memory_candidate(
+                run_id,
+                "User prefers model-led Dream maintenance",
+                dimension="preferences",
+                confidence=0.92,
+            )
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                call_id="dream_call_1",
+                                name="memory_promote_candidate",
+                                arguments={"id": candidate_id, "min_confidence": 0.7},
+                                risk="write",
+                                provider="fake",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="completed")],
+                ]
+            )
+
+            report = run_dream_with_provider(state_dir=tmp, provider=provider, limit=5)
+
+            self.assertEqual(report["execution"]["mode"], "model_tool_calls")
+            self.assertEqual(report["execution"]["result"]["counts"]["tool_calls"], 1)
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "promoted")
+            self.assertEqual(MemoryEngine(store).load_l1_snapshot()["page_count"], 1)
+            self.assertIn("memory_promote_candidate", provider.requests[0].metadata["tool_bundle"]["tool_names"])
+            event_types = [event["event_type"] for event in store.get_run_events(report["run_id"])]
+            self.assertIn("dream.started", event_types)
+            self.assertIn("dream.completed", event_types)
 
     def test_runtime_rejects_none_prompt_mode_execution(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

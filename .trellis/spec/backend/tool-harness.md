@@ -65,6 +65,8 @@
 - `memory_health_report(limit=20)` is read-only and returns compact counts, scores, configured-dimension coverage, and bounded review cards.
 - `memory_decay_stale_pages(limit=50, stale_confidence=0.35)` is write risk and applies bounded metadata-driven decay/expiry to active memory pages.
 - `memory_tombstone(id, reason, target_type="auto", replacement_id?)` is write risk and records durable curation while updating candidate/page status.
+- `memory_promote_candidate(id, min_confidence=0.7)` is write risk and validates one model-selected draft candidate before promotion; it may reject, skip, or route conflicts instead of promoting.
+- `memory_reject_candidate(id, reason)` is write risk and records a durable rejected candidate tombstone.
 - `memory_tombstone` uses `archived:low_usefulness` for low-usefulness curation and records optional replacement metadata/link evidence compactly.
 - `memory_tombstone(reason="harmful")` passes ToolHarness `run_id` into MemoryEngine so harmful curation can create compact memory-core eval cases without exposing another schema field.
 - `memory_private_delete(id, reason="private_delete", target_type="auto")` is write risk and redacts stored memory text while returning compact tombstone evidence.
@@ -203,6 +205,8 @@
 - Memory search session scope: assert session snippets include provenance ids and omit raw content.
 - Memory health report: assert compact counts, score, and review-card evidence.
 - Memory tombstone: assert status mutation, durable tombstone row, and compact evidence.
+- Memory promote candidate: assert model-selected candidate promotion goes through safety/quality/conflict validation and returns compact evidence.
+- Memory reject candidate: assert rejected candidate status and tombstone evidence stay compact.
 - Memory private delete: assert redaction, compact evidence, related redaction counts, and omission of deleted text.
 - Recall search: assert compact cards include `kind`, `item_id`, `title`, `summary`, provenance ids, and action hints while omitting full bodies/transcripts.
 - Working note retention metadata: assert stored metadata and compact result remain small.

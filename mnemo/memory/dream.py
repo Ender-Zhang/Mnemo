@@ -118,7 +118,7 @@ class MemoryDreamMixin:
         return {
             "kind": "dream_maintenance_plan",
             "decision_owner": "model",
-            "mode": "model_led_decision_surface",
+            "mode": "model_led_tool_use",
             "budget": {
                 "max_items": max(1, int(limit)),
                 "max_inbox_items": 5,
@@ -131,6 +131,8 @@ class MemoryDreamMixin:
                 "memory_health_report",
                 "memory_decay_stale_pages",
                 "memory_tombstone",
+                "memory_promote_candidate",
+                "memory_reject_candidate",
                 "skill_propose_candidate",
                 "tool_propose_candidate",
                 "eval_propose_case",
@@ -139,13 +141,10 @@ class MemoryDreamMixin:
             "focus_candidates": focus,
             "instructions": [
                 "Choose 0..N maintenance actions from the delta; do not process the whole store.",
+                "Stable memory changes happen only when the model selects an explicit maintenance tool.",
                 "Prefer evidence-backed memory candidates, user corrections, conflicts, and tombstones.",
                 "Skip low-value items with a reason instead of forcing a workflow step.",
             ],
-            "local_fallback": {
-                "enabled": True,
-                "summary": "Run deterministic candidate consolidation for collected draft candidates only.",
-            },
         }
 
     def dream_maintenance(
@@ -171,14 +170,16 @@ class MemoryDreamMixin:
                 for index, action in enumerate(dream_actions[: max(1, int(limit))])
             ]
         action_execution = self.apply_dream_actions(dream_actions, limit=limit) if dream_actions else None
-        execution = self.dream_consolidate(
-            limit=limit,
-            min_confidence=min_confidence,
-            candidate_ids=delta.get("candidate_ids", []),
-            note_ids=delta.get("note_ids", []),
-        )
-        if action_execution:
-            execution["actions"] = action_execution
+        snapshot = self.compile_l1_snapshot(limit=50)
+        execution = {
+            "actions": action_execution or {
+                "kind": "dream_memory_action_result",
+                "counts": {"requested": 0, "applied": 0, "skipped": 0},
+                "applied": [],
+                "skipped": [],
+            },
+            "snapshot": snapshot,
+        }
         completed_at = time.time()
         report = {
             "kind": "dream_report",
@@ -190,7 +191,7 @@ class MemoryDreamMixin:
             "delta": delta,
             "plan": dream_plan,
             "execution": {
-                "mode": "model_actions+local_fallback" if action_execution else "local_fallback",
+                "mode": "model_actions" if action_execution else "model_required",
                 "result": execution,
             },
             "health_after": self.health_report(limit=min(10, max(1, int(limit)))),
@@ -220,6 +221,12 @@ class MemoryDreamMixin:
                     continue
                 if tool == "memory_decay_stale_pages":
                     applied.append(self._apply_dream_decay_action(action_id, arguments, limit=bounded_limit))
+                    continue
+                if tool == "memory_promote_candidate":
+                    applied.append(self._apply_dream_promote_action(action_id, arguments))
+                    continue
+                if tool == "memory_reject_candidate":
+                    applied.append(self._apply_dream_reject_action(action_id, arguments))
                     continue
                 skipped.append(_dream_action_skip(action_id, tool, "unsupported_tool"))
             except (TypeError, ValueError) as exc:
@@ -309,6 +316,30 @@ class MemoryDreamMixin:
         result = self.decay_stale_pages(limit=action_limit, stale_confidence=stale_confidence)
         return _compact_dream_decay_result(action_id, result)
 
+    def _apply_dream_promote_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        candidate_id = _normalize_space(
+            str(arguments.get("candidate_id") or arguments.get("id") or arguments.get("memory_id") or "")
+        )
+        if not candidate_id:
+            raise ValueError("missing candidate_id")
+        result = self.review_candidate_for_promotion(
+            candidate_id,
+            min_confidence=_bounded_confidence(arguments.get("min_confidence"), 0.7),
+        )
+        return _compact_dream_promote_result(action_id, result)
+
+    def _apply_dream_reject_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        candidate_id = _normalize_space(
+            str(arguments.get("candidate_id") or arguments.get("id") or arguments.get("memory_id") or "")
+        )
+        reason = _normalize_space(str(arguments.get("reason") or ""))
+        if not candidate_id:
+            raise ValueError("missing candidate_id")
+        if not reason:
+            raise ValueError("missing reason")
+        result = self.reject_candidate(candidate_id, reason)
+        return _compact_dream_reject_result(action_id, result)
+
 
 def _since_filter(items: list[dict[str, Any]], *, since: float | None, field: str) -> list[dict[str, Any]]:
     if since is None:
@@ -327,6 +358,7 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
     delta = report.get("delta") if isinstance(report.get("delta"), dict) else {}
     actions = result.get("actions") if isinstance(result.get("actions"), dict) else {}
     action_counts = actions.get("counts") if isinstance(actions.get("counts"), dict) else {}
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
     return {
         "id": report.get("id"),
         "started_at": report.get("started_at"),
@@ -343,6 +375,7 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
             "conflicts": len(result.get("conflicts", [])),
             "actions_applied": action_counts.get("applied", 0),
             "actions_skipped": action_counts.get("skipped", 0),
+            "tool_calls": counts.get("tool_calls", 0),
         },
     }
 
@@ -407,7 +440,16 @@ def _compact_dream_action_request(raw_action: dict[str, Any], index: int) -> dic
     if action.get("error"):
         compact["error"] = action.get("error")
         return compact
-    for key in ("memory_id", "id", "target_id", "target_type", "reason", "replacement_id", "eval_run_id"):
+    for key in (
+        "memory_id",
+        "candidate_id",
+        "id",
+        "target_id",
+        "target_type",
+        "reason",
+        "replacement_id",
+        "eval_run_id",
+    ):
         value = arguments.get(key)
         if value is not None:
             output_key = "memory_id" if key == "id" else key
@@ -472,6 +514,40 @@ def _compact_dream_decay_result(action_id: str, result: dict[str, Any]) -> dict[
             for item in result.get("decayed", [])
             if isinstance(item, dict)
         ][:10],
+    }
+
+def _compact_dream_promote_result(action_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    page = result.get("page") if isinstance(result.get("page"), dict) else {}
+    compact = {
+        "action_id": action_id,
+        "tool": "memory_promote_candidate",
+        "candidate_id": result.get("candidate_id"),
+        "status": result.get("status"),
+        "decision": result.get("decision"),
+    }
+    if result.get("reason"):
+        compact["reason"] = _truncate(str(result.get("reason")), limit=160)
+    if result.get("page_id"):
+        compact["page_id"] = result.get("page_id")
+    if page.get("title"):
+        compact["page_title"] = page.get("title")
+    if result.get("conflict_page_id"):
+        compact["conflict_page_id"] = result.get("conflict_page_id")
+    if result.get("quality"):
+        compact["quality"] = result.get("quality")
+    snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
+    if snapshot:
+        compact["snapshot_items"] = snapshot.get("page_count", 0)
+    return compact
+
+def _compact_dream_reject_result(action_id: str, result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "action_id": action_id,
+        "tool": "memory_reject_candidate",
+        "candidate_id": result.get("candidate_id"),
+        "status": result.get("status"),
+        "reason": _truncate(str(result.get("reason") or ""), limit=160),
+        "tombstone_id": result.get("tombstone_id"),
     }
 
 def _bounded_action_limit(value: Any, *, default: int) -> int:

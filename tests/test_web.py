@@ -638,7 +638,7 @@ print(json.dumps({
             self.assertEqual(payload["candidate"]["status"], "promoted")
             self.assertTrue(payload["page_id"].startswith("mempg_"))
             page = store.get_memory_page(payload["page_id"])
-            self.assertEqual(page["content"], "User prefers inline learning chip actions")
+            self.assertEqual(page["content"], "- User prefers inline learning chip actions")
 
             undo_payload = json.loads(undo_body)
             self.assertEqual(undo_status, 200)

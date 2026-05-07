@@ -285,9 +285,11 @@ print(json.dumps({
             self.assertEqual(dream["item"]["metadata"]["source"], "mcp")
             self.assertEqual(dream["item"]["metadata"]["dream"]["limit"], 10)
             self.assertEqual(tick["processed"][0]["status"], "dream_completed")
-            self.assertEqual(tick["processed"][0]["dream_report"]["promoted"], 1)
+            self.assertEqual(tick["processed"][0]["dream_report"]["mode"], "model_required")
+            self.assertEqual(tick["processed"][0]["dream_report"]["promoted"], 0)
+            self.assertEqual(tick["processed"][0]["dream_report"]["actions_applied"], 0)
             self.assertEqual(tick["queue"]["total"], 0)
-            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "promoted")
+            self.assertEqual(store.get_memory_candidate(candidate_id)["status"], "draft")
             self.assertEqual(status["scheduled"]["counts"]["dream"]["completed"], 1)
 
     def test_json_rpc_initialize_list_call_errors_and_jsonl_serve(self) -> None:

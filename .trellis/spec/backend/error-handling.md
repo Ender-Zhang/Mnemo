@@ -30,8 +30,8 @@
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory forget <memory_id> [--reason REASON] [--target-type auto|candidate|page] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstones [--target-id ID] [--target-type candidate|page] [--limit N] [--state-dir DIR] [--json]`
-- CLI: `mnemo dream run [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
-- CLI: `mnemo dream --now [--actions-json JSON_ARRAY] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream run [--actions-json JSON_ARRAY] [--provider PROVIDER] [--base-url URL] [--model MODEL] [--api-key-env ENV] [--state-dir DIR] [--json]`
+- CLI: `mnemo dream --now [--actions-json JSON_ARRAY] [--provider PROVIDER] [--base-url URL] [--model MODEL] [--api-key-env ENV] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
 - CLI: `mnemo schedule add --kind watch|cron|dream [--schedule SCHEDULE] [--next-run-at TIME] [--json]`
 - CLI: `mnemo artifacts read <artifact_id> [--json]`

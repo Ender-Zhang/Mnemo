@@ -178,6 +178,30 @@ CORE_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="memory_promote_candidate",
+        description="Validate and promote one selected draft memory candidate into the semantic wiki memory.",
+        risk="write",
+        input_schema=_schema(
+            ["id"],
+            {
+                "id": {"type": "string"},
+                "min_confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.7},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="memory_reject_candidate",
+        description="Reject one selected memory candidate with a durable do-not-resurrect reason.",
+        risk="write",
+        input_schema=_schema(
+            ["id", "reason"],
+            {
+                "id": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+        ),
+    ),
+    ToolSpec(
         name="memory_private_delete",
         description="Private-delete a memory candidate or stable page by redacting stored text and recording a minimal tombstone hash.",
         risk="write",
@@ -505,6 +529,8 @@ class ToolRegistry:
             "memory_health_report": self._memory_health_report,
             "memory_decay_stale_pages": self._memory_decay_stale_pages,
             "memory_tombstone": self._memory_tombstone,
+            "memory_promote_candidate": self._memory_promote_candidate,
+            "memory_reject_candidate": self._memory_reject_candidate,
             "memory_private_delete": self._memory_private_delete,
             "recall_search": self._recall_search,
             "working_note": self._working_note,
@@ -713,6 +739,18 @@ class ToolRegistry:
             replacement_id=replacement_id,
             eval_run_id=context.run_id,
         )
+
+    def _memory_promote_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        candidate_id = _require_str(args, "id")
+        return MemoryEngine(context.store).review_candidate_for_promotion(
+            candidate_id,
+            min_confidence=_bounded_float(args.get("min_confidence"), default=0.7),
+        )
+
+    def _memory_reject_candidate(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        candidate_id = _require_str(args, "id")
+        reason = _require_str(args, "reason")
+        return MemoryEngine(context.store).reject_candidate(candidate_id, reason)
 
     def _memory_private_delete(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
         memory_id = _require_str(args, "id")
@@ -1275,6 +1313,11 @@ def _tool_summary(result: ToolResult) -> str:
         )
     if result.name == "memory_tombstone":
         return "Memory tombstone recorded."
+    if result.name == "memory_promote_candidate":
+        decision = result.result.get("decision") or result.result.get("status") or "reviewed"
+        return f"Memory candidate promotion reviewed: {decision}."
+    if result.name == "memory_reject_candidate":
+        return "Memory candidate rejected."
     if result.name == "memory_private_delete":
         return "Memory private-delete completed."
     if result.name == "working_note":
@@ -1463,6 +1506,28 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
             evidence["eval_case_id"] = eval_case.get("id")
             evidence["eval_case_status"] = eval_case.get("status")
         return [evidence]
+    if result.name == "memory_promote_candidate":
+        return [
+            {
+                "kind": "memory_candidate_review",
+                "candidate_id": result.result.get("candidate_id"),
+                "decision": result.result.get("decision"),
+                "status": result.result.get("status"),
+                "page_id": result.result.get("page_id"),
+                "reason": result.result.get("reason"),
+                "conflict_page_id": result.result.get("conflict_page_id"),
+            }
+        ]
+    if result.name == "memory_reject_candidate":
+        return [
+            {
+                "kind": "memory_candidate_rejection",
+                "candidate_id": result.result.get("candidate_id"),
+                "status": result.result.get("status"),
+                "reason": result.result.get("reason"),
+                "tombstone_id": result.result.get("tombstone_id"),
+            }
+        ]
     if result.name == "memory_private_delete":
         return [
             {

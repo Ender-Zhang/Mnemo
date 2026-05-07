@@ -31,16 +31,53 @@ class MemoryEngineTests(unittest.TestCase):
             wiki_path = memory_page_wiki_path(store.state_dir, page)
             wiki_body = wiki_path.read_text(encoding="utf-8")
             self.assertEqual(candidate["status"], "promoted")
-            self.assertEqual(page["content"], "User prefers concise engineering updates")
+            self.assertEqual(page["title"], "preferences: 沟通风格")
+            self.assertEqual(page["content"], "- User prefers concise engineering updates")
             self.assertEqual(page["source_candidate_id"], candidate_id)
             self.assertEqual(links[0]["target_id"], result["page_id"])
             self.assertTrue(wiki_path.exists())
             self.assertIn(f'id: "{result["page_id"]}"', wiki_body)
-            self.assertEqual(wiki_path.name, "user-prefers-concise-engineering-updates.md")
-            self.assertIn('slug: "user-prefers-concise-engineering-updates"', wiki_body)
+            self.assertEqual(wiki_path.name, "沟通风格.md")
+            self.assertIn('slug: "沟通风格"', wiki_body)
             self.assertIn('dimension: "preferences"', wiki_body)
             self.assertIn('status: "active"', wiki_body)
-            self.assertIn("# User prefers concise engineering updates", wiki_body)
+            self.assertIn("# 沟通风格", wiki_body)
+
+    def test_related_identity_candidates_merge_into_one_profile_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id = _store_with_run(tmp)
+            name_id = store.add_memory_candidate(
+                run_id,
+                "用户姓名是陈大鬼",
+                dimension="identity",
+                confidence=0.9,
+            )
+            birthday_id = store.add_memory_candidate(
+                run_id,
+                "用户出生年月是1990年5月",
+                dimension="identity",
+                confidence=0.88,
+            )
+            engine = MemoryEngine(store)
+
+            first = engine.promote_candidate(name_id)
+            second = engine.promote_candidate(birthday_id)
+
+            self.assertEqual(first["page_id"], second["page_id"])
+            pages = store.list_memory_pages(status="active", limit=10)
+            self.assertEqual(len(pages), 1)
+            page = store.get_memory_page(first["page_id"])
+            wiki_path = memory_page_wiki_path(store.state_dir, page)
+            wiki_body = wiki_path.read_text(encoding="utf-8")
+            self.assertEqual(page["title"], "identity: 个人资料")
+            self.assertIn("- 用户姓名是陈大鬼", page["content"])
+            self.assertIn("- 用户出生年月是1990年5月", page["content"])
+            self.assertEqual(wiki_path.name, "个人资料.md")
+            self.assertIn("# 个人资料", wiki_body)
+            self.assertIn("- 用户姓名是陈大鬼", wiki_body)
+            self.assertIn("- 用户出生年月是1990年5月", wiki_body)
+            self.assertEqual(store.list_memory_links(name_id)[0]["target_id"], first["page_id"])
+            self.assertEqual(store.list_memory_links(birthday_id)[0]["target_id"], first["page_id"])
 
     def test_wiki_materialization_uses_title_slug_with_collision_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -907,10 +944,11 @@ class MemoryEngineTests(unittest.TestCase):
             execution = report["execution"]["result"]
             self.assertEqual(report["kind"], "dream_report")
             self.assertEqual(report["plan"]["decision_owner"], "model")
-            self.assertEqual(report["plan"]["mode"], "model_led_decision_surface")
+            self.assertEqual(report["plan"]["mode"], "model_led_tool_use")
             self.assertEqual(report["delta"]["candidate_ids"], [new_id])
-            self.assertEqual([item["candidate_id"] for item in execution["promoted"]], [new_id])
-            self.assertEqual(store.get_memory_candidate(new_id)["status"], "promoted")
+            self.assertEqual(report["execution"]["mode"], "model_required")
+            self.assertEqual(execution["actions"]["counts"], {"requested": 0, "applied": 0, "skipped": 0})
+            self.assertEqual(store.get_memory_candidate(new_id)["status"], "draft")
             self.assertEqual(store.get_memory_candidate(old_id)["status"], "draft")
             self.assertEqual(store.list_working_notes(status="open")[0]["id"], old_note_id)
 
@@ -968,7 +1006,7 @@ class MemoryEngineTests(unittest.TestCase):
             applied = {item["memory_id"]: item for item in actions["applied"]}
             skipped_reasons = {item["reason"] for item in actions["skipped"]}
 
-            self.assertEqual(report["execution"]["mode"], "model_actions+local_fallback")
+            self.assertEqual(report["execution"]["mode"], "model_actions")
             self.assertEqual(actions["counts"], {"requested": 4, "applied": 2, "skipped": 2})
             self.assertEqual(store.get_memory_candidate(low_id)["status"], "archived:low_usefulness")
             self.assertEqual(store.get_memory_candidate(harmful_id)["status"], "tombstoned:harmful")

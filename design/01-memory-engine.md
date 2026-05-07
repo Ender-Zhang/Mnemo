@@ -50,6 +50,8 @@ Not Source of Truth = embedding vectors, model hidden state, prompt cache
 
 稳定页写入后必须落成可审计 markdown：active 页面位于 `wiki/<dimension>/<title-slug>.md`，stale/archived/tombstoned 页面位于 `wiki/_archive/<title-slug>.md`，private-delete 页面位于 `wiki/_redacted/<title-slug>.md`。文件名必须来自条目标题而不是数据库 id，便于模型先按维度列文件，再按语义路径继续查看或编辑；只有标题冲突时才允许在 slug 后追加短 id 消歧。文件 frontmatter 只放紧凑元数据和 content hash，正文放已蒸馏事实；状态或标题变化时旧路径要被清理，避免同一记忆同时以 active/stale 两种形态存在。
 
+稳定页是 L2 主题页，不是单条事实文件。候选晋升前必须先列出目标维度已有 active wiki/page catalog（标题、路径、摘要、metadata），再决定写入哪个文件；只有没有合适主题页时才创建新文件。例如姓名、出生年月、职业、所在地这类身份事实应聚合到同一个 `identity/个人资料.md` 主题页，候选本身通过 `promoted_to` 链接和 page metadata 保留来源，不应为每个字段生成独立 markdown。
+
 ### 3.2 十维个人本体
 
 Mnemo 的长期记忆不是自由文本池，而是关于一个人的十维本体。十维结构的价值在于：它让 Agent 不只是“检索到事实”，而是能形成可行动的人格模型。
@@ -186,6 +188,7 @@ dimension_exposure:
 **渐进式披露执行契约**:
 
 - 写入：所有长期候选都经过 `MemoryEngine.write_candidate()`，维度必须归一到十维本体；`profile/finance/work_style` 等历史或外部标签不能形成额外记忆桶。
+- 晋升：Dream/人工晋升必须先检索现有维度主题页，再合并到已有语义文件或创建新主题页；正文按去重后的事实集合维护，不能用最新 claim 覆盖整页。
 - L1：`/api/memory/ontology` 只暴露十维覆盖度、短摘要和维度 drill-down URL，不返回 item 数组、原始证据或完整正文。
 - L2：`/api/memory/dimension` 只在用户选择某一维后返回该维 active stable pages 与 open draft/review candidates 的 clipped cards。
 - L3：`/api/memory/item` 只在用户选择具体条目后返回 clipped detail、compact evidence/tombstone rows，以及一篇精炼 wiki note markdown。markdown 必须是 frontmatter + 单一标题 + 正文 + 可选证据，不做 API 字段清单，不重复候选记忆正文。
@@ -728,7 +731,7 @@ DreamCycle 是 Mnemo 的低优先级后台记忆维护循环。daemon 负责触�
 | backlog threshold | `pending_obs`、`draft_facts` 或 stale candidates 积累到阈值 |
 | manual | `mnemo dream --now` |
 
-当前实现用轻量 scheduler 承载 daily/idle 触发：`mnemo schedule add --kind dream` 默认创建 daily Dream maintenance item，也可显式传入 `--schedule daily`。SDK/HTTP 侧通过 `schedule_dream`，MCP 侧通过 `mnemo_dream_schedule` 暴露同一注册能力，仍然只写入 scheduled item 和预算元数据。到期 tick 会直接运行 bounded `MemoryEngine.dream_maintenance()`，写入 compact Dream report，刷新 L1 snapshot，并把最新 report card 存回 scheduled item metadata；watch/cron 仍然走普通 queue。
+当前实现用轻量 scheduler 承载 daily/idle 触发：`mnemo schedule add --kind dream` 默认创建 daily Dream maintenance item，也可显式传入 `--schedule daily`。SDK/HTTP 侧通过 `schedule_dream`，MCP 侧通过 `mnemo_dream_schedule` 暴露同一注册能力，仍然只写入 scheduled item 和预算元数据。到期 tick 会收集 bounded delta，并在配置了 provider 时运行模型主导的 Dream maintenance；没有 provider 或显式 model action 时只写入 `model_required`/no-op report、刷新 L1 snapshot，不自动用规则晋升或拒绝候选。watch/cron 仍然走普通 queue。
 
 **输入只看增量**:
 
@@ -768,13 +771,13 @@ Dream report 可以携带模型显式提出的 maintenance actions，形态兼�
 ]
 ```
 
-运行时只负责执行白名单内的记忆维护工具：`memory_tombstone` 和 `memory_decay_stale_pages`。无效、缺字段、找不到目标或不支持的 action 会进入 `execution.result.actions.skipped`，不会中断 Dream。这样模型可以同时提出多个候选动作，系统只提供能力边界和审计结果，不把 Dream 固化成固定流程。
+运行时只负责执行白名单内的记忆维护工具，例如 `memory_promote_candidate`、`memory_reject_candidate`、`memory_tombstone` 和 `memory_decay_stale_pages`。无效、缺字段、找不到目标或不支持的 action 会进入 `execution.result.actions.skipped`，不会中断 Dream。这样模型可以同时提出多个候选动作，系统只提供能力边界、质量/冲突/安全校验和审计结果，不把 Dream 固化成固定流程。
 
 ```text
 Dream maintenance run
   1. daemon.collect_delta          # 收集增量，不读全库
   2. model.plan                    # 选择本次维护重点和跳过项
-  3. model uses memory tools       # 读页、查证据、提 patch、建 link 候选
+  3. model uses memory tools       # 读页、查证据、显式 promote/reject/tombstone/decay
   4. pipelines validate            # quality/conflict/privacy/schema/evidence
   5. compile changed anchors       # 只重编受影响 L0/L1/cache anchors
   6. optional mine skill/tool      # 只有高信号重复轨迹才处理

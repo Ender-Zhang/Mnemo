@@ -4,6 +4,7 @@ from datetime import datetime
 import re
 import time
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from ..memory import MemoryEngine
@@ -161,22 +162,34 @@ class ScheduleService:
             "decision": clean_decision,
         }
 
-    def tick(self, *, now: float | str | None = None, limit: int = 50) -> dict[str, Any]:
+    def tick(
+        self,
+        *,
+        now: float | str | None = None,
+        limit: int = 50,
+        dream_runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         self.store.initialize()
         tick_at = parse_schedule_time(now) if now is not None else time.time()
         due_items = self.store.due_scheduled_items(now=tick_at, limit=limit)
         processed: list[dict[str, Any]] = []
         for item in due_items:
-            processed.append(self._enqueue_due_item(item, now=tick_at))
+            processed.append(self._enqueue_due_item(item, now=tick_at, dream_runner=dream_runner))
         return {
             "processed": processed,
             "queue": self.store.queue_stats(),
             "scheduled": scheduled_item_stats(self.store),
         }
 
-    def _enqueue_due_item(self, item: dict[str, Any], *, now: float) -> dict[str, Any]:
+    def _enqueue_due_item(
+        self,
+        item: dict[str, Any],
+        *,
+        now: float,
+        dream_runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         if item.get("kind") == "dream":
-            return self._run_due_dream(item, now=now)
+            return self._run_due_dream(item, now=now, dream_runner=dream_runner)
 
         item_id = str(item["id"])
         try:
@@ -216,7 +229,13 @@ class ScheduleService:
             )
             return {"scheduled_item_id": item_id, "status": "failed", "error": str(exc)}
 
-    def _run_due_dream(self, item: dict[str, Any], *, now: float) -> dict[str, Any]:
+    def _run_due_dream(
+        self,
+        item: dict[str, Any],
+        *,
+        now: float,
+        dream_runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         item_id = str(item["id"])
         try:
             metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
@@ -225,7 +244,11 @@ class ScheduleService:
             min_confidence = _bounded_dream_confidence(
                 dream_config.get("min_confidence", DEFAULT_DREAM_MIN_CONFIDENCE)
             )
-            report = MemoryEngine(self.store).dream_maintenance(limit=limit, min_confidence=min_confidence)
+            report = (
+                dream_runner(item)
+                if dream_runner is not None
+                else MemoryEngine(self.store).dream_maintenance(limit=limit, min_confidence=min_confidence)
+            )
             next_due = next_due_time(str(item["schedule"]), after=now)
             status = "active" if next_due is not None else "completed"
             updated = self.store.record_scheduled_item_tick(
@@ -452,6 +475,9 @@ def _compact_dream_tick_report(report: dict[str, Any]) -> dict[str, Any]:
     execution = report.get("execution") if isinstance(report.get("execution"), dict) else {}
     result = execution.get("result") if isinstance(execution.get("result"), dict) else {}
     snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    actions = result.get("actions") if isinstance(result.get("actions"), dict) else {}
+    action_counts = actions.get("counts") if isinstance(actions.get("counts"), dict) else {}
     return {
         "id": report.get("id"),
         "completed_at": report.get("completed_at"),
@@ -460,6 +486,9 @@ def _compact_dream_tick_report(report: dict[str, Any]) -> dict[str, Any]:
         "rejected": len(result.get("rejected", [])),
         "skipped": len(result.get("skipped", [])),
         "conflicts": len(result.get("conflicts", [])),
+        "tool_calls": counts.get("tool_calls", 0),
+        "actions_applied": action_counts.get("applied", 0),
+        "actions_skipped": action_counts.get("skipped", 0),
         "snapshot_items": snapshot.get("page_count", 0),
     }
 
