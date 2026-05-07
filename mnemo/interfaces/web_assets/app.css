@@ -2103,7 +2103,9 @@ h1 {
 .markdown p,
 .markdown ul,
 .markdown ol,
+.markdown blockquote,
 .markdown pre,
+.markdown hr,
 .markdown-table-wrap {
   margin: 0 0 0.9em;
 }
@@ -2134,6 +2136,22 @@ h1 {
   padding: 0;
   background: transparent;
   color: inherit;
+}
+
+.markdown blockquote {
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid rgba(11, 125, 120, 0.42);
+  color: var(--muted);
+}
+
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown hr {
+  height: 1px;
+  border: 0;
+  background: var(--line);
 }
 
 .markdown a {

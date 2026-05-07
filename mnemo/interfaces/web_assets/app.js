@@ -765,7 +765,7 @@ function addMessage(role, text, options = {}) {
   if (options.pending) message.classList.add("pending");
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
-  avatar.textContent = role === "user" ? "你" : "M";
+  avatar.textContent = role === "user" ? "我" : "M";
   const content = document.createElement("div");
   content.className = "message-content";
   if (role === "assistant") {
@@ -1997,6 +1997,20 @@ function markdownBlocks(text) {
       index = frontmatter.nextIndex;
       continue;
     }
+    if (isMarkdownHorizontalRule(line)) {
+      blocks.push(document.createElement("hr"));
+      index += 1;
+      continue;
+    }
+    if (isMarkdownBlockquoteStart(line)) {
+      const quoteLines = [];
+      while (index < lines.length && isMarkdownBlockquoteStart(lines[index])) {
+        quoteLines.push(lines[index].replace(/^\s*>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(markdownBlockquote(quoteLines));
+      continue;
+    }
     if (isMarkdownTableStart(lines, index)) {
       const tableLines = [lines[index], lines[index + 1]];
       index += 2;
@@ -2044,6 +2058,9 @@ function markdownBlocks(text) {
       index < lines.length &&
       lines[index].trim() &&
       !lines[index].startsWith("```") &&
+      !isMarkdownFrontmatterStart(lines, index) &&
+      !isMarkdownHorizontalRule(lines[index]) &&
+      !isMarkdownBlockquoteStart(lines[index]) &&
       !/^(#{1,4})\s+/.test(lines[index]) &&
       !/^\s*[-*]\s+/.test(lines[index]) &&
       !/^\s*\d+\.\s+/.test(lines[index]) &&
@@ -2073,9 +2090,34 @@ function markdownAnchorId(text, headingIds) {
   return count ? `${base}-${count + 1}` : base;
 }
 
+function isMarkdownDocumentStart(lines, index) {
+  return lines.slice(0, index).every((line) => !String(line || "").trim());
+}
+
 function isMarkdownFrontmatterStart(lines, index) {
-  if (index !== 0 || String(lines[index] || "").trim() !== "---") return false;
+  if (!isMarkdownDocumentStart(lines, index) || String(lines[index] || "").trim() !== "---") return false;
   return lines.slice(index + 1).some((line) => String(line || "").trim() === "---");
+}
+
+function isMarkdownHorizontalRule(line) {
+  return /^\s*-{3,}\s*$/.test(String(line || ""));
+}
+
+function isMarkdownBlockquoteStart(line) {
+  return /^\s*>\s?/.test(String(line || ""));
+}
+
+function markdownBlockquote(lines) {
+  const quote = document.createElement("blockquote");
+  const children = markdownBlocks(lines.join("\n"));
+  if (!children.length) {
+    quote.appendChild(document.createTextNode(""));
+    return quote;
+  }
+  for (const child of children) {
+    quote.appendChild(child);
+  }
+  return quote;
 }
 
 function markdownFrontmatter(lines, index) {
