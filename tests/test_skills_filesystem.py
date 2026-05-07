@@ -3,8 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+import zipfile
 
 from mnemo.skills import SkillService, default_skill_roots, load_skill_file, scan_skill_files
+from mnemo.skills.service import _clawhub_download_url, _clawhub_slug_from_source
 from mnemo.storage import StateStore
 
 
@@ -233,6 +235,32 @@ class SkillFilesystemTests(unittest.TestCase):
 
             forced = service.install(source, force=True)
             self.assertEqual(forced["count"], 2)
+
+    def test_install_zip_archive_and_parse_clawhub_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive_path = root / "skill.zip"
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr(
+                    "SKILL.md",
+                    "---\nname: zipped-skill\ndescription: Installed from zip\n---\nUse zipped skill body.",
+                )
+                archive.writestr("scripts/run.sh", "#!/bin/sh\n")
+            store = StateStore(root / "state")
+            store.initialize()
+
+            result = SkillService(store).install(archive_path.as_uri())
+
+            installed_path = Path(result["skills"][0]["path"])
+            self.assertEqual(result["skills"][0]["name"], "zipped-skill")
+            self.assertEqual(store.get_skill("zipped-skill")["status"], "active")
+            self.assertTrue((installed_path.parent / "scripts" / "run.sh").exists())
+            self.assertEqual(_clawhub_slug_from_source("find-skills-for-clawhub"), "find-skills-for-clawhub")
+            self.assertEqual(
+                _clawhub_slug_from_source("https://clawhub.ai/mrjordandu/find-skills-for-clawhub"),
+                "find-skills-for-clawhub",
+            )
+            self.assertIn("slug=find-skills-for-clawhub", _clawhub_download_url("find-skills-for-clawhub"))
 
     def test_skill_context_cards_include_usage_stats_and_rank_by_score(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

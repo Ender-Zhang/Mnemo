@@ -38,9 +38,10 @@
 - Default skill roots include Mnemo state skills, workspace `.mnemo/skills`, workspace `.agents/skills`, workspace `.claude/skills`, workspace `.hermes/skills`, workspace `.openclaw/skills`, and home `.claude/.hermes/.openclaw` skills.
 - Default skill roots must be de-duplicated while preserving first-seen order.
 - Explicit `skills scan --root` paths are additive to default roots.
-- `SkillService.install()` accepts a local `SKILL.md`, a single-skill directory, a multi-skill root, or a git URL, copies skill directories into `<state_dir>/skills/_installed/<slug>/`, and upserts installed skills as `active`.
+- `SkillService.install()` accepts a local `SKILL.md`, a single-skill directory, a multi-skill root, a ClawHub slug/detail URL, a zip URL, or a git URL, copies skill directories into `<state_dir>/skills/_installed/<slug>/`, and upserts installed skills as `active`.
 - Installed skills copy their source directory so companion `references/`, `scripts/`, and `assets/` files stay available; `.git`, `__pycache__`, pyc files, and `.DS_Store` are ignored.
 - Existing skill names and existing installed target directories are rejected unless `force=True`.
+- ClawHub sources resolve through the registry download endpoint and are extracted as zip archives with path traversal checks before scanning.
 - Git source install uses a temporary shallow clone and fails with a compact normalized service error when clone fails or git is unavailable.
 - Evidence is stored as JSON and returned only through explicit usage inspection APIs, not prompt cards.
 - `mnemo skills usage` is read-only and returns usage events plus aggregate stats from `StateStore`.
@@ -71,6 +72,7 @@
 | `skill_view` missing skill | Return `NotFoundError`; no usage event | `tests/test_tools.py` |
 | `skill_view` existing skill | Record `viewed` event | `tests/test_tools.py` |
 | Local skill install | Copy source skill files into state skills and upsert an active skill | `tests/test_skills_filesystem.py`, `tests/test_cli.py` |
+| Archive/ClawHub skill install | Extract zip archives safely and resolve ClawHub slugs/detail URLs to download URLs | `tests/test_skills_filesystem.py` |
 | Duplicate skill install | Reject existing names unless `--force` is supplied | `tests/test_skills_filesystem.py` |
 | Outcome score omitted | Default by outcome: success=1, failure=-1, neutral=0 | `tests/test_tools.py` |
 | Outcome score out of range | Tool failure | `tests/test_tools.py` |

@@ -8,6 +8,10 @@ import shutil
 import subprocess
 import tempfile
 from typing import Any
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
 
 from ..core.text_patch import apply_exact_replacements, normalize_text_replacements, optional_bool
 from ..storage import StateStore
@@ -26,6 +30,7 @@ _HOME_SKILL_ROOTS = (
     (".hermes", "skills"),
     (".openclaw", "skills"),
 )
+_CLAWHUB_DOWNLOAD_BASE = "https://wry-manatee-359.convex.site/api/v1/download"
 
 
 class SkillService:
@@ -63,7 +68,7 @@ class SkillService:
         if not source_text:
             raise ValueError("Skill source is required")
 
-        with _materialized_skill_source(source_text) as source_path:
+        with _materialized_skill_source(source_text) as (source_path, source_label):
             installables = _installable_skills(source_path)
             if not installables:
                 raise ValueError(f"No SKILL.md files found in skill source: {source_text}")
@@ -94,7 +99,7 @@ class SkillService:
                     skill.name,
                     skill.description,
                     skill.body,
-                    source=f"installed:{source_text}",
+                    source=f"installed:{source_label}",
                     status="active",
                     path=str(target_path),
                 )
@@ -334,10 +339,31 @@ def _path_key(path: Path) -> str:
 
 
 @contextmanager
-def _materialized_skill_source(source: str) -> Iterator[Path]:
+def _materialized_skill_source(source: str) -> Iterator[tuple[Path, str]]:
     path = Path(source).expanduser()
     if path.exists():
-        yield path
+        yield path, source
+        return
+
+    clawhub_slug = _clawhub_slug_from_source(source)
+    if clawhub_slug:
+        with tempfile.TemporaryDirectory(prefix="mnemo-skill-clawhub-") as tmp:
+            extracted = _download_and_extract_skill_archive(
+                _clawhub_download_url(clawhub_slug),
+                Path(tmp),
+                error_prefix="Failed to download ClawHub skill",
+            )
+            yield extracted, f"clawhub:{clawhub_slug}"
+        return
+
+    if _looks_like_archive_source(source):
+        with tempfile.TemporaryDirectory(prefix="mnemo-skill-archive-") as tmp:
+            extracted = _download_and_extract_skill_archive(
+                source,
+                Path(tmp),
+                error_prefix="Failed to download skill archive",
+            )
+            yield extracted, f"archive:{source}"
         return
 
     if not _looks_like_git_source(source):
@@ -359,16 +385,89 @@ def _materialized_skill_source(source: str) -> Iterator[Path]:
         if result.returncode != 0:
             detail = _compact_text(result.stderr or result.stdout, limit=300)
             raise ValueError(f"Failed to clone skill source: {detail}")
-        yield target
+        yield target, f"git:{source}"
 
 
 def _looks_like_git_source(source: str) -> bool:
     text = source.strip()
-    return (
-        text.startswith(("https://", "http://", "ssh://", "git://"))
-        or text.startswith("git@")
-        or text.endswith(".git")
-    )
+    if text.startswith("git@") or text.endswith(".git"):
+        return True
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme in {"ssh", "git"}:
+        return True
+    if parsed.scheme not in {"http", "https"}:
+        return False
+    return parsed.netloc.casefold() in {"github.com", "gitlab.com", "bitbucket.org"}
+
+
+def _clawhub_slug_from_source(source: str) -> str:
+    text = source.strip()
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme in {"http", "https"} and parsed.netloc.casefold() == "clawhub.ai":
+        parts = [urllib.parse.unquote(part) for part in parsed.path.split("/") if part]
+        if len(parts) >= 2:
+            return _valid_clawhub_slug(parts[-1])
+        return ""
+    if "/" not in text and "\\" not in text and _valid_clawhub_slug(text):
+        return text
+    return ""
+
+
+def _valid_clawhub_slug(value: str) -> str:
+    text = value.strip()
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{1,127}", text):
+        return text
+    return ""
+
+
+def _clawhub_download_url(slug: str) -> str:
+    return f"{_CLAWHUB_DOWNLOAD_BASE}?{urllib.parse.urlencode({'slug': slug})}"
+
+
+def _looks_like_archive_source(source: str) -> bool:
+    parsed = urllib.parse.urlparse(source.strip())
+    if parsed.scheme not in {"http", "https", "file"}:
+        return False
+    return parsed.path.lower().endswith(".zip") or bool(_download_query_slug(parsed))
+
+
+def _download_query_slug(parsed: urllib.parse.ParseResult) -> str:
+    values = urllib.parse.parse_qs(parsed.query).get("slug", [])
+    if not values:
+        return ""
+    return _valid_clawhub_slug(values[0])
+
+
+def _download_and_extract_skill_archive(source_url: str, temp_root: Path, *, error_prefix: str) -> Path:
+    archive_path = temp_root / "skill.zip"
+    extract_dir = temp_root / "extracted"
+    try:
+        with urllib.request.urlopen(source_url, timeout=30) as response:
+            with archive_path.open("wb") as handle:
+                shutil.copyfileobj(response, handle)
+    except urllib.error.HTTPError as exc:
+        raise ValueError(f"{error_prefix}: HTTP {exc.code}") from exc
+    except urllib.error.URLError as exc:
+        raise ValueError(f"{error_prefix}: {exc.reason}") from exc
+    except OSError as exc:
+        raise ValueError(f"{error_prefix}: {exc}") from exc
+
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    _extract_zip_safely(archive_path, extract_dir)
+    return extract_dir
+
+
+def _extract_zip_safely(archive_path: Path, target_dir: Path) -> None:
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            target_root = target_dir.resolve()
+            for member in archive.infolist():
+                destination = (target_dir / member.filename).resolve()
+                if destination != target_root and target_root not in destination.parents:
+                    raise ValueError(f"Unsafe path in skill archive: {member.filename}")
+            archive.extractall(target_dir)
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Skill archive is not a valid zip file") from exc
 
 
 def _installable_skills(source_path: Path) -> list[tuple[SkillFile, Path, bool]]:
