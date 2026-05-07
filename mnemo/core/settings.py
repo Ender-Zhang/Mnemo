@@ -27,6 +27,7 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
         "timeout_s": 30.0,
         "retry_count": 0,
         "retry_backoff_s": 0.0,
+        "max_tool_rounds": 12,
     },
 }
 
@@ -110,6 +111,7 @@ def _normalize_runtime_settings(value: dict[str, Any]) -> dict[str, Any]:
             minimum=0.0,
             maximum=60.0,
         ),
+        "max_tool_rounds": _normalize_int(value.get("max_tool_rounds"), "runtime max_tool_rounds", minimum=1, maximum=64),
     }
 
 

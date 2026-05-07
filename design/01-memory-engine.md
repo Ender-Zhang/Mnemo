@@ -48,7 +48,7 @@ Not Source of Truth = embedding vectors, model hidden state, prompt cache
 
 **Wiki materialization**：
 
-稳定页写入后必须落成可审计 markdown：active 页面位于 `wiki/<dimension>/<page_id>.md`，stale/archived/tombstoned 页面位于 `wiki/_archive/<page_id>.md`，private-delete 页面位于 `wiki/_redacted/<page_id>.md`。文件 frontmatter 只放紧凑元数据和 content hash，正文放已蒸馏事实；状态变化时旧路径要被清理，避免同一记忆同时以 active/stale 两种形态存在。
+稳定页写入后必须落成可审计 markdown：active 页面位于 `wiki/<dimension>/<title-slug>.md`，stale/archived/tombstoned 页面位于 `wiki/_archive/<title-slug>.md`，private-delete 页面位于 `wiki/_redacted/<title-slug>.md`。文件名必须来自条目标题而不是数据库 id，便于模型先按维度列文件，再按语义路径继续查看或编辑；只有标题冲突时才允许在 slug 后追加短 id 消歧。文件 frontmatter 只放紧凑元数据和 content hash，正文放已蒸馏事实；状态或标题变化时旧路径要被清理，避免同一记忆同时以 active/stale 两种形态存在。
 
 ### 3.2 十维个人本体
 

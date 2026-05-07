@@ -635,6 +635,8 @@ CORE_TOOLS = {
 }
 ```
 
+Web 工具的拆分参考并致谢 Hermes Agent 的 MIT 许可 `tools/web_tools.py`：搜索工具只返回标题、URL、摘要等结果元数据，页面正文读取由独立 fetch/extract 路径承担。Mnemo 保留这个边界，但实现为 stdlib-only 的本地工具，并增加项目自己的 URL 安全和结果压缩规则。
+
 Learning / Dream 阶段按需暴露的候选写入工具使用 provider-safe snake_case 名称：
 
 ```python
@@ -723,9 +725,9 @@ type ToolGroup =
 
 | Risk | 例子 | 默认处理 |
 |------|------|----------|
-| `read` | `file_read`、`web_search`、`memory_search`、`skills_list` | profile 允许即执行 |
+| `read` | `file_read`、`memory_search`、`skills_list` | profile 允许即执行 |
 | `write` | `file_patch`、`memory_write_candidate`、`skill_manage patch` | 可信 workspace 内执行，写 RunLedger，可回滚 |
-| `external` | 发消息、发邮件、公开发布、付款、删除远端资源 | 执行前确认，或要求 standing authority |
+| `external` | `web_search`、`web_fetch`、发消息、发邮件、公开发布、付款、删除远端资源 | 执行前确认，或要求 standing authority |
 | `admin` | gateway config、provider key、全局安全策略、安装第三方 tool/plugin | 不暴露给普通 run，只能 owner 显式调用 |
 
 四级风险是用户侧和 prompt 侧的压缩表示；ActionEngine 内部还必须计算副作用标记，避免把 `exec`、浏览器、MCP 等复杂工具简化成一个 `write`。
@@ -771,7 +773,7 @@ tools:
 file_read(path, range?) - read workspace files [read]
 apply_patch(patch) - edit files by patch [write]
 exec(cmd, cwd?) - run shell command; probe first [write]
-web_search(query) - current web search [read]
+web_search(query) - current web search [external]
 skills_list(query?) - list matching skills [read]
 skill_manage(action,name,patch?) - create/patch local skills [write]
 send_message(target,text) - deliver message externally [external]

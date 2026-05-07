@@ -1201,6 +1201,7 @@ def _is_profile_safe_tool(name: str) -> bool:
         "skill_view",
         "file_search",
         "file_read",
+        "web_search",
         "web_fetch",
     }
 

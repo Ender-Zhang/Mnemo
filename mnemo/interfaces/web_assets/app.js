@@ -125,6 +125,7 @@ const settingApiKeyEnv = document.querySelector("#settingApiKeyEnv");
 const settingTimeout = document.querySelector("#settingTimeout");
 const settingRetryCount = document.querySelector("#settingRetryCount");
 const settingRetryBackoff = document.querySelector("#settingRetryBackoff");
+const settingMaxToolRounds = document.querySelector("#settingMaxToolRounds");
 const quietEnabled = document.querySelector("#quietEnabled");
 const quietStart = document.querySelector("#quietStart");
 const quietEnd = document.querySelector("#quietEnd");
@@ -1447,13 +1448,29 @@ function isTechnicalToken(value) {
 function openMemoryMarkdown(payload, options = {}) {
   if (!memoryMarkdownPanel || !memoryMarkdownTitle || !memoryMarkdownBody) return;
   const item = payload.item || {};
-  memoryMarkdownTitle.textContent = item.title || "记忆详情";
-  renderMarkdownInto(memoryMarkdownBody, payload.markdown || memoryPayloadMarkdown(payload));
+  const markdown = payload.markdown || memoryPayloadMarkdown(payload);
+  memoryMarkdownTitle.textContent = markdownDocumentTitle(markdown) || item.title || "记忆详情";
+  renderMarkdownInto(memoryMarkdownBody, markdown);
   memoryMarkdownPanel.hidden = false;
   if (options.scroll === false) return;
   window.requestAnimationFrame(() => {
     memoryMarkdownPanel.scrollIntoView({ block: "nearest" });
   });
+}
+
+function markdownDocumentTitle(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  let index = 0;
+  if (isMarkdownFrontmatterStart(lines, 0)) {
+    const frontmatter = markdownFrontmatter(lines, 0);
+    index = frontmatter.nextIndex;
+  }
+  while (index < lines.length) {
+    const match = String(lines[index] || "").match(/^#\s+(.+)$/);
+    if (match) return match[1].trim();
+    index += 1;
+  }
+  return "";
 }
 
 function hideMemoryMarkdown() {
@@ -1527,31 +1544,73 @@ async function initMemoryAvatar() {
 function renderThreeAvatar(THREE) {
   const canvas = memoryAvatar3d;
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
-  camera.position.set(0, 1.4, 5.2);
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  camera.position.set(0, 0.55, 5.4);
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  const key = new THREE.DirectionalLight(0xffffff, 2.2);
-  key.position.set(2.8, 4, 3);
-  scene.add(key, new THREE.AmbientLight(0xdce8ff, 1.2));
+  if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+  const key = new THREE.DirectionalLight(0xffffff, 2);
+  key.position.set(2.6, 3.8, 3.2);
+  const rim = new THREE.DirectionalLight(0xb7fff6, 1.1);
+  rim.position.set(-3, 1.8, -2.4);
+  scene.add(key, rim, new THREE.AmbientLight(0xf5efe3, 1.15));
 
   const group = new THREE.Group();
-  const skin = new THREE.MeshStandardMaterial({ color: 0xf4d7c7, roughness: 0.58, metalness: 0.05 });
-  const suit = new THREE.MeshStandardMaterial({ color: 0x1f2d3a, roughness: 0.42, metalness: 0.18 });
-  const accent = new THREE.MeshStandardMaterial({ color: 0x21a6a0, roughness: 0.35, metalness: 0.25 });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 48, 48), skin);
-  head.position.y = 1.45;
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.58, 1.15, 40), suit);
-  torso.position.y = 0.55;
-  const core = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.01, 16, 128), accent);
-  core.rotation.x = Math.PI / 2.4;
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(1.82, 0.012, 16, 160), accent);
-  halo.rotation.x = Math.PI / 2;
-  const armLeft = limb(THREE, suit, -0.68, 0.7, 0.35);
-  const armRight = limb(THREE, suit, 0.68, 0.7, -0.35);
-  const legLeft = limb(THREE, suit, -0.25, -0.35, 0.08);
-  const legRight = limb(THREE, suit, 0.25, -0.35, -0.08);
-  group.add(head, torso, core, halo, armLeft, armRight, legLeft, legRight);
+  const glass = new THREE.MeshPhysicalMaterial({
+    color: 0xf8fff9,
+    roughness: 0.18,
+    metalness: 0.04,
+    transparent: true,
+    opacity: 0.42,
+  });
+  const lattice = new THREE.MeshStandardMaterial({
+    color: 0x0b7d78,
+    roughness: 0.36,
+    metalness: 0.22,
+    transparent: true,
+    opacity: 0.38,
+    wireframe: true,
+  });
+  const coreMaterial = new THREE.MeshStandardMaterial({
+    color: 0xffc766,
+    emissive: 0x6b3f00,
+    emissiveIntensity: 0.16,
+    roughness: 0.24,
+    metalness: 0.18,
+  });
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.78, 64, 64), glass);
+  const latticeCore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.58, 2), lattice);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 32), coreMaterial);
+  const rings = [
+    memoryRing(THREE, 0x0b7d78, 1.18, Math.PI / 2.35, 0.14),
+    memoryRing(THREE, 0x6254c7, 1.42, Math.PI / 2, Math.PI / 5.5),
+    memoryRing(THREE, 0xa66f1f, 1.65, Math.PI / 2.65, -Math.PI / 5.8),
+  ];
+  const nodes = [];
+  const lineVertices = [];
+  const nodeMaterials = [
+    new THREE.MeshStandardMaterial({ color: 0x0b7d78, roughness: 0.32, metalness: 0.2 }),
+    new THREE.MeshStandardMaterial({ color: 0x6254c7, roughness: 0.34, metalness: 0.14 }),
+    new THREE.MeshStandardMaterial({ color: 0xa66f1f, roughness: 0.35, metalness: 0.12 }),
+    new THREE.MeshStandardMaterial({ color: 0xc65447, roughness: 0.38, metalness: 0.1 }),
+  ];
+  for (let index = 0; index < MEMORY_DIMENSIONS.length; index += 1) {
+    const position = memoryNodePosition(index, MEMORY_DIMENSIONS.length, 1.42);
+    const node = new THREE.Mesh(
+      new THREE.SphereGeometry(0.052 + (index % 3) * 0.01, 24, 24),
+      nodeMaterials[index % nodeMaterials.length],
+    );
+    node.position.set(position.x, position.y, position.z);
+    node.userData.phase = index * 0.63;
+    nodes.push(node);
+    group.add(node);
+    lineVertices.push(0, 0, 0, position.x, position.y, position.z);
+  }
+  const lines = new THREE.LineSegments(
+    new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(lineVertices, 3)),
+    new THREE.LineBasicMaterial({ color: 0x0b7d78, transparent: true, opacity: 0.18 }),
+  );
+  group.add(lines, shell, latticeCore, core, ...rings);
   scene.add(group);
 
   function resize() {
@@ -1570,20 +1629,47 @@ function renderThreeAvatar(THREE) {
   }
 
   function frame(time) {
-    group.rotation.y = time * 0.00022;
-    core.rotation.z = time * 0.00035;
-    halo.rotation.z = -time * 0.00019;
+    group.rotation.y = time * 0.00018;
+    group.rotation.x = Math.sin(time * 0.00022) * 0.08;
+    latticeCore.rotation.y = time * 0.00032;
+    latticeCore.rotation.z = -time * 0.00021;
+    core.scale.setScalar(1 + Math.sin(time * 0.0014) * 0.08);
+    rings[0].rotation.z = time * 0.00038;
+    rings[1].rotation.z = -time * 0.00026;
+    rings[2].rotation.z = time * 0.00018;
+    for (const node of nodes) {
+      node.scale.setScalar(1 + Math.sin(time * 0.0012 + node.userData.phase) * 0.14);
+    }
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 }
 
-function limb(THREE, material, x, y, rotationZ) {
-  const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.9, 24), material);
-  mesh.position.set(x, y, 0);
+function memoryRing(THREE, color, radius, rotationX, rotationZ) {
+  const mesh = new THREE.Mesh(
+    new THREE.TorusGeometry(radius, 0.012, 18, 180),
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.3,
+      metalness: 0.18,
+      transparent: true,
+      opacity: 0.62,
+    }),
+  );
+  mesh.rotation.x = rotationX;
   mesh.rotation.z = rotationZ;
   return mesh;
+}
+
+function memoryNodePosition(index, total, radius) {
+  const phi = Math.acos(1 - (2 * (index + 0.5)) / Math.max(total, 1));
+  const theta = index * Math.PI * (3 - Math.sqrt(5));
+  return {
+    x: Math.cos(theta) * Math.sin(phi) * radius,
+    y: Math.cos(phi) * radius * 0.72,
+    z: Math.sin(theta) * Math.sin(phi) * radius,
+  };
 }
 
 function renderCanvasAvatar() {
@@ -1597,57 +1683,65 @@ function renderCanvasAvatar() {
     ctx.clearRect(0, 0, width, height);
     const gradient = ctx.createRadialGradient(centerX, centerY - 30, 28, centerX, centerY, width * 0.48);
     gradient.addColorStop(0, "rgba(255,255,255,0.98)");
-    gradient.addColorStop(0.55, "rgba(228,243,240,0.42)");
-    gradient.addColorStop(1, "rgba(33,166,160,0.04)");
+    gradient.addColorStop(0.55, "rgba(228,243,240,0.48)");
+    gradient.addColorStop(1, "rgba(98,84,199,0.04)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
     drawAvatarGrid(ctx, width, height, centerX, centerY);
-    ctx.strokeStyle = "rgba(11,125,120,0.26)";
+    ctx.strokeStyle = "rgba(11,125,120,0.24)";
     ctx.lineWidth = 2.2;
-    for (let index = 0; index < 4; index += 1) {
+    for (let index = 0; index < 3; index += 1) {
       ctx.save();
       ctx.translate(centerX, centerY);
-      ctx.rotate(time * 0.00018 + index * 0.78);
+      ctx.rotate(time * 0.00018 + index * 0.92);
       ctx.beginPath();
-      ctx.ellipse(0, 0, width * (0.21 + index * 0.045), height * 0.085, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, width * (0.18 + index * 0.05), height * (0.06 + index * 0.014), 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.restore();
     }
-    const avatarGradient = ctx.createLinearGradient(centerX, centerY - 170, centerX, centerY + 150);
-    avatarGradient.addColorStop(0, "rgba(255,255,255,0.88)");
-    avatarGradient.addColorStop(0.48, "rgba(118,139,174,0.34)");
-    avatarGradient.addColorStop(1, "rgba(11,125,120,0.11)");
-    ctx.fillStyle = avatarGradient;
-    ctx.strokeStyle = "rgba(98,84,199,0.24)";
-    ctx.lineWidth = 2;
+    const pulse = 1 + Math.sin(time * 0.0014) * 0.035;
+    const coreGradient = ctx.createRadialGradient(centerX - 26, centerY - 32, 8, centerX, centerY, width * 0.18 * pulse);
+    coreGradient.addColorStop(0, "rgba(255,255,255,0.96)");
+    coreGradient.addColorStop(0.42, "rgba(228,243,240,0.72)");
+    coreGradient.addColorStop(1, "rgba(11,125,120,0.12)");
+    ctx.fillStyle = coreGradient;
+    ctx.strokeStyle = "rgba(98,84,199,0.28)";
+    ctx.lineWidth = 2.4;
     ctx.beginPath();
-    ctx.arc(centerX, centerY - 132, 35, 0, Math.PI * 2);
+    ctx.arc(centerX, centerY, width * 0.105 * pulse, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(centerX - 54, centerY - 82);
-    ctx.bezierCurveTo(centerX - 44, centerY - 124, centerX + 44, centerY - 124, centerX + 54, centerY - 82);
-    ctx.lineTo(centerX + 42, centerY + 58);
-    ctx.bezierCurveTo(centerX + 34, centerY + 106, centerX - 34, centerY + 106, centerX - 42, centerY + 58);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(255,255,255,0.48)";
-    ctx.lineWidth = 1;
-    for (let y = -74; y <= 54; y += 24) {
+    const nodes = [];
+    for (let index = 0; index < MEMORY_DIMENSIONS.length; index += 1) {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / MEMORY_DIMENSIONS.length + time * 0.00008;
+      const radiusX = width * (0.25 + (index % 2) * 0.025);
+      const radiusY = height * (0.118 + (index % 3) * 0.007);
+      nodes.push({
+        x: centerX + Math.cos(angle) * radiusX,
+        y: centerY + Math.sin(angle) * radiusY,
+        color: ["#0b7d78", "#6254c7", "#a66f1f", "#c65447"][index % 4],
+      });
+    }
+    ctx.lineWidth = 1.1;
+    ctx.strokeStyle = "rgba(11,125,120,0.13)";
+    for (const node of nodes) {
       ctx.beginPath();
-      ctx.moveTo(centerX - 38, centerY + y);
-      ctx.quadraticCurveTo(centerX, centerY + y + 8, centerX + 38, centerY + y);
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(node.x, node.y);
       ctx.stroke();
     }
-    ctx.strokeStyle = "rgba(11,125,120,0.42)";
-    ctx.lineWidth = 5;
+    for (const node of nodes) {
+      ctx.fillStyle = node.color;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.76)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(166,111,31,0.78)";
     ctx.beginPath();
-    ctx.moveTo(centerX - 30, centerY - 35);
-    ctx.lineTo(centerX + 30, centerY - 35);
-    ctx.stroke();
-    ctx.fillStyle = "rgba(11,125,120,0.12)";
-    roundRect(ctx, centerX - 86, centerY + 120, 172, 20, 10);
+    ctx.arc(centerX, centerY, 12, 0, Math.PI * 2);
     ctx.fill();
     requestAnimationFrame(frame);
   }
@@ -1656,12 +1750,12 @@ function renderCanvasAvatar() {
 
 function drawAvatarGrid(ctx, width, height, centerX, centerY) {
   ctx.save();
-  ctx.translate(centerX, centerY + 114);
+  ctx.translate(centerX, centerY + 132);
   ctx.strokeStyle = "rgba(11,125,120,0.08)";
   ctx.lineWidth = 1;
-  for (let index = 0; index < 6; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     ctx.beginPath();
-    ctx.ellipse(0, 0, width * (0.08 + index * 0.052), height * (0.018 + index * 0.011), 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, width * (0.08 + index * 0.055), height * (0.014 + index * 0.01), 0, 0, Math.PI * 2);
     ctx.stroke();
   }
   for (let index = 0; index < 10; index += 1) {
@@ -1739,6 +1833,7 @@ function renderSettings(payload) {
   settingTimeout.value = runtime.timeout_s || 30;
   settingRetryCount.value = runtime.retry_count || 0;
   settingRetryBackoff.value = runtime.retry_backoff_s || 0;
+  settingMaxToolRounds.value = runtime.max_tool_rounds || 12;
 
   const quiet = payload.quiet_hours || payload.settings?.quiet_hours || {};
   quietEnabled.checked = Boolean(quiet.enabled);
@@ -1838,6 +1933,7 @@ async function saveSettings(options = {}) {
       timeout_s: Number(settingTimeout.value || 30),
       retry_count: Number(settingRetryCount.value || 0),
       retry_backoff_s: Number(settingRetryBackoff.value || 0),
+      max_tool_rounds: Number(settingMaxToolRounds.value || 12),
     };
   }
   try {
@@ -1872,6 +1968,7 @@ function renderMarkdownInto(node, text) {
 function markdownBlocks(text) {
   const lines = String(text || "").replace(/\r\n/g, "\n").split("\n");
   const blocks = [];
+  const headingIds = new Map();
   let index = 0;
   while (index < lines.length) {
     const line = lines[index];
@@ -1894,6 +1991,12 @@ function markdownBlocks(text) {
       blocks.push(pre);
       continue;
     }
+    if (isMarkdownFrontmatterStart(lines, index)) {
+      const frontmatter = markdownFrontmatter(lines, index);
+      blocks.push(frontmatter.node);
+      index = frontmatter.nextIndex;
+      continue;
+    }
     if (isMarkdownTableStart(lines, index)) {
       const tableLines = [lines[index], lines[index + 1]];
       index += 2;
@@ -1908,6 +2011,7 @@ function markdownBlocks(text) {
     if (heading) {
       const level = Math.min(4, heading[1].length);
       const node = document.createElement(`h${level}`);
+      node.id = markdownAnchorId(heading[2], headingIds);
       appendInlineMarkdown(node, heading[2]);
       blocks.push(node);
       index += 1;
@@ -1953,6 +2057,46 @@ function markdownBlocks(text) {
     blocks.push(p);
   }
   return blocks;
+}
+
+function markdownAnchorId(text, headingIds) {
+  const base =
+    String(text || "")
+      .normalize("NFKD")
+      .toLowerCase()
+      .replace(/[`*_()[\]]/g, "")
+      .replace(/[^\w\u4e00-\u9fff\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-") || "section";
+  const count = headingIds.get(base) || 0;
+  headingIds.set(base, count + 1);
+  return count ? `${base}-${count + 1}` : base;
+}
+
+function isMarkdownFrontmatterStart(lines, index) {
+  if (index !== 0 || String(lines[index] || "").trim() !== "---") return false;
+  return lines.slice(index + 1).some((line) => String(line || "").trim() === "---");
+}
+
+function markdownFrontmatter(lines, index) {
+  let end = index + 1;
+  while (end < lines.length && String(lines[end] || "").trim() !== "---") {
+    end += 1;
+  }
+  const rawLines = lines.slice(index, Math.min(end + 1, lines.length));
+  const section = document.createElement("section");
+  section.className = "markdown-frontmatter";
+  const title = document.createElement("strong");
+  title.textContent = "原始信息";
+  const pre = document.createElement("pre");
+  const codeNode = document.createElement("code");
+  codeNode.textContent = rawLines.join("\n");
+  pre.appendChild(codeNode);
+  section.append(title, pre);
+  return {
+    node: section,
+    nextIndex: Math.min(end + 1, lines.length),
+  };
 }
 
 function isMarkdownTableStart(lines, index) {
@@ -2034,16 +2178,20 @@ function inlineMarkdownNode(token) {
     const anchor = document.createElement("a");
     anchor.textContent = link[1];
     anchor.href = safeHref(link[2]);
-    anchor.target = "_blank";
-    anchor.rel = "noreferrer";
+    if (!anchor.href.endsWith(link[2]) || !String(link[2]).startsWith("#")) {
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+    }
     return anchor;
   }
   return document.createTextNode(token);
 }
 
 function safeHref(value) {
+  const text = String(value || "").trim();
+  if (text.startsWith("#")) return text;
   try {
-    const url = new URL(value, window.location.href);
+    const url = new URL(text, window.location.href);
     if (["http:", "https:", "mailto:"].includes(url.protocol)) return url.href;
   } catch (_error) {
     return "#";

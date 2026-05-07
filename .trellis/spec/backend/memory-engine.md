@@ -97,7 +97,8 @@
 - Dream consolidation must not promote candidates whose stored quality signal recommends `discard`; these candidates become `rejected:low_quality` with compact quality metadata in the result.
 - Dream consolidation may route quality `draft` recommendations to `needs_review:low_quality` instead of promoting them; candidates without a stored quality signal keep the existing compatibility behavior.
 - Stable memory pages are created through promotion or explicit curation.
-- Active stable memory pages are materialized as deterministic wiki markdown files under `wiki/<dimension>/<page_id>.md`; stale, archived, and tombstoned pages move to `wiki/_archive/<page_id>.md`, and private-deleted pages move to `wiki/_redacted/<page_id>.md`.
+- Active stable memory pages are materialized as deterministic wiki markdown files under `wiki/<dimension>/<title-slug>.md`; stale, archived, and tombstoned pages move to `wiki/_archive/<title-slug>.md`, and private-deleted pages move to `wiki/_redacted/<title-slug>.md`.
+- Wiki markdown filenames must be derived from the user-facing page title instead of the opaque page id so file-list disclosure remains semantic; title collisions may append a short id suffix for uniqueness.
 - Wiki markdown materialization is triggered by promotion, L1 snapshot compilation, stale/decay status changes, tombstone/archive curation, and private-delete redaction.
 - Wiki markdown frontmatter must include compact page metadata: `id`, normalized content `dimension`, `status`, `confidence`, `scope`, timestamps, source candidate id when present, and a content hash.
 - Wiki markdown frontmatter must also preserve compact page-local metadata when present: `aliases`, `links`, `associations`, decay/verification hints, exposure hints, and watch ids. These fields remain bounded metadata and must not contain raw evidence blobs or transcript bodies.
@@ -190,8 +191,11 @@
 - `/api/memory/dimension` is the L2 memory disclosure endpoint: it returns active stable pages and open draft/review candidates for one normalized dimension as clipped cards with detail URLs.
 - `/api/memory/dimension` must exclude promoted, rejected, tombstoned, archived, and private-deleted candidates from the user-facing candidate list.
 - `/api/memory/item` is the L3 memory disclosure endpoint: it returns one selected page or candidate with clipped detail and compact evidence/tombstone rows.
-- `/api/memory/item` markdown must render as a compact wiki note: YAML frontmatter, one H1, one body paragraph, optional evidence bullets, and no API-style field dump.
-- `/api/memory/item` markdown uses normalized ontology dimensions in frontmatter, localized user-facing section labels in the body, and must not repeat the same candidate claim as both title and body.
+- `/api/memory/item` markdown for stable pages must read the materialized wiki markdown file directly from disk and must not call a provider on the read path; missing files may be re-materialized from the page record before reading.
+- `/api/memory/item` markdown must render as a compact wiki note: YAML frontmatter, one concise H1 topic, body content, optional evidence bullets for candidates, and no API-style field dump.
+- `/api/memory/item` markdown uses normalized ontology dimensions in frontmatter, title-based `wiki_path`, and must not repeat the same candidate claim as both title and body.
+- `/api/memory/item` cross-entry Markdown anchors must use title-based wiki file paths such as `wiki/<dimension>/<title-slug>.md` instead of generated `#hash` targets.
+- `/api/memory/ontology` and `/api/memory/dimension` may deduplicate exact duplicate memory bodies across dimensions for display, preferring the configured ontology order without mutating stored pages.
 - `/api/memory/item` must only read active pages and open draft/review candidates; historical rejected/tombstoned/private records require explicit CLI or memory search paths.
 - L4 raw session recall remains available only through explicit memory/session search paths, never through the memory compass ontology, dimension, or item endpoints.
 - `mnemo memory list` must expose read-only candidate/page inventory for human and harness inspection without mutating memory state.

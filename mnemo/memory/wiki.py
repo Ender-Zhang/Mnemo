@@ -19,7 +19,7 @@ def materialize_memory_page(state_dir: str | Path, page: dict[str, Any]) -> dict
     path = memory_page_wiki_path(state_dir, page)
     path.parent.mkdir(parents=True, exist_ok=True)
     remove_memory_page_wiki_files(state_dir, page_id, keep=path)
-    markdown = render_memory_page_markdown(page)
+    markdown = render_memory_page_markdown(page, wiki_path=_relative_wiki_path(state_dir, path))
     tmp_path = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     tmp_path.write_text(markdown, encoding="utf-8")
     os.replace(tmp_path, path)
@@ -31,6 +31,10 @@ def materialize_memory_page(state_dir: str | Path, page: dict[str, Any]) -> dict
 
 def materialize_memory_pages(state_dir: str | Path, pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [materialize_memory_page(state_dir, page) for page in pages]
+
+
+def memory_page_wiki_ref(state_dir: str | Path, page: dict[str, Any]) -> str:
+    return _relative_wiki_path(state_dir, memory_page_wiki_path(state_dir, page))
 
 
 def remove_memory_page_wiki_files(
@@ -45,7 +49,9 @@ def remove_memory_page_wiki_files(
         return []
     kept = keep.expanduser().resolve() if keep else None
     removed: list[str] = []
-    for path in root.glob(f"**/{safe_id}.md"):
+    for path in root.glob("**/*.md"):
+        if path.name != f"{safe_id}.md" and not _wiki_file_has_page_id(path, page_id):
+            continue
         resolved = path.resolve()
         if kept and resolved == kept:
             continue
@@ -61,6 +67,7 @@ def memory_page_wiki_path(state_dir: str | Path, page: dict[str, Any]) -> Path:
     page_id = _safe_page_id(str(page.get("id") or ""))
     if not page_id:
         raise ValueError("memory page id is required for wiki path")
+    slug = memory_page_slug(page)
     status = str(page.get("status") or "active").casefold()
     if status.startswith("private_delete"):
         folder = "_redacted"
@@ -68,14 +75,21 @@ def memory_page_wiki_path(state_dir: str | Path, page: dict[str, Any]) -> Path:
         folder = "_archive"
     else:
         folder = memory_page_dimension(page)
-    return Path(state_dir).expanduser().resolve() / "wiki" / folder / f"{page_id}.md"
+    root = Path(state_dir).expanduser().resolve() / "wiki" / folder
+    path = root / f"{slug}.md"
+    existing_page_id = _wiki_file_page_id(path)
+    if existing_page_id and existing_page_id != page_id:
+        path = root / f"{slug}--{page_id[-8:]}.md"
+    return path
 
 
-def render_memory_page_markdown(page: dict[str, Any]) -> str:
+def render_memory_page_markdown(page: dict[str, Any], *, wiki_path: str | None = None) -> str:
     title = _display_title(str(page.get("title") or "Memory"))
     content = str(page.get("content") or "").strip() or "_No memory body._"
     frontmatter = {
         "id": page.get("id"),
+        "slug": memory_page_slug(page),
+        "wiki_path": wiki_path,
         "dimension": memory_page_dimension(page),
         "status": page.get("status") or "active",
         "confidence": page.get("confidence"),
@@ -103,6 +117,15 @@ def memory_page_dimension(page: dict[str, Any]) -> str:
         if dimension in CONTENT_DIMENSIONS:
             return dimension
     return "context"
+
+
+def memory_page_slug(page: dict[str, Any]) -> str:
+    title = _display_title(str(page.get("title") or ""))
+    slug = _title_slug(title)
+    if slug:
+        return slug
+    page_id = _safe_page_id(str(page.get("id") or ""))
+    return page_id or "memory"
 
 
 def memory_page_content_hash(page: dict[str, Any]) -> str:
@@ -226,6 +249,40 @@ def _iso_timestamp(value: Any) -> str | None:
 
 def _safe_page_id(value: str) -> str:
     return "".join(char for char in str(value or "") if char.isalnum() or char in {"_", "-"})
+
+
+def _title_slug(value: str) -> str:
+    parts: list[str] = []
+    previous_dash = False
+    for char in _normalize_space(str(value or "")).casefold().replace("_", "-"):
+        if char.isalnum():
+            parts.append(char)
+            previous_dash = False
+        elif not previous_dash:
+            parts.append("-")
+            previous_dash = True
+    return "".join(parts).strip("-")
+
+
+def _wiki_file_has_page_id(path: Path, page_id: str) -> bool:
+    return _wiki_file_page_id(path) == page_id
+
+
+def _wiki_file_page_id(path: Path) -> str:
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:2048]
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return ""
+    if not head.startswith("---"):
+        return ""
+    frontmatter = head.split("---", 2)[1] if head.count("---") >= 2 else head
+    for line in frontmatter.splitlines():
+        key, separator, value = line.partition(":")
+        if separator and key.strip() == "id":
+            return value.strip().strip("\"'")
+    return ""
 
 
 def _relative_wiki_path(state_dir: str | Path, path: Path) -> str:

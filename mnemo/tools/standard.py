@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from html.parser import HTMLParser
+import ipaddress
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 from typing import TYPE_CHECKING, Any
 from urllib.error import URLError
-from urllib.parse import urlparse
-from urllib.request import Request, urlopen
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 import webbrowser
 
 from ..core.errors import NotFoundError, ToolError
@@ -20,6 +23,33 @@ if TYPE_CHECKING:
 
 
 ToolHandler = Callable[[dict[str, Any], "ToolContext"], dict[str, Any]]
+
+# Web tool design acknowledgement: inspired by Hermes Agent's MIT-licensed
+# web tool split between search metadata and page extraction/fetching.
+# This implementation is Mnemo-specific and keeps stdlib-only dependencies.
+_WEB_USER_AGENT = "mnemo-agent/0"
+_DUCKDUCKGO_HTML_SEARCH_URL = "https://duckduckgo.com/html/?q={query}"
+_BLOCKED_WEB_HOSTNAMES = frozenset({"metadata.google.internal", "metadata.goog"})
+_ALWAYS_BLOCKED_WEB_IPS = frozenset(
+    {
+        ipaddress.ip_address("169.254.169.254"),
+        ipaddress.ip_address("169.254.170.2"),
+        ipaddress.ip_address("169.254.169.253"),
+        ipaddress.ip_address("100.100.100.200"),
+        ipaddress.ip_address("fd00:ec2::254"),
+    }
+)
+_ALWAYS_BLOCKED_WEB_NETWORKS = (ipaddress.ip_network("169.254.0.0/16"),)
+_CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+_TEXTUAL_CONTENT_MARKERS = (
+    "json",
+    "javascript",
+    "markdown",
+    "text",
+    "xhtml",
+    "xml",
+    "yaml",
+)
 
 
 def _schema(required: list[str], properties: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -96,8 +126,21 @@ STANDARD_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="web_search",
+        description="Search the public web and return compact result metadata. Requires external policy.",
+        risk="external",
+        input_schema=_schema(
+            ["query"],
+            {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+                "timeout_s": {"type": "number", "minimum": 0.1, "maximum": 30, "default": 10},
+            },
+        ),
+    ),
+    ToolSpec(
         name="web_fetch",
-        description="Fetch an HTTP or HTTPS URL. Requires external policy.",
+        description="Fetch an HTTP or HTTPS URL and return readable text. Requires external policy.",
         risk="external",
         input_schema=_schema(
             ["url"],
@@ -156,6 +199,7 @@ def standard_tool_handlers() -> dict[str, ToolHandler]:
         "file_read": file_read,
         "file_write": file_write,
         "file_patch": file_patch,
+        "web_search": web_search,
         "web_fetch": web_fetch,
         "shell_exec": shell_exec,
         "browser_open": browser_open,
@@ -249,28 +293,40 @@ def file_patch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
     }
 
 
+def web_search(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
+    query = _require_str(args, "query")
+    limit = _bounded_int(args.get("limit", 5), minimum=1, maximum=20)
+    timeout_s = _bounded_float(args.get("timeout_s", 10), minimum=0.1, maximum=30)
+    search_url = _DUCKDUCKGO_HTML_SEARCH_URL.format(query=quote_plus(query))
+    fetched = _fetch_http(search_url, timeout_s=timeout_s, max_bytes=120000)
+    charset = fetched["headers"].get_content_charset() or "utf-8"
+    html = fetched["raw"].decode(charset, errors="replace")
+    results = _parse_search_results(html, limit=limit)
+    return {
+        "query": query,
+        "source": "duckduckgo_html",
+        "results": results,
+        "count": len(results),
+        "truncated": bool(fetched["truncated"]),
+    }
+
+
 def web_fetch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
-    url = _require_http_url(args, "url")
+    url = _require_public_http_url(args, "url")
     timeout_s = _bounded_float(args.get("timeout_s", 10), minimum=0.1, maximum=30)
     max_bytes = _bounded_int(args.get("max_bytes", 60000), minimum=1, maximum=200000)
-    request = Request(url, headers={"User-Agent": "mnemo-agent/0"})
-    try:
-        with urlopen(request, timeout=timeout_s) as response:
-            raw = response.read(max_bytes + 1)
-            content_type = response.headers.get("content-type", "")
-            charset = response.headers.get_content_charset() or "utf-8"
-            status = getattr(response, "status", 200)
-    except URLError as exc:
-        raise ToolError(f"web_fetch failed: {exc}") from exc
-    truncated = len(raw) > max_bytes
-    text = raw[:max_bytes].decode(charset, errors="replace")
+    fetched = _fetch_http(url, timeout_s=timeout_s, max_bytes=max_bytes)
+    content_type = fetched["headers"].get("content-type", "")
+    text, title = _decode_web_body(fetched["raw"][:max_bytes], fetched["headers"])
     return {
         "url": url,
-        "status": status,
+        "final_url": fetched["final_url"],
+        "status": fetched["status"],
         "content_type": content_type,
+        "title": title,
         "text": text,
-        "bytes_read": min(len(raw), max_bytes),
-        "truncated": truncated,
+        "bytes_read": fetched["bytes_read"],
+        "truncated": fetched["truncated"],
     }
 
 
@@ -352,6 +408,8 @@ def standard_tool_summary(result: ToolResult) -> str | None:
     if result.name == "file_patch":
         count = sum(item.get("count", 0) for item in result.result.get("replacements", []))
         return f"Patched file: {result.result.get('path', 'unknown')} ({count} replacements)."
+    if result.name == "web_search":
+        return f"Found {len(result.result.get('results', []))} web results."
     if result.name == "web_fetch":
         return f"Fetched URL with status {result.result.get('status', 'unknown')}."
     if result.name == "shell_exec":
@@ -395,12 +453,23 @@ def standard_tool_evidence(result: ToolResult) -> list[dict[str, Any]] | None:
                 "replacement_count": sum(item.get("count", 0) for item in result.result.get("replacements", [])),
             }
         ]
+    if result.name == "web_search":
+        results = result.result.get("results", [])
+        return [
+            {
+                "kind": "web_search",
+                "id": str(result.result.get("query") or ""),
+                "title": str(result.result.get("query") or "Web search"),
+                "items": results[:10],
+                "source": result.result.get("source"),
+            }
+        ]
     if result.name == "web_fetch":
         return [
             {
                 "kind": "web_page",
-                "id": str(result.result.get("url") or ""),
-                "title": str(result.result.get("url") or "Web page"),
+                "id": str(result.result.get("final_url") or result.result.get("url") or ""),
+                "title": str(result.result.get("title") or result.result.get("url") or "Web page"),
                 "status": result.result.get("status"),
                 "content_type": result.result.get("content_type"),
                 "truncated": bool(result.result.get("truncated")),
@@ -460,6 +529,317 @@ def _require_http_url(args: dict[str, Any], key: str) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ToolError(f"{key} must be an http or https URL")
     return url
+
+
+def _require_public_http_url(args: dict[str, Any], key: str) -> str:
+    return _validate_public_http_url(_require_http_url(args, key), key=key)
+
+
+def _validate_public_http_url(url: str, *, key: str = "url") -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ToolError(f"{key} must be an http or https URL")
+    hostname = (parsed.hostname or "").strip().lower().rstrip(".")
+    if not hostname:
+        raise ToolError(f"{key} must be an http or https URL")
+    if hostname in _BLOCKED_WEB_HOSTNAMES:
+        raise ToolError(f"{key} points to a blocked internal host")
+    resolved_ips = _resolve_hostname_ips(hostname)
+    if any(_is_always_blocked_web_ip(ip) for ip in resolved_ips):
+        raise ToolError(f"{key} points to a private or internal network address")
+    if _allow_private_web_urls():
+        return url
+    for ip in resolved_ips:
+        if _is_blocked_web_ip(ip):
+            raise ToolError(f"{key} points to a private or internal network address")
+    return url
+
+
+def _allow_private_web_urls() -> bool:
+    return str(os.getenv("MNEMO_ALLOW_PRIVATE_WEB_URLS") or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _resolve_hostname_ips(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        literal = ipaddress.ip_address(hostname)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        return [literal]
+    try:
+        addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ToolError("URL host could not be resolved") from exc
+    ips: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for item in addr_info:
+        sockaddr = item[4]
+        try:
+            ips.append(ipaddress.ip_address(str(sockaddr[0])))
+        except (IndexError, ValueError):
+            continue
+    if not ips:
+        raise ToolError("URL host could not be resolved")
+    return ips
+
+
+def _is_always_blocked_web_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return ip in _ALWAYS_BLOCKED_WEB_IPS or any(ip in network for network in _ALWAYS_BLOCKED_WEB_NETWORKS)
+
+
+def _is_blocked_web_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    if _is_always_blocked_web_ip(ip):
+        return True
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+        return True
+    if ip.is_multicast or ip.is_unspecified:
+        return True
+    if ip in _CGNAT_NETWORK:
+        return True
+    return False
+
+
+class _SafeRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        target = urljoin(req.full_url, newurl)
+        _validate_public_http_url(target)
+        return super().redirect_request(req, fp, code, msg, headers, target)
+
+
+def _fetch_http(url: str, *, timeout_s: float, max_bytes: int) -> dict[str, Any]:
+    _validate_public_http_url(url)
+    request = Request(url, headers={"User-Agent": _WEB_USER_AGENT})
+    try:
+        with build_opener(_SafeRedirectHandler).open(request, timeout=timeout_s) as response:
+            final_url = _validate_public_http_url(response.geturl())
+            raw = response.read(max_bytes + 1)
+            status = getattr(response, "status", 200)
+            headers = response.headers
+    except URLError as exc:
+        raise ToolError(f"web request failed: {exc}") from exc
+    truncated = len(raw) > max_bytes
+    return {
+        "url": url,
+        "final_url": final_url,
+        "status": status,
+        "headers": headers,
+        "raw": raw[:max_bytes],
+        "bytes_read": min(len(raw), max_bytes),
+        "truncated": truncated,
+    }
+
+
+def _decode_web_body(raw: bytes, headers: Any) -> tuple[str, str | None]:
+    content_type = str(headers.get("content-type", "") or "").casefold()
+    if raw.startswith(b"%PDF"):
+        raise ToolError("web_fetch does not decode PDF content")
+    if b"\0" in raw[:4096]:
+        raise ToolError("web_fetch response appears to be binary")
+    if content_type and not _is_textual_content_type(content_type):
+        raise ToolError(f"web_fetch response is not text content: {content_type}")
+    charset = headers.get_content_charset() or "utf-8"
+    decoded = raw.decode(charset, errors="replace")
+    if "html" not in content_type and not _looks_like_html(decoded):
+        return decoded, None
+    return _html_to_text(decoded)
+
+
+def _is_textual_content_type(content_type: str) -> bool:
+    return any(marker in content_type for marker in _TEXTUAL_CONTENT_MARKERS)
+
+
+def _looks_like_html(text: str) -> bool:
+    prefix = text.lstrip()[:200].casefold()
+    return prefix.startswith("<!doctype html") or prefix.startswith("<html") or "<body" in prefix
+
+
+def _html_to_text(html: str) -> tuple[str, str | None]:
+    parser = _HTMLTextExtractor()
+    parser.feed(html)
+    parser.close()
+    return parser.text(), parser.title()
+
+
+class _HTMLTextExtractor(HTMLParser):
+    _BLOCK_TAGS = {
+        "article",
+        "br",
+        "dd",
+        "div",
+        "dt",
+        "footer",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "li",
+        "main",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "td",
+        "th",
+        "tr",
+        "ul",
+        "ol",
+    }
+    _SKIP_TAGS = {"script", "style", "noscript", "template", "svg"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._chunks: list[str] = []
+        self._title_chunks: list[str] = []
+        self._skip_depth = 0
+        self._in_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag in self._SKIP_TAGS:
+            self._skip_depth += 1
+            return
+        if tag == "title":
+            self._in_title = True
+            return
+        if tag in self._BLOCK_TAGS:
+            self._chunks.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag in self._SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+            return
+        if tag == "title":
+            self._in_title = False
+            return
+        if tag in self._BLOCK_TAGS:
+            self._chunks.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._skip_depth:
+            return
+        if self._in_title:
+            self._title_chunks.append(data)
+            return
+        self._chunks.append(data)
+
+    def text(self) -> str:
+        return _clean_visible_text("".join(self._chunks))
+
+    def title(self) -> str | None:
+        title = _clean_inline_text("".join(self._title_chunks))
+        return title or None
+
+
+def _clean_visible_text(text: str) -> str:
+    lines = [_clean_inline_text(line) for line in text.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def _clean_inline_text(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _parse_search_results(html: str, *, limit: int) -> list[dict[str, Any]]:
+    parser = _DuckDuckGoHTMLParser(limit=limit)
+    parser.feed(html)
+    parser.close()
+    return parser.results()
+
+
+class _DuckDuckGoHTMLParser(HTMLParser):
+    def __init__(self, *, limit: int) -> None:
+        super().__init__(convert_charrefs=True)
+        self._limit = limit
+        self._results: list[dict[str, Any]] = []
+        self._current: dict[str, Any] | None = None
+        self._capture: str | None = None
+        self._capture_tag: str | None = None
+        self._buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if len(self._results) >= self._limit:
+            return
+        attr_map = {name.lower(): value or "" for name, value in attrs}
+        classes = set(attr_map.get("class", "").split())
+        if tag == "a" and "result__a" in classes:
+            self._finish_current()
+            self._current = {"url": _normalize_search_result_url(attr_map.get("href", ""))}
+            self._capture = "title"
+            self._capture_tag = tag
+            self._buffer = []
+            return
+        if self._current is not None and "result__snippet" in classes:
+            self._capture = "snippet"
+            self._capture_tag = tag
+            self._buffer = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._capture and tag == self._capture_tag and self._current is not None:
+            self._current[self._capture] = _clean_inline_text("".join(self._buffer))
+            self._capture = None
+            self._capture_tag = None
+            self._buffer = []
+            if "snippet" in self._current:
+                self._finish_current()
+
+    def handle_data(self, data: str) -> None:
+        if self._capture:
+            self._buffer.append(data)
+
+    def close(self) -> None:
+        super().close()
+        self._finish_current()
+
+    def results(self) -> list[dict[str, Any]]:
+        return self._results[: self._limit]
+
+    def _finish_current(self) -> None:
+        if self._current is None or len(self._results) >= self._limit:
+            self._current = None
+            return
+        title = _clean_inline_text(str(self._current.get("title") or ""))
+        url = _normalize_search_result_url(str(self._current.get("url") or ""))
+        if title and _is_search_result_http_url(url):
+            self._results.append(
+                {
+                    "position": len(self._results) + 1,
+                    "title": title,
+                    "url": url,
+                    "snippet": _clean_inline_text(str(self._current.get("snippet") or "")),
+                }
+            )
+        self._current = None
+
+
+def _normalize_search_result_url(url: str) -> str:
+    value = url.strip()
+    if not value:
+        return ""
+    if value.startswith("//"):
+        value = f"https:{value}"
+    parsed = urlparse(value)
+    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
+        uddg = parse_qs(parsed.query).get("uddg")
+        if uddg:
+            return unquote(uddg[0])
+    return value
+
+
+def _is_search_result_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    hostname = (parsed.hostname or "").strip().lower().rstrip(".")
+    if not hostname or hostname in _BLOCKED_WEB_HOSTNAMES:
+        return False
+    try:
+        literal = ipaddress.ip_address(hostname)
+    except ValueError:
+        return True
+    return not _is_blocked_web_ip(literal)
 
 
 def _require_raw_str(args: dict[str, Any], key: str) -> str:

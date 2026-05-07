@@ -142,6 +142,7 @@ class StandardToolTests(unittest.TestCase):
             for tool_name, arguments in [
                 ("file_write", {"path": "out.txt", "content": "hello"}),
                 ("file_patch", {"path": "out.txt", "replacements": [{"old": "hello", "new": "hi"}]}),
+                ("web_search", {"query": "example"}),
                 ("web_fetch", {"url": "https://example.com"}),
                 ("shell_exec", {"command": ["echo", "hello"]}),
                 ("browser_open", {"url": "https://example.com", "dry_run": True}),
@@ -405,6 +406,163 @@ class StandardToolTests(unittest.TestCase):
             self.assertEqual(result.evidence[0]["kind"], "tool_error")
             urlopen.assert_not_called()
 
+    def test_web_fetch_blocks_private_network_urls_before_fetching(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "external")),
+            )
+
+            with patch("mnemo.tools.standard.build_opener") as build_opener:
+                result = harness.execute(
+                    ToolCallEnvelope(
+                        name="web_fetch",
+                        arguments={"url": "http://127.0.0.1/admin"},
+                        call_id="call_web_fetch_private_url",
+                    ),
+                    run_id=run_id,
+                    mission_id=mission_id,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.result, {})
+            self.assertIn("private or internal network address", result.error or "")
+            self.assertEqual(result.evidence[0]["kind"], "tool_error")
+            build_opener.assert_not_called()
+
+    def test_web_fetch_blocks_metadata_urls_even_when_private_urls_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "external")),
+            )
+
+            with patch.dict("os.environ", {"MNEMO_ALLOW_PRIVATE_WEB_URLS": "true"}), patch(
+                "mnemo.tools.standard.build_opener"
+            ) as build_opener:
+                result = harness.execute(
+                    ToolCallEnvelope(
+                        name="web_fetch",
+                        arguments={"url": "http://169.254.169.254/latest/meta-data"},
+                        call_id="call_web_fetch_metadata_url",
+                    ),
+                    run_id=run_id,
+                    mission_id=mission_id,
+                )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.result, {})
+            self.assertIn("private or internal network address", result.error or "")
+            build_opener.assert_not_called()
+
+    def test_web_fetch_extracts_readable_html_text(self) -> None:
+        html = b"""
+        <html>
+          <head><title>Example Domain</title><style>.hidden {}</style></head>
+          <body><h1>Example Domain</h1><script>secret()</script><p>Readable text.</p></body>
+        </html>
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "external")),
+            )
+
+            with patch("mnemo.tools.standard._fetch_http") as fetch_http:
+                fetch_http.return_value = {
+                    "final_url": "https://93.184.216.34",
+                    "status": 200,
+                    "headers": _Headers({"content-type": "text/html; charset=utf-8"}),
+                    "raw": html,
+                    "bytes_read": len(html),
+                    "truncated": False,
+                }
+                result = harness.execute(
+                    ToolCallEnvelope(
+                        name="web_fetch",
+                        arguments={"url": "https://93.184.216.34"},
+                        call_id="call_web_fetch_html",
+                    ),
+                    run_id=run_id,
+                    mission_id=mission_id,
+                )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["title"], "Example Domain")
+            self.assertIn("Example Domain", result.result["text"])
+            self.assertIn("Readable text.", result.result["text"])
+            self.assertNotIn("<html", result.result["text"].casefold())
+            self.assertNotIn("secret()", result.result["text"])
+            self.assertEqual(result.evidence[0]["kind"], "web_page")
+
+    def test_web_search_parses_compact_result_metadata(self) -> None:
+        html = """
+        <html>
+          <body>
+            <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs">Example Docs</a>
+            <a class="result__snippet">Compact result snippet.</a>
+            <a class="result__a" href="https://example.org/news">Example News</a>
+            <div class="result__snippet">Second snippet.</div>
+          </body>
+        </html>
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "external")),
+            )
+
+            with patch("mnemo.tools.standard._fetch_http") as fetch_http:
+                fetch_http.return_value = {
+                    "final_url": "https://duckduckgo.com/html/?q=mnemo",
+                    "status": 200,
+                    "headers": _Headers({"content-type": "text/html; charset=utf-8"}),
+                    "raw": html.encode("utf-8"),
+                    "bytes_read": len(html.encode("utf-8")),
+                    "truncated": False,
+                }
+                result = harness.execute(
+                    ToolCallEnvelope(
+                        name="web_search",
+                        arguments={"query": "mnemo", "limit": 2},
+                        call_id="call_web_search",
+                    ),
+                    run_id=run_id,
+                    mission_id=mission_id,
+                )
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["source"], "duckduckgo_html")
+            self.assertEqual(result.result["count"], 2)
+            self.assertEqual(result.result["results"][0]["url"], "https://example.com/docs")
+            self.assertEqual(result.result["results"][0]["title"], "Example Docs")
+            self.assertEqual(result.result["results"][0]["snippet"], "Compact result snippet.")
+            self.assertEqual(result.evidence[0]["kind"], "web_search")
+
     def test_app_open_dry_run_is_workspace_scoped(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -457,6 +615,16 @@ def _store_with_run(path: Path) -> tuple[StateStore, str, str]:
     mission_id = store.create_mission(conversation_id, "standard tool tests")
     run_id = store.create_run(conversation_id, mission_id, "standard tools")
     return store, run_id, mission_id
+
+
+class _Headers(dict):
+    def get_content_charset(self) -> str:
+        content_type = str(self.get("content-type", ""))
+        for part in content_type.split(";"):
+            part = part.strip()
+            if part.startswith("charset="):
+                return part.split("=", 1)[1]
+        return "utf-8"
 
 
 if __name__ == "__main__":

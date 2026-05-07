@@ -10,19 +10,23 @@
 - `load_prompt_bootstrap(state_dir: str | Path, *, workspace_root: str | Path | None = None, per_file_char_limit=BOOTSTRAP_FILE_CHAR_LIMIT, total_char_limit=BOOTSTRAP_TOTAL_CHAR_LIMIT) -> PromptBootstrapContext`
 - `mnemo.core.injection.injection_warnings(value: str) -> list[str]`
 - `mnemo.runtime.learning.learning_reflection_messages(packet: dict[str, Any]) -> list[dict[str, str]]`
-- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET, mode: PromptMode = "full") -> AssembledPrompt`
+- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, runtime_context=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET, mode: PromptMode = "full") -> AssembledPrompt`
 - `AssembledPrompt.messages() -> list[dict[str, str]]`
 - `AssembledPrompt.metadata() -> dict[str, Any]`
 
 ### 3. Contracts
 - Stable prefix blocks must stay ordered before dynamic blocks.
 - Stable prefix order: `system.identity`, `developer.operating_principles`, optional `soul.user_contract`, `tools.cards`.
-- Non-droppable blocks: `system.identity`, `developer.operating_principles`, optional `soul.user_contract`, `mission.continuation`, `turn.current_user_message`.
+- Non-droppable blocks: `system.identity`, `developer.operating_principles`, optional `soul.user_contract`, `mission.continuation`, `runtime.context`, `turn.current_user_message`.
 - Droppable blocks: optional tool cards, workspace bootstrap blocks, L1 memory snapshot, memory index, and skill index.
 - `full` preserves the standard personal prompt surface.
-- `minimal` includes identity, operating principles, visible tool cards, `AGENTS.md`/`TOOLS.md` workspace bootstrap, mission continuation, and current turn; it does not inject Soul, L1 memory, memory index, or skill index.
-- `capsule` includes identity, operating principles, visible tool cards, mission continuation, and current turn; it does not inject Soul, workspace bootstrap, L1 memory, memory index, or skill index.
+- `minimal` includes identity, operating principles, visible tool cards, `AGENTS.md`/`TOOLS.md` workspace bootstrap, mission continuation, runtime context, and current turn; it does not inject Soul, L1 memory, memory index, or skill index.
+- `capsule` includes identity, operating principles, visible tool cards, mission continuation, runtime context, and current turn; it does not inject Soul, workspace bootstrap, L1 memory, memory index, or skill index.
 - `none` is diagnostic-only prompt assembly with identity and current turn; runtime execution must reject it.
+- `runtime.context` is a turn-scoped non-droppable block for executable prompt modes. It includes current date, local time, timezone/UTC offset, and explicit user location when configured.
+- Missing user location must be rendered as not provided; prompt assembly must not infer location from server placement, old memories, or unrelated context.
+- Runtime context prompt text must instruct the model to resolve relative dates and freshness terms from the current date, and to avoid stale search years unless the user asks for a specific year.
+- Runtime context metadata may include current date, timezone, and a location-known flag, but must not include the raw location string.
 - `metadata()` includes `mode`, `execution_allowed`, and `disclosure_boundary`.
 - `SOUL.md` under `state_dir` becomes `soul.user_contract` with `stable/user_profile`; it is a bounded user contract, not a raw memory dump.
 - Workspace bootstrap files from `workspace_root` become quoted `workspace.bootstrap.*` blocks with `daily/daily_context`.
@@ -64,6 +68,8 @@
 | Missing runtime L1 snapshot | Runtime compiles one from active pages and injects it before `memory.index` | `tests/test_runtime.py` |
 | Empty L1 snapshot | Do not inject `memory.l1_snapshot` | `tests/test_prompt.py` |
 | Memory index cards | Prompt-facing memory cards exclude rejected/tombstoned/review-gated candidates | `tests/test_memory.py`, `tests/test_runtime.py` |
+| Runtime context present | Executable prompt modes include turn-scoped current date/time/timezone/location context before the current user turn | `tests/test_prompt.py`, `tests/test_runtime.py` |
+| Missing runtime location | Prompt says user location is not provided and metadata omits raw location | `tests/test_prompt.py` |
 | CLI snapshot inspection | Existing compiled snapshot is inspectable without full page bodies | `tests/test_cli.py` |
 | Tight prompt budget with tools | May drop `tools.cards`; tool schema metadata remains present | `tests/test_prompt.py` |
 | Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |
@@ -91,6 +97,7 @@
 - Runtime/provider tests that assert prompt metadata is persisted in `prompt.assembled`.
 - Runtime/CLI/Web tests that assert Soul and workspace bootstrap are passed through request boundaries.
 - Runtime/provider tests that assert daily L1 memory snapshot content reaches provider messages when present.
+- Runtime/provider tests that assert the prompt includes current runtime context before the current user turn.
 - Runtime/provider tests that assert learning reflection messages contain a compact packet and no raw tool schema payload.
 - Prompt mode tests that assert disclosure boundaries for `minimal`, `capsule`, and `none`.
 

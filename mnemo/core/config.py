@@ -12,6 +12,7 @@ DEFAULT_STATE_DIR = "~/.mnemo"
 DEFAULT_TIMEOUT_S = 30.0
 DEFAULT_RETRY_COUNT = 0
 DEFAULT_RETRY_BACKOFF_S = 0.0
+DEFAULT_MAX_TOOL_ROUNDS = 12
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class RuntimeConfig:
     timeout_s: float = DEFAULT_TIMEOUT_S
     retry_count: int = DEFAULT_RETRY_COUNT
     retry_backoff_s: float = DEFAULT_RETRY_BACKOFF_S
+    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS
     config_path: str | None = None
 
     def redacted(self) -> dict[str, Any]:
@@ -44,6 +46,7 @@ class ConfigOverrides:
     timeout_s: float | None = None
     retry_count: int | None = None
     retry_backoff_s: float | None = None
+    max_tool_rounds: int | None = None
     config_path: str | None = None
 
 
@@ -93,6 +96,12 @@ def resolve_runtime_config(
         file_config.get("retry_backoff_s"),
         DEFAULT_RETRY_BACKOFF_S,
     )
+    max_tool_rounds = _first_int(
+        overrides.max_tool_rounds,
+        env.get("MNEMO_MAX_TOOL_ROUNDS"),
+        file_config.get("max_tool_rounds"),
+        DEFAULT_MAX_TOOL_ROUNDS,
+    )
 
     return RuntimeConfig(
         state_dir=state_dir,
@@ -104,6 +113,7 @@ def resolve_runtime_config(
         timeout_s=timeout_s,
         retry_count=max(0, retry_count),
         retry_backoff_s=max(0.0, retry_backoff_s),
+        max_tool_rounds=max(1, min(max_tool_rounds, 64)),
         config_path=str(config_path) if config_path else None,
     )
 

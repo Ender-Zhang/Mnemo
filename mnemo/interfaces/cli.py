@@ -7,7 +7,13 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .. import __version__
-from ..core.config import ConfigOverrides, DEFAULT_PROVIDER, DEFAULT_STATE_DIR, resolve_runtime_config
+from ..core.config import (
+    ConfigOverrides,
+    DEFAULT_MAX_TOOL_ROUNDS,
+    DEFAULT_PROVIDER,
+    DEFAULT_STATE_DIR,
+    resolve_runtime_config,
+)
 from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps, loads
@@ -127,6 +133,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
     run_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
     run_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
+    run_parser.add_argument(
+        "--max-tool-rounds",
+        type=int,
+        default=None,
+        help=f"Provider tool-call round budget, or MNEMO_MAX_TOOL_ROUNDS (default: {DEFAULT_MAX_TOOL_ROUNDS})",
+    )
     run_parser.add_argument(
         "--prompt-mode",
         choices=list(PROMPT_MODES),
@@ -431,6 +443,12 @@ def build_parser() -> argparse.ArgumentParser:
     web_parser.add_argument("--timeout-s", type=float, help="Provider request timeout, or MNEMO_TIMEOUT_S")
     web_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
     web_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
+    web_parser.add_argument(
+        "--max-tool-rounds",
+        type=int,
+        default=None,
+        help=f"Provider tool-call round budget, or MNEMO_MAX_TOOL_ROUNDS (default: {DEFAULT_MAX_TOOL_ROUNDS})",
+    )
     web_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
     harness_parser = subparsers.add_parser("harness", help="Run lightweight replay and eval harnesses")
@@ -889,12 +907,20 @@ def _cmd_run(args: argparse.Namespace) -> int:
         prompt_mode=args.prompt_mode,
     )
     if args.stream:
-        event_stream = stream_local(request) if config.provider == "local" else stream_provider(request, _provider_adapter(args, stream=True))
+        event_stream = (
+            stream_local(request)
+            if config.provider == "local"
+            else stream_provider(request, _provider_adapter(args, stream=True), max_tool_rounds=config.max_tool_rounds)
+        )
         for event in event_stream:
             print(dumps(chat_event_as_dict(event)), flush=True)
         return 0
 
-    result = run_local(request) if config.provider == "local" else run_provider(request, _provider_adapter(args))
+    result = (
+        run_local(request)
+        if config.provider == "local"
+        else run_provider(request, _provider_adapter(args), max_tool_rounds=config.max_tool_rounds)
+    )
     if args.json:
         print(dumps(result_as_dict(result)))
         return 0
@@ -1869,6 +1895,7 @@ def _cmd_web(args: argparse.Namespace) -> int:
             timeout_s=config.timeout_s,
             retry_count=config.retry_count,
             retry_backoff_s=config.retry_backoff_s,
+            max_tool_rounds=config.max_tool_rounds,
         )
     )
     return 0
@@ -2028,6 +2055,7 @@ def _cmd_config(args: argparse.Namespace) -> int:
             "timeout_s",
             "retry_count",
             "retry_backoff_s",
+            "max_tool_rounds",
             "config_path",
         ):
             print(f"{key}={payload.get(key)}")
@@ -2216,7 +2244,7 @@ def _queued_executor(args: argparse.Namespace):
     adapter = _provider_adapter(args)
 
     def execute(request: RunRequest):
-        return run_provider(request, adapter)
+        return run_provider(request, adapter, max_tool_rounds=config.max_tool_rounds)
 
     return execute
 
@@ -2466,6 +2494,7 @@ def _runtime_config_from_args(args: argparse.Namespace):
             timeout_s=getattr(args, "timeout_s", None),
             retry_count=getattr(args, "retry_count", None),
             retry_backoff_s=getattr(args, "retry_backoff_s", None),
+            max_tool_rounds=getattr(args, "max_tool_rounds", None),
             config_path=getattr(args, "config", None),
         )
     )

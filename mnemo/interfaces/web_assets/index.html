@@ -166,7 +166,7 @@
 
           <div class="memory-layout">
             <section class="avatar-panel">
-              <canvas id="memoryAvatar3d" class="memory-avatar-canvas" width="720" height="720" aria-label="三维记忆人物"></canvas>
+              <canvas id="memoryAvatar3d" class="memory-avatar-canvas" width="720" height="720" aria-label="三维记忆网络"></canvas>
               <div id="memoryOrbit" class="memory-orbit" aria-label="十维记忆轨道"></div>
               <div id="memoryStats" class="memory-stats"></div>
             </section>
@@ -247,6 +247,10 @@
                 <label>
                   <span>重试间隔</span>
                   <input id="settingRetryBackoff" name="retry_backoff_s" type="number" min="0" max="60" step="0.1" />
+                </label>
+                <label>
+                  <span>工具轮次</span>
+                  <input id="settingMaxToolRounds" name="max_tool_rounds" type="number" min="1" max="64" step="1" />
                 </label>
               </div>
               <button class="primary-button" type="submit">保存模型设置</button>

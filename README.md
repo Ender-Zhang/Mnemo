@@ -10,7 +10,7 @@ The repository contains both the design package in `design/` and the runnable im
 - OpenAI-compatible and Anthropic provider runtimes with provider-native tool calls.
 - Single-chat web UI with streaming output, actionable artifact cards, decision cards, learning chips, settings drawer, replay, and stop/cancel.
 - SQLite state store for conversations, missions, runs, events, memory, skills, artifacts, queue, and generated tools.
-- Lightweight tool harness with policy-gated memory, skill, artifact, file, shell, HTTP, browser, and app connector tools.
+- Lightweight tool harness with policy-gated memory, skill, artifact, file, shell, web search/fetch, browser, and app connector tools.
 - Memory candidate pipeline, associative memory pages, delta-oriented DreamCycle reports, and L1 memory snapshot.
 - Skill scanning, draft/review/promote flow, skill patch candidates, SOP crystallization, and generated tool lifecycle gates.
 - Reference SDK and MCP-style tool server for compact external integrations.
@@ -166,3 +166,7 @@ mnemo harness list
 ```
 
 CI also builds the package, installs the wheel outside the checkout, and runs `tests/package_install_smoke.py` to verify the console script, `python -m mnemo`, package metadata, and packaged web assets.
+
+## Acknowledgments
+
+Web tool separation between compact search metadata and page fetch/extraction is acknowledged in `THIRD_PARTY_NOTICES.md`.

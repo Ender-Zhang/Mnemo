@@ -8,7 +8,7 @@ from mnemo.core.errors import MnemoError
 from mnemo.core.models import RunRequest, ToolCallEnvelope
 from mnemo.memory import MemoryEngine
 from mnemo.providers import ProviderEvent
-from mnemo.runtime import ProviderAgentRuntime, run_local, stream_local
+from mnemo.runtime import ProviderAgentRuntime, run_local, stream_local, stream_provider
 from mnemo.storage import StateStore
 
 
@@ -102,10 +102,12 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertEqual(events[-1].type, "run.completed")
             self.assertEqual(events[-1].data["result"]["response"], "Hello from model")
             self.assertEqual(provider.requests[0].messages[-1]["content"], "你好")
+            prompt_text = "\n".join(message["content"] for message in provider.requests[0].messages)
+            self.assertIn("Runtime context for this turn", prompt_text)
             self.assertEqual(len(provider.requests), 1)
             self.assertEqual(
                 [message["role"] for message in provider.requests[0].messages],
-                ["system", "developer", "developer", "developer", "user"],
+                ["system", "developer", "developer", "developer", "developer", "user"],
             )
             self.assertEqual(provider.requests[0].metadata["provider_capabilities"]["provider"], "fake")
             self.assertEqual(provider.requests[0].metadata["cache_plan"]["tool_bundle"]["epoch"], 1)
@@ -116,6 +118,7 @@ class LocalRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(prompt_event["payload"]["provider_capabilities"]["provider"], "fake")
             self.assertEqual(prompt_event["payload"]["cache_plan"]["tool_bundle"]["epoch"], 1)
+            self.assertIn("runtime.context", [block["id"] for block in prompt_event["payload"]["blocks"]])
             ledger_events = store.get_run_events(events[-1].run_id)
             skip_event = next(
                 event for event in ledger_events if event["event_type"] == "learning.reflection.skipped"
@@ -162,6 +165,98 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertEqual(len(provider.requests), 3)
             self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")
             self.assertEqual(provider.requests[2].metadata["stage"], "after_turn_learning")
+
+    def test_provider_runtime_finalizes_when_tool_budget_is_exhausted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="recall_search",
+                                arguments={"query": "first pass", "limit": 1},
+                                call_id="call_first",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="recall_search",
+                                arguments={"query": "second pass", "limit": 1},
+                                call_id="call_second",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [
+                        ProviderEvent(type="text_delta", text="Final answer from available results."),
+                        ProviderEvent(type="completed"),
+                    ],
+                ]
+            )
+
+            events = list(
+                ProviderAgentRuntime(
+                    provider,
+                    max_tool_rounds=1,
+                    enable_learning_reflection=False,
+                ).stream(RunRequest(message="answer with bounded tools", state_dir=tmp))
+            )
+
+            self.assertEqual(events[-1].type, "run.completed")
+            self.assertEqual(events[-1].data["result"]["response"], "Final answer from available results.")
+            self.assertEqual(len(provider.requests), 3)
+            self.assertEqual(provider.requests[-1].tools, ())
+            self.assertTrue(provider.requests[-1].metadata["tool_budget_exhausted"])
+            self.assertEqual(provider.requests[-1].messages[-1]["role"], "developer")
+            self.assertIn("Do not request more tools", provider.requests[-1].messages[-1]["content"])
+
+            store = StateStore(tmp)
+            ledger_events = store.get_run_events(events[-1].run_id)
+            event_types = [event["event_type"] for event in ledger_events]
+            self.assertIn("provider.tool_budget_exhausted", event_types)
+            self.assertNotIn("run.error", [event.type for event in events])
+
+    def test_stream_provider_accepts_configured_tool_round_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="recall_search",
+                                arguments={"query": "configured budget", "limit": 1},
+                                call_id="call_configured_budget",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="text_delta", text="Budget respected."), ProviderEvent(type="completed")],
+                ]
+            )
+
+            events = list(
+                stream_provider(
+                    RunRequest(message="use configured budget", state_dir=tmp),
+                    provider,
+                    max_tool_rounds=1,
+                )
+            )
+
+            self.assertEqual(events[-1].type, "run.completed")
+            self.assertEqual(events[-1].data["result"]["response"], "Budget respected.")
+            self.assertEqual(len(provider.requests), 2)
 
     def test_provider_runtime_marks_review_memory_learning_chip_for_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

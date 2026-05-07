@@ -701,6 +701,7 @@ print(json.dumps({
                     timeout_s=90,
                     retry_count=3,
                     retry_backoff_s=1.25,
+                    max_tool_rounds=18,
                 )
             ) as server:
                 status, _, body = server.request("GET", "/api/settings")
@@ -717,6 +718,7 @@ print(json.dumps({
                             "timeout_s": 45,
                             "retry_count": 2,
                             "retry_backoff_s": 0.5,
+                            "max_tool_rounds": 20,
                         },
                     },
                 )
@@ -743,6 +745,7 @@ print(json.dumps({
             self.assertEqual(payload["runtime"]["timeout_s"], 90.0)
             self.assertEqual(payload["runtime"]["retry_count"], 3)
             self.assertEqual(payload["runtime"]["retry_backoff_s"], 1.25)
+            self.assertEqual(payload["runtime"]["max_tool_rounds"], 18)
             self.assertEqual(payload["permissions"]["open_decisions"], 1)
             self.assertEqual(payload["learned_preferences"]["count"], 1)
             self.assertEqual(payload["data_controls"]["counts"]["artifacts"], 1)
@@ -760,6 +763,7 @@ print(json.dumps({
             self.assertEqual(updated["runtime"]["timeout_s"], 45.0)
             self.assertEqual(updated["runtime"]["retry_count"], 2)
             self.assertEqual(updated["runtime"]["retry_backoff_s"], 0.5)
+            self.assertEqual(updated["runtime"]["max_tool_rounds"], 20)
 
             self.assertEqual(invalid_status, 400)
             self.assertIn("quiet_hours start", json.loads(invalid_body)["error"])
@@ -792,16 +796,28 @@ print(json.dumps({
                 evidence=[{"kind": "turn", "summary": "Asked for calmer UI"}],
             )
             preferences_page_id = store.upsert_memory_page(
-                "preferences: reports",
+                "preferences: 报告偏好",
                 "User prefers concise reports. " + ("long private detail " * 30),
                 confidence=0.91,
                 source_candidate_id=source_candidate_id,
             )
+            profile_page_id = store.upsert_memory_page(
+                "preferences: 职业与技术偏好",
+                (
+                    "用户是算法工程师，主要使用Python，但vibe coding时什么语言都可以接受。"
+                    "工作内容是研发AI Agent。偏好幽默风格的交流方式。"
+                ),
+                confidence=0.95,
+            )
             store.upsert_memory_page("goals: mnemo", "Build a lightweight agentic system.", confidence=0.82)
-            store.upsert_memory_page("user_profile: Chen", "The user profile belongs under identity.", confidence=0.75)
+            identity_page_id = store.upsert_memory_page(
+                "user_profile: Chen",
+                "The user profile belongs under identity.",
+                confidence=0.75,
+            )
             finance_candidate_id = store.add_memory_candidate(
                 run_id,
-                "User has a monthly budget preference",
+                "预算偏好",
                 dimension="finance",
             )
             store.add_memory_candidate(run_id, "User works through compact loops", dimension="work_style")
@@ -828,6 +844,10 @@ print(json.dumps({
                     "GET",
                     f"/api/memory/item?type=page&id={preferences_page_id}",
                 )
+                profile_status, _, profile_body = server.request(
+                    "GET",
+                    f"/api/memory/item?type=page&id={profile_page_id}",
+                )
                 candidate_status, _, candidate_body = server.request(
                     "GET",
                     f"/api/memory/item?type=candidate&id={finance_candidate_id}",
@@ -848,6 +868,7 @@ print(json.dumps({
             payload = json.loads(body)
             dimension_payload = json.loads(dimension_body)
             page_payload = json.loads(page_body)
+            profile_payload = json.loads(profile_body)
             candidate_payload = json.loads(candidate_body)
             dimensions = {item["dimension"]: item for item in payload["dimensions"]}
             self.assertEqual(status, 200)
@@ -867,11 +888,11 @@ print(json.dumps({
             }
             self.assertEqual(set(dimensions), ontology_names)
             self.assertEqual(len(payload["dimensions"]), 10)
-            self.assertEqual(payload["counts"]["pages"], 3)
+            self.assertEqual(payload["counts"]["pages"], 4)
             self.assertEqual(payload["counts"]["candidates"], 3)
             self.assertGreaterEqual(payload["counts"]["covered_dimensions"], 4)
             self.assertEqual(dimensions["identity"]["pages"], 1)
-            self.assertEqual(dimensions["preferences"]["pages"], 1)
+            self.assertEqual(dimensions["preferences"]["pages"], 2)
             self.assertEqual(dimensions["preferences"]["candidates"], 2)
             self.assertEqual(dimensions["patterns"]["candidates"], 1)
             self.assertEqual(dimensions["preferences"]["level"], "L1")
@@ -888,8 +909,8 @@ print(json.dumps({
             self.assertEqual(dimension_payload["dimension"], "preferences")
             self.assertTrue(dimension_payload["pages"])
             self.assertTrue(dimension_payload["candidates"])
-            self.assertIn("/api/memory/item?type=page", dimension_payload["pages"][0]["detail_url"])
-            self.assertIn("...[truncated]", json.dumps(dimension_payload["pages"][0]))
+            self.assertTrue(any("/api/memory/item?type=page" in item["detail_url"] for item in dimension_payload["pages"]))
+            self.assertIn("...[truncated]", json.dumps(dimension_payload["pages"]))
             self.assertNotIn("Promoted entries stay out", dimension_body)
             self.assertNotIn("Rejected entries stay hidden", dimension_body)
             self.assertEqual(page_status, 200)
@@ -897,24 +918,66 @@ print(json.dumps({
             self.assertEqual(page_payload["level"], "L3")
             self.assertEqual(page_payload["item"]["id"], preferences_page_id)
             self.assertEqual(page_payload["item"]["dimension"], "preferences")
+            self.assertEqual(page_payload["item"]["title"], "报告偏好")
             self.assertTrue(page_payload["evidence"])
-            self.assertIn("---\nkind: page", page_payload["markdown"])
-            self.assertIn("dimension: preferences", page_payload["markdown"])
-            self.assertIn("# reports", page_payload["markdown"])
-            self.assertIn("## 证据", page_payload["markdown"])
+            self.assertIn("---\nid:", page_payload["markdown"])
+            self.assertIn('dimension: "preferences"', page_payload["markdown"])
+            self.assertIn('wiki_path: "wiki/preferences/报告偏好.md"', page_payload["markdown"])
+            self.assertIn("# 报告偏好", page_payload["markdown"])
             self.assertNotIn("- Dimension:", page_payload["markdown"])
             self.assertNotIn("## Summary", page_payload["markdown"])
             self.assertNotIn("secret-ontology-key", page_body)
+            self.assertEqual(profile_status, 200)
+            self.assertEqual(profile_payload["item"]["title"], "职业与技术偏好")
+            self.assertIn("# 职业与技术偏好", profile_payload["markdown"])
+            self.assertNotIn("# The user says their name", profile_payload["markdown"])
+            self.assertNotIn("](#python)", profile_payload["markdown"].casefold())
+            self.assertNotIn("](#ai-agent)", profile_payload["markdown"].casefold())
             self.assertEqual(candidate_status, 200)
             self.assertEqual(candidate_payload["item"]["dimension"], "preferences")
-            self.assertIn("# 偏好候选", candidate_payload["markdown"])
-            self.assertEqual(candidate_payload["markdown"].count("User has a monthly budget preference"), 1)
+            self.assertEqual(candidate_payload["item"]["title"], "预算偏好")
+            self.assertIn("# 预算偏好", candidate_payload["markdown"])
+            self.assertIn("预算偏好", candidate_payload["markdown"])
             self.assertEqual(invalid_status, 400)
             self.assertIn("unknown memory dimension", json.loads(invalid_body)["error"])
             self.assertEqual(missing_status, 404)
             self.assertIn("memory item not found", json.loads(missing_body)["error"])
             self.assertEqual(hidden_status, 404)
             self.assertIn("memory item not found", json.loads(hidden_body)["error"])
+
+    def test_web_memory_compass_dedupes_exact_duplicate_page_bodies_across_dimensions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = StateStore(tmp)
+            store.initialize()
+            duplicate_body = "The user says their name is 陈大鬼 and prefers to be addressed by that name."
+            identity_page_id = store.upsert_memory_page("identity: name", duplicate_body, confidence=0.92)
+            preferences_page_id = store.upsert_memory_page("preferences: name", duplicate_body, confidence=0.91)
+
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, body = server.request("GET", "/api/memory/ontology")
+                identity_status, _, identity_body = server.request(
+                    "GET",
+                    "/api/memory/dimension?dimension=identity",
+                )
+                preferences_status, _, preferences_body = server.request(
+                    "GET",
+                    "/api/memory/dimension?dimension=preferences",
+                )
+
+            payload = json.loads(body)
+            identity_payload = json.loads(identity_body)
+            preferences_payload = json.loads(preferences_body)
+            dimensions = {item["dimension"]: item for item in payload["dimensions"]}
+
+            self.assertEqual(status, 200)
+            self.assertEqual(identity_status, 200)
+            self.assertEqual(preferences_status, 200)
+            self.assertEqual(payload["counts"]["pages"], 1)
+            self.assertEqual(dimensions["identity"]["pages"], 1)
+            self.assertEqual(dimensions["preferences"]["pages"], 0)
+            self.assertEqual([item["id"] for item in identity_payload["pages"]], [identity_page_id])
+            self.assertEqual(preferences_payload["pages"], [])
+            self.assertNotIn(preferences_page_id, body + identity_body + preferences_body)
 
     def test_web_cancel_run_endpoint_marks_run_and_records_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1072,6 +1135,8 @@ print(json.dumps({
                 self.assertIn("initMemoryAvatar", script)
                 self.assertIn("renderThreeAvatar", script)
                 self.assertIn("renderCanvasAvatar", script)
+                self.assertIn("memoryRing", script)
+                self.assertIn("memoryNodePosition", script)
                 self.assertIn("openMemoryMarkdown", script)
                 self.assertIn("renderSettings", script)
                 self.assertIn("renderProviderTiles", script)
@@ -1152,18 +1217,25 @@ print(json.dumps({
                 self.assertEqual(css_status, 200)
                 self.assertIn("renderMarkdownInto", script)
                 self.assertIn("markdownBlocks", script)
+                self.assertIn("markdownAnchorId", script)
+                self.assertIn("markdownDocumentTitle", script)
+                self.assertIn("memoryMarkdownTitle.textContent = markdownDocumentTitle(markdown)", script)
+                self.assertIn("isMarkdownFrontmatterStart", script)
+                self.assertIn("markdownFrontmatter", script)
                 self.assertIn("markdownTable", script)
                 self.assertIn("isMarkdownTableStart", script)
                 self.assertIn("appendInlineMarkdown", script)
                 self.assertIn("inlineMarkdownNode", script)
                 self.assertIn("renderMarkdownInto(state.assistantNode, rawText)", script)
                 self.assertIn('document.createElement("pre")', script)
+                self.assertIn('title.textContent = "原始信息"', script)
                 self.assertIn('document.createElement("table")', script)
                 self.assertIn('document.createElement("strong")', script)
                 self.assertIn('document.createElement("em")', script)
                 self.assertIn('document.createElement("a")', script)
                 self.assertIn("node.replaceChildren()", script)
                 self.assertIn("textContent = link[1]", script)
+                self.assertIn('text.startsWith("#")', script)
                 self.assertIn("dataset.rawText", script)
                 self.assertIn("finalizeAssistantMarkdown", script)
                 self.assertNotIn("innerHTML", script)
@@ -1174,6 +1246,7 @@ print(json.dumps({
                 self.assertIn("updateContextPanel", script)
                 self.assertIn("compactId", script)
                 self.assertIn("message.markdown", css)
+                self.assertIn("markdown-frontmatter", css)
                 self.assertIn("markdown-table-wrap", css)
                 self.assertIn(".message.markdown table", css)
 
@@ -1279,6 +1352,7 @@ print(json.dumps({
                 self.assertIn('id="settingModel"', html)
                 self.assertIn('id="settingBaseUrl"', html)
                 self.assertIn('id="settingApiKeyEnv"', html)
+                self.assertIn('id="settingMaxToolRounds"', html)
                 self.assertIn("记忆罗盘", html)
                 self.assertIn('id="memoryAvatar3d"', html)
                 self.assertIn('id="memoryOrbit"', html)
@@ -1294,6 +1368,7 @@ print(json.dumps({
                 self.assertIn("syncProviderTiles", script)
                 self.assertIn("saveSettings", script)
                 self.assertIn("payload.runtime", script)
+                self.assertIn("max_tool_rounds", script)
                 self.assertIn("quiet_hours", script)
                 self.assertIn("/api/memory/ontology", script)
                 self.assertIn("/api/memory/dimension", script)

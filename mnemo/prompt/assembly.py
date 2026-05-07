@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Literal, cast
 
 from ..core.jsonutil import dumps
@@ -15,6 +17,8 @@ CacheSegment = Literal["core", "user_profile", "tool_bundle", "daily_context", "
 DEFAULT_PROMPT_TOKEN_BUDGET = 6000
 MISSION_VALUE_CHAR_LIMIT = 1000
 L1_SNAPSHOT_PROMPT_ITEM_LIMIT = 16
+RUNTIME_CONTEXT_LOCATION_ENV_KEYS = ("MNEMO_USER_LOCATION", "MNEMO_LOCATION")
+RUNTIME_CONTEXT_TIMEZONE_ENV_KEYS = ("MNEMO_TIMEZONE", "TZ")
 
 
 @dataclass(frozen=True)
@@ -94,12 +98,14 @@ class PromptAssembler:
         memory_snapshot: dict[str, Any] | None = None,
         memory_cards: Sequence[dict[str, Any]] | None = None,
         skill_cards: Sequence[dict[str, Any]] | None = None,
+        runtime_context: Mapping[str, Any] | None = None,
         token_budget: int | None = DEFAULT_PROMPT_TOKEN_BUDGET,
         mode: PromptMode = "full",
     ) -> AssembledPrompt:
         prompt_mode = _normalize_prompt_mode(mode)
         checkpoint = _resolve_checkpoint(mission, checkpoint)
         tools = tuple(sorted(tool_specs or (), key=lambda spec: spec.name))
+        resolved_runtime_context = _resolve_runtime_context(runtime_context)
         blocks = self._blocks_for_mode(
             prompt_mode,
             current_user_message,
@@ -111,6 +117,7 @@ class PromptAssembler:
             memory_snapshot=memory_snapshot,
             memory_cards=memory_cards or (),
             skill_cards=skill_cards or (),
+            runtime_context=resolved_runtime_context,
         )
         kept_blocks, dropped_blocks = _apply_budget(blocks, token_budget)
         return AssembledPrompt(
@@ -134,6 +141,7 @@ class PromptAssembler:
         memory_snapshot: dict[str, Any] | None,
         memory_cards: Sequence[dict[str, Any]],
         skill_cards: Sequence[dict[str, Any]],
+        runtime_context: Mapping[str, str],
     ) -> list[PromptBlock]:
         if mode == "none":
             return [
@@ -169,6 +177,7 @@ class PromptAssembler:
         blocks.extend(
             [
                 self._mission_continuation(mission, checkpoint),
+                self._runtime_context(runtime_context),
                 self._current_turn(current_user_message),
             ]
         )
@@ -233,6 +242,48 @@ class PromptAssembler:
             cache_segment="mission",
             priority=20,
             can_drop=False,
+        )
+
+    def _runtime_context(self, runtime_context: Mapping[str, str]) -> PromptBlock:
+        current_year = runtime_context["current_date"][:4]
+        timezone_line = f"- Timezone: {runtime_context['timezone']}"
+        if runtime_context["utc_offset"] != "unknown":
+            timezone_line = f"{timezone_line} (UTC{runtime_context['utc_offset']})"
+        lines = [
+            "Runtime context for this turn:",
+            f"- Current date: {runtime_context['current_date']}",
+            f"- Current local time: {runtime_context['current_time']}",
+            timezone_line,
+            f"- User location: {runtime_context['location']}",
+            (
+                "Use this context for relative dates such as today, tomorrow, and yesterday, "
+                "and for freshness words such as latest, current, or recent."
+            ),
+            (
+                f"For web search queries about latest/current information, prefer {current_year} or "
+                "date-specific freshness over stale years unless the user asked for a specific year."
+            ),
+            (
+                "For location-sensitive tasks, use the user location only when provided. "
+                "If it is not provided, state the uncertainty or ask for it when needed."
+            ),
+        ]
+        return _block(
+            id="runtime.context",
+            role="developer",
+            layer="runtime",
+            title="Runtime Context",
+            content="\n".join(lines),
+            source="runtime",
+            cache_policy="turn",
+            cache_segment="turn",
+            priority=18,
+            can_drop=False,
+            metadata={
+                "current_date": runtime_context["current_date"],
+                "timezone": runtime_context["timezone"],
+                "location_known": runtime_context["location"] != "not provided",
+            },
         )
 
     def _tool_cards(self, tool_specs: Sequence[ToolSpec]) -> PromptBlock:
@@ -389,6 +440,61 @@ def _block(
         can_drop=can_drop,
         metadata=metadata or {},
     )
+
+
+def _resolve_runtime_context(runtime_context: Mapping[str, Any] | None) -> dict[str, str]:
+    now = _runtime_context_datetime(runtime_context)
+    source = runtime_context or {}
+    current_date = _runtime_context_text(source.get("current_date"), default=now.date().isoformat())
+    current_time = _runtime_context_text(source.get("current_time"), default=now.isoformat(timespec="seconds"))
+    utc_offset = _runtime_context_text(source.get("utc_offset"), default=_format_utc_offset(now))
+    timezone = _runtime_context_text(
+        source.get("timezone"),
+        default=_first_env_value(RUNTIME_CONTEXT_TIMEZONE_ENV_KEYS) or now.tzname() or "local",
+        limit=120,
+    )
+    location_default = _first_env_value(RUNTIME_CONTEXT_LOCATION_ENV_KEYS) or "not provided"
+    location = _runtime_context_text(source.get("location"), default=location_default, limit=200)
+    return {
+        "current_date": current_date,
+        "current_time": current_time,
+        "timezone": timezone,
+        "utc_offset": utc_offset,
+        "location": location,
+    }
+
+
+def _runtime_context_datetime(runtime_context: Mapping[str, Any] | None) -> datetime:
+    if runtime_context:
+        value = runtime_context.get("now")
+        if isinstance(value, datetime):
+            return value.astimezone()
+    return datetime.now().astimezone()
+
+
+def _runtime_context_text(value: Any, *, default: str, limit: int = 80) -> str:
+    text = str(value or "").strip()
+    if not text:
+        text = default
+    return _compact(text, limit=limit)
+
+
+def _first_env_value(keys: Sequence[str]) -> str:
+    for key in keys:
+        value = os.environ.get(key)
+        if value and value.strip():
+            return value.strip()
+    return ""
+
+
+def _format_utc_offset(value: datetime) -> str:
+    offset = value.utcoffset()
+    if offset is None:
+        return "unknown"
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    total_minutes = abs(total_minutes)
+    return f"{sign}{total_minutes // 60:02d}:{total_minutes % 60:02d}"
 
 
 def _resolve_checkpoint(

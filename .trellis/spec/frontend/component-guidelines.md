@@ -37,12 +37,16 @@
 - Learning chips with `requires_confirmation=true` should use review wording, not routine confirmation wording, before durable memory promotion.
 - The settings view renders compact connected-app, permission, quiet-hours, runtime provider/model, preference, and data-control summaries from `/api/settings`.
 - Settings provider tiles may prefill the Provider form, but they must not save runtime changes until the normal settings submit path runs.
+- Runtime provider settings include bounded operational controls such as timeout, retry count/backoff, and `max_tool_rounds`; these controls must stay in the settings view and must not create a separate task execution surface.
 - Settings provider tiles and the Provider select must stay visually synchronized before save.
 - Ten-dimensional memory inspection lives in the memory compass view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
 - The memory compass can mirror L1 dimensions as an orbit around the avatar, but orbit buttons must call the same L2 dimension loader and remain read-only.
 - Settings actions should save narrow settings only; ordinary user tasks still route through the single composer.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
 - Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.
+- Memory Wiki Markdown frontmatter delimited by `---` must remain visible as a raw `markdown-frontmatter` metadata block before the rendered body; do not drop it or collapse it into an ordinary paragraph.
+- Memory Wiki panels must extract the Markdown H1 into the panel header so the title remains visible even when frontmatter is rendered first.
+- Markdown headings must receive deterministic ids for same-note links. Memory Wiki cross-entry links should use backend/model-provided title-based wiki file paths such as `wiki/preferences/communication-style.md`; hash-only links stay same-page and must not be forced into a new browser tab.
 - Replayed `turn.started` events should render the historical user prompt when the client is not actively streaming a new turn.
 - Tool activity rows should upsert by stable event/action keys so queued, started, and completed action events update one compact card.
 - Internal learning housekeeping, including after-turn learning action lifecycle events, `learning_discard`, and learning-tone status updates, should not appear as visible Activity rows.
@@ -61,7 +65,7 @@
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
 | Normal learning candidate | Does not render a visible confirmation chip for ordinary background learning | `tests/test_runtime.py` |
 | Learning chip | Shows compact review text, accept/this-turn/reject, and post-resolution undo actions for exceptional review-gated memory | `tests/test_web.py`, `tests/test_runtime.py` |
-| Settings page | Shows compact low-frequency settings, saves quiet hours and runtime provider preferences without raw secrets | `tests/test_web.py` |
+| Settings page | Shows compact low-frequency settings, saves quiet hours and runtime provider preferences, including `max_tool_rounds`, without raw secrets | `tests/test_web.py` |
 | Memory compass page | Loads compact L1 coverage, then L2/L3 memory detail and markdown on demand without raw secrets | `tests/test_web.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
 | Activity upsert | Merges action lifecycle events into a stable row | Asset behavior in `tests/test_web.py` |
@@ -107,5 +111,6 @@
 - For settings, assert the asset calls `/api/settings`, renders the settings view, saves provider/runtime and quiet-hours settings, and never exposes raw provider secrets.
 - For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory compass assets expose progressive L1/L2/L3 disclosure with in-page markdown detail viewing.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
+- For Memory Wiki Markdown, assert frontmatter helpers and `.markdown-frontmatter` styling are present so the raw metadata block remains visible.
 - For activity rows, assert `activityRows`, `activityActionId`, and compact tool-card upsert behavior are present.
 - For internal learning housekeeping, assert `isInternalLearningEvent`, `internal === "learning"`, `tone === "learning"`, and `learning_discard` filters are present.

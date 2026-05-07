@@ -9,9 +9,10 @@ import json
 import os
 from pathlib import Path
 import socket
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
+from ..core.config import DEFAULT_MAX_TOOL_ROUNDS
 from ..core.events import chat_event_as_dict
 from ..core.errors import MnemoError
 from ..core.jsonutil import dumps
@@ -23,6 +24,7 @@ from ..runtime import stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..memory import MemoryEngine
+from ..memory.wiki import materialize_memory_page, memory_page_wiki_path, memory_page_wiki_ref
 from ..memory.query import MEMORY_ONTOLOGY_DIMENSIONS, is_known_memory_dimension, normalize_memory_dimension
 from ..sdk import MnemoClient, mnemo_core_api_schema
 from ..storage import StateStore
@@ -42,6 +44,7 @@ class WebServerConfig:
     timeout_s: float = 30.0
     retry_count: int = 0
     retry_backoff_s: float = 0.0
+    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS
 
 
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -66,7 +69,6 @@ _MEMORY_EVIDENCE_LABELS = {
     "tombstone": "归档记录",
     "memory_safety": "安全检查",
 }
-
 
 def build_http_server(config: WebServerConfig) -> ThreadingHTTPServer:
     StateStore(config.state_dir).initialize()
@@ -126,6 +128,7 @@ def _resolved_web_config(config: WebServerConfig) -> WebServerConfig:
         timeout_s=config.timeout_s,
         retry_count=config.retry_count,
         retry_backoff_s=config.retry_backoff_s,
+        max_tool_rounds=config.max_tool_rounds,
     )
 
 
@@ -510,7 +513,7 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
                 stream=True,
             )
         )
-        yield from stream_provider(request, provider)
+        yield from stream_provider(request, provider, max_tool_rounds=config.max_tool_rounds)
         return
     if config.provider == "anthropic":
         if not config.model:
@@ -526,7 +529,7 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
                 stream=True,
             )
         )
-        yield from stream_provider(request, provider)
+        yield from stream_provider(request, provider, max_tool_rounds=config.max_tool_rounds)
         return
     raise ValueError(f"unsupported provider: {config.provider}")
 
@@ -542,6 +545,7 @@ def _effective_web_config(config: WebServerConfig) -> WebServerConfig:
     timeout_s = runtime.get("timeout_s") if "timeout_s" in raw_runtime else config.timeout_s
     retry_count = runtime.get("retry_count") if "retry_count" in raw_runtime else config.retry_count
     retry_backoff_s = runtime.get("retry_backoff_s") if "retry_backoff_s" in raw_runtime else config.retry_backoff_s
+    max_tool_rounds = runtime.get("max_tool_rounds") if "max_tool_rounds" in raw_runtime else config.max_tool_rounds
     return WebServerConfig(
         state_dir=config.state_dir,
         host=config.host,
@@ -555,6 +559,7 @@ def _effective_web_config(config: WebServerConfig) -> WebServerConfig:
         timeout_s=float(timeout_s if timeout_s is not None else config.timeout_s),
         retry_count=int(retry_count if retry_count is not None else config.retry_count),
         retry_backoff_s=float(retry_backoff_s if retry_backoff_s is not None else config.retry_backoff_s),
+        max_tool_rounds=int(max_tool_rounds if max_tool_rounds is not None else config.max_tool_rounds),
     )
 
 
@@ -742,6 +747,7 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
             "timeout_s": effective.timeout_s,
             "retry_count": effective.retry_count,
             "retry_backoff_s": effective.retry_backoff_s,
+            "max_tool_rounds": effective.max_tool_rounds,
             "current": {
                 "provider": config.provider,
                 "model": config.model or "",
@@ -749,6 +755,7 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
                 "timeout_s": config.timeout_s,
                 "retry_count": config.retry_count,
                 "retry_backoff_s": config.retry_backoff_s,
+                "max_tool_rounds": config.max_tool_rounds,
             },
             "applies": "live",
         },
@@ -787,12 +794,12 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
 def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
     store = StateStore(config.state_dir)
     store.initialize()
-    pages = store.list_memory_pages(status="active", limit=1000)
-    candidates = [
+    pages = _dedupe_memory_pages(store.list_memory_pages(status="active", limit=1000))
+    candidates = _dedupe_memory_candidates([
         candidate
         for candidate in store.list_memory_candidates(status=None, limit=1000)
         if _is_open_memory_candidate(candidate)
-    ]
+    ])
     buckets = {
         dimension: {
             "dimension": dimension,
@@ -843,13 +850,19 @@ def _memory_dimension_payload(config: WebServerConfig, dimension: str) -> dict[s
     store.initialize()
     pages = [
         page
-        for page in store.list_memory_pages(status="active", limit=1000)
+        for page in _dedupe_memory_pages(store.list_memory_pages(status="active", limit=1000))
         if _memory_dimension(page, fallback="context") == dimension
     ]
     candidates = [
         candidate
-        for candidate in store.list_memory_candidates(status=None, limit=1000)
-        if _is_open_memory_candidate(candidate) and _memory_dimension(candidate, fallback="context") == dimension
+        for candidate in _dedupe_memory_candidates(
+            [
+                candidate
+                for candidate in store.list_memory_candidates(status=None, limit=1000)
+                if _is_open_memory_candidate(candidate)
+            ]
+        )
+        if _memory_dimension(candidate, fallback="context") == dimension
     ]
     page_items = [_memory_l2_page_card(page) for page in pages]
     candidate_items = [_memory_l2_candidate_card(candidate) for candidate in candidates]
@@ -891,12 +904,15 @@ def _memory_item_payload(config: WebServerConfig, item_type: str, item_id: str) 
         tombstones = store.list_memory_tombstones(target_id=item_id, target_type="page", limit=5)
         detail = _memory_l3_page_detail(page, dimension)
         evidence = _memory_item_evidence(source_candidate, tombstones)
+        wiki = _memory_page_wiki_note(config, page)
+        detail = dict(detail)
+        detail["title"] = wiki["title"]
         return {
             "kind": "memory_item",
             "level": "L3",
             "item": detail,
             "evidence": evidence,
-            "markdown": _memory_item_markdown(detail, evidence),
+            "markdown": wiki["markdown"],
         }
     if normalized_type in {"candidate", "memory_candidate"}:
         candidate = store.get_memory_candidate(item_id)
@@ -908,12 +924,15 @@ def _memory_item_payload(config: WebServerConfig, item_type: str, item_id: str) 
         tombstones = store.list_memory_tombstones(target_id=item_id, target_type="candidate", limit=5)
         detail = _memory_l3_candidate_detail(candidate, dimension)
         evidence = _memory_item_evidence(candidate, tombstones, include_source_candidate=False)
+        wiki = _memory_candidate_wiki_note(config, detail, evidence)
+        detail = dict(detail)
+        detail["title"] = wiki["title"]
         return {
             "kind": "memory_item",
             "level": "L3",
             "item": detail,
             "evidence": evidence,
-            "markdown": _memory_item_markdown(detail, evidence),
+            "markdown": wiki["markdown"],
         }
     raise ValueError(f"unsupported memory item type: {item_type}")
 
@@ -932,11 +951,16 @@ def _is_open_memory_candidate(candidate: dict[str, Any]) -> bool:
 
 
 def _memory_l2_page_card(page: dict[str, Any]) -> dict[str, Any]:
+    dimension = _memory_dimension(page, fallback="context")
+    summary = str(page.get("content") or "")
     return {
         "kind": "page",
         "id": page.get("id"),
-        "title": _clip_text(_memory_display_title(str(page.get("title") or "")), 90),
-        "summary": _clip_text(str(page.get("content") or ""), 180),
+        "title": _clip_text(
+            _memory_display_title(str(page.get("title") or "")) or _MEMORY_DIMENSION_LABELS.get(dimension, dimension),
+            90,
+        ),
+        "summary": _clip_text(summary, 180),
         "confidence": page.get("confidence"),
         "status": page.get("status"),
         "updated_at": page.get("updated_at"),
@@ -945,10 +969,15 @@ def _memory_l2_page_card(page: dict[str, Any]) -> dict[str, Any]:
 
 
 def _memory_l2_candidate_card(candidate: dict[str, Any]) -> dict[str, Any]:
+    dimension = _memory_dimension(candidate, fallback="context")
+    claim = str(candidate.get("claim") or "")
     return {
         "kind": "candidate",
         "id": candidate.get("id"),
-        "title": _clip_text(_memory_display_title(str(candidate.get("claim") or "")), 90),
+        "title": _clip_text(
+            _memory_display_title(claim) or f"{_MEMORY_DIMENSION_LABELS.get(dimension, dimension)}候选",
+            90,
+        ),
         "summary": _clip_text(str(candidate.get("status") or "candidate"), 120),
         "confidence": candidate.get("confidence"),
         "status": candidate.get("status"),
@@ -958,12 +987,16 @@ def _memory_l2_candidate_card(candidate: dict[str, Any]) -> dict[str, Any]:
 
 
 def _memory_l3_page_detail(page: dict[str, Any], dimension: str) -> dict[str, Any]:
+    summary = str(page.get("content") or "")
     return {
         "type": "page",
         "id": page.get("id"),
         "dimension": dimension,
-        "title": _clip_text(_memory_display_title(str(page.get("title") or "")), 120),
-        "summary": _clip_text(str(page.get("content") or ""), 700),
+        "title": _clip_text(
+            _memory_display_title(str(page.get("title") or "")) or _MEMORY_DIMENSION_LABELS.get(dimension, dimension),
+            120,
+        ),
+        "summary": _clip_text(summary, 700),
         "scope": page.get("scope"),
         "confidence": page.get("confidence"),
         "status": page.get("status"),
@@ -974,12 +1007,16 @@ def _memory_l3_page_detail(page: dict[str, Any], dimension: str) -> dict[str, An
 
 
 def _memory_l3_candidate_detail(candidate: dict[str, Any], dimension: str) -> dict[str, Any]:
+    claim = str(candidate.get("claim") or "")
     return {
         "type": "candidate",
         "id": candidate.get("id"),
         "dimension": dimension,
-        "title": _clip_text(_memory_display_title(str(candidate.get("claim") or "")), 120),
-        "summary": _clip_text(str(candidate.get("claim") or ""), 700),
+        "title": _clip_text(
+            _memory_display_title(claim) or f"{_MEMORY_DIMENSION_LABELS.get(dimension, dimension)}候选",
+            120,
+        ),
+        "summary": _clip_text(claim, 700),
         "scope": candidate.get("scope"),
         "confidence": candidate.get("confidence"),
         "status": candidate.get("status"),
@@ -1031,26 +1068,66 @@ def _memory_item_evidence(
     return evidence
 
 
-def _memory_item_markdown(detail: dict[str, Any], evidence: list[dict[str, Any]]) -> str:
+def _memory_page_wiki_note(config: WebServerConfig, page: dict[str, Any]) -> dict[str, str]:
+    path = memory_page_wiki_path(config.state_dir, page)
+    if not path.exists():
+        materialize_memory_page(config.state_dir, page)
+    markdown = path.read_text(encoding="utf-8")
+    title = _markdown_h1(markdown) or _memory_display_title(str(page.get("title") or "")) or "Memory"
+    return {
+        "title": _clip_text(title, 120),
+        "markdown": markdown,
+    }
+
+
+def _memory_candidate_wiki_note(
+    config: WebServerConfig,
+    detail: dict[str, Any],
+    evidence: list[dict[str, Any]],
+) -> dict[str, str]:
+    title = _memory_wiki_clean_title(str(detail.get("title") or ""), detail)
+    body = str(detail.get("summary") or "").strip() or "_暂无正文。_"
+    return {
+        "title": title,
+        "markdown": _memory_item_markdown(config.state_dir, detail, evidence, title=title, body_markdown=body),
+    }
+
+
+def _markdown_h1(markdown: str) -> str:
+    for line in str(markdown or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+    return ""
+
+
+def _memory_item_markdown(
+    state_dir: str,
+    detail: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    *,
+    title: str,
+    body_markdown: str,
+) -> str:
     dimension = normalize_memory_dimension(str(detail.get("dimension") or ""), fallback="context")
     kind = str(detail.get("type") or "memory").strip() or "memory"
-    title = _memory_wiki_title(detail, dimension=dimension)
-    body = str(detail.get("summary") or "").strip()
     frontmatter = {
         "kind": kind,
+        "id": str(detail.get("id") or ""),
         "dimension": dimension,
         "status": str(detail.get("status") or "unknown"),
         "confidence": _memory_wiki_confidence(detail.get("confidence")),
         "scope": str(detail.get("scope") or "global"),
+        "wiki_path": _memory_item_wiki_path(state_dir, detail, dimension, title=title),
         "updated_at": _memory_wiki_timestamp(detail.get("updated_at") or detail.get("created_at")),
     }
     lines = ["---"]
     for key, value in frontmatter.items():
         if value:
             lines.append(f"{key}: {value}")
-    lines.extend(["---", "", f"# {title}", ""])
-    if body:
-        lines.append(body)
+    lines.extend(["---", "", f"# {title}", "", "## 概述", ""])
+    if body_markdown.strip():
+        lines.append(body_markdown.strip())
     else:
         lines.append("_暂无正文。_")
     if evidence:
@@ -1063,15 +1140,81 @@ def _memory_item_markdown(detail: dict[str, Any], evidence: list[dict[str, Any]]
     return "\n".join(lines)
 
 
-def _memory_wiki_title(detail: dict[str, Any], *, dimension: str) -> str:
-    title = str(detail.get("title") or "").strip()
-    summary = str(detail.get("summary") or "").strip()
-    if title and title != summary:
-        return title
-    label = _MEMORY_DIMENSION_LABELS.get(dimension, dimension)
+def _memory_wiki_clean_title(title: str, detail: dict[str, Any]) -> str:
+    compact = " ".join(str(title or "").strip().split())
+    compact = compact.lstrip("#").strip()
+    if compact:
+        return _clip_text(compact, 40)
+    dimension = normalize_memory_dimension(str(detail.get("dimension") or ""), fallback="context")
     if detail.get("type") == "candidate":
-        return f"{label}候选"
-    return label
+        return f"{_MEMORY_DIMENSION_LABELS.get(dimension, dimension)}候选"
+    return _MEMORY_DIMENSION_LABELS.get(dimension, dimension)
+
+
+def _memory_item_wiki_path(state_dir: str, detail: dict[str, Any], dimension: str, *, title: str) -> str:
+    item_id = str(detail.get("id") or "").strip()
+    if not item_id or detail.get("type") != "page":
+        return ""
+    return memory_page_wiki_ref(
+        state_dir,
+        {
+            "id": item_id,
+            "title": title,
+            "scope": detail.get("scope"),
+            "status": detail.get("status"),
+            "metadata": {"dimension": dimension},
+        },
+    ).removeprefix("./")
+
+
+def _dedupe_memory_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _dedupe_memory_items(pages, value_getter=lambda page: str(page.get("content") or ""))
+
+
+def _dedupe_memory_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _dedupe_memory_items(candidates, value_getter=lambda candidate: str(candidate.get("claim") or ""))
+
+
+def _dedupe_memory_items(
+    items: list[dict[str, Any]],
+    *,
+    value_getter: Callable[[dict[str, Any]], str],
+) -> list[dict[str, Any]]:
+    selected: dict[str, tuple[int, dict[str, Any]]] = {}
+    passthrough: list[tuple[int, dict[str, Any]]] = []
+    for index, item in enumerate(items):
+        key = _memory_duplicate_key(value_getter(item))
+        if not key:
+            passthrough.append((index, item))
+            continue
+        existing = selected.get(key)
+        if existing is None:
+            selected[key] = (index, item)
+            continue
+        existing_index, existing_item = existing
+        if _memory_dedupe_preference(item) < _memory_dedupe_preference(existing_item):
+            selected[key] = (existing_index, item)
+    ordered = [*passthrough, *selected.values()]
+    ordered.sort(key=lambda pair: pair[0])
+    return [item for _, item in ordered]
+
+
+def _memory_duplicate_key(value: str) -> str:
+    compact = "".join(char for char in str(value or "").casefold() if char.isalnum())
+    return compact if len(compact) >= 12 else ""
+
+
+def _memory_dedupe_preference(item: dict[str, Any]) -> tuple[int, float, str]:
+    dimension = _memory_dimension(item, fallback="context")
+    try:
+        dimension_rank = MEMORY_ONTOLOGY_DIMENSIONS.index(dimension)
+    except ValueError:
+        dimension_rank = len(MEMORY_ONTOLOGY_DIMENSIONS)
+    try:
+        confidence = float(item.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return (dimension_rank, -confidence, str(item.get("id") or ""))
 
 
 def _memory_wiki_confidence(value: Any) -> str:

@@ -7,6 +7,7 @@ from typing import Any
 
 from mnemo.core.jsonutil import dumps
 from mnemo.memory import MemoryEngine
+from mnemo.memory.wiki import materialize_memory_page, memory_page_wiki_path
 from mnemo.storage import StateStore
 
 
@@ -27,7 +28,7 @@ class MemoryEngineTests(unittest.TestCase):
             candidate = store.get_memory_candidate(candidate_id)
             page = store.get_memory_page(result["page_id"])
             links = store.list_memory_links(candidate_id)
-            wiki_path = store.state_dir / "wiki" / "preferences" / f"{result['page_id']}.md"
+            wiki_path = memory_page_wiki_path(store.state_dir, page)
             wiki_body = wiki_path.read_text(encoding="utf-8")
             self.assertEqual(candidate["status"], "promoted")
             self.assertEqual(page["content"], "User prefers concise engineering updates")
@@ -35,9 +36,37 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(links[0]["target_id"], result["page_id"])
             self.assertTrue(wiki_path.exists())
             self.assertIn(f'id: "{result["page_id"]}"', wiki_body)
+            self.assertEqual(wiki_path.name, "user-prefers-concise-engineering-updates.md")
+            self.assertIn('slug: "user-prefers-concise-engineering-updates"', wiki_body)
             self.assertIn('dimension: "preferences"', wiki_body)
             self.assertIn('status: "active"', wiki_body)
             self.assertIn("# User prefers concise engineering updates", wiki_body)
+
+    def test_wiki_materialization_uses_title_slug_with_collision_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, _run_id = _store_with_run(tmp)
+            first_id = store.upsert_memory_page(
+                "preferences: tools",
+                "User prefers semantic wiki files.",
+                scope="global",
+                confidence=0.9,
+            )
+            second_id = store.upsert_memory_page(
+                "preferences: tools",
+                "Project-specific tool preference.",
+                scope="project",
+                confidence=0.8,
+            )
+
+            first = store.get_memory_page(first_id)
+            second = store.get_memory_page(second_id)
+            first_wiki = materialize_memory_page(store.state_dir, first)
+            second_wiki = materialize_memory_page(store.state_dir, second)
+
+            self.assertEqual(first_wiki["path"], "wiki/preferences/tools.md")
+            self.assertEqual(second_wiki["path"], f"wiki/preferences/tools--{second_id[-8:]}.md")
+            self.assertTrue((store.state_dir / first_wiki["path"]).exists())
+            self.assertTrue((store.state_dir / second_wiki["path"]).exists())
 
     def test_undo_candidate_tombstones_promoted_page_and_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -288,6 +317,7 @@ class MemoryEngineTests(unittest.TestCase):
             )
             promoted = MemoryEngine(store).promote_candidate(candidate_id)
             page_id = promoted["page_id"]
+            active_wiki_path = memory_page_wiki_path(store.state_dir, store.get_memory_page(page_id))
 
             result = MemoryEngine(store).private_delete_memory(
                 page_id,
@@ -316,8 +346,8 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertTrue(wiki_files)
             wiki_text = "\n".join(path.read_text(encoding="utf-8") for path in wiki_files)
             self.assertNotIn(secret, wiki_text)
-            self.assertFalse((store.state_dir / "wiki" / "preferences" / f"{page_id}.md").exists())
-            self.assertTrue((store.state_dir / "wiki" / "_redacted" / f"{page_id}.md").exists())
+            self.assertFalse(active_wiki_path.exists())
+            self.assertTrue(memory_page_wiki_path(store.state_dir, page).exists())
             self.assertTrue(all(item["reason"] == "private_delete" for item in tombstones))
             self.assertTrue(all(item["summary"] == "[private memory deleted]" for item in tombstones))
             self.assertTrue(all(str(item["target_hash"]).startswith("sha256:") for item in tombstones))
@@ -425,6 +455,8 @@ class MemoryEngineTests(unittest.TestCase):
                     "UPDATE memory_pages SET updated_at = ?, created_at = ? WHERE id IN (?, ?)",
                     (now - (10 * 86400), now - (10 * 86400), decayed_id, fresh_id),
                 )
+            expired_active_path = memory_page_wiki_path(store.state_dir, store.get_memory_page(expired_id))
+            decayed_active_path = memory_page_wiki_path(store.state_dir, store.get_memory_page(decayed_id))
 
             result = engine.decay_stale_pages(limit=10, now=now, stale_confidence=0.45)
 
@@ -436,10 +468,10 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(store.get_memory_page(fresh_id)["status"], "active")
             self.assertLess(store.get_memory_page(decayed_id)["confidence"], 0.45)
             self.assertEqual(store.get_memory_page(expired_id)["metadata"]["expires"], "2000-01-01")
-            self.assertTrue((store.state_dir / "wiki" / "_archive" / f"{expired_id}.md").exists())
-            self.assertTrue((store.state_dir / "wiki" / "_archive" / f"{decayed_id}.md").exists())
-            self.assertFalse((store.state_dir / "wiki" / "context" / f"{expired_id}.md").exists())
-            self.assertFalse((store.state_dir / "wiki" / "preferences" / f"{decayed_id}.md").exists())
+            self.assertTrue(memory_page_wiki_path(store.state_dir, store.get_memory_page(expired_id)).exists())
+            self.assertTrue(memory_page_wiki_path(store.state_dir, store.get_memory_page(decayed_id)).exists())
+            self.assertFalse(expired_active_path.exists())
+            self.assertFalse(decayed_active_path.exists())
             snapshot = engine.compile_l1_snapshot(limit=10)
             self.assertEqual(snapshot["items"][0]["id"], fresh_id)
             self.assertNotIn(expired_id, str(snapshot))
@@ -633,7 +665,7 @@ class MemoryEngineTests(unittest.TestCase):
             results = engine.search("Rust", limit=5)
             cards = engine.context_cards("Rust", limit=5)
             engine.compile_l1_snapshot(limit=10)
-            wiki_body = (store.state_dir / "wiki" / "goals" / f"{source_id}.md").read_text(encoding="utf-8")
+            wiki_body = memory_page_wiki_path(store.state_dir, store.get_memory_page(source_id)).read_text(encoding="utf-8")
             report = engine.health_report(limit=10)
 
             self.assertIn(source_id, {item["id"] for item in alias_results})
@@ -1186,9 +1218,10 @@ class MemoryEngineTests(unittest.TestCase):
             self.assertEqual(snapshot["items"][0]["id"], page_id)
             self.assertLessEqual(len(snapshot["items"][0]["summary"]), 183)
             self.assertNotIn("This page should not appear", str(snapshot))
-            wiki_path = store.state_dir / "wiki" / "preferences" / f"{page_id}.md"
+            wiki_path = memory_page_wiki_path(store.state_dir, store.get_memory_page(page_id))
             wiki_body = wiki_path.read_text(encoding="utf-8")
             self.assertTrue(wiki_path.exists())
+            self.assertEqual(wiki_path.name, "update-style.md")
             self.assertIn('dimension: "preferences"', wiki_body)
             self.assertIn("User prefers direct updates", wiki_body)
             self.assertIsNotNone(loaded)

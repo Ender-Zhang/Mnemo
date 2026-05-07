@@ -33,12 +33,12 @@
 - API response: accepted tool approvals may include compact `{ "tool_result": { "tool": string, "ok": boolean, "summary": string } }`.
 - API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject"|"undo" }`
 - API: `GET /api/settings`
-- API: `POST /api/settings` with JSON `{ "quiet_hours"?: { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string }, "runtime"?: { "provider"?: string, "model"?: string, "base_url"?: string, "api_key_env"?: string, "timeout_s"?: number, "retry_count"?: number, "retry_backoff_s"?: number } }`
+- API: `POST /api/settings` with JSON `{ "quiet_hours"?: { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string }, "runtime"?: { "provider"?: string, "model"?: string, "base_url"?: string, "api_key_env"?: string, "timeout_s"?: number, "retry_count"?: number, "retry_backoff_s"?: number, "max_tool_rounds"?: number } }`
 - API: `GET /api/memory/ontology` returns L1 compact ten-dimensional memory counts, short summaries, and per-dimension drill-down URLs.
 - API: `GET /api/memory/ontology` returns exactly the configured ten user-facing dimensions; historical labels such as profile, finance, or work-style must already be normalized by the API.
 - API: `GET /api/memory/dimension?dimension=<dimension>` returns L2 clipped page/candidate cards for one normalized dimension.
 - API: `GET /api/memory/item?type=page|candidate&id=<id>` returns L3 clipped item detail plus compact evidence rows and markdown detail text.
-- API: `GET /api/memory/item?type=page|candidate&id=<id>` markdown is a wiki note, not a metadata dump: frontmatter, one title, concise body, optional evidence section.
+- API: `GET /api/memory/item?type=page|candidate&id=<id>` markdown is a wiki note read from the materialized wiki file for stable pages, not a provider-generated metadata dump: frontmatter, one concise topic title, body content, cross-entry links that use wiki file paths, optional evidence section for candidates.
 
 ### 3. Contracts
 - The browser stores durable conversation, mission, last run, and last processed chat event ids in `localStorage`.
@@ -67,12 +67,12 @@
 - Review-gated learning chips use `requires_confirmation` only for local presentation; they do not add browser persistence keys or a separate workflow.
 - `/api/settings` can seed read-only chat glance cards on page load and hydrate the settings view on open; it is not persisted in browser storage except lightweight local UI toggles.
 - Settings view can update quiet hours and runtime provider preferences through `/api/settings`; raw API keys must never be sent or stored, only an environment variable name.
-- Runtime settings are live overlays: unset fields must continue using process startup config, while saved provider/model/base URL, API key env, timeout, and retry fields override future web turns.
+- Runtime settings are live overlays: unset fields must continue using process startup config, while saved provider/model/base URL, API key env, timeout, retry fields, and `max_tool_rounds` override future web turns.
 - `/api/settings` payloads must summarize learned preferences, runtime preferences, and data counts without raw artifact bodies, raw memory dumps, or provider secrets.
 - `/api/memory/ontology` is a read-only memory compass view; it must summarize ten-dimensional L1 memory coverage without provider secrets, item arrays, or unbounded raw memory bodies.
 - The memory compass must fetch L2 dimension cards only after the user selects a dimension.
 - The memory compass must fetch L3 evidence and markdown only after the user selects a memory page or candidate.
-- Memory markdown detail panels must render the API-provided wiki note in the memory page itself; labels, frontmatter, and de-duplicated candidate wording are backend contracts.
+- Memory markdown detail panels must render the API-provided wiki note in the memory page itself; labels, frontmatter, concise titles, anchor links, and de-duplicated candidate wording are backend contracts. The panel header should extract the Markdown H1 so the title remains visible even when raw frontmatter is rendered first.
 - L2 and L3 memory responses are cached only in volatile runtime maps for the current browser session; they must not add browser persistence keys.
 - Enter submits the composer while Shift+Enter inserts a newline.
 - After a user submits a turn, the client renders one volatile pending assistant message until the first assistant delta, final message, run error, or stream error arrives.

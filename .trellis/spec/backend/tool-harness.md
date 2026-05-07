@@ -49,6 +49,10 @@
 - `tool_search(query?, risk?, limit=20)` returns compact tool cards without raw schemas.
 - `tool_expand_schema(names)` returns matching tool names for the runtime to add to the next provider `ToolBundle` epoch; it does not return raw schemas to the model.
 - Provider runtime records `tool_bundle.expanded` with `cache_bust_reason="lazy_schema_expansion"` when a successful `tool_expand_schema` call changes the active bundle.
+- Provider runtime defaults `max_tool_rounds` to 12 and resolves overrides from CLI/Web runtime config, `MNEMO_MAX_TOOL_ROUNDS`, or settings `runtime.max_tool_rounds`; accepted values are bounded to 1..64.
+- Provider runtime treats `ProviderAgentRuntime(max_tool_rounds=N)` as a bounded tool-round budget, not as a hard failure boundary for already gathered evidence. A provider may still return multiple tool calls in one allowed round.
+- If the provider still requests tools in the final allowed tool round, runtime executes those tool calls, records `provider.tool_budget_exhausted`, appends a developer instruction to stop calling tools, and performs one final provider request with `tools=()` and `metadata.tool_budget_exhausted=true`.
+- Tool calls returned during the no-tool finalization pass are ignored and recorded as `provider.tool_call_ignored`; a run must not emit `run.error` solely because the tool budget was exhausted after successful tool results.
 - `artifact_update` returns artifact id, title, and kind; artifact body remains in storage.
 - `memory_search` may return `linked_page` matches from one-hop memory associations.
 - `memory_search.search_scope`: optional, one of `memory`, `stable`, `sessions`, or `all`; default is `memory`.
@@ -70,7 +74,10 @@
 - `recall_search` excludes the active run from past-work session/run matches so the user's recall query does not echo itself.
 - `file_patch(path, replacements, replace_all=False)` applies exact UTF-8 text replacements under `ToolContext.workspace_root` and is `admin` risk.
 - `file_patch` rejects missing text, ambiguous text when `replace_all` is false, binary files, and paths outside the workspace.
-- `web_fetch(url, timeout_s=10, max_bytes=60000)` validates HTTP/HTTPS URLs with a network location before opening a request; malformed URLs fail as tool errors without network I/O.
+- `web_search(query, limit=5, timeout_s=10)` queries the public web and returns compact result metadata only: title, URL, snippet, and position. It must not fetch result pages or return raw search HTML.
+- `web_fetch(url, timeout_s=10, max_bytes=60000)` validates HTTP/HTTPS URLs with a network location before opening a request; malformed URLs and private/internal network targets fail as tool errors without network I/O.
+- `web_fetch` returns readable text for HTML pages, preserving compact metadata such as final URL, status, content type, and title; it must reject binary/PDF payloads instead of decoding garbage.
+- Web tool design acknowledges Hermes Agent's MIT-licensed `tools/web_tools.py` split between search metadata and page extraction/fetching, while keeping Mnemo's implementation stdlib-only and project-specific.
 - `browser_open(url, new=2, dry_run=False)` validates HTTP/HTTPS URLs and opens them with the default browser; it is `external` risk.
 - `app_open(path, dry_run=False)` resolves `path` under `ToolContext.workspace_root` and opens it with the OS default app; it is `admin` risk.
 - Connector tools support `dry_run=True` so tests and model planning can validate the handoff without launching local UI.
@@ -123,6 +130,9 @@
 | Binary file read | Return failed tool result, no decoded payload | `tests/test_standard_tools.py` |
 | Shell command timeout | Return failed tool result with timeout error | `tests/test_standard_tools.py` |
 | Web fetch malformed URL | Return failed tool result before network I/O | `tests/test_standard_tools.py` |
+| Web fetch private URL | Return failed tool result before network I/O | `tests/test_standard_tools.py` |
+| Web fetch HTML page | Return readable text and title, not raw HTML tags/scripts | `tests/test_standard_tools.py` |
+| Web search | Return compact search result metadata and evidence | `tests/test_standard_tools.py` |
 | Browser connector | External policy gates URL open; dry-run validates HTTP/HTTPS URL without launching browser | `tests/test_standard_tools.py` |
 | App connector | Admin policy gates OS app open; path traversal is rejected before opener execution | `tests/test_standard_tools.py` |
 | Ask user decision | Creates a persistent Inbox item and returns compact decision evidence | `tests/test_tools.py`, `tests/test_web.py` |
@@ -134,6 +144,7 @@
 | Learning ToolBundle profile | Exposes only mixed learning candidate tools and no discovery/core task tools | `tests/test_tools.py` |
 | Tool search | Returns compact tool cards without schemas | `tests/test_tools.py` |
 | Lazy schema expansion | Provider runtime creates a new bundle epoch after `tool_expand_schema` | `tests/test_runtime.py` |
+| Tool budget exhaustion | Provider runtime executes final-round tool calls, then completes through a no-tool finalization pass instead of failing the run | `tests/test_runtime.py` |
 | Anthropic tool use | Parse non-streaming and streaming `tool_use` blocks into `ToolCallEnvelope` | `tests/test_providers.py` |
 | Anthropic tool result feedback | Convert Mnemo tool messages into Anthropic `tool_result` user blocks | `tests/test_providers.py` |
 | Working note memory retention | Persist note metadata and compact evidence only | `tests/test_tools.py` |
@@ -213,6 +224,7 @@
 - Ask-user decisions: assert persistent Inbox item id appears in compact evidence and `decision.card` payload.
 - Watch feedback: assert model policy updates schedule/status and compact evidence omits raw notification bodies.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
+- Provider runtime tool budget: assert final-round tool calls are executed, the final provider request has `tools=()`, metadata includes `tool_budget_exhausted=true`, and no `run.error` is emitted when a final response is produced.
 - ToolBundle tests: assert stable ids, compact metadata, profile filtering, and lazy expansion epochs.
 - After-turn learning tests: assert compact packet reflection uses `learning.v1`, persists lifecycle events, and can produce mixed candidate chips.
 - Low-signal learning tests: assert a zero-tool turn does not create an after-turn provider request and records `learning.reflection.skipped`.

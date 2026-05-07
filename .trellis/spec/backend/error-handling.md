@@ -58,6 +58,7 @@
 - Non-streaming provider JSON requests retry timeout errors, connection errors, and `retry_status_codes` up to `retry_count`.
 - Streaming provider requests remain single-attempt because retrying after partial deltas can duplicate model output or tool calls.
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
+- Provider tool-round budget resolves from CLI args, config file, Web settings, or `MNEMO_MAX_TOOL_ROUNDS`; values are bounded to 1..64 and budget exhaustion must complete through the provider-runtime finalization path instead of surfacing a Python traceback.
 - Runtime cancellation is cooperative state, not a provider/tool error; observed cancellation completes the run with `status="cancelled"`.
 - Web cancellation endpoint errors are JSON: missing `run_id` returns 400, unknown run id returns 404.
 - Web chat streams must not emit a duplicate `server.error` after the runtime has already emitted a `*.error` chat event for the same failed stream.
@@ -119,7 +120,7 @@
 | Retryable provider status | Non-streaming adapter retries and can recover | `tests/test_providers.py` |
 | Non-retryable provider status | Adapter fails without extra attempts | `tests/test_providers.py` |
 | Streaming provider status | Streaming adapter fails without retry | `tests/test_providers.py` |
-| Retry config resolution | Runtime config resolves retry fields and redacts secrets | `tests/test_config.py` |
+| Retry/tool budget config resolution | Runtime config resolves retry and `max_tool_rounds` fields and redacts secrets | `tests/test_config.py` |
 | Capability inspection | CLI reports provider capability metadata without leaking API keys | `tests/test_cli.py` |
 | Runtime cancellation | Provider runtime emits `run.completed` with cancelled status after observing the signal | `tests/test_runtime.py` |
 | Web cancellation endpoint | Valid run returns cancellation payload; missing/unknown ids return JSON errors | `tests/test_web.py` |
@@ -175,7 +176,7 @@
 - CLI failure for provider status errors.
 - Existing provider adapter status/payload/timeout tests still pass.
 - Provider retry tests for OpenAI-compatible and Anthropic non-streaming calls.
-- Config resolver test for `retry_count` and `retry_backoff_s`.
+- Config resolver test for `retry_count`, `retry_backoff_s`, and `max_tool_rounds`.
 - Runtime cancellation test for cancelled completion status.
 - Web cancellation endpoint test for success and JSON error responses.
 - Web artifact endpoint test for success, compact related metadata, and JSON error responses.

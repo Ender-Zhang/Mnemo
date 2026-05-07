@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+from ..core.config import DEFAULT_MAX_TOOL_ROUNDS
 from ..core.errors import MnemoError
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolExecutionPolicy, ToolResult
 from ..memory import MemoryEngine
@@ -42,12 +43,12 @@ class ProviderAgentRuntime:
         provider: ProviderAdapter,
         *,
         registry: ToolRegistry | None = None,
-        max_tool_rounds: int = 3,
+        max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
         enable_learning_reflection: bool = True,
     ) -> None:
         self.provider = provider
         self.registry = registry
-        self.max_tool_rounds = max_tool_rounds
+        self.max_tool_rounds = max(1, min(int(max_tool_rounds), 64))
         self.enable_learning_reflection = enable_learning_reflection
 
     def run(self, request: RunRequest) -> RunResult:
@@ -252,8 +253,70 @@ class ProviderAgentRuntime:
                         )
                         return
                     messages.append(_tool_result_message(result))
-            else:
-                raise MnemoError("provider exceeded maximum tool rounds")
+
+                if tool_round >= self.max_tool_rounds:
+                    ledger.append(
+                        run_id,
+                        "provider.tool_budget_exhausted",
+                        {
+                            "provider": self.provider.name,
+                            "tool_round": tool_round,
+                            "tool_call_count": len(tool_calls),
+                        },
+                    )
+                    yield emit("status.updated", {"text": "工具轮次已用完，正在整理现有结果。", "tone": "working"})
+                    messages.append(
+                        {
+                            "role": "developer",
+                            "content": (
+                                "Tool budget is exhausted for this turn. Do not request more tools. "
+                                "Answer directly using the available context and tool results, and note uncertainty "
+                                "briefly if the evidence is incomplete."
+                            ),
+                        }
+                    )
+                    completed = []
+                    for provider_event in self.provider.stream(
+                        ProviderRunInput(
+                            messages=messages,
+                            tools=(),
+                            metadata={
+                                "run_id": run_id,
+                                "tool_round": tool_round + 1,
+                                "tool_budget_exhausted": True,
+                                "tool_bundle": active_tool_bundle.metadata(),
+                                "provider_capabilities": capabilities.metadata(),
+                                "cache_plan": active_cache_plan,
+                            },
+                        )
+                    ):
+                        if provider_event.type == "text_delta" and provider_event.text:
+                            response_parts.append(provider_event.text)
+                            yield emit("assistant.delta", {"text": provider_event.text})
+                        elif provider_event.type == "tool_call":
+                            ledger.append(
+                                run_id,
+                                "provider.tool_call_ignored",
+                                {
+                                    "provider": self.provider.name,
+                                    "reason": "tool_budget_exhausted",
+                                },
+                            )
+                        elif provider_event.type == "completed":
+                            completed.append(provider_event)
+
+                    ledger.append(
+                        run_id,
+                        "provider.completed",
+                        {
+                            "provider": self.provider.name,
+                            "tool_round": tool_round + 1,
+                            "metadata": [event.metadata for event in completed],
+                            "tool_call_count": 0,
+                            "tool_budget_exhausted": True,
+                        },
+                    )
+                    break
 
             response = "".join(response_parts).strip() or "已完成。"
             checkpoint = _checkpoint(store, mission_id, request.message, response, run_id, tool_results)
@@ -492,12 +555,22 @@ class ProviderAgentRuntime:
             )
 
 
-def run_provider(request: RunRequest, provider: ProviderAdapter) -> RunResult:
-    return ProviderAgentRuntime(provider).run(request)
+def run_provider(
+    request: RunRequest,
+    provider: ProviderAdapter,
+    *,
+    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
+) -> RunResult:
+    return ProviderAgentRuntime(provider, max_tool_rounds=max_tool_rounds).run(request)
 
 
-def stream_provider(request: RunRequest, provider: ProviderAdapter) -> Iterator[ChatEvent]:
-    return ProviderAgentRuntime(provider).stream(request)
+def stream_provider(
+    request: RunRequest,
+    provider: ProviderAdapter,
+    *,
+    max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
+) -> Iterator[ChatEvent]:
+    return ProviderAgentRuntime(provider, max_tool_rounds=max_tool_rounds).stream(request)
 
 
 def _assistant_tool_call_message(tool_calls: list[Any], content: str) -> dict[str, Any]:

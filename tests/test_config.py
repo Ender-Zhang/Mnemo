@@ -21,6 +21,7 @@ class RuntimeConfigTests(unittest.TestCase):
                         "timeout_s": 10,
                         "retry_count": 1,
                         "retry_backoff_s": 0.2,
+                        "max_tool_rounds": 4,
                     }
                 ),
                 encoding="utf-8",
@@ -38,6 +39,7 @@ class RuntimeConfigTests(unittest.TestCase):
                     "MNEMO_TIMEOUT_S": "12",
                     "MNEMO_RETRY_COUNT": "2",
                     "MNEMO_RETRY_BACKOFF_S": "0.01",
+                    "MNEMO_MAX_TOOL_ROUNDS": "9",
                 },
             )
 
@@ -47,6 +49,7 @@ class RuntimeConfigTests(unittest.TestCase):
             self.assertEqual(config.timeout_s, 12.0)
             self.assertEqual(config.retry_count, 2)
             self.assertEqual(config.retry_backoff_s, 0.01)
+            self.assertEqual(config.max_tool_rounds, 9)
 
     def test_api_key_resolves_from_env_and_redacts(self) -> None:
         config = resolve_runtime_config(

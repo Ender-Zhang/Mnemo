@@ -20,3 +20,7 @@ If you're using Codex, project-scoped helpers may also live in:
 Keep this managed block so 'trellis update' can refresh the instructions.
 
 <!-- TRELLIS:END -->
+
+# Local Deployment Note
+
+- After making code changes in this project, restart the local `mnemo-web` service so the Cloudflare Tunnel at `https://mem.day.qzz.io` reflects the current workspace. Verify via `/api/health` and, for tool changes, `/api/core/context`.

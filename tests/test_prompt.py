@@ -24,6 +24,7 @@ class PromptAssemblerTests(unittest.TestCase):
                 "developer.operating_principles",
                 "tools.cards",
                 "mission.continuation",
+                "runtime.context",
                 "turn.current_user_message",
             ],
         )
@@ -37,18 +38,51 @@ class PromptAssemblerTests(unittest.TestCase):
             metadata["stable_prefix"],
             ["system.identity", "developer.operating_principles", "tools.cards"],
         )
-        self.assertEqual(metadata["dynamic_tail"], ["mission.continuation", "turn.current_user_message"])
+        self.assertEqual(
+            metadata["dynamic_tail"],
+            ["mission.continuation", "runtime.context", "turn.current_user_message"],
+        )
 
         policies = {block["id"]: block["cache_policy"] for block in metadata["blocks"]}
         segments = {block["id"]: block["cache_segment"] for block in metadata["blocks"]}
         self.assertEqual(policies["system.identity"], "stable")
         self.assertEqual(policies["tools.cards"], "stable")
         self.assertEqual(policies["mission.continuation"], "mission")
+        self.assertEqual(policies["runtime.context"], "turn")
         self.assertEqual(policies["turn.current_user_message"], "turn")
         self.assertEqual(segments["system.identity"], "core")
         self.assertEqual(segments["tools.cards"], "tool_bundle")
         self.assertEqual(segments["mission.continuation"], "mission")
+        self.assertEqual(segments["runtime.context"], "turn")
         self.assertEqual(segments["turn.current_user_message"], "turn")
+
+    def test_runtime_context_includes_current_time_location_and_freshness_guidance(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "库尔德宁游玩攻略 最新",
+            runtime_context={
+                "current_date": "2026-05-03",
+                "current_time": "2026-05-03T10:30:00+08:00",
+                "timezone": "Asia/Shanghai",
+                "utc_offset": "+08:00",
+                "location": "",
+            },
+            token_budget=None,
+        )
+        runtime = next(block for block in prompt.blocks if block.id == "runtime.context")
+        metadata = prompt.metadata()
+        runtime_metadata = next(block for block in metadata["blocks"] if block["id"] == "runtime.context")
+
+        self.assertEqual(runtime.cache_policy, "turn")
+        self.assertFalse(runtime.can_drop)
+        self.assertIn("Current date: 2026-05-03", runtime.content)
+        self.assertIn("Current local time: 2026-05-03T10:30:00+08:00", runtime.content)
+        self.assertIn("Timezone: Asia/Shanghai (UTC+08:00)", runtime.content)
+        self.assertIn("User location: not provided", runtime.content)
+        self.assertIn("latest, current, or recent", runtime.content)
+        self.assertIn("prefer 2026", runtime.content)
+        self.assertEqual(runtime_metadata["metadata"]["current_date"], "2026-05-03")
+        self.assertEqual(runtime_metadata["metadata"]["timezone"], "Asia/Shanghai")
+        self.assertFalse(runtime_metadata["metadata"]["location_known"])
 
     def test_bootstrap_context_adds_soul_and_workspace_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -257,6 +291,7 @@ class PromptAssemblerTests(unittest.TestCase):
                 "memory.index",
                 "skills.index",
                 "mission.continuation",
+                "runtime.context",
                 "turn.current_user_message",
             ],
         )
@@ -360,6 +395,7 @@ class PromptAssemblerTests(unittest.TestCase):
                 "system.identity",
                 "developer.operating_principles",
                 "mission.continuation",
+                "runtime.context",
                 "turn.current_user_message",
             ],
         )
@@ -486,6 +522,7 @@ class PromptAssemblerTests(unittest.TestCase):
                     "developer.operating_principles",
                     "tools.cards",
                     "mission.continuation",
+                    "runtime.context",
                     "turn.current_user_message",
                 ],
             )

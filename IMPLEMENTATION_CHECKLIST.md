@@ -49,7 +49,7 @@ This file tracks implementation status against the design package. Keep it updat
 - [x] Core tool specs: `memory_search`, `memory_read`, `working_note`, `skills_list`, `skill_view`, `artifact_update`, `ask_user`.
 - [x] Learning tool specs: `memory_write_candidate`, `skill_propose_candidate`, `tool_propose_candidate`, `eval_propose_case`, `learning_discard`.
 - [x] Tool calls and results persisted.
-- [x] External tools: workspace file search/read/write/patch, HTTP fetch, shell execution, and lightweight browser/app connectors exist.
+- [x] External tools: workspace file search/read/write/patch, web search/fetch, shell execution, and lightweight browser/app connectors exist.
 - [~] Lightweight permission gate for read/write/external/admin exists; default runtime policy allows all built-in risk levels for smoother single-chat execution, while explicitly stricter policies can still create compact `tool_approval` Decision Cards with natural labels and accepted approvals execute once through ToolHarness; side-effect flags and sandbox profile enforcement are not complete.
 - [x] Tool result compression and evidence cards.
 - [x] User file operations default to a per-state user workspace at `<state-dir>/workspace` instead of the process cwd or source repository root.
@@ -175,6 +175,7 @@ This file tracks implementation status against the design package. Keep it updat
 ## Recently Landed Trellis Tasks
 
 - [x] `04-30-memory-quality-signal`: Memory candidate writes now attach compact quality scores for specificity, personalization, persistence, actionability, and verifiability, and Dream fallback rejects explicit discard-quality candidates before stable-page promotion.
+- [x] `04-30-web-search-fetch-hardening`: Web tools now expose compact `web_search` result metadata, return readable HTML text from `web_fetch`, block malformed/private network targets before network I/O, and acknowledge the Hermes Agent web-tool design reference.
 - [x] `04-30-unobtrusive-learning-confirmations`: Normal memory/skill/tool/eval learning candidates now persist silently without visible confirmation chips, after-turn learning action events are marked internal for Web suppression, and rare decision cards use natural option labels.
 - [x] `04-30-memory-near-duplicate-reinforcement`: Dream consolidation now treats conservative same-dimension, same-polarity near-duplicate candidates as reinforcement of existing active pages, preventing paraphrased stable memories from duplicating.
 - [x] `04-29-memory-l1-association-index`: L1 memory snapshots now compile compact alias pointers and association hubs from active pages, metadata associations, and memory links, and prompt/query planning can use those low-token routes before reading full pages.

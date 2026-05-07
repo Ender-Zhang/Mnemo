@@ -157,6 +157,7 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
 
     def test_default_policy_allows_external_and_admin_risks(self) -> None:
         registry = ToolRegistry()
+        self.assertTrue(ToolExecutionPolicy().check(registry.spec("web_search")).allowed)
         self.assertTrue(ToolExecutionPolicy().check(registry.spec("web_fetch")).allowed)
         self.assertTrue(ToolExecutionPolicy().check(registry.spec("file_write")).allowed)
         self.assertTrue(ToolExecutionPolicy().check(registry.spec("shell_exec")).allowed)
