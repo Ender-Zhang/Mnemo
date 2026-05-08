@@ -43,6 +43,7 @@ def main() -> int:
     from mnemo.interfaces.web import WebServerConfig, build_http_server
     from mnemo.mcp import MnemoMcpServer, mcp_server_config
     from mnemo.runtime import ScheduleService
+    from mnemo.runtime.service import build_web_service_command
     from mnemo.sdk import MnemoClient, mnemo_core_api_schema
 
     _assert_not_source_import(Path(mnemo.__file__ or ""))
@@ -98,6 +99,8 @@ def main() -> int:
         raise AssertionError("packaged MCP server is missing content-length serve transport")
     if "quiet_hours" not in load_user_settings(Path.cwd()):
         raise AssertionError("packaged settings loader is missing quiet-hours defaults")
+    if "web" not in build_web_service_command(state_dir=".mnemo"):
+        raise AssertionError("packaged service helper is missing web command builder")
 
     print(f"installed mnemo {version} smoke passed")
     return 0

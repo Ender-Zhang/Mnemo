@@ -2,14 +2,15 @@
 # Mnemo one-click installer for macOS/Linux.
 #
 # Acknowledgement: the installer structure intentionally adapts safe patterns
-# from NousResearch Hermes Agent's scripts/install.sh, especially clearing
-# inherited Python environment variables, using an isolated venv, and linking a
-# stable CLI command. This script is Mnemo-specific and does not copy Hermes'
-# platform setup flow.
+# from NousResearch Hermes Agent's scripts/install.sh and OpenClaw's persistent
+# gateway shape: clear inherited Python environment variables, install into an
+# isolated venv, link a stable CLI command, then route first-run setup into a
+# service/onboard flow. This script is Mnemo-specific and does not copy either
+# project's platform setup flow.
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/Chriskuei/Mnemo/main/scripts/install.sh | bash
-#   curl -fsSL https://raw.githubusercontent.com/Chriskuei/Mnemo/main/scripts/install.sh | bash -s -- --skip-setup
+#   curl -fsSL https://raw.githubusercontent.com/Chriskuei/Mnemo/main/scripts/install.sh | bash -s -- --skip-onboard
 
 set -euo pipefail
 
@@ -19,7 +20,14 @@ STATE_DIR="${MNEMO_STATE_DIR:-$HOME/.mnemo}"
 INSTALL_DIR="${MNEMO_INSTALL_DIR:-$STATE_DIR/mnemo}"
 BIN_DIR="${MNEMO_BIN_DIR:-$HOME/.local/bin}"
 RUN_SETUP=true
+START_SERVICE=true
 INSTALL_DIR_EXPLICIT=false
+
+if [ -t 0 ] || { [ -r /dev/tty ] && [ -w /dev/tty ]; }; then
+  IS_INTERACTIVE=true
+else
+  IS_INTERACTIVE=false
+fi
 
 if [ -n "${PYTHONPATH:-}" ]; then
   echo "Ignoring inherited PYTHONPATH during install"
@@ -43,14 +51,16 @@ Options:
   --dir PATH       Install checkout directory (default: ~/.mnemo/mnemo)
   --state-dir PATH Runtime state directory (default: ~/.mnemo)
   --bin-dir PATH   Command link directory (default: ~/.local/bin)
-  --skip-setup     Skip post-install setup hints
+  --skip-onboard   Skip post-install onboard
+  --skip-setup     Alias for --skip-onboard
+  --no-start-service
+                   Do not start the background web service during onboard
   -h, --help       Show this help
 
 After installing:
   mnemo --version
-  mnemo web --state-dir ~/.mnemo
-  mnemo channels feishu onboard --state-dir ~/.mnemo
-  mnemo channels feishu serve --state-dir ~/.mnemo --connection websocket
+  mnemo onboard --state-dir ~/.mnemo
+  mnemo service status --state-dir ~/.mnemo
 EOF
 }
 
@@ -77,8 +87,12 @@ while [ "$#" -gt 0 ]; do
       BIN_DIR="$2"
       shift 2
       ;;
-    --skip-setup)
+    --skip-onboard|--skip-setup)
       RUN_SETUP=false
+      shift
+      ;;
+    --no-start-service)
+      START_SERVICE=false
       shift
       ;;
     -h|--help)
@@ -162,13 +176,32 @@ fi
 "$INSTALL_DIR/venv/bin/mnemo" --version
 
 if [ "$RUN_SETUP" = true ]; then
+  log "Running Mnemo onboard"
+  ONBOARD_ARGS=(onboard --state-dir "$STATE_DIR" --host 127.0.0.1 --port 8765)
+  if [ "$START_SERVICE" = false ]; then
+    ONBOARD_ARGS+=(--no-start-service)
+  fi
+  if [ "$IS_INTERACTIVE" = true ]; then
+    if [ -t 0 ]; then
+      "$INSTALL_DIR/venv/bin/mnemo" "${ONBOARD_ARGS[@]}"
+    else
+      "$INSTALL_DIR/venv/bin/mnemo" "${ONBOARD_ARGS[@]}" < /dev/tty
+    fi
+  else
+    "$INSTALL_DIR/venv/bin/mnemo" "${ONBOARD_ARGS[@]}" --non-interactive --skip-feishu
+  fi
+  "$INSTALL_DIR/venv/bin/mnemo" service status --state-dir "$STATE_DIR" || true
+else
   cat <<EOF
 
 Next:
-  1. Start the web UI:
-     $BIN_DIR/mnemo web --state-dir "$STATE_DIR"
+  1. Run first-time setup:
+     $BIN_DIR/mnemo onboard --state-dir "$STATE_DIR"
 
-  2. Connect Feishu/Lark by QR scan:
+  2. Check the background web service:
+     $BIN_DIR/mnemo service status --state-dir "$STATE_DIR"
+
+  3. Existing Feishu/Lark channel commands still work:
      $BIN_DIR/mnemo channels feishu onboard --state-dir "$STATE_DIR"
      $BIN_DIR/mnemo channels feishu serve --state-dir "$STATE_DIR" --connection websocket
 

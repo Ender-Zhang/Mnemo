@@ -52,6 +52,79 @@ class CliTests(unittest.TestCase):
             self.assertEqual(status.returncode, 0, status.stderr)
             self.assertFalse(json.loads(status.stdout)["feishu"]["configured"])
 
+    def test_onboard_non_interactive_configures_runtime_and_service_env(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _run_cli(
+                [
+                    "onboard",
+                    "--state-dir",
+                    tmp,
+                    "--non-interactive",
+                    "--skip-feishu",
+                    "--no-start-service",
+                    "--provider",
+                    "openai-compatible",
+                    "--base-url",
+                    "https://example.test/v1",
+                    "--model",
+                    "demo-model",
+                    "--api-key-env",
+                    "MNEMO_TEST_API_KEY",
+                    "--api-key",
+                    "secret-test-key",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("secret-test-key", result.stdout)
+            payload = json.loads(result.stdout)["onboard"]
+            runtime = payload["settings"]["runtime"]
+            self.assertEqual(runtime["provider"], "openai-compatible")
+            self.assertEqual(runtime["base_url"], "https://example.test/v1")
+            self.assertEqual(runtime["model"], "demo-model")
+            self.assertEqual(runtime["api_key_env"], "MNEMO_TEST_API_KEY")
+            self.assertEqual(payload["service_env"]["keys"], ["MNEMO_TEST_API_KEY"])
+
+            settings = json.loads((Path(tmp) / "settings.json").read_text(encoding="utf-8"))
+            self.assertNotIn("api_key", settings)
+            env_file = Path(payload["service_env"]["path"])
+            self.assertEqual(env_file.stat().st_mode & 0o777, 0o600)
+            self.assertIn("MNEMO_TEST_API_KEY=", env_file.read_text(encoding="utf-8"))
+
+    def test_service_install_dry_run_writes_launcher_without_starting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = _run_cli(
+                [
+                    "service",
+                    "install",
+                    "--state-dir",
+                    tmp,
+                    "--mode",
+                    "detached",
+                    "--dry-run",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    "9876",
+                    "--json",
+                ]
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            service = json.loads(result.stdout)["service"]
+            self.assertEqual(service["manager"], "detached")
+            self.assertTrue(service["installed"])
+            self.assertFalse(service["running"])
+            self.assertTrue(service["skipped"])
+            self.assertEqual(service["url"], "http://127.0.0.1:9876")
+            self.assertTrue(Path(service["launcher"]).exists())
+
+            status = _run_cli(["service", "status", "--state-dir", tmp, "--json"])
+            self.assertEqual(status.returncode, 0, status.stderr)
+            status_payload = json.loads(status.stdout)["service"]
+            self.assertTrue(status_payload["installed"])
+            self.assertFalse(status_payload["running"])
+
     def test_init_and_run_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init = _run_cli(["init", "--state-dir", tmp])

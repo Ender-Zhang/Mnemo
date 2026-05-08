@@ -24,7 +24,7 @@ One-command install from a fresh machine:
 curl -fsSL https://raw.githubusercontent.com/Chriskuei/Mnemo/main/scripts/install.sh | bash
 ```
 
-The installer creates an isolated venv under `~/.mnemo/mnemo`, links `mnemo` into `~/.local/bin`, and prints the next commands.
+The installer creates an isolated venv under `~/.mnemo/mnemo`, links `mnemo` into `~/.local/bin`, runs `mnemo onboard`, and starts the local web service when a user service manager is available.
 
 ```bash
 python3.13 -m venv .venv
@@ -71,6 +71,8 @@ Anthropic-compatible runs use the same shape with `--provider anthropic --model 
 ## Web Chat
 
 ```bash
+mnemo onboard --state-dir .mnemo
+mnemo service status --state-dir .mnemo
 mnemo web --state-dir .mnemo --port 8765
 ```
 
@@ -83,6 +85,9 @@ Provider-backed web runs accept the same provider flags as `mnemo run`.
 Mnemo can create a personal Feishu/Lark bot by QR scan, then receive messages through the Feishu channel.
 
 ```bash
+mnemo onboard --state-dir .mnemo --bind-feishu
+
+# Or run the channel-specific flow directly:
 mnemo channels feishu onboard --state-dir .mnemo
 mnemo channels feishu serve --state-dir .mnemo --connection websocket
 ```
@@ -208,4 +213,4 @@ CI also builds the package, installs the wheel outside the checkout, and runs `t
 ## Acknowledgments
 
 Web tool separation between compact search metadata and page fetch/extraction is acknowledged in `THIRD_PARTY_NOTICES.md`.
-The one-click installer, Feishu scan-to-create onboarding, and Feishu channel explicitly reference safe boundary patterns from NousResearch Hermes Agent (`scripts/install.sh` and `gateway/platforms/feishu.py`) while keeping Mnemo's implementation routed through Mnemo runtime services.
+The one-click installer, service/onboard flow, Feishu scan-to-create onboarding, and Feishu channel explicitly reference safe boundary patterns from NousResearch Hermes Agent and OpenClaw while keeping Mnemo's implementation routed through Mnemo runtime services.

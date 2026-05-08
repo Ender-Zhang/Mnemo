@@ -30,6 +30,8 @@ class FeishuChannelTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         content = script.read_text(encoding="utf-8")
         self.assertIn("NousResearch Hermes Agent", content)
+        self.assertIn("OpenClaw", content)
+        self.assertIn("mnemo onboard", content)
         self.assertIn("mnemo channels feishu serve", content)
         self.assertIn("FEISHU_APP_ID", content)
 

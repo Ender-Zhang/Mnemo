@@ -11,7 +11,7 @@
 mnemo/
   core/        shared dataclasses, config, errors, ids, JSON helpers
   storage/     SQLite StateStore and migrations
-  runtime/     local/provider runtimes, daemon, scheduler, ledger, stream projection
+  runtime/     local/provider runtimes, daemon, scheduler, ledger, service helpers, stream projection
   providers/   OpenAI-compatible and Anthropic adapter boundary
   tools/       ToolRegistry, ToolHarness, standard tools, tool evolution
   memory/      memory pages, candidates, DreamCycle, associative recall
@@ -31,6 +31,7 @@ design/        design package, not runtime code
 - CLI commands belong in `mnemo/interfaces/cli.py`; HTTP routes belong in `mnemo/interfaces/web.py`.
 - Durable state changes belong in `mnemo/storage/sqlite.py` and the database spec must be updated.
 - Provider protocol normalization belongs in `mnemo/providers/base.py`; runtime orchestration stays in `mnemo/runtime/provider.py`.
+- Local background service files and process-manager integration belong in `mnemo/runtime/service.py`; CLI handlers only translate arguments and print compact status.
 - Tool specs and handlers belong in `mnemo/tools/registry.py` or `mnemo/tools/standard.py`.
 - Domain services should stay close to their domain: memory in `mnemo/memory/`, skills in `mnemo/skills/`, prompt in `mnemo/prompt/`.
 - External integration facades belong in `mnemo/sdk/` or `mnemo/mcp/`; they should route into existing services instead of duplicating domain logic.

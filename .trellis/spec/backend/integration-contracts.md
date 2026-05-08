@@ -321,3 +321,46 @@
 - Channel/Web tests for QR onboarding, saved config status, and no secret leakage in status payloads.
 - CLI tests for help text, status output, and missing credential errors.
 - Install script syntax checks and package smoke import coverage.
+
+## Scenario: Install Onboard And Web Service
+
+### 1. Scope / Trigger
+- Trigger: changes to `scripts/install.sh`, `mnemo onboard`, `mnemo service ...`, `mnemo/runtime/service.py`, or runtime API credential setup.
+- Goal: fresh installs should be able to configure API access, optionally bind Feishu/Lark, and start the local web service without manual follow-up commands.
+
+### 2. Signatures
+- `mnemo onboard [--state-dir DIR] [--workspace-root DIR] [--provider local|openai-compatible|anthropic] [--base-url URL] [--model MODEL] [--api-key-env ENV] [--api-key KEY] [--bind-feishu|--skip-feishu] [--start-service|--no-start-service] [--service-mode auto|launchd|systemd|detached] [--non-interactive] [--json]`
+- `mnemo service install|start|restart [--state-dir DIR] [--host HOST] [--port PORT] [--mode auto|launchd|systemd|detached] [--dry-run] [--json]`
+- `mnemo service stop|status [--state-dir DIR] [--json]`
+- `mnemo.runtime.service.save_service_env(state_dir, values) -> dict[str, Any]`
+- `mnemo.runtime.service.service_status(state_dir) -> dict[str, Any]`
+
+### 3. Contracts
+- `mnemo onboard` initializes the state directory, writes non-secret runtime settings through `save_user_settings()`, and never stores raw API keys in `settings.json`.
+- A pasted or copied provider key may be written only to `<state_dir>/service/mnemo-web.env` with mode `0600`; CLI JSON/status output exposes only env var names.
+- The background service launches `python -m mnemo web ...` so the installed venv owns imports and the Web settings overlay remains the source of runtime provider configuration.
+- Service manager selection is `launchd` on macOS, `systemd --user` on Linux, and detached process fallback when no supported manager is available or an explicit mode is requested.
+- `--dry-run` writes service files for inspection but must not call `launchctl`, `systemctl`, or spawn a detached process.
+- The install script runs `mnemo onboard` by default; non-interactive installs pass `--non-interactive --skip-feishu` to avoid blocking on QR or prompts.
+- Interactive onboard may call the existing Feishu QR flow; non-interactive Feishu binding requires explicit `--bind-feishu`.
+- Acknowledgements for Hermes Agent and OpenClaw must remain in notices/comments when implementation references their install, gateway, or onboarding patterns.
+
+### 4. Validation & Error Matrix
+| Case | Expected Behavior | Test Point |
+| --- | --- | --- |
+| Non-interactive provider onboard | Settings are saved, service env has only named secret variables, stdout is secret-free | `tests/test_cli.py` |
+| Service dry-run install | Launcher/meta files are written, status is compact, and no process is started | `tests/test_cli.py` |
+| Install script syntax/docs | `bash -n` passes and the script references onboard plus Feishu fallback commands | `tests/test_channels.py` |
+| Package install | Installed wheel exposes service helpers and CLI entrypoints | `tests/package_install_smoke.py` |
+
+### 5. Good/Base/Bad Cases
+- Good: use `mnemo onboard --non-interactive --provider openai-compatible --base-url ... --model ... --api-key-env MNEMO_API_KEY --api-key ...` for unattended setup.
+- Good: keep service process-manager code in `mnemo/runtime/service.py` with CLI as a thin wrapper.
+- Base: detached mode is acceptable where launchd/systemd are unavailable.
+- Bad: asking users to run `mnemo web` manually after the default installer completes.
+- Bad: putting provider secrets in Web settings, installer logs, CLI JSON, launchd plist, or systemd unit files.
+
+### 6. Tests Required
+- CLI tests for onboard help, non-interactive runtime setup, service env permissions, service dry-run install, and service status.
+- Install script syntax checks.
+- Package smoke coverage for the service helper module.

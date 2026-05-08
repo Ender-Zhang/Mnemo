@@ -24,6 +24,7 @@ MNEMO_REPO_ROOT="$GITHUB_WORKSPACE" python "$GITHUB_WORKSPACE/tests/package_inst
 - The console script entrypoint is `mnemo = mnemo.interfaces.cli:main`.
 - `python -m mnemo --version` and `mnemo --version` must both return `mnemo <version>`.
 - Packaged web assets must include `mnemo/interfaces/web_assets/index.html`, `app.css`, and `app.js`.
+- Service/onboard helpers must be importable from an installed wheel because `mnemo service` is used by the one-click installer after installation.
 - Installed-package smoke checks must run outside the repository root and fail if `mnemo` imports from the checkout.
 
 ### Validation & Error Matrix
@@ -35,6 +36,7 @@ MNEMO_REPO_ROOT="$GITHUB_WORKSPACE" python "$GITHUB_WORKSPACE/tests/package_inst
 | Console script is missing or miswired | Install smoke fails on `mnemo --version`. |
 | `python -m mnemo` is broken | Install smoke fails on module entrypoint. |
 | Package data omits web assets | Install smoke reports missing asset names. |
+| Service helper import is missing | Install smoke reports missing service command builder. |
 | Smoke imports checkout source | Smoke fails with the resolved source path. |
 
 ### Good/Base/Bad Cases
@@ -47,4 +49,4 @@ MNEMO_REPO_ROOT="$GITHUB_WORKSPACE" python "$GITHUB_WORKSPACE/tests/package_inst
 
 - CI must run the source unit suite on supported Python versions.
 - CI must build package distributions before install smoke.
-- Install smoke must cover package metadata, console script, module entrypoint, and web asset package data.
+- Install smoke must cover package metadata, console script, module entrypoint, service helper imports, and web asset package data.

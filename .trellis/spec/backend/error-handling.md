@@ -143,6 +143,8 @@
 | MCP config output | CLI returns compact generic/Claude stdio config without raw tool schemas | `tests/test_cli.py` |
 | Feishu channel missing credentials | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Feishu QR onboarding status | CLI/Web return compact masked status without app secret | `tests/test_cli.py`, `tests/test_web.py` |
+| Onboard runtime setup | CLI stores only redacted runtime settings and service-only env keys; raw API keys never appear in stdout | `tests/test_cli.py` |
+| Web service lifecycle | CLI service commands return compact manager/status payloads and normalize process-manager failures as `mnemo:` errors | `tests/test_cli.py` |
 | Feishu webhook auth errors | Token/signature failures return compact HTTP 401 without running Mnemo | `tests/test_channels.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -166,6 +168,7 @@
 
 ### 5. Good/Base/Bad Cases
 - Good: pass credentials with `--api-key-env` or `MNEMO_API_KEY`.
+- Good: persist provider secrets for background startup only in the state-local service env file with mode `0600`; normal settings store only `api_key_env`.
 - Good: show response previews and model ids, not raw request payloads.
 - Good: surface compact provider quota/rate-limit reasons such as `error.message`.
 - Good: set `retry_count` only for transient endpoint instability and keep default at zero.
@@ -175,6 +178,7 @@
 - Base: the web stop control requests cancellation and then waits for the stream to finish.
 - Base: service-layer `ValueError` is acceptable inside domain code when the CLI boundary converts it before user output.
 - Bad: print Authorization headers, API keys, or full provider error bodies to stdout.
+- Bad: storing raw API keys in `settings.json`, Web settings payloads, CLI JSON, or service status output.
 - Bad: retry streaming calls after text/tool deltas have already been emitted.
 - Bad: reporting an observed user cancellation as `run.error`.
 - Bad: using a single-threaded web server that blocks cancellation while `/api/chat` streams.
@@ -193,6 +197,8 @@
 - Web Inbox resolve endpoint test for success and JSON error responses.
 - Web learning memory endpoint test for success and JSON error responses.
 - Web settings endpoint test for summary, runtime update, quiet-hours update, invalid payload errors, raw-secret rejection, and secret redaction.
+- CLI onboard tests for non-interactive runtime setup, service env permissions, and no raw secret output.
+- CLI service tests for dry-run install/status output without starting a real service manager.
 - CLI conversation/mission show tests for missing ids without tracebacks.
 - CLI run trace/show/cancel tests for missing run ids without tracebacks.
 - CLI harness eval/variant/release tests for unknown suites or variants without tracebacks.

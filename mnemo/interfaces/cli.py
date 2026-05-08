@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ from ..core.errors import MnemoError
 from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps, loads
 from ..core.models import PROMPT_MODES, RunRequest
+from ..core.settings import load_user_settings, save_user_settings
 from ..evals import EvalHarness, list_suites, list_variants, replay_summary
 from ..channels import (
     FeishuChannelConfig,
@@ -48,6 +50,17 @@ from ..runtime import (
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
 from ..runtime.provider import stream_provider
+from ..runtime.service import (
+    WebServiceConfig,
+    build_web_service_command,
+    install_web_service,
+    load_service_env,
+    restart_web_service,
+    save_service_env,
+    service_status,
+    start_web_service,
+    stop_web_service,
+)
 from ..sdk import MnemoClient, mnemo_core_api_schema
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
@@ -67,6 +80,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_init(args)
         if args.command == "run":
             return _cmd_run(args)
+        if args.command == "onboard":
+            return _cmd_onboard(args)
         if args.command == "conversations":
             return _cmd_conversations(args)
         if args.command == "missions":
@@ -93,6 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_tools(args)
         if args.command == "web":
             return _cmd_web(args)
+        if args.command == "service":
+            return _cmd_service(args)
         if args.command == "harness":
             return _cmd_harness(args)
         if args.command == "evals":
@@ -128,6 +145,36 @@ def build_parser() -> argparse.ArgumentParser:
 
     init_parser = subparsers.add_parser("init", help="Initialize a Mnemo state directory")
     _add_state_dir(init_parser)
+
+    onboard_parser = subparsers.add_parser(
+        "onboard",
+        help="Configure API credentials, Feishu/Lark, and the local web service",
+        description=(
+            "Run Mnemo first-time setup. Provider secrets are stored only in a state-local "
+            "0600 service environment file when needed for background service startup."
+        ),
+    )
+    _add_state_dir(onboard_parser)
+    _add_workspace_root(onboard_parser)
+    _add_runtime_provider_args(onboard_parser)
+    onboard_parser.add_argument("--host", default="127.0.0.1", help="Web service host (default: 127.0.0.1)")
+    onboard_parser.add_argument("--port", type=int, default=8765, help="Web service port (default: 8765)")
+    onboard_parser.add_argument("--domain", choices=["feishu", "lark"], default=os.environ.get("FEISHU_DOMAIN", "feishu"))
+    onboard_parser.add_argument("--non-interactive", action="store_true", help="Use flags/env/defaults instead of prompts")
+    feishu_group = onboard_parser.add_mutually_exclusive_group()
+    feishu_group.add_argument("--bind-feishu", dest="bind_feishu", action="store_true", default=None)
+    feishu_group.add_argument("--skip-feishu", dest="bind_feishu", action="store_false")
+    service_group = onboard_parser.add_mutually_exclusive_group()
+    service_group.add_argument("--start-service", dest="start_service", action="store_true", default=None)
+    service_group.add_argument("--no-start-service", dest="start_service", action="store_false")
+    onboard_parser.add_argument(
+        "--service-mode",
+        choices=["auto", "launchd", "systemd", "detached"],
+        default="auto",
+        help="Background service manager (default: auto)",
+    )
+    onboard_parser.add_argument("--dry-run-service", action="store_true", help="Write setup files but do not call a service manager")
+    onboard_parser.add_argument("--json", action="store_true", help="Print compact JSON result")
 
     run_parser = subparsers.add_parser("run", help="Run one local agent turn")
     _add_state_dir(run_parser)
@@ -482,6 +529,40 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Provider tool-call round budget, or MNEMO_MAX_TOOL_ROUNDS (default: {DEFAULT_MAX_TOOL_ROUNDS})",
     )
     web_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+
+    service_parser = subparsers.add_parser("service", help="Manage the local Mnemo web service")
+    service_subparsers = service_parser.add_subparsers(dest="service_command")
+    for command_name, help_text in (
+        ("install", "Install and start the persistent web service"),
+        ("start", "Start the web service"),
+        ("restart", "Restart the web service"),
+    ):
+        command_parser = service_subparsers.add_parser(command_name, help=help_text)
+        _add_state_dir(command_parser)
+        _add_workspace_root(command_parser)
+        command_parser.add_argument("--host", default="127.0.0.1")
+        command_parser.add_argument("--port", type=int, default=8765)
+        command_parser.add_argument(
+            "--mode",
+            choices=["auto", "launchd", "systemd", "detached"],
+            default="auto",
+            help="Background service manager (default: auto)",
+        )
+        command_parser.add_argument("--dry-run", action="store_true", help="Write setup files but do not call a service manager")
+        command_parser.add_argument("--json", action="store_true")
+    service_stop_parser = service_subparsers.add_parser("stop", help="Stop the web service")
+    _add_state_dir(service_stop_parser)
+    service_stop_parser.add_argument(
+        "--mode",
+        choices=["auto", "launchd", "systemd", "detached"],
+        default="auto",
+        help="Background service manager (default: auto)",
+    )
+    service_stop_parser.add_argument("--dry-run", action="store_true")
+    service_stop_parser.add_argument("--json", action="store_true")
+    service_status_parser = service_subparsers.add_parser("status", help="Show web service status")
+    _add_state_dir(service_status_parser)
+    service_status_parser.add_argument("--json", action="store_true")
 
     channels_parser = subparsers.add_parser("channels", help="Run external messaging channels")
     channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
@@ -969,6 +1050,230 @@ def _command_json(value: str) -> list[str]:
     if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
         raise MnemoError("--command-json must decode to an array of strings")
     return parsed
+
+
+def _cmd_onboard(args: argparse.Namespace) -> int:
+    StateStore(args.state_dir).initialize()
+    runtime_patch, service_env_values = _onboard_runtime_patch(args)
+    try:
+        settings = save_user_settings(args.state_dir, {"runtime": runtime_patch})
+    except ValueError as exc:
+        raise MnemoError(str(exc)) from exc
+
+    service_env = {"path": "", "keys": sorted(load_service_env(args.state_dir)), "exists": False}
+    if service_env_values:
+        service_env = save_service_env(args.state_dir, service_env_values)
+    else:
+        existing_env = load_service_env(args.state_dir)
+        if existing_env:
+            service_env = {
+                "path": str(Path(args.state_dir).expanduser() / "service" / "mnemo-web.env"),
+                "keys": sorted(existing_env),
+                "exists": True,
+            }
+
+    feishu_result: dict[str, Any] = {"skipped": True, "status": feishu_channel_status(args.state_dir)}
+    bind_feishu = args.bind_feishu
+    if bind_feishu is None:
+        bind_feishu = False if args.non_interactive else _prompt_yes_no("Bind Feishu/Lark now?", False)
+    if bind_feishu:
+        feishu_result = run_feishu_qr_onboarding(state_dir=args.state_dir, domain=args.domain, timeout_s=600)
+
+    start_service = args.start_service
+    if start_service is None:
+        start_service = True if args.non_interactive else _prompt_yes_no("Start Mnemo web service now?", True)
+    if start_service:
+        service = install_web_service(
+            _web_service_config_from_args(args),
+            mode=args.service_mode,
+            dry_run=args.dry_run_service,
+        )
+    else:
+        service = {**service_status(args.state_dir), "skipped": True}
+
+    result = {
+        "settings": {"runtime": _redacted_runtime_settings(settings.get("runtime", {}))},
+        "service_env": service_env,
+        "feishu": feishu_result,
+        "service": service,
+    }
+    if args.json:
+        print(dumps({"onboard": result}))
+        return 0
+
+    runtime = result["settings"]["runtime"]
+    print("Mnemo onboard complete.")
+    print(f"Provider: {runtime.get('provider') or 'local'}")
+    if runtime.get("model"):
+        print(f"Model: {runtime['model']}")
+    if service_env.get("keys"):
+        print(f"Service env: {service_env['path']} ({', '.join(service_env['keys'])})")
+    print(f"Feishu/Lark: {'configured' if feishu_channel_status(args.state_dir).get('configured') else 'not configured'}")
+    if service.get("skipped"):
+        print("Service: skipped")
+    else:
+        print(f"Service: manager={service.get('manager')} running={str(bool(service.get('running'))).lower()}")
+        print(f"URL: {service.get('url')}")
+    return 0
+
+
+def _cmd_service(args: argparse.Namespace) -> int:
+    if args.service_command == "status":
+        result = service_status(args.state_dir)
+    elif args.service_command == "install":
+        result = install_web_service(_web_service_config_from_args(args), mode=args.mode, dry_run=args.dry_run)
+    elif args.service_command == "start":
+        result = start_web_service(_web_service_config_from_args(args), mode=args.mode, dry_run=args.dry_run)
+    elif args.service_command == "restart":
+        result = restart_web_service(_web_service_config_from_args(args), mode=args.mode, dry_run=args.dry_run)
+    elif args.service_command == "stop":
+        result = stop_web_service(args.state_dir, mode=args.mode, dry_run=args.dry_run)
+    else:
+        raise MnemoError("service command requires: install, start, stop, restart, or status")
+    if args.json:
+        print(dumps({"service": result}))
+        return 0
+    print(f"Manager: {result.get('manager')}")
+    print(f"Installed: {str(bool(result.get('installed'))).lower()}")
+    print(f"Running: {str(bool(result.get('running'))).lower()}")
+    if result.get("pid"):
+        print(f"PID: {result['pid']}")
+    print(f"URL: {result.get('url')}")
+    print(f"Logs: {result.get('logs', {}).get('stdout')}")
+    return 0
+
+
+def _web_service_config_from_args(args: argparse.Namespace) -> WebServiceConfig:
+    return WebServiceConfig(
+        state_dir=args.state_dir,
+        host=getattr(args, "host", "127.0.0.1"),
+        port=getattr(args, "port", 8765),
+        workspace_root=getattr(args, "workspace_root", None),
+        command=build_web_service_command(
+            state_dir=args.state_dir,
+            host=getattr(args, "host", "127.0.0.1"),
+            port=getattr(args, "port", 8765),
+            workspace_root=getattr(args, "workspace_root", None),
+            python_executable=sys.executable,
+        ),
+    )
+
+
+def _onboard_runtime_patch(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, str]]:
+    settings = load_user_settings(args.state_dir)
+    runtime = settings.get("runtime", {}) if isinstance(settings.get("runtime"), dict) else {}
+    provider = _first_string(
+        getattr(args, "provider", None),
+        os.environ.get("MNEMO_PROVIDER"),
+        runtime.get("provider"),
+        DEFAULT_PROVIDER,
+    )
+    if not args.non_interactive:
+        provider = _prompt("Runtime provider (local/openai-compatible/anthropic)", provider)
+    provider = (provider.strip() or DEFAULT_PROVIDER).lower()
+    if provider not in {"local", "openai-compatible", "anthropic"}:
+        raise MnemoError(f"unsupported provider: {provider}")
+
+    base_url = _first_string(getattr(args, "base_url", None), os.environ.get("MNEMO_BASE_URL"), runtime.get("base_url"))
+    model = _first_string(getattr(args, "model", None), os.environ.get("MNEMO_MODEL"), runtime.get("model"))
+    api_key_env = _first_string(getattr(args, "api_key_env", None), os.environ.get("MNEMO_API_KEY_ENV"), runtime.get("api_key_env"))
+    if provider == "local":
+        base_url = ""
+        model = ""
+        api_key_env = ""
+    else:
+        if not api_key_env:
+            api_key_env = "ANTHROPIC_API_KEY" if provider == "anthropic" else "MNEMO_API_KEY"
+        if not args.non_interactive:
+            if provider == "openai-compatible":
+                base_url = _prompt("OpenAI-compatible base URL", base_url)
+            model = _prompt("Model", model)
+            api_key_env = _prompt("API key environment variable", api_key_env)
+        if provider == "openai-compatible" and (not base_url or not model):
+            raise MnemoError("openai-compatible provider requires base URL and model during onboard")
+        if provider == "anthropic" and not model:
+            raise MnemoError("anthropic provider requires a model during onboard")
+
+    timeout_s = _first_number(getattr(args, "timeout_s", None), runtime.get("timeout_s"), 30.0)
+    retry_count = int(_first_number(getattr(args, "retry_count", None), runtime.get("retry_count"), 0))
+    retry_backoff_s = _first_number(getattr(args, "retry_backoff_s", None), runtime.get("retry_backoff_s"), 0.0)
+    max_tool_rounds = int(_first_number(getattr(args, "max_tool_rounds", None), runtime.get("max_tool_rounds"), 12))
+
+    service_env: dict[str, str] = {}
+    api_key = str(getattr(args, "api_key", "") or "").strip()
+    if provider != "local" and api_key_env:
+        if not api_key:
+            api_key = os.environ.get(api_key_env, "").strip()
+        if not api_key and not args.non_interactive:
+            api_key = getpass.getpass(f"{api_key_env} (optional, hidden): ").strip()
+        if api_key:
+            service_env[api_key_env] = api_key
+
+    return (
+        {
+            "provider": provider,
+            "model": model,
+            "base_url": base_url,
+            "api_key_env": api_key_env,
+            "timeout_s": timeout_s,
+            "retry_count": retry_count,
+            "retry_backoff_s": retry_backoff_s,
+            "max_tool_rounds": max(1, min(max_tool_rounds, 64)),
+        },
+        service_env,
+    )
+
+
+def _first_string(*values: Any) -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _first_number(*values: Any) -> float:
+    for value in values:
+        if value is None or value == "":
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _prompt(question: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    try:
+        answer = input(f"{question}{suffix}: ")
+    except EOFError as exc:
+        raise MnemoError("onboard prompts require an interactive terminal; use --non-interactive") from exc
+    return answer.strip() or default
+
+
+def _prompt_yes_no(question: str, default: bool) -> bool:
+    suffix = "[Y/n]" if default else "[y/N]"
+    try:
+        answer = input(f"{question} {suffix} ")
+    except EOFError as exc:
+        raise MnemoError("onboard prompts require an interactive terminal; use --non-interactive") from exc
+    cleaned = answer.strip().lower()
+    if not cleaned:
+        return default
+    return cleaned in {"y", "yes"}
+
+
+def _redacted_runtime_settings(runtime: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "provider": runtime.get("provider") or "local",
+        "model": runtime.get("model") or "",
+        "base_url": runtime.get("base_url") or "",
+        "api_key_env": runtime.get("api_key_env") or "",
+        "timeout_s": runtime.get("timeout_s"),
+        "retry_count": runtime.get("retry_count"),
+        "retry_backoff_s": runtime.get("retry_backoff_s"),
+        "max_tool_rounds": runtime.get("max_tool_rounds"),
+    }
 
 
 def _cmd_channels(args: argparse.Namespace) -> int:
