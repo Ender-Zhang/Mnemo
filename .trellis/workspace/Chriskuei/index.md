@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 120
+- **Total Sessions**: 121
 - **Last Active**: 2026-05-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~215 | Active |
+| `journal-3.md` | ~248 | Active |
 | `journal-2.md` | ~1973 | Archived |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 121 | 2026-05-08 | Feishu QR onboarding | `674a890` | `main` |
 | 120 | 2026-05-08 | Feishu channel and one-click install | `6a14438` | `main` |
 | 119 | 2026-04-28 | Polish chat interactions and memory view | `241dafb` | `main` |
 | 118 | 2026-04-27 | Gate low-signal learning reflection | `664e6a7` | `main` |

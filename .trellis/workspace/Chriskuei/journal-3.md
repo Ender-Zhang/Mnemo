@@ -213,3 +213,36 @@ Added dependency-light Feishu/Lark webhook channel, one-click installer, docs/no
 ### Next Steps
 
 - None - task complete
+
+
+## Session 121: Feishu QR onboarding
+
+**Date**: 2026-05-08
+**Task**: Feishu QR onboarding
+**Branch**: `main`
+
+### Summary
+
+Added Feishu/Lark scan-to-create QR onboarding, saved channel config/status, optional websocket serving, Web settings controls, docs/specs, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `674a890` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
