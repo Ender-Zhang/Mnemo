@@ -131,6 +131,7 @@
 - `POST /api/core/run`
 - `POST /api/core/replay`
 - `POST /api/core/evaluate`
+- Web UI helper: `GET /api/catalog`
 - CLI: `mnemo api serve [--host HOST] [--port PORT] [--state-dir DIR]`
 
 ### 3. Contracts
@@ -143,6 +144,7 @@
 - `schedule-dream` mirrors SDK `schedule_dream()` and validates `next_run_at` as string, number, or null at the HTTP boundary.
 - `schedule-watch` and `schedule-cron` mirror SDK registration methods and validate `next_run_at` as string, number, or null at the HTTP boundary.
 - `runtime-status` mirrors SDK `runtime_status()` and returns compact read-only status cards.
+- `/api/catalog` is a Web UI helper over `SkillService` and `ToolRegistry`; it returns compact skill cards, compact tool cards, ToolBundle metadata, and counts, but no full skill bodies and no raw tool input schemas.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -150,6 +152,7 @@
 | Core schema | `GET /api/core/schema` returns `mnemo.core_api.v1` | `tests/test_web.py` |
 | OpenAPI discovery | `GET /api/core/openapi.json` lists `/api/core/external-run`, `/api/core/schedule-dream`, `/api/core/schedule-watch`, `/api/core/schedule-cron`, `/api/core/runtime-status`, and method schemas | `tests/test_web.py` |
 | Core method dispatch | Context/capsule/run/external-run/schedule-dream/schedule-watch/schedule-cron/runtime-status route to SDK and return compact results | `tests/test_web.py` |
+| Web catalog | `GET /api/catalog` returns compact Skills/Tools cards and omits skill bodies/raw schemas | `tests/test_web.py` |
 | Invalid JSON | Returns HTTP 400 JSON `{ "error": ... }` | `tests/test_web.py` |
 | Missing required field | Returns HTTP 400 JSON without traceback | `tests/test_web.py` |
 | Unknown method | Returns HTTP 404 JSON without traceback | `tests/test_web.py` |
@@ -158,12 +161,14 @@
 ### 5. Good/Base/Bad Cases
 - Good: add HTTP routes by extending the core method dispatcher and SDK schema together.
 - Good: keep HTTP payloads compact and aligned with SDK/MCP output shapes.
+- Good: keep Web UI helper routes as read-only projections over existing services with compact payloads.
 - Base: stdlib HTTP server is enough for local and lightweight remote deployments.
 - Bad: adding route-specific memory/runtime behavior that bypasses `MnemoClient`.
 - Bad: returning raw provider tool schemas, full transcripts, or external command stdout bodies through HTTP.
 
 ### 6. Tests Required
 - Web tests for schema, OpenAPI discovery, method dispatch including schedule-dream, schedule-watch, schedule-cron, and runtime-status, compactness, and JSON error handling.
+- Web tests for `/api/catalog` compactness and Skills/Tools static asset hooks.
 - CLI tests for `mnemo api serve --help`.
 - Package install smoke coverage for `mnemo.interfaces.web`.
 

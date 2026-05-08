@@ -27,7 +27,9 @@ from ..memory import MemoryEngine
 from ..memory.wiki import materialize_memory_page, memory_page_wiki_path, memory_page_wiki_ref
 from ..memory.query import MEMORY_ONTOLOGY_DIMENSIONS, is_known_memory_dimension, normalize_memory_dimension
 from ..sdk import MnemoClient, mnemo_core_api_schema
+from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
+from ..tools import ToolRegistry
 
 
 @dataclass(frozen=True)
@@ -159,6 +161,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_inbox(parsed.query)
             elif parsed.path == "/api/settings":
                 self._handle_settings()
+            elif parsed.path == "/api/catalog":
+                self._handle_catalog()
             elif parsed.path == "/api/memory/ontology":
                 self._handle_memory_ontology()
             elif parsed.path == "/api/memory/dimension":
@@ -313,6 +317,9 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
 
         def _handle_settings(self) -> None:
             self._send_json(_settings_payload(config))
+
+        def _handle_catalog(self) -> None:
+            self._send_json(_catalog_payload(config))
 
         def _handle_memory_ontology(self) -> None:
             self._send_json(_memory_ontology_payload(config))
@@ -790,6 +797,67 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
             ],
         },
     }
+
+def _catalog_payload(config: WebServerConfig) -> dict[str, Any]:
+    store = StateStore(config.state_dir)
+    store.initialize()
+    skill_service = SkillService(
+        store,
+        roots=default_skill_roots(config.state_dir, workspace=config.workspace_root),
+    )
+    skill_service.scan()
+    skills = skill_service.context_cards(limit=1000)
+
+    registry = ToolRegistry.from_store(store)
+    active_generated_tools = {
+        str(tool.get("name"))
+        for tool in store.list_generated_tools(status="active", limit=1000)
+        if tool.get("name")
+    }
+    bundle = registry.tool_bundle().metadata()
+    bundled_names = set(bundle.get("tool_names", []))
+    tools = [
+        _tool_catalog_card(spec, generated=spec.name in active_generated_tools, in_bundle=spec.name in bundled_names)
+        for spec in sorted(registry.specs(), key=lambda item: item.name)
+    ]
+    return {
+        "kind": "capability_catalog",
+        "version": "mnemo.catalog.v1",
+        "skills": skills,
+        "tools": tools,
+        "tool_bundle": bundle,
+        "counts": {
+            "skills": {
+                "total": len(skills),
+                "status": _count_by(skills, "status"),
+            },
+            "tools": {
+                "total": len(tools),
+                "risk": _count_by(tools, "risk"),
+                "generated": sum(1 for tool in tools if tool.get("source") == "generated"),
+                "in_bundle": sum(1 for tool in tools if tool.get("in_bundle")),
+            },
+        },
+    }
+
+
+def _tool_catalog_card(spec: Any, *, generated: bool, in_bundle: bool) -> dict[str, Any]:
+    return {
+        "name": spec.name,
+        "description": spec.description,
+        "risk": spec.risk,
+        "source": "generated" if generated else "built-in",
+        "in_bundle": in_bundle,
+    }
+
+
+def _count_by(items: list[dict[str, Any]], key: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        value = str(item.get(key) or "unknown")
+        counts[value] = counts.get(value, 0) + 1
+    return counts
+
 
 def _memory_ontology_payload(config: WebServerConfig) -> dict[str, Any]:
     store = StateStore(config.state_dir)

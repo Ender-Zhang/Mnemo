@@ -4,14 +4,14 @@
 
 ### 1. Scope / Trigger
 - Trigger: changes to `mnemo/interfaces/web.py` or `mnemo/interfaces/web_assets/*`.
-- Goal: keep the frontend lightweight, user-facing, and aligned with the single-chat product model plus first-class memory and settings pages.
+- Goal: keep the frontend lightweight, user-facing, and aligned with the single-chat product model plus first-class memory, skills, tools, and settings pages.
 
 ### 2. Directory Layout
 ```text
 mnemo/interfaces/
   web.py              stdlib HTTP server and JSON/NDJSON API handlers
   web_assets/
-    index.html        single product shell with chat, memory, and settings views
+    index.html        single product shell with chat, memory, skills, tools, and settings views
     app.css           responsive visual styling
     app.js            stream reader, event rendering, replay/resume
 tests/test_web.py     API and static asset behavior tests
@@ -23,7 +23,7 @@ tests/test_web.py     API and static asset behavior tests
 - `web.py` owns HTTP routing and provider selection; browser logic stays in `app.js`.
 - `app.js` owns client state, NDJSON parsing, event de-duplication, and card rendering.
 - `app.css` owns layout and visual styling; avoid inline styles in generated DOM.
-- The default view is the GPT-like chat surface with one composer; memory and settings are separate lightweight views in the same static shell.
+- The default view is the GPT-like chat surface with one composer; memory, skills, tools, and settings are separate lightweight views in the same static shell.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -33,6 +33,7 @@ tests/test_web.py     API and static asset behavior tests
 | Chat stream | `/api/chat` returns NDJSON ChatEvent records | `tests/test_web.py` |
 | Replay | `/api/events` supports full and incremental replay | `tests/test_web.py` |
 | Artifact viewer | `/api/artifacts` fetches body and compact related metadata on demand | `tests/test_web.py` |
+| Skills/tools catalog | `/api/catalog` serves compact skill cards and tool cards without skill bodies or raw tool schemas | `tests/test_web.py` |
 | Settings page | `/api/settings` serves compact settings summaries and runtime preferences, and web assets render the settings page | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases

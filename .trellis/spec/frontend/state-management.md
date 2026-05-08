@@ -20,6 +20,7 @@
 - Runtime state: `state.artifacts: Map<string, object>`
 - Runtime state: `state.artifactRelated: Map<string, object[]>`
 - Runtime state: `state.settings: object | null`
+- Runtime state: `state.catalog: object | null`
 - Runtime state: `state.pendingAssistantNode: HTMLElement | null`
 - Runtime state: `state.lastUserIntent: string`
 - UI event: `recall.card` with `{ recall: { query: string, scope: string, count: number, items: RecallItem[] } }`
@@ -33,6 +34,7 @@
 - API response: accepted tool approvals may include compact `{ "tool_result": { "tool": string, "ok": boolean, "summary": string } }`.
 - API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject"|"undo" }`
 - API: `GET /api/settings`
+- API: `GET /api/catalog` returns compact `skills`, compact `tools`, `tool_bundle` metadata, and counts without skill bodies or raw provider tool schemas.
 - API: `POST /api/settings` with JSON `{ "quiet_hours"?: { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string }, "runtime"?: { "provider"?: string, "model"?: string, "base_url"?: string, "api_key_env"?: string, "timeout_s"?: number, "retry_count"?: number, "retry_backoff_s"?: number, "max_tool_rounds"?: number } }`
 - API: `GET /api/memory/ontology` returns L1 compact ten-dimensional memory counts, short summaries, and per-dimension drill-down URLs.
 - API: `GET /api/memory/ontology` returns exactly the configured ten user-facing dimensions; historical labels such as profile, finance, or work-style must already be normalized by the API.
@@ -66,6 +68,8 @@
 - Learning chips resolve or undo persisted review-gated memory candidates by id and keep status local to the card.
 - Review-gated learning chips use `requires_confirmation` only for local presentation; they do not add browser persistence keys or a separate workflow.
 - `/api/settings` can seed read-only chat glance cards on page load and hydrate the settings view on open; it is not persisted in browser storage except lightweight local UI toggles.
+- `/api/catalog` hydrates read-only Skills and Tools views and is cached only in volatile browser state; it must not add browser persistence keys.
+- Skills and Tools catalog views may filter the already loaded compact cards locally, but full skill bodies and raw tool input schemas stay behind explicit backend/tool surfaces.
 - Settings view can update quiet hours and runtime provider preferences through `/api/settings`; raw API keys must never be sent or stored, only an environment variable name.
 - Runtime settings are live overlays: unset fields must continue using process startup config, while saved provider/model/base URL, API key env, timeout, retry fields, and `max_tool_rounds` override future web turns.
 - `/api/settings` payloads must summarize learned preferences, runtime preferences, and data counts without raw artifact bodies, raw memory dumps, or provider secrets.
@@ -102,6 +106,7 @@
 | Normal learning candidate | Ordinary memory/skill/tool/eval candidate writes remain background events without visible confirmation chips | `tests/test_runtime.py` |
 | Learning memory action | Promotes, rejects, or undoes a persisted memory candidate and renders review-gated candidates as review chips | `tests/test_web.py`, `tests/test_runtime.py` |
 | Settings summary | Returns compact connected app, permission, quiet-hours, runtime, preference, and data-control data without secrets | `tests/test_web.py` |
+| Skills/tools catalog | Returns compact skills/tools and frontend renders read-only catalog pages without bodies or schemas | `tests/test_web.py` |
 | Settings update | Saves valid quiet-hours/runtime settings and rejects invalid time or secret-bearing payloads with JSON errors | `tests/test_web.py` |
 | Settings asset | Opens a settings view and preloads settings through `/api/settings` | `tests/test_web.py` |
 | Memory ontology asset | Opens compact ten-dimensional L1 coverage from the memory compass view | `tests/test_web.py` |
@@ -125,6 +130,7 @@
 - Good: resolve or undo learning chips by candidate id through `/api/learning/memory`, leaving conversation replay keys untouched.
 - Good: keep `requires_confirmation` as streamed card-local presentation metadata.
 - Good: fetch settings only when the settings view opens and keep ordinary user actions in the chat composer.
+- Good: fetch `/api/catalog` only when Skills or Tools opens and keep the payload to names, descriptions, status/source/path, risk, and ToolBundle metadata.
 - Good: keep ten-dimensional memory inspection read-only and memory-view-scoped.
 - Good: reveal memory progressively instead of dumping every page, candidate, evidence row, and markdown body into the first L1 payload.
 - Good: keep pending assistant UI as volatile DOM state.
@@ -164,6 +170,7 @@
 - Memory dimension and item APIs cover L2/L3 on-demand disclosure.
 - Settings API covers summary, quiet-hours update, runtime provider update, invalid time/secret errors, and no secret leakage.
 - Frontend asset includes settings view hooks and runtime provider controls.
+- Frontend asset includes Skills/Tools view hooks and `/api/catalog` loading.
 - Run cancel API covers success, missing id, unknown id, and frontend stop-control asset hooks.
 
 ### 7. Wrong vs Correct

@@ -26,6 +26,14 @@
             <span class="nav-icon nav-memory" aria-hidden="true"></span>
             <span>记忆</span>
           </button>
+          <button id="skillsOpen" class="nav-item" type="button" data-view="skills" title="Skills" aria-label="Skills">
+            <span class="nav-icon nav-skills" aria-hidden="true"></span>
+            <span>技能</span>
+          </button>
+          <button id="toolsOpen" class="nav-item" type="button" data-view="tools" title="Tools" aria-label="Tools">
+            <span class="nav-icon nav-tools" aria-hidden="true"></span>
+            <span>工具</span>
+          </button>
           <button id="settingsOpen" class="nav-item" type="button" data-view="settings" title="设置" aria-label="设置">
             <span class="nav-icon nav-settings" aria-hidden="true"></span>
             <span>设置</span>
@@ -191,6 +199,69 @@
                 </header>
                 <article id="memoryMarkdownBody" class="markdown-body"></article>
               </section>
+            </section>
+          </div>
+        </section>
+
+        <section id="skillsView" class="view catalog-view skills-view" aria-label="Skills">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Skills</p>
+              <h1>技能目录</h1>
+              <p>已索引的本地、安装与生成技能。</p>
+            </div>
+            <div class="page-actions">
+              <span id="skillsStatus" class="status-pill">未加载</span>
+              <button id="skillsRefresh" class="quiet-button" type="button">刷新</button>
+              <button class="quiet-button" type="button" data-view="chat">回到对话</button>
+            </div>
+          </header>
+
+          <div class="catalog-layout">
+            <section id="skillsSummary" class="catalog-summary" aria-label="技能摘要"></section>
+            <section class="catalog-panel">
+              <div class="catalog-toolbar">
+                <input id="skillsSearch" type="search" placeholder="搜索技能" aria-label="搜索技能" />
+                <select id="skillsStatusFilter" aria-label="技能状态">
+                  <option value="">全部状态</option>
+                  <option value="active">active</option>
+                  <option value="draft">draft</option>
+                  <option value="ready">ready</option>
+                </select>
+              </div>
+              <div id="skillsList" class="catalog-list" aria-live="polite"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="toolsView" class="view catalog-view tools-view" aria-label="Tools">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">Tools</p>
+              <h1>工具目录</h1>
+              <p>当前注册工具与默认工具包。</p>
+            </div>
+            <div class="page-actions">
+              <span id="toolsStatus" class="status-pill">未加载</span>
+              <button id="toolsRefresh" class="quiet-button" type="button">刷新</button>
+              <button class="quiet-button" type="button" data-view="chat">回到对话</button>
+            </div>
+          </header>
+
+          <div class="catalog-layout">
+            <section id="toolsSummary" class="catalog-summary" aria-label="工具摘要"></section>
+            <section class="catalog-panel">
+              <div class="catalog-toolbar">
+                <input id="toolsSearch" type="search" placeholder="搜索工具" aria-label="搜索工具" />
+                <select id="toolsRiskFilter" aria-label="工具风险">
+                  <option value="">全部风险</option>
+                  <option value="read">read</option>
+                  <option value="write">write</option>
+                  <option value="external">external</option>
+                  <option value="admin">admin</option>
+                </select>
+              </div>
+              <div id="toolsList" class="catalog-list" aria-live="polite"></div>
             </section>
           </div>
         </section>

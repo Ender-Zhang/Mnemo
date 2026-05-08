@@ -3,7 +3,7 @@
 ## Scenario: Lightweight Web UI Quality Gate
 
 ### 1. Scope / Trigger
-- Trigger: changes to web routes, static assets, chat rendering, event replay, or artifact viewing.
+- Trigger: changes to web routes, static assets, chat rendering, event replay, artifact viewing, or catalog views.
 - Goal: keep the no-build frontend reliable, accessible, and package-safe.
 
 ### 2. Required Patterns
@@ -21,6 +21,7 @@
 - No hidden dashboard-first flow for normal user tasks.
 - No raw API keys, provider headers, or full provider request payloads in browser-visible data.
 - No large artifact bodies in `artifact.card` stream payloads.
+- No full skill bodies or raw tool input schemas in browser catalog payloads.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -34,6 +35,7 @@
 | Run cancellation | Stop control calls `/api/runs/cancel` with active run id and preserves stream/replay contracts | `tests/test_web.py` |
 | Busy reset | New/reset is disabled while a stream is active | `tests/test_web.py` |
 | Settings view | Fetches compact settings on open, saves runtime and quiet-hour settings, and does not expose provider secrets | `tests/test_web.py` |
+| Catalog views | Fetch compact Skills/Tools data on open and do not expose skill bodies or raw schemas | `tests/test_web.py` |
 | Long text | Uses wrapping styles and stable dimensions | CSS/asset review |
 
 ### 5. Good/Base/Bad Cases

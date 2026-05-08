@@ -770,6 +770,93 @@ print(json.dumps({
             self.assertEqual(secret_status, 400)
             self.assertIn("api_key cannot be stored", json.loads(secret_body)["error"])
 
+    def test_web_catalog_api_returns_compact_skills_and_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_dir = root / "state"
+            workspace = root / "workspace"
+            skill_dir = workspace / ".agents" / "skills" / "web-helper"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text(
+                (
+                    "---\n"
+                    "name: web-helper\n"
+                    "description: Help with web UI work\n"
+                    "allowed-tools: [memory_search, skill_view]\n"
+                    "---\n"
+                    "PRIVATE SKILL BODY SHOULD NOT LEAK."
+                ),
+                encoding="utf-8",
+            )
+            store = StateStore(str(state_dir))
+            store.initialize()
+            conversation_id = store.create_conversation("web catalog")
+            mission_id = store.create_mission(conversation_id, "web catalog")
+            run_id = store.create_run(conversation_id, mission_id, "catalog")
+            candidate_id = store.add_tool_candidate(
+                run_id,
+                "lookup_memory",
+                {
+                    "name": "lookup_memory",
+                    "description": "Lookup memory with a focused argument name",
+                    "risk": "read",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"term": {"type": "string"}},
+                        "required": ["term"],
+                        "additionalProperties": False,
+                    },
+                    "implementation": {
+                        "type": "alias",
+                        "target_tool": "memory_search",
+                        "argument_map": {"query": {"from": "term"}, "limit": {"const": 5}},
+                    },
+                },
+            )
+            store.update_tool_candidate_status(candidate_id, "ready")
+            store.upsert_generated_tool(
+                candidate_id=candidate_id,
+                name="lookup_memory",
+                description="Lookup memory with a focused argument name",
+                risk="read",
+                input_schema={
+                    "type": "object",
+                    "properties": {"term": {"type": "string"}},
+                    "required": ["term"],
+                    "additionalProperties": False,
+                },
+                implementation={
+                    "type": "alias",
+                    "target_tool": "memory_search",
+                    "argument_map": {"query": {"from": "term"}, "limit": {"const": 5}},
+                },
+            )
+
+            with RunningServer(
+                WebServerConfig(state_dir=str(state_dir), port=0, workspace_root=str(workspace))
+            ) as server:
+                status, _, body = server.request("GET", "/api/catalog")
+
+            payload = json.loads(body)
+            skills = {skill["name"]: skill for skill in payload["skills"]}
+            tools = {tool["name"]: tool for tool in payload["tools"]}
+            self.assertEqual(status, 200)
+            self.assertEqual(payload["kind"], "capability_catalog")
+            self.assertEqual(payload["version"], "mnemo.catalog.v1")
+            self.assertIn("web-helper", skills)
+            self.assertEqual(skills["web-helper"]["status"], "active")
+            self.assertIn("memory_search", skills["web-helper"]["allowed_tools"])
+            self.assertTrue(skills["web-helper"]["path"].endswith("SKILL.md"))
+            self.assertIn("memory_search", tools)
+            self.assertIn("lookup_memory", tools)
+            self.assertEqual(tools["lookup_memory"]["source"], "generated")
+            self.assertTrue(tools["lookup_memory"]["in_bundle"])
+            self.assertGreaterEqual(payload["counts"]["tools"]["total"], 1)
+            self.assertGreaterEqual(payload["counts"]["skills"]["total"], 1)
+            self.assertNotIn("PRIVATE SKILL BODY", body)
+            self.assertNotIn("input_schema", body)
+            self.assertNotIn('"schemas"', body)
+
     def test_web_defaults_workspace_to_state_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
@@ -1427,6 +1514,44 @@ print(json.dumps({
                 self.assertIn(".drawer-active .provider-tiles", css)
                 self.assertIn("order: 1", css)
                 self.assertIn("order: 2", css)
+
+    def test_web_client_asset_renders_skills_and_tools_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                status, _, html = server.request("GET", "/")
+                script_status, _, script = server.request("GET", "/app.js")
+                css_status, _, css = server.request("GET", "/app.css")
+
+                self.assertEqual(status, 200)
+                self.assertEqual(script_status, 200)
+                self.assertEqual(css_status, 200)
+                self.assertIn('id="skillsOpen"', html)
+                self.assertIn('id="toolsOpen"', html)
+                self.assertIn('id="skillsView"', html)
+                self.assertIn('id="toolsView"', html)
+                self.assertIn('id="skillsList"', html)
+                self.assertIn('id="toolsList"', html)
+                self.assertIn('id="skillsSearch"', html)
+                self.assertIn('id="toolsRiskFilter"', html)
+                self.assertIn('data-view="skills"', html)
+                self.assertIn('data-view="tools"', html)
+                self.assertIn("/api/catalog", script)
+                self.assertIn("loadCatalog", script)
+                self.assertIn("renderSkillsCatalog", script)
+                self.assertIn("renderToolsCatalog", script)
+                self.assertIn("skillCatalogCard", script)
+                self.assertIn("toolCatalogCard", script)
+                self.assertIn("catalogMatches", script)
+                self.assertIn('target === "skills" || target === "tools"', script)
+                self.assertIn("catalog: null", script)
+                self.assertIn("catalog-layout", css)
+                self.assertIn("catalog-summary", css)
+                self.assertIn("catalog-toolbar", css)
+                self.assertIn("catalog-list", css)
+                self.assertIn("catalog-card", css)
+                self.assertIn("catalog-badge.risk-external", css)
+                self.assertIn("nav-skills", css)
+                self.assertIn("nav-tools", css)
 
     def test_web_client_asset_supports_enter_pending_and_tool_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

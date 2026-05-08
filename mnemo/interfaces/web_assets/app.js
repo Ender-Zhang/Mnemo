@@ -65,6 +65,7 @@ const state = {
   artifacts: new Map(),
   artifactRelated: new Map(),
   settings: null,
+  catalog: null,
   memoryOntology: null,
   memoryDimensions: new Map(),
   memoryItems: new Map(),
@@ -77,6 +78,8 @@ const state = {
 const views = {
   chat: document.querySelector("#chatView"),
   memory: document.querySelector("#memoryView"),
+  skills: document.querySelector("#skillsView"),
+  tools: document.querySelector("#toolsView"),
   settings: document.querySelector("#settingsView"),
 };
 
@@ -138,6 +141,18 @@ const settingsSummary = document.querySelector("#settingsSummary");
 const memoryMarkdownPanel = document.querySelector("#memoryMarkdownPanel");
 const memoryMarkdownTitle = document.querySelector("#memoryMarkdownTitle");
 const memoryMarkdownBody = document.querySelector("#memoryMarkdownBody");
+const skillsStatus = document.querySelector("#skillsStatus");
+const skillsRefresh = document.querySelector("#skillsRefresh");
+const skillsSummary = document.querySelector("#skillsSummary");
+const skillsSearch = document.querySelector("#skillsSearch");
+const skillsStatusFilter = document.querySelector("#skillsStatusFilter");
+const skillsList = document.querySelector("#skillsList");
+const toolsStatus = document.querySelector("#toolsStatus");
+const toolsRefresh = document.querySelector("#toolsRefresh");
+const toolsSummary = document.querySelector("#toolsSummary");
+const toolsSearch = document.querySelector("#toolsSearch");
+const toolsRiskFilter = document.querySelector("#toolsRiskFilter");
+const toolsList = document.querySelector("#toolsList");
 
 document.body.classList.toggle("compact-tools", state.compactTools);
 
@@ -232,6 +247,42 @@ memoryRefresh.addEventListener("click", () => {
   loadMemoryCompass();
 });
 
+if (skillsRefresh) {
+  skillsRefresh.addEventListener("click", () => {
+    loadCatalog({ force: true });
+  });
+}
+
+if (toolsRefresh) {
+  toolsRefresh.addEventListener("click", () => {
+    loadCatalog({ force: true });
+  });
+}
+
+if (skillsSearch) {
+  skillsSearch.addEventListener("input", () => {
+    renderSkillsCatalog(state.catalog);
+  });
+}
+
+if (skillsStatusFilter) {
+  skillsStatusFilter.addEventListener("change", () => {
+    renderSkillsCatalog(state.catalog);
+  });
+}
+
+if (toolsSearch) {
+  toolsSearch.addEventListener("input", () => {
+    renderToolsCatalog(state.catalog);
+  });
+}
+
+if (toolsRiskFilter) {
+  toolsRiskFilter.addEventListener("change", () => {
+    renderToolsCatalog(state.catalog);
+  });
+}
+
 settingsProviderForm.addEventListener("submit", (event) => {
   event.preventDefault();
   saveSettings();
@@ -303,6 +354,9 @@ function switchView(name, options = {}) {
   if (target === "memory") {
     initMemoryAvatar();
     loadMemoryCompass();
+  }
+  if (target === "skills" || target === "tools") {
+    loadCatalog();
   }
   if (target === "settings") {
     loadSettings();
@@ -1776,6 +1830,183 @@ function roundRect(ctx, x, y, width, height, radius) {
   ctx.arcTo(x, y + height, x, y, radius);
   ctx.arcTo(x, y, x + width, y, radius);
   ctx.closePath();
+}
+
+async function loadCatalog(options = {}) {
+  if (!skillsList && !toolsList) return;
+  if (state.catalog && !options.force) {
+    renderCatalog(state.catalog);
+    return;
+  }
+  setText(skillsStatus, "加载中");
+  setText(toolsStatus, "加载中");
+  if (skillsList) skillsList.replaceChildren(loadingRow("加载技能目录"));
+  if (toolsList) toolsList.replaceChildren(loadingRow("加载工具目录"));
+  try {
+    const response = await fetch("/api/catalog");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    state.catalog = payload;
+    renderCatalog(payload);
+    setText(skillsStatus, "已加载");
+    setText(toolsStatus, "已加载");
+  } catch (error) {
+    state.catalog = null;
+    setText(skillsStatus, "加载失败");
+    setText(toolsStatus, "加载失败");
+    if (skillsSummary) skillsSummary.replaceChildren();
+    if (toolsSummary) toolsSummary.replaceChildren();
+    if (skillsList) skillsList.replaceChildren(textRow(error.message || String(error)));
+    if (toolsList) toolsList.replaceChildren(textRow(error.message || String(error)));
+  }
+}
+
+function renderCatalog(payload) {
+  renderSkillsCatalog(payload);
+  renderToolsCatalog(payload);
+}
+
+function renderSkillsCatalog(payload) {
+  if (!skillsList || !skillsSummary) return;
+  if (!payload) {
+    skillsSummary.replaceChildren();
+    skillsList.replaceChildren(textRow("技能目录未加载。"));
+    return;
+  }
+  const skills = Array.isArray(payload.skills) ? payload.skills : [];
+  const statusCounts = payload.counts?.skills?.status || {};
+  skillsSummary.replaceChildren(
+    catalogStatBlock("总数", String(payload.counts?.skills?.total ?? skills.length)),
+    catalogStatBlock("active", String(statusCounts.active || 0)),
+    catalogStatBlock("draft", String(statusCounts.draft || 0)),
+    catalogStatBlock("ready", String(statusCounts.ready || 0)),
+  );
+
+  const query = String(skillsSearch?.value || "").trim().toLowerCase();
+  const status = String(skillsStatusFilter?.value || "");
+  const filtered = skills.filter((skill) => {
+    if (status && skill.status !== status) return false;
+    return catalogMatches(skill, query, ["name", "description", "source", "path", "allowed_tools"]);
+  });
+  if (!filtered.length) {
+    skillsList.replaceChildren(textRow(skills.length ? "没有匹配的技能。" : "还没有已索引技能。"));
+    return;
+  }
+  skillsList.replaceChildren(...filtered.map((skill) => skillCatalogCard(skill)));
+}
+
+function renderToolsCatalog(payload) {
+  if (!toolsList || !toolsSummary) return;
+  if (!payload) {
+    toolsSummary.replaceChildren();
+    toolsList.replaceChildren(textRow("工具目录未加载。"));
+    return;
+  }
+  const tools = Array.isArray(payload.tools) ? payload.tools : [];
+  const riskCounts = payload.counts?.tools?.risk || {};
+  toolsSummary.replaceChildren(
+    catalogStatBlock("总数", String(payload.counts?.tools?.total ?? tools.length)),
+    catalogStatBlock("默认包", String(payload.counts?.tools?.in_bundle || 0)),
+    catalogStatBlock("write", String(riskCounts.write || 0)),
+    catalogStatBlock("external/admin", String((riskCounts.external || 0) + (riskCounts.admin || 0))),
+  );
+
+  const query = String(toolsSearch?.value || "").trim().toLowerCase();
+  const risk = String(toolsRiskFilter?.value || "");
+  const filtered = tools.filter((tool) => {
+    if (risk && tool.risk !== risk) return false;
+    return catalogMatches(tool, query, ["name", "description", "risk", "source"]);
+  });
+  if (!filtered.length) {
+    toolsList.replaceChildren(textRow(tools.length ? "没有匹配的工具。" : "还没有注册工具。"));
+    return;
+  }
+  toolsList.replaceChildren(...filtered.map((tool) => toolCatalogCard(tool, payload.tool_bundle || {})));
+}
+
+function catalogStatBlock(label, value) {
+  const block = document.createElement("div");
+  block.className = "catalog-stat";
+  const strong = document.createElement("strong");
+  strong.textContent = value;
+  const span = document.createElement("span");
+  span.textContent = label;
+  block.append(strong, span);
+  return block;
+}
+
+function skillCatalogCard(skill) {
+  const card = document.createElement("article");
+  card.className = "catalog-card skill-card";
+  const head = catalogCardHead(skill.name || "Unnamed skill", skill.status || "unknown");
+  const description = document.createElement("p");
+  description.textContent = skill.description || "无描述";
+  const meta = document.createElement("div");
+  meta.className = "catalog-meta";
+  meta.appendChild(catalogMetaItem("来源", skill.source || "unknown"));
+  meta.appendChild(catalogMetaItem("路径", skill.path || "未记录", "catalog-path"));
+  if (Array.isArray(skill.allowed_tools) && skill.allowed_tools.length) {
+    meta.appendChild(catalogMetaItem("允许工具", skill.allowed_tools.join(", ")));
+  }
+  if (skill.usage) {
+    meta.appendChild(catalogMetaItem("使用", `${skill.usage.uses || 0} 次 · 成功 ${skill.usage.successes || 0}`));
+  }
+  card.append(head, description, meta);
+  return card;
+}
+
+function toolCatalogCard(tool, bundle) {
+  const card = document.createElement("article");
+  card.className = "catalog-card tool-card";
+  card.dataset.risk = tool.risk || "read";
+  const head = catalogCardHead(tool.name || "unnamed_tool", tool.risk || "read", `risk-${tool.risk || "read"}`);
+  const description = document.createElement("p");
+  description.textContent = tool.description || "无描述";
+  const meta = document.createElement("div");
+  meta.className = "catalog-meta";
+  meta.appendChild(catalogMetaItem("来源", tool.source || "built-in"));
+  meta.appendChild(catalogMetaItem("工具包", tool.in_bundle ? bundle.profile || "default" : "按需扩展"));
+  if (bundle.bundle_id && tool.in_bundle) {
+    meta.appendChild(catalogMetaItem("bundle", compactId(bundle.bundle_id)));
+  }
+  card.append(head, description, meta);
+  return card;
+}
+
+function catalogCardHead(titleText, badgeText, badgeClass = "") {
+  const head = document.createElement("header");
+  head.className = "catalog-card-head";
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const badge = document.createElement("span");
+  badge.className = `catalog-badge ${badgeClass}`.trim();
+  badge.textContent = badgeText;
+  head.append(title, badge);
+  return head;
+}
+
+function catalogMetaItem(label, value, className = "") {
+  const item = document.createElement("span");
+  item.className = `catalog-meta-item ${className}`.trim();
+  const name = document.createElement("em");
+  name.textContent = label;
+  const detail = document.createElement("strong");
+  detail.textContent = value;
+  item.append(name, detail);
+  return item;
+}
+
+function catalogMatches(item, query, keys) {
+  if (!query) return true;
+  const text = keys
+    .map((key) => {
+      const value = item?.[key];
+      if (Array.isArray(value)) return value.join(" ");
+      return value === null || value === undefined ? "" : String(value);
+    })
+    .join(" ")
+    .toLowerCase();
+  return text.includes(query);
 }
 
 async function loadSettings() {

@@ -3,8 +3,8 @@
 ## Scenario: DOM Components Without A Framework
 
 ### 1. Scope / Trigger
-- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, learning chips, memory compass, or settings page controls.
-- Goal: keep the UI understandable as a single product shell where chat remains the execution surface and memory/settings remain lightweight inspection/configuration surfaces.
+- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, learning chips, memory compass, skills/tools catalog, or settings page controls.
+- Goal: keep the UI understandable as a single product shell where chat remains the execution surface and memory/skills/tools/settings remain lightweight inspection/configuration surfaces.
 
 ### 2. Component Patterns
 - Components are DOM builder/render functions in `mnemo/interfaces/web_assets/app.js`.
@@ -12,7 +12,7 @@
 - The primary screen is always the chat view: top status, timeline, and one composer.
 - Navigation state may live in the URL hash so refresh/back/deep links keep the selected view without adding a second task surface.
 - On mobile, the primary navigation should move to a compact bottom bar while the header stays focused on the Mnemo brand and lightweight commands.
-- Mobile bottom navigation must keep the primary chat, memory, and settings entries visible as equal-width items.
+- Mobile bottom navigation must keep the primary chat, memory, skills, tools, and settings entries visible as equal-width items.
 - Tool and learning activity appears inline as compact cards, not separate dashboards.
 - Chat empty state may show read-only glance cards for current runtime, memory counts, and latest activity; these cards must not become a second task surface.
 - Desktop chat may show a read-only context rail for real-time activity, recent request, runtime, and memory summary; it must hide on smaller screens and must not expose Mission/Run internals beyond compact resume labels.
@@ -36,6 +36,7 @@
 - Learning chips are reserved for exceptional review-gated memory candidates and resolve or undo memory candidates through `/api/learning/memory`.
 - Learning chips with `requires_confirmation=true` should use review wording, not routine confirmation wording, before durable memory promotion.
 - The settings view renders compact connected-app, permission, quiet-hours, runtime provider/model, preference, and data-control summaries from `/api/settings`.
+- Skills and Tools views render compact `/api/catalog` cards; Skills must not display full skill bodies, and Tools must not display raw provider input schemas.
 - Settings provider tiles may prefill the Provider form, but they must not save runtime changes until the normal settings submit path runs.
 - Runtime provider settings include bounded operational controls such as timeout, retry count/backoff, and `max_tool_rounds`; these controls must stay in the settings view and must not create a separate task execution surface.
 - Settings provider tiles and the Provider select must stay visually synchronized before save.
@@ -65,6 +66,7 @@
 | Recall card | Shows compact past-work/artifact/decision/knowledge result items with actions | `tests/test_web.py` |
 | Normal learning candidate | Does not render a visible confirmation chip for ordinary background learning | `tests/test_runtime.py` |
 | Learning chip | Shows compact review text, accept/this-turn/reject, and post-resolution undo actions for exceptional review-gated memory | `tests/test_web.py`, `tests/test_runtime.py` |
+| Skills/tools catalog | Shows read-only compact catalog cards, local filters, and no skill bodies or raw tool schemas | `tests/test_web.py` |
 | Settings page | Shows compact low-frequency settings, saves quiet hours and runtime provider preferences, including `max_tool_rounds`, without raw secrets | `tests/test_web.py` |
 | Memory compass page | Loads compact L1 coverage, then L2/L3 memory detail and markdown on demand without raw secrets | `tests/test_web.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
@@ -83,6 +85,7 @@
 - Good: call `updateComposerState()` after `prefillMessage()` or `insertComposerText()` changes the textarea.
 - Good: reset visible rail activity and composer draft when starting a new conversation.
 - Good: use equal-width mobile bottom navigation so chat, memory, and settings remain one tap away.
+- Good: keep Skills and Tools as read-only inspection pages hydrated by compact cards and local filters.
 - Good: resolve a Decision card with small inline buttons rather than opening a separate Inbox dashboard.
 - Good: render approved tool execution as a compact action/error card returned from the resolve API.
 - Good: expose tool arguments/results in collapsible details on the same action card.
@@ -109,6 +112,7 @@
 - For recall cards, assert repeated title/summary text is compacted.
 - For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses review wording for review-gated items.
 - For settings, assert the asset calls `/api/settings`, renders the settings view, saves provider/runtime and quiet-hours settings, and never exposes raw provider secrets.
+- For skills/tools catalogs, assert the asset calls `/api/catalog`, renders Skills and Tools views, and never exposes skill bodies or raw tool schemas.
 - For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory compass assets expose progressive L1/L2/L3 disclosure with in-page markdown detail viewing.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
 - For Memory Wiki Markdown, assert frontmatter helpers and `.markdown-frontmatter` styling are present so the raw metadata block remains visible.
