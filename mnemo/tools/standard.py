@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from html.parser import HTMLParser
 import ipaddress
+import json
 import os
 from pathlib import Path
 import socket
@@ -41,6 +42,7 @@ _ALWAYS_BLOCKED_WEB_IPS = frozenset(
 )
 _ALWAYS_BLOCKED_WEB_NETWORKS = (ipaddress.ip_network("169.254.0.0/16"),)
 _CGNAT_NETWORK = ipaddress.ip_network("100.64.0.0/10")
+_NON_INTERNAL_WEB_NETWORKS = (ipaddress.ip_network("2001::/32"),)
 _TEXTUAL_CONTENT_MARKERS = (
     "json",
     "javascript",
@@ -49,6 +51,22 @@ _TEXTUAL_CONTENT_MARKERS = (
     "xhtml",
     "xml",
     "yaml",
+)
+_WEB_FETCH_EVIDENCE_TEXT_BYTES = 4000
+_WEB_FETCH_JSON_PREVIEW_ITEMS = 8
+_WEB_FETCH_JSON_PREVIEW_FIELDS = (
+    "question",
+    "title",
+    "name",
+    "slug",
+    "url",
+    "volume24hr",
+    "volume",
+    "volumeNum",
+    "liquidity",
+    "outcomePrices",
+    "endDate",
+    "endDateIso",
 )
 
 
@@ -318,7 +336,7 @@ def web_fetch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
     fetched = _fetch_http(url, timeout_s=timeout_s, max_bytes=max_bytes)
     content_type = fetched["headers"].get("content-type", "")
     text, title = _decode_web_body(fetched["raw"][:max_bytes], fetched["headers"])
-    return {
+    result = {
         "url": url,
         "final_url": fetched["final_url"],
         "status": fetched["status"],
@@ -328,6 +346,10 @@ def web_fetch(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
         "bytes_read": fetched["bytes_read"],
         "truncated": fetched["truncated"],
     }
+    json_preview = _json_content_preview(text, content_type)
+    if json_preview is not None:
+        result["json_preview"] = json_preview
+    return result
 
 
 def shell_exec(args: dict[str, Any], context: "ToolContext") -> dict[str, Any]:
@@ -465,16 +487,24 @@ def standard_tool_evidence(result: ToolResult) -> list[dict[str, Any]] | None:
             }
         ]
     if result.name == "web_fetch":
-        return [
-            {
-                "kind": "web_page",
-                "id": str(result.result.get("final_url") or result.result.get("url") or ""),
-                "title": str(result.result.get("title") or result.result.get("url") or "Web page"),
-                "status": result.result.get("status"),
-                "content_type": result.result.get("content_type"),
-                "truncated": bool(result.result.get("truncated")),
-            }
-        ]
+        evidence = {
+            "kind": "web_page",
+            "id": str(result.result.get("final_url") or result.result.get("url") or ""),
+            "title": str(result.result.get("title") or result.result.get("url") or "Web page"),
+            "status": result.result.get("status"),
+            "content_type": result.result.get("content_type"),
+            "truncated": bool(result.result.get("truncated")),
+        }
+        json_preview = result.result.get("json_preview")
+        if json_preview is not None:
+            evidence["json_preview"] = json_preview
+        else:
+            text = str(result.result.get("text") or "")
+            if text:
+                evidence_text, text_truncated = _truncate_text(text, _WEB_FETCH_EVIDENCE_TEXT_BYTES)
+                evidence["text"] = evidence_text
+                evidence["text_truncated"] = text_truncated or bool(result.result.get("truncated"))
+        return [evidence]
     if result.name == "shell_exec":
         return [
             {
@@ -589,7 +619,9 @@ def _is_always_blocked_web_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address)
 def _is_blocked_web_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if _is_always_blocked_web_ip(ip):
         return True
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+    if any(ip in network for network in _NON_INTERNAL_WEB_NETWORKS):
+        return False
+    if ip.is_private or ip.is_loopback or ip.is_link_local:
         return True
     if ip.is_multicast or ip.is_unspecified:
         return True
@@ -641,6 +673,74 @@ def _decode_web_body(raw: bytes, headers: Any) -> tuple[str, str | None]:
     if "html" not in content_type and not _looks_like_html(decoded):
         return decoded, None
     return _html_to_text(decoded)
+
+
+def _json_content_preview(text: str, content_type: str) -> Any:
+    normalized_type = content_type.casefold()
+    stripped = text.lstrip()
+    if "json" not in normalized_type and not stripped.startswith(("[", "{")):
+        return None
+    try:
+        value = json.loads(stripped)
+    except (TypeError, ValueError):
+        if stripped.startswith("["):
+            return _compact_json_array_prefix(stripped)
+        return None
+    return _compact_json_value(value)
+
+
+def _compact_json_array_prefix(text: str) -> Any:
+    decoder = json.JSONDecoder()
+    index = 1
+    items: list[Any] = []
+    while len(items) < _WEB_FETCH_JSON_PREVIEW_ITEMS:
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index < len(text) and text[index] == ",":
+            index += 1
+            continue
+        if index >= len(text) or text[index] == "]":
+            break
+        try:
+            item, index = decoder.raw_decode(text, index)
+        except ValueError:
+            break
+        items.append(item)
+    if not items:
+        return None
+    return {
+        "type": "array",
+        "count_at_least": len(items),
+        "items": [_compact_json_value(item) for item in items],
+        "truncated": True,
+    }
+
+
+def _compact_json_value(value: Any) -> Any:
+    if isinstance(value, list):
+        return {
+            "type": "array",
+            "count": len(value),
+            "items": [_compact_json_value(item) for item in value[:_WEB_FETCH_JSON_PREVIEW_ITEMS]],
+            "truncated": len(value) > _WEB_FETCH_JSON_PREVIEW_ITEMS,
+        }
+    if isinstance(value, dict):
+        preferred = [key for key in _WEB_FETCH_JSON_PREVIEW_FIELDS if key in value]
+        keys = preferred or [str(key) for key in list(value)[:12]]
+        return {key: _compact_json_scalar(value.get(key)) for key in keys}
+    return _compact_json_scalar(value)
+
+
+def _compact_json_scalar(value: Any) -> Any:
+    if isinstance(value, str):
+        return value if len(value) <= 240 else value[:220].rstrip() + "...[truncated]"
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    if isinstance(value, list):
+        return [_compact_json_scalar(item) for item in value[:8]]
+    if isinstance(value, dict):
+        return {str(key): _compact_json_scalar(item) for key, item in list(value.items())[:8]}
+    return str(value)[:240]
 
 
 def _is_textual_content_type(content_type: str) -> bool:
@@ -834,6 +934,8 @@ def _is_search_result_http_url(url: str) -> bool:
         return False
     hostname = (parsed.hostname or "").strip().lower().rstrip(".")
     if not hostname or hostname in _BLOCKED_WEB_HOSTNAMES:
+        return False
+    if hostname.endswith("duckduckgo.com"):
         return False
     try:
         literal = ipaddress.ip_address(hostname)

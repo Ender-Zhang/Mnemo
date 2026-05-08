@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mnemo.core.errors import MnemoError
 from mnemo.core.models import RunRequest, ToolCallEnvelope
@@ -248,6 +249,44 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertTrue(tool_result["ok"])
             self.assertEqual(store.get_skill("chat-skill")["status"], "active")
 
+    def test_provider_runtime_returns_web_fetch_content_to_next_tool_round(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="web_fetch",
+                                arguments={"url": "https://example.com/markets"},
+                                call_id="call_web_fetch",
+                                provider="fake",
+                                risk="external",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="text_delta", text="Answered from fetched content."), ProviderEvent(type="completed")],
+                ]
+            )
+            raw = b'[{"question":"Will Bitcoin hit $150k by June 30, 2026?","volume24hr":5821653}]'
+
+            with patch("mnemo.tools.standard._fetch_http") as fetch_http:
+                fetch_http.return_value = {
+                    "final_url": "https://example.com/markets",
+                    "status": 200,
+                    "headers": _Headers({"content-type": "application/json"}),
+                    "raw": raw,
+                    "bytes_read": len(raw),
+                    "truncated": False,
+                }
+                events = list(ProviderAgentRuntime(provider).stream(RunRequest(message="fetch markets", state_dir=tmp)))
+
+            tool_feedback = provider.requests[1].messages[-1]["content"]
+            self.assertEqual(events[-1].data["result"]["response"], "Answered from fetched content.")
+            self.assertIn("json_preview", tool_feedback)
+            self.assertIn("Will Bitcoin hit $150k", tool_feedback)
+
     def test_provider_runtime_finalizes_when_tool_budget_is_exhausted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider(
@@ -306,6 +345,58 @@ class LocalRuntimeTests(unittest.TestCase):
             event_types = [event["event_type"] for event in ledger_events]
             self.assertIn("provider.tool_budget_exhausted", event_types)
             self.assertNotIn("run.error", [event.type for event in events])
+
+    def test_provider_runtime_suppresses_literal_tool_call_text_after_budget_exhaustion(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="recall_search",
+                                arguments={"query": "first pass", "limit": 1},
+                                call_id="call_first",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="recall_search",
+                                arguments={"query": "second pass", "limit": 1},
+                                call_id="call_second",
+                                provider="fake",
+                                risk="read",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [
+                        ProviderEvent(
+                            type="text_delta",
+                            text="<tool_call>\n<function=file_read>\n<parameter=path>/tmp/out.json</parameter>\n</function>\n</tool_call>",
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                ]
+            )
+
+            events = list(
+                ProviderAgentRuntime(
+                    provider,
+                    max_tool_rounds=1,
+                    enable_learning_reflection=False,
+                ).stream(RunRequest(message="answer with bounded tools", state_dir=tmp))
+            )
+
+            response = events[-1].data["result"]["response"]
+            self.assertNotIn("<tool_call>", response)
+            self.assertIn("工具轮次已用完", response)
 
     def test_stream_provider_accepts_configured_tool_round_budget(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -940,6 +1031,16 @@ class CancellingProvider:
     def stream(self, request):
         StateStore(self.state_dir).cancel_run(request.metadata["run_id"], reason="test cancellation")
         return [ProviderEvent(type="completed")]
+
+
+class _Headers(dict):
+    def get_content_charset(self) -> str:
+        content_type = str(self.get("content-type", ""))
+        for part in content_type.split(";"):
+            part = part.strip()
+            if part.startswith("charset="):
+                return part.split("=", 1)[1]
+        return "utf-8"
 
 
 if __name__ == "__main__":

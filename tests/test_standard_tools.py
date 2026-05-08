@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
 import sys
 import tempfile
@@ -9,7 +10,8 @@ from unittest.mock import patch
 from mnemo.core.models import ToolCallEnvelope, ToolExecutionPolicy
 from mnemo.runtime.ledger import RunLedger
 from mnemo.storage import StateStore
-from mnemo.tools import ToolHarness, ToolRegistry
+from mnemo.tools import ToolHarness, ToolRegistry, compact_tool_result
+from mnemo.tools.standard import _validate_public_http_url
 
 
 class StandardToolTests(unittest.TestCase):
@@ -467,6 +469,18 @@ class StandardToolTests(unittest.TestCase):
             self.assertIn("private or internal network address", result.error or "")
             build_opener.assert_not_called()
 
+    def test_web_url_validation_allows_reserved_ipv6_when_public_ip_is_available(self) -> None:
+        with patch("mnemo.tools.standard._resolve_hostname_ips") as resolve:
+            resolve.return_value = [
+                ipaddress.ip_address("162.125.32.2"),
+                ipaddress.ip_address("2001::1f0d:5f25"),
+            ]
+
+            self.assertEqual(
+                _validate_public_http_url("https://gamma-api.polymarket.com/markets"),
+                "https://gamma-api.polymarket.com/markets",
+            )
+
     def test_web_fetch_extracts_readable_html_text(self) -> None:
         html = b"""
         <html>
@@ -512,11 +526,64 @@ class StandardToolTests(unittest.TestCase):
             self.assertNotIn("<html", result.result["text"].casefold())
             self.assertNotIn("secret()", result.result["text"])
             self.assertEqual(result.evidence[0]["kind"], "web_page")
+            compact = compact_tool_result(result)
+            self.assertIn("Readable text.", compact["evidence"][0]["text"])
+            self.assertNotIn("secret()", compact["evidence"][0]["text"])
+
+    def test_web_fetch_compact_evidence_includes_json_preview(self) -> None:
+        payload = (
+            b'[{"question":"Will Bitcoin hit $150k by June 30, 2026?",'
+            b'"volume24hr":5821653,"outcomePrices":["0.0135","0.9865"],'
+            b'"endDate":"2026-07-01T04:00:00Z","description":"long body"},'
+            b'{"question":"Cavaliers vs. Pistons","volume24hr":4604453,'
+            b'"outcomePrices":["0.0005","0.9995"]}'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            store, run_id, mission_id = _store_with_run(root / "state")
+            harness = ToolHarness(
+                store=store,
+                ledger=RunLedger(store),
+                workspace_root=workspace,
+                policy=ToolExecutionPolicy(allowed_risks=("read", "external")),
+            )
+
+            with patch("mnemo.tools.standard._fetch_http") as fetch_http:
+                fetch_http.return_value = {
+                    "final_url": "https://gamma-api.polymarket.com/markets",
+                    "status": 200,
+                    "headers": _Headers({"content-type": "application/json"}),
+                    "raw": payload,
+                    "bytes_read": len(payload),
+                    "truncated": True,
+                }
+                result = harness.execute(
+                    ToolCallEnvelope(
+                        name="web_fetch",
+                        arguments={"url": "https://example.com/markets", "max_bytes": len(payload)},
+                        call_id="call_web_fetch_json",
+                    ),
+                    run_id=run_id,
+                    mission_id=mission_id,
+                )
+
+            compact = compact_tool_result(result)
+            preview = compact["evidence"][0]["json_preview"]
+            self.assertTrue(result.ok)
+            self.assertEqual(preview["type"], "array")
+            self.assertEqual(preview["count_at_least"], 2)
+            self.assertEqual(preview["items"][0]["question"], "Will Bitcoin hit $150k by June 30, 2026?")
+            self.assertEqual(preview["items"][0]["volume24hr"], 5821653)
+            self.assertNotIn("description", str(preview))
 
     def test_web_search_parses_compact_result_metadata(self) -> None:
         html = """
         <html>
           <body>
+            <a class="result__a" href="https://duckduckgo.com/y.js?ad_domain=example.com">Sponsored Result</a>
+            <a class="result__snippet">Sponsored snippet.</a>
             <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fdocs">Example Docs</a>
             <a class="result__snippet">Compact result snippet.</a>
             <a class="result__a" href="https://example.org/news">Example News</a>

@@ -318,7 +318,7 @@ class ProviderAgentRuntime:
                     )
                     break
 
-            response = "".join(response_parts).strip() or "已完成。"
+            response = _final_response_text(response_parts, tool_results)
             checkpoint = _checkpoint(store, mission_id, request.message, response, run_id, tool_results)
             store.update_mission_checkpoint(mission_id, checkpoint)
             yield emit("assistant.message", {"text": response, "final": True})
@@ -597,6 +597,32 @@ def _tool_result_message(result: ToolResult) -> dict[str, Any]:
         "tool_call_id": result.call_id,
         "content": _json_dumps(compact_tool_result(result)),
     }
+
+
+def _final_response_text(response_parts: list[str], tool_results: list[ToolResult]) -> str:
+    response = "".join(response_parts).strip()
+    if response and not _looks_like_unexecuted_tool_call(response):
+        return response
+    if not response:
+        return "已完成。"
+    summaries = [
+        f"- {result.name}: {result.summary or ('ok' if result.ok else result.error or 'failed')}"
+        for result in tool_results[-5:]
+    ]
+    if not summaries:
+        return "工具轮次已用完，模型仍尝试继续调用工具；本轮没有可整理的工具结果。"
+    return "工具轮次已用完，模型仍尝试继续调用工具。我已停止继续调用，当前已有结果：\n" + "\n".join(summaries)
+
+
+def _looks_like_unexecuted_tool_call(response: str) -> bool:
+    stripped = response.strip().casefold()
+    if stripped.startswith("<tool_call") and "</tool_call>" in stripped:
+        return True
+    if stripped.startswith("<function=") or stripped.startswith("<function "):
+        return True
+    if stripped.startswith('{"tool_calls"') or stripped.startswith('{"tool_call"'):
+        return True
+    return False
 
 
 def _checkpoint(
