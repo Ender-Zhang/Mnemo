@@ -69,8 +69,6 @@ const state = {
   memoryOntology: null,
   memoryDimensions: new Map(),
   memoryItems: new Map(),
-  avatarStarted: false,
-  avatarRendered: false,
   compactTools: localStorage.getItem("mnemo.ui.compact_tools") !== "false",
   streamMarkdown: localStorage.getItem("mnemo.ui.stream_markdown") !== "false",
 };
@@ -122,8 +120,6 @@ const memoryCoverageFill = document.querySelector("#memoryCoverageFill");
 const memoryActiveTitle = document.querySelector("#memoryActiveTitle");
 const memoryActiveSummary = document.querySelector("#memoryActiveSummary");
 const memoryActiveMeta = document.querySelector("#memoryActiveMeta");
-const memoryAvatar3d = document.querySelector("#memoryAvatar3d");
-const memoryOrbit = document.querySelector("#memoryOrbit");
 const settingsProviderForm = document.querySelector("#settingsProviderForm");
 const providerTiles = document.querySelector("#providerTiles");
 const settingProvider = document.querySelector("#settingProvider");
@@ -146,6 +142,7 @@ const settingsSummary = document.querySelector("#settingsSummary");
 const memoryMarkdownPanel = document.querySelector("#memoryMarkdownPanel");
 const memoryMarkdownTitle = document.querySelector("#memoryMarkdownTitle");
 const memoryMarkdownBody = document.querySelector("#memoryMarkdownBody");
+const memorySelectedMeta = document.querySelector("#memorySelectedMeta");
 const skillsStatus = document.querySelector("#skillsStatus");
 const skillsRefresh = document.querySelector("#skillsRefresh");
 const skillsSummary = document.querySelector("#skillsSummary");
@@ -357,7 +354,6 @@ function switchView(name, options = {}) {
     }
   }
   if (target === "memory") {
-    initMemoryAvatar();
     loadMemoryCompass();
   }
   if (target === "skills" || target === "tools") {
@@ -1214,11 +1210,12 @@ async function loadMemoryCompass() {
     renderMemoryCompass(state.memoryOntology);
     return;
   }
-  memoryCompass.replaceChildren(loadingRow("加载记忆罗盘"));
+  memoryCompass.replaceChildren(loadingRow("加载记忆 Wiki"));
   memoryLayerDetail.replaceChildren(textRow("选择一个维度查看长期记忆。"));
   setText(memoryActiveTitle, "维度详情");
   setText(memoryActiveSummary, "正在加载记忆。");
   setText(memoryActiveMeta, "未选择");
+  hideMemoryMarkdown();
   try {
     const response = await fetch("/api/memory/ontology");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1236,7 +1233,6 @@ function renderMemoryCompass(payload) {
   memoryCountBadge.textContent = `${counts.pages || 0} 稳定 · ${counts.candidates || 0} 候选`;
   renderMemoryStats(counts);
   renderMemoryCoverage(counts, dimensions.length || MEMORY_DIMENSIONS.length);
-  renderMemoryOrbit(dimensions);
   const cards = dimensions.map((dimension) => memoryDimensionCard(dimension));
   memoryCompass.replaceChildren(...cards);
   const first = dimensions.find((item) => Number(item.pages || 0) + Number(item.candidates || 0) > 0) || dimensions[0];
@@ -1297,40 +1293,10 @@ function memoryDimensionCard(dimension) {
   return button;
 }
 
-function renderMemoryOrbit(dimensions) {
-  if (!memoryOrbit) return;
-  const cards = dimensions.map((dimension, index) => memoryOrbitButton(dimension, index, dimensions.length || 1));
-  memoryOrbit.replaceChildren(...cards);
-}
-
-function memoryOrbitButton(dimension, index, total) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "memory-orbit-button";
-  button.dataset.dimension = dimension.dimension;
-  const angle = (-90 + (360 / Math.max(total, 1)) * index) * (Math.PI / 180);
-  button.style.setProperty("--x", `${Math.cos(angle) * 42}%`);
-  button.style.setProperty("--y", `${Math.sin(angle) * 42}%`);
-  const order = document.createElement("span");
-  order.textContent = String(index + 1).padStart(2, "0");
-  const label = document.createElement("strong");
-  label.textContent = dimensionLabel(dimension.dimension);
-  const count = document.createElement("small");
-  count.textContent = `${Number(dimension.pages || 0) + Number(dimension.candidates || 0)} 条`;
-  button.append(order, label, count);
-  button.addEventListener("click", () => loadMemoryDimension(dimension.dimension));
-  return button;
-}
-
 async function loadMemoryDimension(dimensionName) {
   const key = String(dimensionName || "context");
   for (const card of memoryCompass.querySelectorAll(".memory-dimension-card")) {
     card.classList.toggle("active", card.dataset.dimension === key);
-  }
-  if (memoryOrbit) {
-    for (const card of memoryOrbit.querySelectorAll(".memory-orbit-button")) {
-      card.classList.toggle("active", card.dataset.dimension === key);
-    }
   }
   if (state.memoryDimensions.has(key)) {
     renderMemoryDimensionDetail(state.memoryDimensions.get(key));
@@ -1353,19 +1319,9 @@ function renderMemoryDimensionDetail(payload) {
   setText(memoryActiveTitle, dimensionLabel(payload.dimension));
   setText(memoryActiveSummary, payload.summary || "暂无摘要。");
   setText(memoryActiveMeta, `${payload.counts?.pages || 0} 稳定 · ${payload.counts?.candidates || 0} 候选`);
-  const header = document.createElement("div");
-  header.className = "memory-layer-header";
-  const title = document.createElement("strong");
-  title.textContent = dimensionLabel(payload.dimension);
-  const summary = document.createElement("p");
-  summary.textContent = payload.summary || "";
-  const meta = document.createElement("span");
-  meta.textContent = `${payload.counts?.pages || 0} 稳定 · ${payload.counts?.candidates || 0} 候选`;
-  header.append(title, meta, summary);
-
   const stable = memoryDetailSection("稳定记忆", payload.pages || []);
   const candidates = memoryDetailSection("候选信号", payload.candidates || []);
-  memoryLayerDetail.replaceChildren(header, stable, candidates);
+  memoryLayerDetail.replaceChildren(stable, candidates);
 }
 
 function memoryDetailSection(titleText, entries) {
@@ -1394,6 +1350,8 @@ function memoryLayerItem(item) {
   button.type = "button";
   button.className = "memory-detail-card";
   button.title = "查看记忆详情";
+  button.dataset.memoryItemId = item.id || "";
+  button.dataset.memoryItemKind = item.kind || "memory";
   const type = document.createElement("span");
   type.className = "memory-detail-type";
   type.textContent = memoryKindLabel(item.kind || "memory");
@@ -1439,10 +1397,11 @@ function renderMemoryItemDetail(payload) {
     row.remove();
   }
   const item = payload.item || {};
+  for (const card of memoryLayerDetail.querySelectorAll(".memory-detail-card")) {
+    card.classList.toggle("active", card.dataset.memoryItemId === item.id);
+  }
   const panel = document.createElement("section");
-  panel.className = "memory-item-panel";
-  const title = document.createElement("strong");
-  title.textContent = item.title || "Memory";
+  panel.className = "memory-selected-card";
   const summary = document.createElement("p");
   summary.textContent = item.summary || "";
   const meta = document.createElement("span");
@@ -1464,12 +1423,13 @@ function renderMemoryItemDetail(payload) {
     actionButton("忘记", () => prefillMemoryAction("forget", payload), "secondary-button small danger-button"),
     actionButton("查看 Wiki", () => openMemoryMarkdown(payload), "secondary-button small"),
   );
-  panel.append(title, summary, meta, evidence, actions);
-  const existing = memoryLayerDetail.querySelector(".memory-item-panel");
-  if (existing) existing.replaceWith(panel);
-  else memoryLayerDetail.appendChild(panel);
+  panel.append(summary, meta, evidence, actions);
+  if (memorySelectedMeta) {
+    memorySelectedMeta.hidden = false;
+    memorySelectedMeta.replaceChildren(panel);
+  }
   openMemoryMarkdown(payload, { scroll: false });
-  revealMemoryItemPanel(panel);
+  revealMemoryItemPanel(memoryMarkdownPanel || panel);
 }
 
 function revealMemoryItemPanel(panel) {
@@ -1566,7 +1526,21 @@ function markdownDocumentTitle(text) {
 }
 
 function hideMemoryMarkdown() {
-  if (memoryMarkdownPanel) memoryMarkdownPanel.hidden = true;
+  if (!memoryMarkdownPanel || !memoryMarkdownTitle || !memoryMarkdownBody) return;
+  memoryMarkdownPanel.hidden = false;
+  memoryMarkdownTitle.textContent = "选择记忆";
+  if (memorySelectedMeta) {
+    memorySelectedMeta.hidden = true;
+    memorySelectedMeta.replaceChildren();
+  }
+  const placeholder = document.createElement("section");
+  placeholder.className = "memory-empty-detail";
+  const title = document.createElement("strong");
+  title.textContent = "尚未选择条目";
+  const body = document.createElement("p");
+  body.textContent = "从左侧列表选择一条稳定记忆或候选信号。";
+  placeholder.append(title, body);
+  memoryMarkdownBody.replaceChildren(placeholder);
 }
 
 function memoryPayloadMarkdown(payload) {
@@ -1606,268 +1580,6 @@ function prefillMemoryAction(intent, payload) {
     return;
   }
   prefillMessage(`请把这条记忆引用到当前任务中：${title}。维度：${dimension}。摘要：${summary}`);
-}
-
-async function initMemoryAvatar() {
-  if (state.avatarStarted || !memoryAvatar3d) return;
-  state.avatarStarted = true;
-  const fallbackTimer = window.setTimeout(() => {
-    if (!state.avatarRendered) {
-      state.avatarRendered = true;
-      renderCanvasAvatar();
-    }
-  }, 450);
-  try {
-    const THREE = await import("https://unpkg.com/three@0.160.0/build/three.module.js");
-    if (!state.avatarRendered) {
-      state.avatarRendered = true;
-      window.clearTimeout(fallbackTimer);
-      renderThreeAvatar(THREE);
-    }
-  } catch (_error) {
-    if (!state.avatarRendered) {
-      state.avatarRendered = true;
-      window.clearTimeout(fallbackTimer);
-      renderCanvasAvatar();
-    }
-  }
-}
-
-function renderThreeAvatar(THREE) {
-  const canvas = memoryAvatar3d;
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-  camera.position.set(0, 0.55, 5.4);
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
-  const key = new THREE.DirectionalLight(0xffffff, 2);
-  key.position.set(2.6, 3.8, 3.2);
-  const rim = new THREE.DirectionalLight(0xb7fff6, 1.1);
-  rim.position.set(-3, 1.8, -2.4);
-  scene.add(key, rim, new THREE.AmbientLight(0xf5efe3, 1.15));
-
-  const group = new THREE.Group();
-  const glass = new THREE.MeshPhysicalMaterial({
-    color: 0xf8fff9,
-    roughness: 0.18,
-    metalness: 0.04,
-    transparent: true,
-    opacity: 0.42,
-  });
-  const lattice = new THREE.MeshStandardMaterial({
-    color: 0x0b7d78,
-    roughness: 0.36,
-    metalness: 0.22,
-    transparent: true,
-    opacity: 0.38,
-    wireframe: true,
-  });
-  const coreMaterial = new THREE.MeshStandardMaterial({
-    color: 0xffc766,
-    emissive: 0x6b3f00,
-    emissiveIntensity: 0.16,
-    roughness: 0.24,
-    metalness: 0.18,
-  });
-  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.78, 64, 64), glass);
-  const latticeCore = new THREE.Mesh(new THREE.IcosahedronGeometry(0.58, 2), lattice);
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 32), coreMaterial);
-  const rings = [
-    memoryRing(THREE, 0x0b7d78, 1.18, Math.PI / 2.35, 0.14),
-    memoryRing(THREE, 0x6254c7, 1.42, Math.PI / 2, Math.PI / 5.5),
-    memoryRing(THREE, 0xa66f1f, 1.65, Math.PI / 2.65, -Math.PI / 5.8),
-  ];
-  const nodes = [];
-  const lineVertices = [];
-  const nodeMaterials = [
-    new THREE.MeshStandardMaterial({ color: 0x0b7d78, roughness: 0.32, metalness: 0.2 }),
-    new THREE.MeshStandardMaterial({ color: 0x6254c7, roughness: 0.34, metalness: 0.14 }),
-    new THREE.MeshStandardMaterial({ color: 0xa66f1f, roughness: 0.35, metalness: 0.12 }),
-    new THREE.MeshStandardMaterial({ color: 0xc65447, roughness: 0.38, metalness: 0.1 }),
-  ];
-  for (let index = 0; index < MEMORY_DIMENSIONS.length; index += 1) {
-    const position = memoryNodePosition(index, MEMORY_DIMENSIONS.length, 1.42);
-    const node = new THREE.Mesh(
-      new THREE.SphereGeometry(0.052 + (index % 3) * 0.01, 24, 24),
-      nodeMaterials[index % nodeMaterials.length],
-    );
-    node.position.set(position.x, position.y, position.z);
-    node.userData.phase = index * 0.63;
-    nodes.push(node);
-    group.add(node);
-    lineVertices.push(0, 0, 0, position.x, position.y, position.z);
-  }
-  const lines = new THREE.LineSegments(
-    new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(lineVertices, 3)),
-    new THREE.LineBasicMaterial({ color: 0x0b7d78, transparent: true, opacity: 0.18 }),
-  );
-  group.add(lines, shell, latticeCore, core, ...rings);
-  scene.add(group);
-
-  function resize() {
-    const rect = canvas.getBoundingClientRect();
-    const size = Math.max(260, Math.min(rect.width || 420, rect.height || 420));
-    renderer.setSize(size, size, false);
-    camera.aspect = 1;
-    camera.updateProjectionMatrix();
-  }
-
-  resize();
-  if (window.ResizeObserver) {
-    new ResizeObserver(resize).observe(canvas);
-  } else {
-    window.addEventListener("resize", resize);
-  }
-
-  function frame(time) {
-    group.rotation.y = time * 0.00018;
-    group.rotation.x = Math.sin(time * 0.00022) * 0.08;
-    latticeCore.rotation.y = time * 0.00032;
-    latticeCore.rotation.z = -time * 0.00021;
-    core.scale.setScalar(1 + Math.sin(time * 0.0014) * 0.08);
-    rings[0].rotation.z = time * 0.00038;
-    rings[1].rotation.z = -time * 0.00026;
-    rings[2].rotation.z = time * 0.00018;
-    for (const node of nodes) {
-      node.scale.setScalar(1 + Math.sin(time * 0.0012 + node.userData.phase) * 0.14);
-    }
-    renderer.render(scene, camera);
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-}
-
-function memoryRing(THREE, color, radius, rotationX, rotationZ) {
-  const mesh = new THREE.Mesh(
-    new THREE.TorusGeometry(radius, 0.012, 18, 180),
-    new THREE.MeshStandardMaterial({
-      color,
-      roughness: 0.3,
-      metalness: 0.18,
-      transparent: true,
-      opacity: 0.62,
-    }),
-  );
-  mesh.rotation.x = rotationX;
-  mesh.rotation.z = rotationZ;
-  return mesh;
-}
-
-function memoryNodePosition(index, total, radius) {
-  const phi = Math.acos(1 - (2 * (index + 0.5)) / Math.max(total, 1));
-  const theta = index * Math.PI * (3 - Math.sqrt(5));
-  return {
-    x: Math.cos(theta) * Math.sin(phi) * radius,
-    y: Math.cos(phi) * radius * 0.72,
-    z: Math.sin(theta) * Math.sin(phi) * radius,
-  };
-}
-
-function renderCanvasAvatar() {
-  const canvas = memoryAvatar3d;
-  const ctx = canvas.getContext("2d");
-  function frame(time) {
-    const width = canvas.width;
-    const height = canvas.height;
-    const centerX = width / 2;
-    const centerY = height / 2 + 14;
-    ctx.clearRect(0, 0, width, height);
-    const gradient = ctx.createRadialGradient(centerX, centerY - 30, 28, centerX, centerY, width * 0.48);
-    gradient.addColorStop(0, "rgba(255,255,255,0.98)");
-    gradient.addColorStop(0.55, "rgba(228,243,240,0.48)");
-    gradient.addColorStop(1, "rgba(98,84,199,0.04)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-    drawAvatarGrid(ctx, width, height, centerX, centerY);
-    ctx.strokeStyle = "rgba(11,125,120,0.24)";
-    ctx.lineWidth = 2.2;
-    for (let index = 0; index < 3; index += 1) {
-      ctx.save();
-      ctx.translate(centerX, centerY);
-      ctx.rotate(time * 0.00018 + index * 0.92);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, width * (0.18 + index * 0.05), height * (0.06 + index * 0.014), 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-    const pulse = 1 + Math.sin(time * 0.0014) * 0.035;
-    const coreGradient = ctx.createRadialGradient(centerX - 26, centerY - 32, 8, centerX, centerY, width * 0.18 * pulse);
-    coreGradient.addColorStop(0, "rgba(255,255,255,0.96)");
-    coreGradient.addColorStop(0.42, "rgba(228,243,240,0.72)");
-    coreGradient.addColorStop(1, "rgba(11,125,120,0.12)");
-    ctx.fillStyle = coreGradient;
-    ctx.strokeStyle = "rgba(98,84,199,0.28)";
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, width * 0.105 * pulse, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    const nodes = [];
-    for (let index = 0; index < MEMORY_DIMENSIONS.length; index += 1) {
-      const angle = -Math.PI / 2 + (Math.PI * 2 * index) / MEMORY_DIMENSIONS.length + time * 0.00008;
-      const radiusX = width * (0.25 + (index % 2) * 0.025);
-      const radiusY = height * (0.118 + (index % 3) * 0.007);
-      nodes.push({
-        x: centerX + Math.cos(angle) * radiusX,
-        y: centerY + Math.sin(angle) * radiusY,
-        color: ["#0b7d78", "#6254c7", "#a66f1f", "#c65447"][index % 4],
-      });
-    }
-    ctx.lineWidth = 1.1;
-    ctx.strokeStyle = "rgba(11,125,120,0.13)";
-    for (const node of nodes) {
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.lineTo(node.x, node.y);
-      ctx.stroke();
-    }
-    for (const node of nodes) {
-      ctx.fillStyle = node.color;
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.76)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    ctx.fillStyle = "rgba(166,111,31,0.78)";
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, 12, 0, Math.PI * 2);
-    ctx.fill();
-    requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-}
-
-function drawAvatarGrid(ctx, width, height, centerX, centerY) {
-  ctx.save();
-  ctx.translate(centerX, centerY + 132);
-  ctx.strokeStyle = "rgba(11,125,120,0.08)";
-  ctx.lineWidth = 1;
-  for (let index = 0; index < 5; index += 1) {
-    ctx.beginPath();
-    ctx.ellipse(0, 0, width * (0.08 + index * 0.055), height * (0.014 + index * 0.01), 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  for (let index = 0; index < 10; index += 1) {
-    const angle = (Math.PI * 2 * index) / 10;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(angle) * 24, Math.sin(angle) * 8);
-    ctx.lineTo(Math.cos(angle) * width * 0.36, Math.sin(angle) * height * 0.08);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function roundRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + width, y, x + width, y + height, radius);
-  ctx.arcTo(x + width, y + height, x, y + height, radius);
-  ctx.arcTo(x, y + height, x, y, radius);
-  ctx.arcTo(x, y, x + width, y, radius);
-  ctx.closePath();
 }
 
 async function loadCatalog(options = {}) {

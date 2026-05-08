@@ -22,7 +22,7 @@
             <span class="nav-icon nav-chat" aria-hidden="true"></span>
             <span>对话</span>
           </button>
-          <button id="memoryOpen" class="nav-item" type="button" data-view="memory" title="记忆罗盘" aria-label="记忆罗盘">
+          <button id="memoryOpen" class="nav-item" type="button" data-view="memory" title="记忆 Wiki" aria-label="记忆 Wiki">
             <span class="nav-icon nav-memory" aria-hidden="true"></span>
             <span>记忆</span>
           </button>
@@ -140,7 +140,7 @@
               </header>
               <div class="rail-memory-summary">
                 <div>
-                  <span>记忆罗盘</span>
+                  <span>记忆 Wiki</span>
                   <strong id="railMemory">加载中</strong>
                   <small id="railMemoryHint">只显示摘要，不暴露原文</small>
                 </div>
@@ -159,12 +159,12 @@
           </aside>
         </section>
 
-        <section id="memoryView" class="view memory-view" aria-label="记忆罗盘">
+        <section id="memoryView" class="view memory-view" aria-label="记忆 Wiki">
           <header class="page-header">
             <div>
-              <p class="eyebrow">Memory Compass</p>
-              <h1>记忆罗盘</h1>
-              <p>先看全局，再进入维度，最后查看单条记忆的证据与详情。</p>
+              <p class="eyebrow">Memory Wiki</p>
+              <h1>记忆 Wiki</h1>
+              <p>按维度浏览长期记忆，点开条目查看证据、摘要和原始 Markdown。</p>
             </div>
             <div class="page-actions">
               <button id="memoryRefresh" class="quiet-button" type="button">刷新</button>
@@ -173,67 +173,60 @@
           </header>
 
           <div class="memory-layout">
-            <section class="memory-sidebar" aria-label="记忆总览">
-              <section class="memory-overview-card">
-                <div class="memory-overview-head">
-                  <div>
-                    <p class="eyebrow">Overview</p>
-                    <h2>总览</h2>
-                  </div>
-                  <span id="memoryCountBadge" class="context-chip">未加载</span>
+            <aside class="memory-index" aria-label="记忆维度">
+              <div class="memory-index-head">
+                <div>
+                  <p class="eyebrow">Overview</p>
+                  <h2>记忆总览</h2>
                 </div>
-                <div id="memoryStats" class="memory-stats"></div>
-                <div class="memory-coverage">
-                  <div class="memory-coverage-top">
-                    <span>维度覆盖</span>
-                    <strong id="memoryCoverageLabel">0/10</strong>
-                  </div>
-                  <span class="memory-coverage-track" aria-hidden="true">
-                    <span id="memoryCoverageFill"></span>
-                  </span>
+                <span id="memoryCountBadge" class="context-chip">未加载</span>
+              </div>
+              <div id="memoryStats" class="memory-stats"></div>
+              <div class="memory-coverage">
+                <div class="memory-coverage-top">
+                  <span>维度覆盖</span>
+                  <strong id="memoryCoverageLabel">0/10</strong>
                 </div>
-              </section>
+                <span class="memory-coverage-track" aria-hidden="true">
+                  <span id="memoryCoverageFill"></span>
+                </span>
+              </div>
+              <div class="memory-index-title">
+                <h3>维度</h3>
+                <span>点击查看</span>
+              </div>
+              <div id="memoryCompass" class="memory-compass"></div>
+            </aside>
 
-              <section class="memory-dimension-panel">
-                <div class="panel-heading compact">
-                  <div>
-                    <h2>维度索引</h2>
-                    <p>十个长期记忆维度。</p>
-                  </div>
-                </div>
-                <div id="memoryCompass" class="memory-compass"></div>
-              </section>
-
-              <section class="avatar-panel">
-                <header>
-                  <p class="eyebrow">Map</p>
-                  <h2>关系图</h2>
-                </header>
-                <canvas id="memoryAvatar3d" class="memory-avatar-canvas" width="720" height="720" aria-label="三维记忆网络"></canvas>
-                <div id="memoryOrbit" class="memory-orbit" aria-label="十维记忆轨道"></div>
-              </section>
-            </section>
-
-            <section class="memory-panel">
-              <div class="panel-heading memory-focus-heading">
+            <section class="memory-browser" aria-label="记忆浏览器">
+              <header class="memory-browser-header">
                 <div>
                   <p class="eyebrow">Dimension</p>
                   <h2 id="memoryActiveTitle">维度详情</h2>
                   <p id="memoryActiveSummary">正在加载记忆。</p>
                 </div>
                 <span id="memoryActiveMeta" class="context-chip muted">未选择</span>
+              </header>
+
+              <div class="memory-browser-grid">
+                <section id="memoryLayerDetail" class="memory-layer-detail" aria-label="记忆条目"></section>
+                <section id="memoryMarkdownPanel" class="memory-markdown-panel">
+                  <header>
+                    <div>
+                      <p class="eyebrow">Memory Wiki</p>
+                      <h2 id="memoryMarkdownTitle">选择记忆</h2>
+                    </div>
+                    <span class="context-chip muted">本页查看</span>
+                  </header>
+                  <div id="memorySelectedMeta" class="memory-selected-meta" hidden></div>
+                  <article id="memoryMarkdownBody" class="markdown-body">
+                    <section class="memory-empty-detail">
+                      <strong>尚未选择条目</strong>
+                      <p>从左侧列表选择一条稳定记忆或候选信号。</p>
+                    </section>
+                  </article>
+                </section>
               </div>
-              <div id="memoryLayerDetail" class="memory-layer-detail"></div>
-              <section id="memoryMarkdownPanel" class="memory-markdown-panel" hidden>
-                <header>
-                  <div>
-                    <p class="eyebrow">Memory Wiki</p>
-                    <h2 id="memoryMarkdownTitle">记忆详情</h2>
-                  </div>
-                  <span class="context-chip muted">本页查看</span>
-                </header>
-                <article id="memoryMarkdownBody" class="markdown-body"></article>
-              </section>
             </section>
           </div>
         </section>

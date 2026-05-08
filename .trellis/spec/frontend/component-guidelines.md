@@ -3,7 +3,7 @@
 ## Scenario: DOM Components Without A Framework
 
 ### 1. Scope / Trigger
-- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, learning chips, memory compass, skills/tools catalog, or settings page controls.
+- Trigger: changes to timeline rendering, composer controls, action cards, artifact cards, decision cards, recall cards, learning chips, memory Wiki, skills/tools catalog, or settings page controls.
 - Goal: keep the UI understandable as a single product shell where chat remains the execution surface and memory/skills/tools/settings remain lightweight inspection/configuration surfaces.
 
 ### 2. Component Patterns
@@ -40,9 +40,8 @@
 - Settings provider tiles may prefill the Provider form, but they must not save runtime changes until the normal settings submit path runs.
 - Runtime provider settings include bounded operational controls such as timeout, retry count/backoff, and `max_tool_rounds`; these controls must stay in the settings view and must not create a separate task execution surface.
 - Settings provider tiles and the Provider select must stay visually synchronized before save.
-- Ten-dimensional memory inspection lives in the memory compass view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
-- Memory inspection should prioritize readable counts, coverage, dimension summaries, and selected item details; 3D or orbit visuals are supporting context and must not dominate the information layout.
-- The memory compass can mirror L1 dimensions as an orbit around the avatar, but orbit buttons must call the same L2 dimension loader and remain read-only.
+- Ten-dimensional memory inspection lives in the memory Wiki view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
+- Memory inspection should prioritize a wiki-browser flow: readable counts and coverage, a dimension index, a scannable item list, and a selected Markdown detail pane. Decorative 3D/orbit visuals should not be part of the primary memory browsing flow.
 - Settings actions should save narrow settings only; ordinary user tasks still route through the single composer.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
 - Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.
@@ -94,7 +93,7 @@
 - Good: resolve or undo a Learning chip with small inline buttons rather than opening a memory dashboard.
 - Good: label review-gated Learning chip acceptance as an explicit confirmation instead of casual preference learning.
 - Good: keep data-control actions compact and route task-like follow-ups back to the single composer.
-- Good: inspect ten-dimensional memory from the memory compass as a compact, read-only view.
+- Good: inspect ten-dimensional memory from the memory Wiki as a compact, read-only browser.
 - Good: keep evidence chains behind explicit item selection.
 - Good: use `document.createElement`, `textContent`, and `replaceChildren` for Markdown blocks and inline marks.
 - Good: store streaming Markdown source in `dataset.rawText` before final formatting.
@@ -114,7 +113,7 @@
 - For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses review wording for review-gated items.
 - For settings, assert the asset calls `/api/settings`, renders the settings view, saves provider/runtime and quiet-hours settings, and never exposes raw provider secrets.
 - For skills/tools catalogs, assert the asset calls `/api/catalog`, renders Skills and Tools views, and never exposes skill bodies or raw tool schemas.
-- For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory compass assets expose progressive L1/L2/L3 disclosure with in-page markdown detail viewing.
+- For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory Wiki assets expose progressive L1/L2/L3 disclosure with in-page markdown detail viewing.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
 - For Memory Wiki Markdown, assert frontmatter helpers and `.markdown-frontmatter` styling are present so the raw metadata block remains visible.
 - For activity rows, assert `activityRows`, `activityActionId`, and compact tool-card upsert behavior are present.
