@@ -246,3 +246,36 @@ Added Feishu/Lark scan-to-create QR onboarding, saved channel config/status, opt
 ### Next Steps
 
 - None - task complete
+
+
+## Session 122: Install Onboard Service
+
+**Date**: 2026-05-08
+**Task**: Install Onboard Service
+**Branch**: `main`
+
+### Summary
+
+Added unified install onboarding, service management, API credential setup, and Feishu binding flow.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4a26857` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
