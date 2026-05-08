@@ -66,6 +66,8 @@ const state = {
   artifactRelated: new Map(),
   settings: null,
   catalog: null,
+  feishuOnboardSession: null,
+  feishuOnboardTimer: null,
   memoryOntology: null,
   memoryDimensions: new Map(),
   memoryItems: new Map(),
@@ -139,6 +141,10 @@ const streamMarkdown = document.querySelector("#streamMarkdown");
 const saveExperience = document.querySelector("#saveExperience");
 const settingsStatus = document.querySelector("#settingsStatus");
 const settingsSummary = document.querySelector("#settingsSummary");
+const feishuStatus = document.querySelector("#feishuStatus");
+const feishuDomain = document.querySelector("#feishuDomain");
+const feishuOnboardStart = document.querySelector("#feishuOnboardStart");
+const feishuOnboardPanel = document.querySelector("#feishuOnboardPanel");
 const memoryMarkdownPanel = document.querySelector("#memoryMarkdownPanel");
 const memoryMarkdownTitle = document.querySelector("#memoryMarkdownTitle");
 const memoryMarkdownBody = document.querySelector("#memoryMarkdownBody");
@@ -302,6 +308,12 @@ saveExperience.addEventListener("click", () => {
   document.body.classList.toggle("compact-tools", state.compactTools);
   saveSettings({ quietOnly: true });
 });
+
+if (feishuOnboardStart) {
+  feishuOnboardStart.addEventListener("click", () => {
+    startFeishuOnboarding();
+  });
+}
 
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
@@ -1824,13 +1836,108 @@ function renderSettings(payload) {
   compactTools.checked = state.compactTools;
   streamMarkdown.checked = state.streamMarkdown;
   renderProviderTiles(runtime);
+  renderFeishuStatus(payload.channels?.feishu);
 
   const blocks = [];
   blocks.push(settingsSummaryBlock("当前模型", `${runtime.provider || "local"}${runtime.model ? ` · ${runtime.model}` : ""}`));
   blocks.push(settingsSummaryBlock("权限待处理", String(payload.permissions?.open_decisions || 0)));
   blocks.push(settingsSummaryBlock("记忆", `${payload.data_controls?.counts?.memory_pages || 0} 稳定 / ${payload.data_controls?.counts?.memory_candidates || 0} 候选`));
+  blocks.push(settingsSummaryBlock("飞书", connectedDetail(payload.connected_apps, "feishu")));
   blocks.push(settingsSummaryBlock("工作区", connectedDetail(payload.connected_apps, "workspace")));
   settingsSummary.replaceChildren(...blocks);
+}
+
+function renderFeishuStatus(status) {
+  if (!feishuStatus) return;
+  const current = status || {};
+  const title = document.createElement("strong");
+  title.textContent = current.configured ? "已接入" : "未接入";
+  const detail = document.createElement("span");
+  if (current.configured) {
+    const bot = current.bot_name || current.bot_open_id || current.app_id || "已配置机器人";
+    detail.textContent = `${current.domain || "feishu"} · ${bot} · ${current.connection || "websocket"}`;
+  } else {
+    detail.textContent = "扫码后会自动创建并保存机器人配置。";
+  }
+  const path = document.createElement("span");
+  path.textContent = current.config_path ? `配置：${current.config_path}` : "";
+  feishuStatus.replaceChildren(title, detail, path);
+}
+
+async function startFeishuOnboarding() {
+  if (!feishuOnboardStart || !feishuOnboardPanel) return;
+  feishuOnboardStart.disabled = true;
+  feishuOnboardPanel.hidden = false;
+  feishuOnboardPanel.replaceChildren(textRow("正在创建扫码会话..."));
+  try {
+    const response = await fetch("/api/channels/feishu/onboard/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain: feishuDomain?.value || "feishu" }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    state.feishuOnboardSession = payload.session;
+    renderFeishuOnboardSession(payload.session);
+    pollFeishuOnboarding();
+  } catch (error) {
+    feishuOnboardPanel.replaceChildren(textRow(error.message || String(error)));
+    feishuOnboardStart.disabled = false;
+  }
+}
+
+function renderFeishuOnboardSession(session) {
+  if (!feishuOnboardPanel) return;
+  const title = document.createElement("strong");
+  title.textContent = "用飞书扫码";
+  const hint = document.createElement("span");
+  hint.textContent = session?.user_code ? `验证码：${session.user_code}` : "扫码后会自动轮询结果。";
+  const link = document.createElement("a");
+  link.href = session?.qr_url || "#";
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = session?.qr_url || "扫码链接不可用";
+  const nodes = [title];
+  if (session?.qr_svg_b64) {
+    const img = document.createElement("img");
+    img.alt = "飞书接入二维码";
+    img.src = `data:image/svg+xml;base64,${session.qr_svg_b64}`;
+    nodes.push(img);
+  }
+  nodes.push(hint, link);
+  feishuOnboardPanel.replaceChildren(...nodes);
+}
+
+async function pollFeishuOnboarding() {
+  if (!state.feishuOnboardSession || !feishuOnboardPanel) return;
+  window.clearTimeout(state.feishuOnboardTimer);
+  try {
+    const response = await fetch("/api/channels/feishu/onboard/poll", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: state.feishuOnboardSession.session_id }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    if (payload.status === "configured") {
+      feishuOnboardPanel.replaceChildren(textRow("飞书已接入，可以启动 Feishu channel。"));
+      state.feishuOnboardSession = null;
+      feishuOnboardStart.disabled = false;
+      await loadSettings();
+      return;
+    }
+    if (payload.status === "denied" || payload.status === "expired") {
+      feishuOnboardPanel.replaceChildren(textRow(payload.message || "扫码会话已结束。"));
+      state.feishuOnboardSession = null;
+      feishuOnboardStart.disabled = false;
+      return;
+    }
+    const wait = Math.max(1, Number(payload.retry_after_s || state.feishuOnboardSession.interval_s || 5));
+    state.feishuOnboardTimer = window.setTimeout(pollFeishuOnboarding, wait * 1000);
+  } catch (error) {
+    feishuOnboardPanel.appendChild(textRow(error.message || String(error)));
+    feishuOnboardStart.disabled = false;
+  }
 }
 
 function renderProviderTiles(runtime) {

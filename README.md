@@ -80,7 +80,16 @@ Provider-backed web runs accept the same provider flags as `mnemo run`.
 
 ## Feishu/Lark Channel
 
-Mnemo can receive Feishu/Lark webhook events and reply in the same chat.
+Mnemo can create a personal Feishu/Lark bot by QR scan, then receive messages through the Feishu channel.
+
+```bash
+mnemo channels feishu onboard --state-dir .mnemo
+mnemo channels feishu serve --state-dir .mnemo --connection websocket
+```
+
+The onboarding command uses Feishu/Lark scan-to-create registration and saves the returned app credentials to `.mnemo/channels/feishu_config.json` with `0600` permissions. CLI and Web status output masks secrets.
+
+Existing self-built apps can still use webhook mode:
 
 ```bash
 export FEISHU_APP_ID=cli_xxx
@@ -97,7 +106,7 @@ mnemo channels feishu serve \
   --api-key-env MNEMO_API_KEY
 ```
 
-Set the Feishu event subscription URL to `/feishu/webhook` on your public tunnel. Optional hardening knobs: `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, and `FEISHU_BOT_NAME`.
+Set the Feishu event subscription URL to `/feishu/webhook` on your public tunnel when using webhook mode. Optional hardening knobs: `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, and `FEISHU_BOT_NAME`.
 
 ## Operations
 
@@ -199,4 +208,4 @@ CI also builds the package, installs the wheel outside the checkout, and runs `t
 ## Acknowledgments
 
 Web tool separation between compact search metadata and page fetch/extraction is acknowledged in `THIRD_PARTY_NOTICES.md`.
-The one-click installer and Feishu webhook channel explicitly reference safe boundary patterns from NousResearch Hermes Agent (`scripts/install.sh` and `gateway/platforms/feishu.py`) while keeping Mnemo's implementation dependency-light and routed through Mnemo runtime services.
+The one-click installer, Feishu scan-to-create onboarding, and Feishu channel explicitly reference safe boundary patterns from NousResearch Hermes Agent (`scripts/install.sh` and `gateway/platforms/feishu.py`) while keeping Mnemo's implementation routed through Mnemo runtime services.

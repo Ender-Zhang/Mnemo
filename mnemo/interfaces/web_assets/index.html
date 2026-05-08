@@ -398,6 +398,23 @@
               <button id="saveExperience" class="secondary-button" type="button">保存体验设置</button>
             </section>
 
+            <section class="settings-card">
+              <div class="settings-card-header">
+                <h2>飞书接入</h2>
+                <p>扫码创建个人机器人，配置只保存在本机状态目录。</p>
+              </div>
+              <div id="feishuStatus" class="feishu-status" aria-live="polite"></div>
+              <label>
+                <span>区域</span>
+                <select id="feishuDomain" name="feishu_domain">
+                  <option value="feishu">飞书</option>
+                  <option value="lark">Lark</option>
+                </select>
+              </label>
+              <button id="feishuOnboardStart" class="secondary-button" type="button">扫码接入</button>
+              <div id="feishuOnboardPanel" class="feishu-onboard-panel" hidden></div>
+            </section>
+
             <section class="settings-card wide-card">
               <div class="settings-card-header">
                 <h2>系统状态</h2>

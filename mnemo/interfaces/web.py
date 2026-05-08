@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import threading
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
@@ -19,6 +20,12 @@ from ..core.jsonutil import dumps
 from ..core.models import RunRequest
 from ..core.settings import load_user_settings, save_user_settings, settings_path
 from ..core.workspace import resolve_workspace_root
+from ..channels import (
+    FeishuQrOnboardSession,
+    feishu_channel_status,
+    poll_feishu_qr_onboarding,
+    start_feishu_qr_onboarding,
+)
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
 from ..runtime import stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
@@ -135,6 +142,9 @@ def _resolved_web_config(config: WebServerConfig) -> WebServerConfig:
 
 
 def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
+    feishu_onboard_sessions: dict[str, FeishuQrOnboardSession] = {}
+    feishu_onboard_lock = threading.Lock()
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "MnemoWeb/0.1"
 
@@ -161,6 +171,8 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_inbox(parsed.query)
             elif parsed.path == "/api/settings":
                 self._handle_settings()
+            elif parsed.path == "/api/channels/feishu":
+                self._handle_feishu_channel_status()
             elif parsed.path == "/api/catalog":
                 self._handle_catalog()
             elif parsed.path == "/api/memory/ontology":
@@ -186,6 +198,10 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_learning_memory()
             elif parsed.path == "/api/settings":
                 self._handle_settings_update()
+            elif parsed.path == "/api/channels/feishu/onboard/start":
+                self._handle_feishu_onboard_start()
+            elif parsed.path == "/api/channels/feishu/onboard/poll":
+                self._handle_feishu_onboard_poll()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -318,6 +334,9 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
         def _handle_settings(self) -> None:
             self._send_json(_settings_payload(config))
 
+        def _handle_feishu_channel_status(self) -> None:
+            self._send_json({"feishu": feishu_channel_status(config.state_dir)})
+
         def _handle_catalog(self) -> None:
             self._send_json(_catalog_payload(config))
 
@@ -364,6 +383,40 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             self._send_json(_settings_payload(config))
+
+        def _handle_feishu_onboard_start(self) -> None:
+            try:
+                body = self._read_json_body()
+                domain = _optional_string(body.get("domain")) or "feishu"
+                session = start_feishu_qr_onboarding(domain=domain)
+            except (ValueError, MnemoError) as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            with feishu_onboard_lock:
+                feishu_onboard_sessions[session.session_id] = session
+            self._send_json({"status": "pending", "session": session.public_dict(), "feishu": feishu_channel_status(config.state_dir)})
+
+        def _handle_feishu_onboard_poll(self) -> None:
+            try:
+                body = self._read_json_body()
+                session_id = _required_string(body, "session_id")
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            with feishu_onboard_lock:
+                session = feishu_onboard_sessions.get(session_id)
+            if session is None:
+                self._send_json({"error": f"Feishu onboarding session not found: {session_id}"}, status=HTTPStatus.NOT_FOUND)
+                return
+            try:
+                result = poll_feishu_qr_onboarding(session, state_dir=config.state_dir, save=True)
+            except MnemoError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if result.get("status") in {"configured", "denied", "expired"}:
+                with feishu_onboard_lock:
+                    feishu_onboard_sessions.pop(session_id, None)
+            self._send_json(result)
 
         def _handle_inbox_resolve(self) -> None:
             try:
@@ -743,6 +796,7 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
     preferences = _preference_cards(memory_pages)
     settings = load_user_settings(config.state_dir)
     effective = _effective_web_config(config)
+    feishu_status = feishu_channel_status(config.state_dir)
 
     return {
         "settings": settings,
@@ -766,7 +820,10 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
             },
             "applies": "live",
         },
-        "connected_apps": _connected_app_cards(effective),
+        "connected_apps": [*_connected_app_cards(effective), _feishu_connected_app_card(feishu_status)],
+        "channels": {
+            "feishu": feishu_status,
+        },
         "permissions": {
             "open_decisions": len(open_decisions),
             "risk_policy": [
@@ -1357,6 +1414,19 @@ def _connected_app_cards(config: WebServerConfig) -> list[dict[str, Any]]:
             "detail": "Content-Length stdio",
         },
     ]
+
+
+def _feishu_connected_app_card(status: dict[str, Any]) -> dict[str, Any]:
+    detail = "not configured"
+    if status.get("configured"):
+        label = status.get("bot_name") or status.get("bot_open_id") or status.get("app_id") or "configured"
+        detail = f"{status.get('domain') or 'feishu'} · {label}"
+    return {
+        "id": "feishu",
+        "label": "Feishu/Lark",
+        "status": "connected" if status.get("configured") else "not_connected",
+        "detail": detail,
+    }
 
 
 def _preference_cards(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:

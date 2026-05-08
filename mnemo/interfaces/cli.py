@@ -19,7 +19,13 @@ from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps, loads
 from ..core.models import PROMPT_MODES, RunRequest
 from ..evals import EvalHarness, list_suites, list_variants, replay_summary
-from ..channels import FeishuChannelConfig, serve_feishu
+from ..channels import (
+    FeishuChannelConfig,
+    feishu_channel_status,
+    load_feishu_saved_config,
+    run_feishu_qr_onboarding,
+    serve_feishu,
+)
 from ..memory import MemoryEngine
 from ..mcp import MnemoMcpServer, mcp_server_config
 from ..providers import (
@@ -481,12 +487,27 @@ def build_parser() -> argparse.ArgumentParser:
     channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
     feishu_parser = channels_subparsers.add_parser("feishu", help="Run the Feishu/Lark channel")
     feishu_subparsers = feishu_parser.add_subparsers(dest="feishu_command")
+    feishu_onboard_parser = feishu_subparsers.add_parser(
+        "onboard",
+        help="Create and save a Feishu/Lark bot by QR scan",
+        description=(
+            "Start Feishu/Lark scan-to-create onboarding. The returned app secret is saved "
+            "to a state-local 0600 config file and is not printed."
+        ),
+    )
+    _add_state_dir(feishu_onboard_parser)
+    feishu_onboard_parser.add_argument("--domain", choices=["feishu", "lark"], default=os.environ.get("FEISHU_DOMAIN", "feishu"))
+    feishu_onboard_parser.add_argument("--timeout-s", type=int, default=600, help="QR polling timeout in seconds")
+    feishu_onboard_parser.add_argument("--json", action="store_true", help="Print compact JSON result")
+    feishu_status_parser = feishu_subparsers.add_parser("status", help="Show saved Feishu/Lark channel status")
+    _add_state_dir(feishu_status_parser)
+    feishu_status_parser.add_argument("--json", action="store_true", help="Print JSON")
     feishu_serve_parser = feishu_subparsers.add_parser(
         "serve",
         help="Serve a Feishu/Lark webhook channel",
         description=(
-            "Serve a Feishu/Lark webhook channel. Credentials resolve from flags or "
-            "FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_VERIFICATION_TOKEN, and FEISHU_ENCRYPT_KEY."
+            "Serve a Feishu/Lark webhook channel or websocket channel. Credentials resolve from flags, "
+            "environment variables, or the saved config created by `mnemo channels feishu onboard`."
         ),
     )
     _add_state_dir(feishu_serve_parser)
@@ -496,7 +517,13 @@ def build_parser() -> argparse.ArgumentParser:
     feishu_serve_parser.add_argument("--path", default="/feishu/webhook")
     feishu_serve_parser.add_argument("--app-id", help="Feishu app id, or FEISHU_APP_ID")
     feishu_serve_parser.add_argument("--app-secret", help="Feishu app secret, or FEISHU_APP_SECRET")
-    feishu_serve_parser.add_argument("--domain", choices=["feishu", "lark"], default=os.environ.get("FEISHU_DOMAIN", "feishu"))
+    feishu_serve_parser.add_argument("--domain", choices=["feishu", "lark"], default=os.environ.get("FEISHU_DOMAIN") or None)
+    feishu_serve_parser.add_argument(
+        "--connection",
+        choices=["webhook", "websocket"],
+        default=os.environ.get("FEISHU_CONNECTION", ""),
+        help="Feishu transport: webhook or websocket. Saved QR config defaults to websocket.",
+    )
     feishu_serve_parser.add_argument("--api-base-url", help="Override Feishu API base URL for tests/proxies")
     feishu_serve_parser.add_argument("--verification-token", help="Webhook verification token, or FEISHU_VERIFICATION_TOKEN")
     feishu_serve_parser.add_argument("--encrypt-key", help="Webhook encrypt key used for signature checks, or FEISHU_ENCRYPT_KEY")
@@ -945,8 +972,32 @@ def _command_json(value: str) -> list[str]:
 
 
 def _cmd_channels(args: argparse.Namespace) -> int:
-    if args.channels_command != "feishu" or args.feishu_command != "serve":
-        raise MnemoError("channels command requires: feishu serve")
+    if args.channels_command != "feishu":
+        raise MnemoError("channels command requires: feishu")
+    if args.feishu_command == "onboard":
+        result = run_feishu_qr_onboarding(state_dir=args.state_dir, domain=args.domain, timeout_s=args.timeout_s)
+        if args.json:
+            print(dumps({"feishu": result}))
+            return 0
+        channel = result.get("channel", {}) if isinstance(result, dict) else {}
+        print("Feishu/Lark configured.")
+        print(f"Config: {channel.get('config_path', '')}")
+        print(f"Domain: {channel.get('domain', '')}")
+        print(f"Connection: {channel.get('connection', '')}")
+        return 0
+    if args.feishu_command == "status":
+        status = feishu_channel_status(args.state_dir)
+        if args.json:
+            print(dumps({"feishu": status}))
+            return 0
+        print(f"Configured: {str(bool(status.get('configured'))).lower()}")
+        print(f"Config: {status.get('config_path', '')}")
+        print(f"Domain: {status.get('domain', '') or '-'}")
+        print(f"Connection: {status.get('connection', '') or '-'}")
+        print(f"Bot: {status.get('bot_name', '') or status.get('bot_open_id', '') or '-'}")
+        return 0
+    if args.feishu_command != "serve":
+        raise MnemoError("channels command requires: feishu onboard, feishu status, or feishu serve")
     config = _feishu_channel_config_from_args(args)
     _validate_provider_config(config)
     serve_feishu(config)
@@ -955,12 +1006,13 @@ def _cmd_channels(args: argparse.Namespace) -> int:
 
 def _feishu_channel_config_from_args(args: argparse.Namespace) -> FeishuChannelConfig:
     runtime = _runtime_config_from_args(args)
-    app_id = _first_env_string(args.app_id, "FEISHU_APP_ID")
-    app_secret = _first_env_string(args.app_secret, "FEISHU_APP_SECRET")
+    saved = load_feishu_saved_config(runtime.state_dir)
+    app_id = _first_env_string(args.app_id, "FEISHU_APP_ID") or str(saved.get("app_id") or "")
+    app_secret = _first_env_string(args.app_secret, "FEISHU_APP_SECRET") or str(saved.get("app_secret") or "")
     if not app_id:
-        raise MnemoError("Feishu channel requires --app-id or FEISHU_APP_ID")
+        raise MnemoError("Feishu channel requires --app-id, FEISHU_APP_ID, or saved QR onboarding config")
     if not app_secret:
-        raise MnemoError("Feishu channel requires --app-secret or FEISHU_APP_SECRET")
+        raise MnemoError("Feishu channel requires --app-secret, FEISHU_APP_SECRET, or saved QR onboarding config")
     allowed_users = tuple(
         str(item).strip()
         for item in [
@@ -977,14 +1029,15 @@ def _feishu_channel_config_from_args(args: argparse.Namespace) -> FeishuChannelC
         path=args.path,
         app_id=app_id,
         app_secret=app_secret,
-        domain=args.domain,
+        domain=args.domain or str(saved.get("domain") or "feishu"),
+        connection=(args.connection or str(saved.get("connection") or "webhook")),
         api_base_url=args.api_base_url or os.environ.get("FEISHU_API_BASE_URL") or None,
         verification_token=_first_env_string(args.verification_token, "FEISHU_VERIFICATION_TOKEN"),
         encrypt_key=_first_env_string(args.encrypt_key, "FEISHU_ENCRYPT_KEY"),
         allowed_users=allowed_users,
         require_mention=not args.no_require_mention and _env_bool("FEISHU_REQUIRE_MENTION", True),
-        bot_open_id=_first_env_string(args.bot_open_id, "FEISHU_BOT_OPEN_ID"),
-        bot_name=_first_env_string(args.bot_name, "FEISHU_BOT_NAME"),
+        bot_open_id=_first_env_string(args.bot_open_id, "FEISHU_BOT_OPEN_ID") or str(saved.get("bot_open_id") or ""),
+        bot_name=_first_env_string(args.bot_name, "FEISHU_BOT_NAME") or str(saved.get("bot_name") or ""),
         provider=runtime.provider,
         base_url=runtime.base_url,
         model=runtime.model,

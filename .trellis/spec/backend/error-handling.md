@@ -25,7 +25,9 @@
 - HTTP: `POST /api/core/schedule-watch`, `POST /api/core/schedule-cron`
 - HTTP: `POST /api/core/runtime-status`
 - CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
-- CLI: `mnemo channels feishu serve [--app-id APP_ID|FEISHU_APP_ID] [--app-secret APP_SECRET|FEISHU_APP_SECRET] [--verification-token TOKEN|FEISHU_VERIFICATION_TOKEN] [--encrypt-key KEY|FEISHU_ENCRYPT_KEY] [--state-dir DIR]`
+- CLI: `mnemo channels feishu onboard [--domain feishu|lark] [--timeout-s S] [--state-dir DIR] [--json]`
+- CLI: `mnemo channels feishu status [--state-dir DIR] [--json]`
+- CLI: `mnemo channels feishu serve [--connection webhook|websocket] [--app-id APP_ID|FEISHU_APP_ID] [--app-secret APP_SECRET|FEISHU_APP_SECRET] [--verification-token TOKEN|FEISHU_VERIFICATION_TOKEN] [--encrypt-key KEY|FEISHU_ENCRYPT_KEY] [--state-dir DIR]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
@@ -75,7 +77,9 @@
 - `mnemo api capsule` normalizes service validation errors this way; argparse handles missing required `TASK`.
 - `mnemo api external-run` normalizes invalid command JSON, invalid command arrays, timeout, process start, and non-zero external command failures this way; external stdout/stderr bodies are compacted and not printed by default.
 - `mnemo mcp config` is read-only, validates a non-empty server command, and emits compact client config without credentials or raw tool schemas.
-- `mnemo channels feishu serve` validates required app credentials at the CLI boundary and must not print app secrets.
+- `mnemo channels feishu onboard` normalizes registration failures, denials, expired QR sessions, and timeouts to compact `mnemo:` errors and must not print app secrets.
+- `mnemo channels feishu status` is read-only and prints masked saved config metadata only.
+- `mnemo channels feishu serve` validates required app credentials from flags, env, or saved QR config at the CLI boundary and must not print app secrets.
 - Feishu webhook errors are compact HTTP responses: invalid JSON returns 400 JSON, invalid verification token/signature returns 401 text, unsupported encrypted payloads return 400 JSON, and duplicate callbacks return 200 JSON without re-running Mnemo.
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
@@ -138,6 +142,7 @@
 | HTTP runtime status errors | Invalid `limit` returns compact JSON 400 without traceback | `tests/test_web.py` |
 | MCP config output | CLI returns compact generic/Claude stdio config without raw tool schemas | `tests/test_cli.py` |
 | Feishu channel missing credentials | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Feishu QR onboarding status | CLI/Web return compact masked status without app secret | `tests/test_cli.py`, `tests/test_web.py` |
 | Feishu webhook auth errors | Token/signature failures return compact HTTP 401 without running Mnemo | `tests/test_channels.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |

@@ -11,7 +11,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from mnemo.channels import FeishuChannelConfig, build_feishu_server
+from mnemo.channels import (
+    FeishuChannelConfig,
+    build_feishu_server,
+    feishu_channel_status,
+    load_feishu_saved_config,
+    poll_feishu_qr_onboarding,
+    save_feishu_saved_config,
+    start_feishu_qr_onboarding,
+)
 from mnemo.core.jsonutil import dumps
 
 
@@ -119,6 +127,45 @@ class FeishuChannelTests(unittest.TestCase):
             self.assertTrue(service.wait_for_idle(timeout_s=5.0))
             server.server_close()
 
+    def test_feishu_qr_onboarding_start_poll_and_save(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with FakeFeishuOnboardServer() as onboard, FakeFeishuApiServer() as api:
+                session = start_feishu_qr_onboarding(accounts_base_url=onboard.base_url, now=1000.0)
+                self.assertTrue(session.device_code.startswith("dc_"))
+                self.assertIn("from=mnemo", session.qr_url)
+                first = poll_feishu_qr_onboarding(
+                    session,
+                    state_dir=tmp,
+                    accounts_base_url=onboard.base_url,
+                    api_base_url=api.base_url,
+                    now=1001.0,
+                    save=True,
+                )
+                self.assertEqual(first["status"], "pending")
+                second = poll_feishu_qr_onboarding(
+                    session,
+                    state_dir=tmp,
+                    accounts_base_url=onboard.base_url,
+                    api_base_url=api.base_url,
+                    now=1002.0,
+                    save=True,
+                )
+                self.assertEqual(second["status"], "configured")
+                self.assertEqual(second["channel"]["connection"], "websocket")
+                self.assertNotIn("secret_test", json.dumps(second, ensure_ascii=False))
+                saved = load_feishu_saved_config(tmp)
+                self.assertEqual(saved["app_id"], "cli_test")
+                self.assertEqual(saved["app_secret"], "secret_test")
+                self.assertEqual(saved["bot_name"], "MnemoBot")
+                status = feishu_channel_status(tmp)
+                self.assertEqual(status["bot_name"], "MnemoBot")
+                self.assertNotIn("secret_test", json.dumps(status, ensure_ascii=False))
+
+    def test_feishu_saved_config_requires_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(Exception):
+                save_feishu_saved_config(tmp, {"app_id": "cli_only"})
+
 
 def _message_payload(*, text: str = "hello", token: str = "verify-token") -> dict[str, Any]:
     return {
@@ -203,6 +250,14 @@ class FakeFeishuApiServer:
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                path = self.path.split("?", 1)[0]
+                fake.requests.append({"path": path, "headers": dict(self.headers), "body": {}})
+                if path == "/open-apis/bot/v3/info":
+                    self._send_json({"code": 0, "bot": {"app_name": "MnemoBot", "open_id": "ou_bot"}})
+                    return
+                self._send_json({"code": 404, "msg": "not found"}, status=404)
+
             def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = self.rfile.read(length).decode("utf-8")
@@ -224,6 +279,83 @@ class FakeFeishuApiServer:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def log_message(self, format: str, *args: Any) -> None:
+                return None
+
+        return Handler
+
+
+class FakeFeishuOnboardServer:
+    def __init__(self) -> None:
+        self.poll_count = 0
+        self.requests: list[dict[str, Any]] = []
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    @property
+    def base_url(self) -> str:
+        host, port = self.server.server_address
+        return f"http://{host}:{port}"
+
+    def __enter__(self) -> FakeFeishuOnboardServer:
+        self.thread.start()
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=1)
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        fake = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                fields = dict(item.split("=", 1) for item in body.split("&") if "=" in item)
+                action = fields.get("action")
+                fake.requests.append({"path": self.path, "fields": fields})
+                if self.path != "/oauth/v1/app/registration":
+                    self._send_json({"error": "not_found"}, status=404)
+                    return
+                if action == "init":
+                    self._send_json({"supported_auth_methods": ["client_secret"]})
+                    return
+                if action == "begin":
+                    self._send_json(
+                        {
+                            "device_code": "dc_test",
+                            "verification_uri_complete": "https://accounts.feishu.cn/qr/test",
+                            "user_code": "ABCD",
+                            "interval": 1,
+                            "expire_in": 600,
+                        }
+                    )
+                    return
+                if action == "poll":
+                    fake.poll_count += 1
+                    if fake.poll_count == 1:
+                        self._send_json({"error": "authorization_pending"})
+                    else:
+                        self._send_json(
+                            {
+                                "client_id": "cli_test",
+                                "client_secret": "secret_test",
+                                "user_info": {"open_id": "ou_owner", "tenant_brand": "feishu"},
+                            }
+                        )
+                    return
+                self._send_json({"error": "bad_action"}, status=400)
+
+            def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
+                raw = dumps(payload).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
 
             def log_message(self, format: str, *args: Any) -> None:
                 return None

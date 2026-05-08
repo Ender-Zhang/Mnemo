@@ -261,18 +261,31 @@
 
 ### 1. Scope / Trigger
 - Trigger: changes to `mnemo/channels/feishu.py`, `mnemo channels feishu ...`, or Feishu/Lark webhook payload handling.
-- Goal: let external chat messages enter the existing Mnemo runtime without introducing a second agent loop or storing provider/channel secrets.
+- Goal: let external chat messages enter the existing Mnemo runtime without introducing a second agent loop, while keeping channel secrets local and masked.
 
 ### 2. Signatures
 - `mnemo.channels.FeishuChannelConfig(...)`
+- `mnemo.channels.start_feishu_qr_onboarding(domain="feishu") -> FeishuQrOnboardSession`
+- `mnemo.channels.poll_feishu_qr_onboarding(session, state_dir=..., save=True) -> dict[str, Any]`
+- `mnemo.channels.feishu_channel_status(state_dir) -> dict[str, Any]`
 - `mnemo.channels.build_feishu_server(config: FeishuChannelConfig) -> ThreadingHTTPServer`
 - `mnemo.channels.serve_feishu(config: FeishuChannelConfig) -> None`
-- CLI: `mnemo channels feishu serve [--host HOST] [--port PORT] [--path PATH] [--state-dir DIR] [--workspace-root DIR] [--provider local|openai-compatible|anthropic] [--base-url URL] [--model MODEL] [--api-key-env ENV]`
+- CLI: `mnemo channels feishu onboard [--domain feishu|lark] [--timeout-s S] [--state-dir DIR] [--json]`
+- CLI: `mnemo channels feishu status [--state-dir DIR] [--json]`
+- CLI: `mnemo channels feishu serve [--connection webhook|websocket] [--host HOST] [--port PORT] [--path PATH] [--state-dir DIR] [--workspace-root DIR] [--provider local|openai-compatible|anthropic] [--base-url URL] [--model MODEL] [--api-key-env ENV]`
+- HTTP: `GET /api/channels/feishu`
+- HTTP: `POST /api/channels/feishu/onboard/start`
+- HTTP: `POST /api/channels/feishu/onboard/poll`
 
 ### 3. Contracts
 - Feishu webhook mode is a transport facade over `run_local()` / `run_provider()`; it must not duplicate prompt assembly, memory, tools, or provider orchestration.
 - Feishu credentials resolve from explicit flags or environment variables: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_VERIFICATION_TOKEN`, `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, `FEISHU_BOT_NAME`, and optional `FEISHU_API_BASE_URL`.
-- Secrets must not be persisted, logged, returned in JSON, or printed by CLI help beyond variable names.
+- QR onboarding uses Feishu/Lark app registration device flow, requests `PersonalAgent` with `client_secret` auth, and stores the returned app credentials in `<state_dir>/channels/feishu_config.json`.
+- The saved Feishu config is the only channel secret persistence exception; it must be state-local, mode `0600` where supported, and never returned unmasked through Web/CLI status payloads.
+- Non-QR secrets must not be persisted, logged, returned in JSON, or printed by CLI help beyond variable names.
+- Saved QR credentials may be used by `mnemo channels feishu serve` when flags/env vars are absent.
+- Web onboarding sessions live in process memory; `/start` returns a QR URL plus optional SVG data, and `/poll` saves credentials only after Feishu returns a completed registration.
+- Websocket mode is allowed when optional Feishu dependencies are installed; it still routes events into the same `FeishuChannelService`.
 - URL verification payloads (`type=url_verification`) return `{ "challenge": ... }` before token/signature checks so Feishu subscription setup works.
 - When configured, verification-token and signature checks use timing-safe comparison and return compact `401` responses on failure.
 - Encrypted webhook payloads are rejected with compact JSON until a dependency-free decrypt path is added.
@@ -290,17 +303,21 @@
 | Invalid token/signature | Returns compact 401 without running Mnemo | `tests/test_channels.py` |
 | Duplicate callback | Returns duplicate acknowledgement and sends no second reply | `tests/test_channels.py` |
 | Valid text message | Runs Mnemo and sends one Feishu text reply | `tests/test_channels.py` |
+| QR onboarding success | Starts registration, polls credentials, probes bot metadata, and saves masked status | `tests/test_channels.py` |
+| Web onboarding API | Starts/polls a session and never returns app secret | `tests/test_web.py` |
 | Missing app credentials | CLI exits with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Package install | Installed wheel exposes `mnemo.channels.FeishuChannelConfig` and `build_feishu_server` | `tests/package_install_smoke.py` |
 
 ### 5. Good/Base/Bad Cases
-- Good: keep Feishu parsing, auth checks, and outbound API calls inside `mnemo/channels/feishu.py`.
+- Good: keep Feishu parsing, QR registration, auth checks, and outbound API calls inside `mnemo/channels/feishu.py`.
 - Good: use provider/runtime config resolution shared by the CLI, then call `run_provider()` or `run_local()`.
 - Base: webhook mode is enough for Cloudflare Tunnel or another HTTPS reverse proxy.
-- Bad: storing `FEISHU_APP_SECRET` in Mnemo settings or state files.
+- Base: QR scan-to-create defaults to websocket because it avoids manual webhook callback setup.
+- Bad: storing `FEISHU_APP_SECRET` in Web settings, browser storage, logs, or unmasked status payloads.
 - Bad: running a provider call synchronously before acknowledging Feishu's webhook callback.
 
 ### 6. Tests Required
 - Channel tests for challenge, token/signature failure, dedup, background runtime processing, outbound send shape, and session continuity file.
-- CLI tests for help text and missing credential errors.
+- Channel/Web tests for QR onboarding, saved config status, and no secret leakage in status payloads.
+- CLI tests for help text, status output, and missing credential errors.
 - Install script syntax checks and package smoke import coverage.

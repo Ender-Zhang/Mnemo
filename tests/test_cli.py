@@ -30,7 +30,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(help_result.returncode, 0)
         self.assertIn("Serve a Feishu/Lark webhook channel", help_result.stdout)
         self.assertIn("FEISHU_APP_ID", help_result.stdout)
+        self.assertIn("--connection", help_result.stdout)
         self.assertIn("--no-require-mention", help_result.stdout)
+        onboard_help = _run_cli(["channels", "feishu", "onboard", "--help"])
+        self.assertEqual(onboard_help.returncode, 0)
+        self.assertIn("scan-to-create", onboard_help.stdout)
 
         with tempfile.TemporaryDirectory() as tmp:
             missing = _run_cli(
@@ -42,7 +46,11 @@ class CliTests(unittest.TestCase):
                 },
             )
             self.assertNotEqual(missing.returncode, 0)
-            self.assertIn("Feishu channel requires --app-id or FEISHU_APP_ID", missing.stderr)
+            self.assertIn("Feishu channel requires --app-id, FEISHU_APP_ID, or saved QR onboarding config", missing.stderr)
+
+            status = _run_cli(["channels", "feishu", "status", "--state-dir", tmp, "--json"])
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertFalse(json.loads(status.stdout)["feishu"]["configured"])
 
     def test_init_and_run_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

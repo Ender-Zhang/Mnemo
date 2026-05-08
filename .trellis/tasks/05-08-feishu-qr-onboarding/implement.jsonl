@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "channel and web API placement"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI and onboarding error contracts"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "Feishu channel contract"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "settings onboarding UI"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "settings payload and volatile onboarding state"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "cross-layer QR flow"}

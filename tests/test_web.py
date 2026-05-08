@@ -770,6 +770,71 @@ print(json.dumps({
             self.assertEqual(secret_status, 400)
             self.assertIn("api_key cannot be stored", json.loads(secret_body)["error"])
 
+    def test_web_feishu_onboarding_api_and_settings_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            session = web_module.FeishuQrOnboardSession(
+                session_id="feishu_onboard_test",
+                device_code="dc_test",
+                qr_url="https://accounts.feishu.cn/qr/test",
+                user_code="ABCD",
+                interval_s=1,
+                expires_at=9999999999.0,
+                domain="feishu",
+            )
+
+            def fake_poll(seen_session, *, state_dir, save):
+                self.assertEqual(seen_session.session_id, session.session_id)
+                return {
+                    "status": "configured",
+                    "credentials": {"app_id": "cli_...test", "domain": "feishu"},
+                    "channel": {
+                        "configured": True,
+                        "config_path": str(Path(state_dir) / "channels" / "feishu_config.json"),
+                        "domain": "feishu",
+                        "connection": "websocket",
+                        "app_id": "cli_...test",
+                        "bot_name": "MnemoBot",
+                    },
+                }
+
+            original_start = web_module.start_feishu_qr_onboarding
+            original_poll = web_module.poll_feishu_qr_onboarding
+            try:
+                web_module.start_feishu_qr_onboarding = lambda domain="feishu": session
+                web_module.poll_feishu_qr_onboarding = fake_poll
+                with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                    status, _, body = server.request("GET", "/api/channels/feishu")
+                    start_status, _, start_body = server.request(
+                        "POST",
+                        "/api/channels/feishu/onboard/start",
+                        {"domain": "feishu"},
+                    )
+                    poll_status, _, poll_body = server.request(
+                        "POST",
+                        "/api/channels/feishu/onboard/poll",
+                        {"session_id": session.session_id},
+                    )
+                    missing_status, _, missing_body = server.request(
+                        "POST",
+                        "/api/channels/feishu/onboard/poll",
+                        {"session_id": "missing"},
+                    )
+            finally:
+                web_module.start_feishu_qr_onboarding = original_start
+                web_module.poll_feishu_qr_onboarding = original_poll
+
+            self.assertEqual(status, 200)
+            self.assertFalse(json.loads(body)["feishu"]["configured"])
+            self.assertEqual(start_status, 200)
+            started = json.loads(start_body)
+            self.assertEqual(started["status"], "pending")
+            self.assertEqual(started["session"]["session_id"], session.session_id)
+            self.assertIn("qr_url", started["session"])
+            self.assertEqual(poll_status, 200)
+            self.assertEqual(json.loads(poll_body)["status"], "configured")
+            self.assertEqual(missing_status, 404)
+            self.assertIn("not found", json.loads(missing_body)["error"])
+
     def test_web_catalog_api_returns_compact_skills_and_tools(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1197,6 +1262,8 @@ print(json.dumps({
                 self.assertNotIn('id="memoryMarkdownModal"', html)
                 self.assertIn('id="settingsProviderForm"', html)
                 self.assertIn('id="providerTiles"', html)
+                self.assertIn('id="feishuOnboardStart"', html)
+                self.assertIn('id="feishuOnboardPanel"', html)
                 self.assertIn("data-close-sheet", html)
                 self.assertIn('class="sheet-backdrop"', html)
                 self.assertIn('id="attachButton"', html)
@@ -1221,6 +1288,9 @@ print(json.dumps({
                 self.assertIn("openMemoryMarkdown", script)
                 self.assertIn("renderSettings", script)
                 self.assertIn("renderProviderTiles", script)
+                self.assertIn("startFeishuOnboarding", script)
+                self.assertIn("/api/channels/feishu/onboard/start", script)
+                self.assertIn("/api/channels/feishu/onboard/poll", script)
                 self.assertIn("providerTile", script)
                 self.assertIn("viewFromLocation", script)
                 self.assertIn("hashchange", script)
@@ -1275,6 +1345,7 @@ print(json.dumps({
                 self.assertIn("memory-index", css)
                 self.assertIn("memory-dimension-card", css)
                 self.assertIn("settings-card", css)
+                self.assertIn("feishu-onboard-panel", css)
                 self.assertIn("provider-tile", css)
                 self.assertIn("memory-markdown-panel", css)
                 self.assertIn("sheet-close", css)
@@ -1443,6 +1514,8 @@ print(json.dumps({
                 self.assertIn('id="settingBaseUrl"', html)
                 self.assertIn('id="settingApiKeyEnv"', html)
                 self.assertIn('id="settingMaxToolRounds"', html)
+                self.assertIn('id="feishuStatus"', html)
+                self.assertIn('id="feishuDomain"', html)
                 self.assertIn("记忆 Wiki", html)
                 self.assertIn('class="memory-index"', html)
                 self.assertIn('class="memory-browser"', html)
@@ -1470,6 +1543,8 @@ print(json.dumps({
                 self.assertIn("saveSettings", script)
                 self.assertIn("payload.runtime", script)
                 self.assertIn("max_tool_rounds", script)
+                self.assertIn("renderFeishuStatus", script)
+                self.assertIn("pollFeishuOnboarding", script)
                 self.assertIn("quiet_hours", script)
                 self.assertIn("/api/memory/ontology", script)
                 self.assertIn("/api/memory/dimension", script)
@@ -1509,6 +1584,7 @@ print(json.dumps({
                 self.assertIn("查看 Wiki", script)
                 self.assertIn("settings-layout", css)
                 self.assertIn("settings-card", css)
+                self.assertIn("feishu-status", css)
                 self.assertIn("memory-index", css)
                 self.assertIn("memory-browser", css)
                 self.assertIn("memory-browser-grid", css)

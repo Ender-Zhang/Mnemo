@@ -49,7 +49,8 @@ Options:
 After installing:
   mnemo --version
   mnemo web --state-dir ~/.mnemo
-  mnemo channels feishu serve --state-dir ~/.mnemo --host 0.0.0.0 --port 8771
+  mnemo channels feishu onboard --state-dir ~/.mnemo
+  mnemo channels feishu serve --state-dir ~/.mnemo --connection websocket
 EOF
 }
 
@@ -139,7 +140,10 @@ log "Creating virtual environment"
 
 log "Installing Mnemo"
 "$INSTALL_DIR/venv/bin/python" -m pip install --upgrade pip setuptools wheel >/dev/null
-"$INSTALL_DIR/venv/bin/python" -m pip install -e "$INSTALL_DIR"
+if ! "$INSTALL_DIR/venv/bin/python" -m pip install -e "$INSTALL_DIR[feishu]"; then
+  echo "Feishu optional dependencies failed to install; installing core Mnemo only"
+  "$INSTALL_DIR/venv/bin/python" -m pip install -e "$INSTALL_DIR"
+fi
 
 mkdir -p "$BIN_DIR"
 ln -sf "$INSTALL_DIR/venv/bin/mnemo" "$BIN_DIR/mnemo"
@@ -164,14 +168,15 @@ Next:
   1. Start the web UI:
      $BIN_DIR/mnemo web --state-dir "$STATE_DIR"
 
-  2. Connect Feishu/Lark via webhook:
+  2. Connect Feishu/Lark by QR scan:
+     $BIN_DIR/mnemo channels feishu onboard --state-dir "$STATE_DIR"
+     $BIN_DIR/mnemo channels feishu serve --state-dir "$STATE_DIR" --connection websocket
+
+  Existing apps still work via webhook:
      export FEISHU_APP_ID=cli_xxx
      export FEISHU_APP_SECRET=...
-     export FEISHU_VERIFICATION_TOKEN=...
      $BIN_DIR/mnemo channels feishu serve --state-dir "$STATE_DIR" --host 0.0.0.0 --port 8771
-
-  Feishu webhook path:
-     /feishu/webhook
+     webhook path: /feishu/webhook
 EOF
 fi
 

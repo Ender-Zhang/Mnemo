@@ -36,6 +36,7 @@
 - Learning chips are reserved for exceptional review-gated memory candidates and resolve or undo memory candidates through `/api/learning/memory`.
 - Learning chips with `requires_confirmation=true` should use review wording, not routine confirmation wording, before durable memory promotion.
 - The settings view renders compact connected-app, permission, quiet-hours, runtime provider/model, preference, and data-control summaries from `/api/settings`.
+- Feishu/Lark onboarding belongs in the settings view as a compact connected-app control; it may show a QR code/link and masked channel status, but never app secrets.
 - Skills and Tools views render compact `/api/catalog` cards; Skills must not display full skill bodies, and Tools must not display raw provider input schemas.
 - Settings provider tiles may prefill the Provider form, but they must not save runtime changes until the normal settings submit path runs.
 - Runtime provider settings include bounded operational controls such as timeout, retry count/backoff, and `max_tool_rounds`; these controls must stay in the settings view and must not create a separate task execution surface.
@@ -68,6 +69,7 @@
 | Learning chip | Shows compact review text, accept/this-turn/reject, and post-resolution undo actions for exceptional review-gated memory | `tests/test_web.py`, `tests/test_runtime.py` |
 | Skills/tools catalog | Shows read-only compact catalog cards, local filters, and no skill bodies or raw tool schemas | `tests/test_web.py` |
 | Settings page | Shows compact low-frequency settings, saves quiet hours and runtime provider preferences, including `max_tool_rounds`, without raw secrets | `tests/test_web.py` |
+| Feishu onboarding controls | Show QR onboarding state and masked channel status without browser-persisted secrets | `tests/test_web.py` |
 | Memory compass page | Loads compact L1 coverage, then L2/L3 memory detail and markdown on demand without raw secrets | `tests/test_web.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
 | Activity upsert | Merges action lifecycle events into a stable row | Asset behavior in `tests/test_web.py` |
@@ -112,6 +114,7 @@
 - For recall cards, assert repeated title/summary text is compacted.
 - For learning actions, assert the asset calls `/api/learning/memory`, disables buttons while resolving, exposes post-resolution undo, and uses review wording for review-gated items.
 - For settings, assert the asset calls `/api/settings`, renders the settings view, saves provider/runtime and quiet-hours settings, and never exposes raw provider secrets.
+- For Feishu onboarding, assert the asset calls `/api/channels/feishu/onboard/start` and `/api/channels/feishu/onboard/poll`, renders masked status, and does not add localStorage keys for channel secrets.
 - For skills/tools catalogs, assert the asset calls `/api/catalog`, renders Skills and Tools views, and never exposes skill bodies or raw tool schemas.
 - For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory Wiki assets expose progressive L1/L2/L3 disclosure with in-page markdown detail viewing.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.

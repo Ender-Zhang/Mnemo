@@ -34,6 +34,9 @@
 - API response: accepted tool approvals may include compact `{ "tool_result": { "tool": string, "ok": boolean, "summary": string } }`.
 - API: `POST /api/learning/memory` with JSON `{ "candidate_id": string, "action": "accept"|"this_time"|"reject"|"undo" }`
 - API: `GET /api/settings`
+- API: `GET /api/channels/feishu` returns compact masked Feishu/Lark channel status.
+- API: `POST /api/channels/feishu/onboard/start` starts a process-local QR onboarding session and returns `{ status, session }` with QR URL/SVG data but no app secret.
+- API: `POST /api/channels/feishu/onboard/poll` polls one QR onboarding session and returns pending/configured/denied/expired status without app secret.
 - API: `GET /api/catalog` returns compact `skills`, compact `tools`, `tool_bundle` metadata, and counts without skill bodies or raw provider tool schemas.
 - API: `POST /api/settings` with JSON `{ "quiet_hours"?: { "enabled": boolean, "start": "HH:MM", "end": "HH:MM", "timezone"?: string }, "runtime"?: { "provider"?: string, "model"?: string, "base_url"?: string, "api_key_env"?: string, "timeout_s"?: number, "retry_count"?: number, "retry_backoff_s"?: number, "max_tool_rounds"?: number } }`
 - API: `GET /api/memory/ontology` returns L1 compact ten-dimensional memory counts, short summaries, and per-dimension drill-down URLs.
@@ -68,6 +71,8 @@
 - Learning chips resolve or undo persisted review-gated memory candidates by id and keep status local to the card.
 - Review-gated learning chips use `requires_confirmation` only for local presentation; they do not add browser persistence keys or a separate workflow.
 - `/api/settings` can seed read-only chat glance cards on page load and hydrate the settings view on open; it is not persisted in browser storage except lightweight local UI toggles.
+- Feishu onboarding state is volatile browser state only: a session id and timer may live in memory while the settings view is open, but must not be persisted in browser storage.
+- Feishu channel status may be shown in settings and connected-app summaries, but app secrets must never be returned to or stored by the browser.
 - `/api/catalog` hydrates read-only Skills and Tools views and is cached only in volatile browser state; it must not add browser persistence keys.
 - Skills and Tools catalog views may filter the already loaded compact cards locally, but full skill bodies and raw tool input schemas stay behind explicit backend/tool surfaces.
 - Settings view can update quiet hours and runtime provider preferences through `/api/settings`; raw API keys must never be sent or stored, only an environment variable name.
@@ -106,6 +111,7 @@
 | Normal learning candidate | Ordinary memory/skill/tool/eval candidate writes remain background events without visible confirmation chips | `tests/test_runtime.py` |
 | Learning memory action | Promotes, rejects, or undoes a persisted memory candidate and renders review-gated candidates as review chips | `tests/test_web.py`, `tests/test_runtime.py` |
 | Settings summary | Returns compact connected app, permission, quiet-hours, runtime, preference, and data-control data without secrets | `tests/test_web.py` |
+| Feishu onboarding | Settings API exposes masked Feishu status and QR onboarding start/poll without app secrets | `tests/test_web.py` |
 | Skills/tools catalog | Returns compact skills/tools and frontend renders read-only catalog pages without bodies or schemas | `tests/test_web.py` |
 | Settings update | Saves valid quiet-hours/runtime settings and rejects invalid time or secret-bearing payloads with JSON errors | `tests/test_web.py` |
 | Settings asset | Opens a settings view and preloads settings through `/api/settings` | `tests/test_web.py` |
@@ -170,6 +176,7 @@
 - Memory dimension and item APIs cover L2/L3 on-demand disclosure.
 - Settings API covers summary, quiet-hours update, runtime provider update, invalid time/secret errors, and no secret leakage.
 - Frontend asset includes settings view hooks and runtime provider controls.
+- Frontend asset includes Feishu onboarding controls, start/poll API calls, and no browser persistence keys for onboarding sessions.
 - Frontend asset includes Skills/Tools view hooks and `/api/catalog` loading.
 - Run cancel API covers success, missing id, unknown id, and frontend stop-control asset hooks.
 
