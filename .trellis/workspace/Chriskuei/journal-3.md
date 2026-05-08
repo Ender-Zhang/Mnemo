@@ -180,3 +180,36 @@ Added a structure-only evidence gate before after-turn provider learning reflect
 ### Next Steps
 
 - None - task complete
+
+
+## Session 120: Feishu channel and one-click install
+
+**Date**: 2026-05-08
+**Task**: Feishu channel and one-click install
+**Branch**: `main`
+
+### Summary
+
+Added dependency-light Feishu/Lark webhook channel, one-click installer, docs/notices/spec contracts, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6a14438` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
