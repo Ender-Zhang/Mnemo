@@ -25,6 +25,25 @@ class CliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0)
         self.assertIn("Mnemo personal AI runtime", completed.stdout)
 
+    def test_channels_feishu_help_and_validation(self) -> None:
+        help_result = _run_cli(["channels", "feishu", "serve", "--help"])
+        self.assertEqual(help_result.returncode, 0)
+        self.assertIn("Serve a Feishu/Lark webhook channel", help_result.stdout)
+        self.assertIn("FEISHU_APP_ID", help_result.stdout)
+        self.assertIn("--no-require-mention", help_result.stdout)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = _run_cli(
+                ["channels", "feishu", "serve", "--state-dir", tmp],
+                env_overrides={
+                    "FEISHU_APP_ID": "",
+                    "FEISHU_APP_SECRET": "",
+                    "MNEMO_CONFIG": "",
+                },
+            )
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn("Feishu channel requires --app-id or FEISHU_APP_ID", missing.stderr)
+
     def test_init_and_run_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             init = _run_cli(["init", "--state-dir", tmp])

@@ -19,6 +19,7 @@ from ..core.events import chat_event_as_dict
 from ..core.jsonutil import dumps, loads
 from ..core.models import PROMPT_MODES, RunRequest
 from ..evals import EvalHarness, list_suites, list_variants, replay_summary
+from ..channels import FeishuChannelConfig, serve_feishu
 from ..memory import MemoryEngine
 from ..mcp import MnemoMcpServer, mcp_server_config
 from ..providers import (
@@ -102,6 +103,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _cmd_api(args)
         if args.command == "mcp":
             return _cmd_mcp(args)
+        if args.command == "channels":
+            return _cmd_channels(args)
         parser.print_help()
         return 0
     except MnemoError as exc:
@@ -473,6 +476,58 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Provider tool-call round budget, or MNEMO_MAX_TOOL_ROUNDS (default: {DEFAULT_MAX_TOOL_ROUNDS})",
     )
     web_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
+
+    channels_parser = subparsers.add_parser("channels", help="Run external messaging channels")
+    channels_subparsers = channels_parser.add_subparsers(dest="channels_command")
+    feishu_parser = channels_subparsers.add_parser("feishu", help="Run the Feishu/Lark channel")
+    feishu_subparsers = feishu_parser.add_subparsers(dest="feishu_command")
+    feishu_serve_parser = feishu_subparsers.add_parser(
+        "serve",
+        help="Serve a Feishu/Lark webhook channel",
+        description=(
+            "Serve a Feishu/Lark webhook channel. Credentials resolve from flags or "
+            "FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_VERIFICATION_TOKEN, and FEISHU_ENCRYPT_KEY."
+        ),
+    )
+    _add_state_dir(feishu_serve_parser)
+    _add_workspace_root(feishu_serve_parser)
+    feishu_serve_parser.add_argument("--host", default="127.0.0.1")
+    feishu_serve_parser.add_argument("--port", type=int, default=8771)
+    feishu_serve_parser.add_argument("--path", default="/feishu/webhook")
+    feishu_serve_parser.add_argument("--app-id", help="Feishu app id, or FEISHU_APP_ID")
+    feishu_serve_parser.add_argument("--app-secret", help="Feishu app secret, or FEISHU_APP_SECRET")
+    feishu_serve_parser.add_argument("--domain", choices=["feishu", "lark"], default=os.environ.get("FEISHU_DOMAIN", "feishu"))
+    feishu_serve_parser.add_argument("--api-base-url", help="Override Feishu API base URL for tests/proxies")
+    feishu_serve_parser.add_argument("--verification-token", help="Webhook verification token, or FEISHU_VERIFICATION_TOKEN")
+    feishu_serve_parser.add_argument("--encrypt-key", help="Webhook encrypt key used for signature checks, or FEISHU_ENCRYPT_KEY")
+    feishu_serve_parser.add_argument("--allowed-user", action="append", default=[], help="Allowed Feishu open_id/user_id/union_id. Repeatable.")
+    feishu_serve_parser.add_argument(
+        "--no-require-mention",
+        action="store_true",
+        help="Allow group messages without an @mention gate.",
+    )
+    feishu_serve_parser.add_argument("--bot-open-id", help="Bot open_id for group @mention checks, or FEISHU_BOT_OPEN_ID")
+    feishu_serve_parser.add_argument("--bot-name", help="Bot name fallback for group @mention checks, or FEISHU_BOT_NAME")
+    feishu_serve_parser.add_argument(
+        "--provider",
+        choices=["local", "openai-compatible", "anthropic"],
+        default=None,
+        help="Runtime provider (default: local, or MNEMO_PROVIDER)",
+    )
+    feishu_serve_parser.add_argument("--base-url", help="OpenAI-compatible base URL, or MNEMO_BASE_URL")
+    feishu_serve_parser.add_argument("--model", help="Provider model name, or MNEMO_MODEL")
+    feishu_serve_parser.add_argument("--api-key", help="Provider API key. Prefer --api-key-env for shell history safety.")
+    feishu_serve_parser.add_argument("--api-key-env", help="Environment variable containing provider API key.")
+    feishu_serve_parser.add_argument("--timeout-s", type=float, help="Provider and Feishu request timeout, or MNEMO_TIMEOUT_S")
+    feishu_serve_parser.add_argument("--retry-count", type=int, help="Provider non-streaming retry count, or MNEMO_RETRY_COUNT")
+    feishu_serve_parser.add_argument("--retry-backoff-s", type=float, help="Provider retry backoff seconds, or MNEMO_RETRY_BACKOFF_S")
+    feishu_serve_parser.add_argument(
+        "--max-tool-rounds",
+        type=int,
+        default=None,
+        help=f"Provider tool-call round budget, or MNEMO_MAX_TOOL_ROUNDS (default: {DEFAULT_MAX_TOOL_ROUNDS})",
+    )
+    feishu_serve_parser.add_argument("--config", help="Optional JSON config path, or MNEMO_CONFIG")
 
     harness_parser = subparsers.add_parser("harness", help="Run lightweight replay and eval harnesses")
     harness_subparsers = harness_parser.add_subparsers(dest="harness_command")
@@ -887,6 +942,72 @@ def _command_json(value: str) -> list[str]:
     if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
         raise MnemoError("--command-json must decode to an array of strings")
     return parsed
+
+
+def _cmd_channels(args: argparse.Namespace) -> int:
+    if args.channels_command != "feishu" or args.feishu_command != "serve":
+        raise MnemoError("channels command requires: feishu serve")
+    config = _feishu_channel_config_from_args(args)
+    _validate_provider_config(config)
+    serve_feishu(config)
+    return 0
+
+
+def _feishu_channel_config_from_args(args: argparse.Namespace) -> FeishuChannelConfig:
+    runtime = _runtime_config_from_args(args)
+    app_id = _first_env_string(args.app_id, "FEISHU_APP_ID")
+    app_secret = _first_env_string(args.app_secret, "FEISHU_APP_SECRET")
+    if not app_id:
+        raise MnemoError("Feishu channel requires --app-id or FEISHU_APP_ID")
+    if not app_secret:
+        raise MnemoError("Feishu channel requires --app-secret or FEISHU_APP_SECRET")
+    allowed_users = tuple(
+        str(item).strip()
+        for item in [
+            *getattr(args, "allowed_user", []),
+            *os.environ.get("FEISHU_ALLOWED_USERS", "").split(","),
+        ]
+        if str(item).strip()
+    )
+    return FeishuChannelConfig(
+        state_dir=runtime.state_dir,
+        workspace_root=args.workspace_root,
+        host=args.host,
+        port=args.port,
+        path=args.path,
+        app_id=app_id,
+        app_secret=app_secret,
+        domain=args.domain,
+        api_base_url=args.api_base_url or os.environ.get("FEISHU_API_BASE_URL") or None,
+        verification_token=_first_env_string(args.verification_token, "FEISHU_VERIFICATION_TOKEN"),
+        encrypt_key=_first_env_string(args.encrypt_key, "FEISHU_ENCRYPT_KEY"),
+        allowed_users=allowed_users,
+        require_mention=not args.no_require_mention and _env_bool("FEISHU_REQUIRE_MENTION", True),
+        bot_open_id=_first_env_string(args.bot_open_id, "FEISHU_BOT_OPEN_ID"),
+        bot_name=_first_env_string(args.bot_name, "FEISHU_BOT_NAME"),
+        provider=runtime.provider,
+        base_url=runtime.base_url,
+        model=runtime.model,
+        api_key=runtime.api_key,
+        api_key_env=runtime.api_key_env,
+        timeout_s=runtime.timeout_s,
+        retry_count=runtime.retry_count,
+        retry_backoff_s=runtime.retry_backoff_s,
+        max_tool_rounds=runtime.max_tool_rounds,
+    )
+
+
+def _first_env_string(value: str | None, env_name: str) -> str:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return os.environ.get(env_name, "").strip()
+
+
+def _env_bool(env_name: str, default: bool) -> bool:
+    raw = os.environ.get(env_name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

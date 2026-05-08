@@ -256,3 +256,51 @@
 - JSON-RPC tests for success, Content-Length framing, JSONL debug serving, and structured errors.
 - CLI tests for JSON output, config packaging, serve transport selection, and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.
+
+## Scenario: Feishu/Lark Messaging Channel
+
+### 1. Scope / Trigger
+- Trigger: changes to `mnemo/channels/feishu.py`, `mnemo channels feishu ...`, or Feishu/Lark webhook payload handling.
+- Goal: let external chat messages enter the existing Mnemo runtime without introducing a second agent loop or storing provider/channel secrets.
+
+### 2. Signatures
+- `mnemo.channels.FeishuChannelConfig(...)`
+- `mnemo.channels.build_feishu_server(config: FeishuChannelConfig) -> ThreadingHTTPServer`
+- `mnemo.channels.serve_feishu(config: FeishuChannelConfig) -> None`
+- CLI: `mnemo channels feishu serve [--host HOST] [--port PORT] [--path PATH] [--state-dir DIR] [--workspace-root DIR] [--provider local|openai-compatible|anthropic] [--base-url URL] [--model MODEL] [--api-key-env ENV]`
+
+### 3. Contracts
+- Feishu webhook mode is a transport facade over `run_local()` / `run_provider()`; it must not duplicate prompt assembly, memory, tools, or provider orchestration.
+- Feishu credentials resolve from explicit flags or environment variables: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_VERIFICATION_TOKEN`, `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, `FEISHU_BOT_NAME`, and optional `FEISHU_API_BASE_URL`.
+- Secrets must not be persisted, logged, returned in JSON, or printed by CLI help beyond variable names.
+- URL verification payloads (`type=url_verification`) return `{ "challenge": ... }` before token/signature checks so Feishu subscription setup works.
+- When configured, verification-token and signature checks use timing-safe comparison and return compact `401` responses on failure.
+- Encrypted webhook payloads are rejected with compact JSON until a dependency-free decrypt path is added.
+- Inbound `im.message.receive_v1` text messages are deduplicated by event/message id before runtime execution.
+- Message processing runs in a background thread and returns Feishu's webhook acknowledgement quickly; Feishu replies are sent through `/open-apis/im/v1/messages?receive_id_type=chat_id`.
+- Per-chat execution is serialized so a chat cannot overlap multiple Mnemo turns.
+- Feishu chat ids map to Mnemo conversation ids in state-local channel metadata so follow-up messages keep continuity.
+- Group messages honor the mention gate when `require_mention` is true and a bot identity is configured; DMs are accepted.
+- Allowed-user filtering compares Feishu open_id, user_id, and union_id.
+
+### 4. Validation & Error Matrix
+| Case | Expected Behavior | Test Point |
+| --- | --- | --- |
+| URL verification | Returns the challenge JSON | `tests/test_channels.py` |
+| Invalid token/signature | Returns compact 401 without running Mnemo | `tests/test_channels.py` |
+| Duplicate callback | Returns duplicate acknowledgement and sends no second reply | `tests/test_channels.py` |
+| Valid text message | Runs Mnemo and sends one Feishu text reply | `tests/test_channels.py` |
+| Missing app credentials | CLI exits with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Package install | Installed wheel exposes `mnemo.channels.FeishuChannelConfig` and `build_feishu_server` | `tests/package_install_smoke.py` |
+
+### 5. Good/Base/Bad Cases
+- Good: keep Feishu parsing, auth checks, and outbound API calls inside `mnemo/channels/feishu.py`.
+- Good: use provider/runtime config resolution shared by the CLI, then call `run_provider()` or `run_local()`.
+- Base: webhook mode is enough for Cloudflare Tunnel or another HTTPS reverse proxy.
+- Bad: storing `FEISHU_APP_SECRET` in Mnemo settings or state files.
+- Bad: running a provider call synchronously before acknowledging Feishu's webhook callback.
+
+### 6. Tests Required
+- Channel tests for challenge, token/signature failure, dedup, background runtime processing, outbound send shape, and session continuity file.
+- CLI tests for help text and missing credential errors.
+- Install script syntax checks and package smoke import coverage.

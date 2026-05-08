@@ -9,3 +9,10 @@ Mnemo's web tool split between compact `web_search` result metadata and page-ori
 - License: MIT License, Copyright (c) 2025 Nous Research
 
 Mnemo's implementation is stdlib-only and project-specific; no Hermes source code was copied.
+
+Mnemo's one-click installer and Feishu/Lark webhook channel were also informed by Hermes Agent's installation and gateway boundary patterns:
+
+- Reference files: `scripts/install.sh`, `gateway/platforms/feishu.py`
+- Patterns referenced: inherited Python environment sanitation, isolated venv command linking, Feishu URL verification, optional token/signature checks, callback deduplication, and background message processing.
+
+Mnemo's installer and Feishu channel are dependency-light, stdlib-oriented implementations routed through Mnemo runtime services; no Hermes source code was copied.

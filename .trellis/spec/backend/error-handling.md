@@ -25,6 +25,7 @@
 - HTTP: `POST /api/core/schedule-watch`, `POST /api/core/schedule-cron`
 - HTTP: `POST /api/core/runtime-status`
 - CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
+- CLI: `mnemo channels feishu serve [--app-id APP_ID|FEISHU_APP_ID] [--app-secret APP_SECRET|FEISHU_APP_SECRET] [--verification-token TOKEN|FEISHU_VERIFICATION_TOKEN] [--encrypt-key KEY|FEISHU_ENCRYPT_KEY] [--state-dir DIR]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
@@ -74,6 +75,8 @@
 - `mnemo api capsule` normalizes service validation errors this way; argparse handles missing required `TASK`.
 - `mnemo api external-run` normalizes invalid command JSON, invalid command arrays, timeout, process start, and non-zero external command failures this way; external stdout/stderr bodies are compacted and not printed by default.
 - `mnemo mcp config` is read-only, validates a non-empty server command, and emits compact client config without credentials or raw tool schemas.
+- `mnemo channels feishu serve` validates required app credentials at the CLI boundary and must not print app secrets.
+- Feishu webhook errors are compact HTTP responses: invalid JSON returns 400 JSON, invalid verification token/signature returns 401 text, unsupported encrypted payloads return 400 JSON, and duplicate callbacks return 200 JSON without re-running Mnemo.
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
 - `mnemo replay` and `mnemo harness replay` normalize unknown replay modes this way.
@@ -134,6 +137,8 @@
 | HTTP Watch/Cron schedule errors | Missing Watch target or invalid Cron `next_run_at` returns compact JSON 400 without traceback | `tests/test_web.py` |
 | HTTP runtime status errors | Invalid `limit` returns compact JSON 400 without traceback | `tests/test_web.py` |
 | MCP config output | CLI returns compact generic/Claude stdio config without raw tool schemas | `tests/test_cli.py` |
+| Feishu channel missing credentials | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
+| Feishu webhook auth errors | Token/signature failures return compact HTTP 401 without running Mnemo | `tests/test_channels.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Unknown replay mode | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -191,6 +196,7 @@
 - CLI memory health/decay/tombstone tests for compact output, replacement links, harmful eval routing, and missing ids without tracebacks.
 - CLI memory forget tests for compact private-delete output and missing ids without tracebacks.
 - CLI MCP config tests for compact JSON and readable client config output.
+- CLI/channel tests for Feishu credential validation and webhook auth failures.
 - CLI Dream report tests for missing ids without tracebacks.
 - CLI Dream action tests for valid action reports and invalid `--actions-json` without tracebacks.
 - CLI artifact read tests for missing ids without tracebacks.

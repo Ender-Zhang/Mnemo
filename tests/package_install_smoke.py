@@ -38,6 +38,7 @@ def _assert_not_source_import(package_file: Path) -> None:
 
 def main() -> int:
     import mnemo
+    from mnemo.channels import FeishuChannelConfig, build_feishu_server
     from mnemo.core.settings import load_user_settings
     from mnemo.interfaces.web import WebServerConfig, build_http_server
     from mnemo.mcp import MnemoMcpServer, mcp_server_config
@@ -49,8 +50,11 @@ def main() -> int:
     _assert_not_source_import(Path(sys.modules[MnemoMcpServer.__module__].__file__ or ""))
     _assert_not_source_import(Path(sys.modules[ScheduleService.__module__].__file__ or ""))
     _assert_not_source_import(Path(sys.modules[WebServerConfig.__module__].__file__ or ""))
+    _assert_not_source_import(Path(sys.modules[FeishuChannelConfig.__module__].__file__ or ""))
     if not callable(build_http_server):
         raise AssertionError("packaged web interface is missing HTTP server builder")
+    if not callable(build_feishu_server):
+        raise AssertionError("packaged Feishu channel is missing HTTP server builder")
 
     version = importlib.metadata.version("mnemo")
     if version != mnemo.__version__:

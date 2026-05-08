@@ -20,6 +20,7 @@ mnemo/
   evals/       deterministic harness suites
   sdk/         reference in-process integration API
   mcp/         MCP-style tool descriptors, calls, and JSON-RPC bridge
+  channels/    external messaging transports such as Feishu webhook adapters
   interfaces/  CLI and stdlib web server/static assets
 tests/         unittest test suite mirrored by behavior area
 design/        design package, not runtime code
@@ -33,6 +34,7 @@ design/        design package, not runtime code
 - Tool specs and handlers belong in `mnemo/tools/registry.py` or `mnemo/tools/standard.py`.
 - Domain services should stay close to their domain: memory in `mnemo/memory/`, skills in `mnemo/skills/`, prompt in `mnemo/prompt/`.
 - External integration facades belong in `mnemo/sdk/` or `mnemo/mcp/`; they should route into existing services instead of duplicating domain logic.
+- Messaging channel transports belong in `mnemo/channels/`; they should stay thin over existing runtime/provider services and expose CLI wiring from `mnemo/interfaces/cli.py`.
 - Tests use stdlib `unittest` and live in `tests/test_<area>.py`.
 
 ### 4. Validation & Error Matrix

@@ -18,6 +18,14 @@ The repository contains both the design package in `design/` and the runnable im
 
 ## Quick Start
 
+One-command install from a fresh machine:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Chriskuei/Mnemo/main/scripts/install.sh | bash
+```
+
+The installer creates an isolated venv under `~/.mnemo/mnemo`, links `mnemo` into `~/.local/bin`, and prints the next commands.
+
 ```bash
 python3.13 -m venv .venv
 . .venv/bin/activate
@@ -69,6 +77,27 @@ mnemo web --state-dir .mnemo --port 8765
 Open `http://127.0.0.1:8765`. The UI is intentionally one chat box: it streams responses, shows tool actions and actionable artifacts inline, preserves the active conversation/mission ids, can replay prior events, exposes low-frequency settings in a drawer, and can stop the current active run through cooperative cancellation.
 
 Provider-backed web runs accept the same provider flags as `mnemo run`.
+
+## Feishu/Lark Channel
+
+Mnemo can receive Feishu/Lark webhook events and reply in the same chat.
+
+```bash
+export FEISHU_APP_ID=cli_xxx
+export FEISHU_APP_SECRET=replace-me
+export FEISHU_VERIFICATION_TOKEN=replace-me
+
+mnemo channels feishu serve \
+  --state-dir .mnemo \
+  --host 0.0.0.0 \
+  --port 8771 \
+  --provider openai-compatible \
+  --base-url http://localhost:8000/v1 \
+  --model local-model \
+  --api-key-env MNEMO_API_KEY
+```
+
+Set the Feishu event subscription URL to `/feishu/webhook` on your public tunnel. Optional hardening knobs: `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, and `FEISHU_BOT_NAME`.
 
 ## Operations
 
@@ -170,3 +199,4 @@ CI also builds the package, installs the wheel outside the checkout, and runs `t
 ## Acknowledgments
 
 Web tool separation between compact search metadata and page fetch/extraction is acknowledged in `THIRD_PARTY_NOTICES.md`.
+The one-click installer and Feishu webhook channel explicitly reference safe boundary patterns from NousResearch Hermes Agent (`scripts/install.sh` and `gateway/platforms/feishu.py`) while keeping Mnemo's implementation dependency-light and routed through Mnemo runtime services.
