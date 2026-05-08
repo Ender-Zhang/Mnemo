@@ -41,6 +41,7 @@
 - Runtime provider settings include bounded operational controls such as timeout, retry count/backoff, and `max_tool_rounds`; these controls must stay in the settings view and must not create a separate task execution surface.
 - Settings provider tiles and the Provider select must stay visually synchronized before save.
 - Ten-dimensional memory inspection lives in the memory compass view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
+- Memory inspection should prioritize readable counts, coverage, dimension summaries, and selected item details; 3D or orbit visuals are supporting context and must not dominate the information layout.
 - The memory compass can mirror L1 dimensions as an orbit around the avatar, but orbit buttons must call the same L2 dimension loader and remain read-only.
 - Settings actions should save narrow settings only; ordinary user tasks still route through the single composer.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.

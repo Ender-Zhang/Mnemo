@@ -173,21 +173,56 @@
           </header>
 
           <div class="memory-layout">
-            <section class="avatar-panel">
-              <canvas id="memoryAvatar3d" class="memory-avatar-canvas" width="720" height="720" aria-label="三维记忆网络"></canvas>
-              <div id="memoryOrbit" class="memory-orbit" aria-label="十维记忆轨道"></div>
-              <div id="memoryStats" class="memory-stats"></div>
+            <section class="memory-sidebar" aria-label="记忆总览">
+              <section class="memory-overview-card">
+                <div class="memory-overview-head">
+                  <div>
+                    <p class="eyebrow">Overview</p>
+                    <h2>总览</h2>
+                  </div>
+                  <span id="memoryCountBadge" class="context-chip">未加载</span>
+                </div>
+                <div id="memoryStats" class="memory-stats"></div>
+                <div class="memory-coverage">
+                  <div class="memory-coverage-top">
+                    <span>维度覆盖</span>
+                    <strong id="memoryCoverageLabel">0/10</strong>
+                  </div>
+                  <span class="memory-coverage-track" aria-hidden="true">
+                    <span id="memoryCoverageFill"></span>
+                  </span>
+                </div>
+              </section>
+
+              <section class="memory-dimension-panel">
+                <div class="panel-heading compact">
+                  <div>
+                    <h2>维度索引</h2>
+                    <p>十个长期记忆维度。</p>
+                  </div>
+                </div>
+                <div id="memoryCompass" class="memory-compass"></div>
+              </section>
+
+              <section class="avatar-panel">
+                <header>
+                  <p class="eyebrow">Map</p>
+                  <h2>关系图</h2>
+                </header>
+                <canvas id="memoryAvatar3d" class="memory-avatar-canvas" width="720" height="720" aria-label="三维记忆网络"></canvas>
+                <div id="memoryOrbit" class="memory-orbit" aria-label="十维记忆轨道"></div>
+              </section>
             </section>
 
             <section class="memory-panel">
-              <div class="panel-heading">
+              <div class="panel-heading memory-focus-heading">
                 <div>
-                  <h2>罗盘总览</h2>
-                  <p>点击维度查看摘要与证据，单条记忆会在本页展开 Wiki Markdown。</p>
+                  <p class="eyebrow">Dimension</p>
+                  <h2 id="memoryActiveTitle">维度详情</h2>
+                  <p id="memoryActiveSummary">正在加载记忆。</p>
                 </div>
-                <span id="memoryCountBadge" class="context-chip">未加载</span>
+                <span id="memoryActiveMeta" class="context-chip muted">未选择</span>
               </div>
-              <div id="memoryCompass" class="memory-compass"></div>
               <div id="memoryLayerDetail" class="memory-layer-detail"></div>
               <section id="memoryMarkdownPanel" class="memory-markdown-panel" hidden>
                 <header>

@@ -1540,18 +1540,61 @@ h1 {
 
 .memory-layout {
   display: grid;
-  grid-template-columns: minmax(520px, 1.08fr) minmax(360px, 0.92fr);
-  gap: 24px;
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+  gap: 18px;
   min-height: 0;
   padding: 0 42px 34px;
 }
 
+.memory-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.memory-overview-card,
+.memory-dimension-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid rgba(222, 215, 204, 0.88);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 249, 0.76);
+  box-shadow: 0 10px 30px rgba(39, 33, 24, 0.045);
+}
+
+.memory-overview-card {
+  padding: 14px;
+}
+
+.memory-overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.memory-overview-head h2,
+.avatar-panel h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.memory-dimension-panel {
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px;
+}
+
 .avatar-panel {
   position: relative;
-  min-height: 0;
+  min-height: 210px;
   display: grid;
-  align-items: center;
-  justify-items: center;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
+  justify-items: stretch;
   overflow: hidden;
   border: 1px solid rgba(222, 215, 204, 0.82);
   border-radius: var(--radius);
@@ -1559,6 +1602,16 @@ h1 {
     radial-gradient(circle at 50% 45%, rgba(255, 253, 249, 0.94), rgba(228, 243, 240, 0.46) 38%, transparent 66%),
     linear-gradient(155deg, rgba(255, 253, 249, 0.86), rgba(235, 232, 255, 0.24) 52%, rgba(255, 242, 220, 0.34));
   box-shadow: 0 18px 54px rgba(39, 33, 24, 0.055);
+}
+
+.avatar-panel header {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px 0;
 }
 
 .avatar-panel::before,
@@ -1578,7 +1631,8 @@ h1 {
 }
 
 .memory-avatar-canvas {
-  width: min(100%, 600px);
+  place-self: center;
+  width: min(100%, 260px);
   aspect-ratio: 1;
   height: auto;
   display: block;
@@ -1588,22 +1642,22 @@ h1 {
 
 .memory-orbit {
   position: absolute;
-  inset: 34px;
+  inset: 44px 16px 14px;
   z-index: 2;
   pointer-events: none;
 }
 
 .memory-orbit-button {
   position: absolute;
-  left: calc(50% + var(--x, 0%) - 42px);
-  top: calc(50% + var(--y, 0%) - 30px);
+  left: calc(50% + var(--x, 0%) - 34px);
+  top: calc(52% + var(--y, 0%) - 22px);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 1px 7px;
-  min-width: 84px;
-  max-width: 118px;
-  min-height: 58px;
-  padding: 8px 9px;
+  gap: 0 6px;
+  min-width: 68px;
+  max-width: 88px;
+  min-height: 43px;
+  padding: 6px 7px;
   border: 1px solid rgba(222, 215, 204, 0.88);
   border-radius: var(--radius);
   background: rgba(255, 253, 249, 0.82);
@@ -1617,9 +1671,8 @@ h1 {
 .memory-orbit-button span {
   grid-row: 1 / 3;
   color: var(--teal);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 850;
-  letter-spacing: 0.03em;
 }
 
 .memory-orbit-button strong {
@@ -1627,12 +1680,12 @@ h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .memory-orbit-button small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .memory-orbit-button.active {
@@ -1642,24 +1695,19 @@ h1 {
 }
 
 .memory-stats {
-  position: absolute;
-  left: 18px;
-  bottom: 18px;
   display: grid;
-  grid-template-columns: repeat(3, auto);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  z-index: 3;
 }
 
 .memory-stats div {
   display: grid;
   gap: 2px;
-  min-width: 82px;
+  min-width: 0;
   padding: 10px;
   border: 1px solid rgba(222, 215, 204, 0.9);
   border-radius: var(--radius);
-  background: rgba(255, 253, 249, 0.76);
-  backdrop-filter: blur(14px);
+  background: rgba(240, 236, 229, 0.5);
 }
 
 .memory-stats strong {
@@ -1669,9 +1717,56 @@ h1 {
 .memory-stats span {
   color: var(--muted);
   font-size: 12px;
+  font-weight: 760;
+}
+
+.memory-stats small {
+  min-width: 0;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.memory-coverage {
+  display: grid;
+  gap: 7px;
+}
+
+.memory-coverage-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.memory-coverage-top strong {
+  color: var(--ink);
+}
+
+.memory-coverage-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(222, 215, 204, 0.8);
+  overflow: hidden;
+}
+
+.memory-coverage-track span {
+  display: block;
+  width: var(--coverage, 0%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--teal), var(--gold));
 }
 
 .memory-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, auto) minmax(260px, 1fr);
+  align-content: start;
+  gap: 14px;
   min-width: 0;
   min-height: 0;
   overflow: auto;
@@ -1686,22 +1781,36 @@ h1 {
   margin-bottom: 14px;
 }
 
+.panel-heading.compact {
+  margin-bottom: 0;
+}
+
+.memory-focus-heading {
+  margin-bottom: 0;
+  padding: 16px;
+  border: 1px solid rgba(222, 215, 204, 0.88);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 249, 0.76);
+  box-shadow: 0 10px 30px rgba(39, 33, 24, 0.045);
+}
+
 .panel-heading h2 {
   margin-bottom: 4px;
 }
 
 .memory-compass {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 3px;
 }
 
 .memory-dimension-card {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 6px 10px;
-  min-height: 104px;
+  gap: 7px;
+  min-height: 94px;
   padding: 12px;
   border: 1px solid rgba(222, 215, 204, 0.9);
   border-radius: var(--radius);
@@ -1715,6 +1824,13 @@ h1 {
   box-shadow: var(--shadow-small);
 }
 
+.memory-dimension-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .memory-dimension-card strong,
 .memory-detail-card strong,
 .memory-item-panel > strong {
@@ -1722,7 +1838,18 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-.memory-dimension-card span {
+.memory-dimension-head em {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(240, 236, 229, 0.78);
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.memory-dimension-counts {
   color: var(--teal);
   font-size: 12px;
   font-weight: 820;
@@ -1757,7 +1884,7 @@ h1 {
 .memory-layer-detail {
   display: grid;
   gap: 14px;
-  margin-top: 18px;
+  margin-top: 0;
 }
 
 .memory-layer-header,
@@ -1770,6 +1897,12 @@ h1 {
   background: rgba(255, 253, 249, 0.76);
 }
 
+.memory-layer-header span {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 760;
+}
+
 .memory-layer-header p,
 .memory-detail-card p,
 .memory-item-panel p,
@@ -1779,9 +1912,27 @@ h1 {
   line-height: 1.48;
 }
 
+.memory-detail-section {
+  display: grid;
+  gap: 8px;
+}
+
+.memory-detail-section header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .memory-detail-section h3 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 15px;
+}
+
+.memory-detail-section header span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 760;
 }
 
 .memory-detail-list {
@@ -1793,18 +1944,23 @@ h1 {
   display: grid;
   gap: 6px;
   width: 100%;
-  padding: 11px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: rgba(255, 253, 249, 0.66);
   text-align: left;
 }
 
-.memory-detail-card span,
+.memory-detail-card .memory-detail-type,
 .memory-item-panel > span {
   color: var(--teal);
   font-size: 12px;
   font-weight: 760;
+}
+
+.memory-detail-card > span:last-child {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .memory-evidence-list {
@@ -2931,8 +3087,12 @@ h1 {
     flex-direction: column;
   }
 
-  .memory-panel {
+  .memory-sidebar {
     order: 1;
+  }
+
+  .memory-panel {
+    order: 2;
     flex: 0 0 auto;
     min-height: auto;
     overflow: visible;
@@ -2951,8 +3111,8 @@ h1 {
   }
 
   .avatar-panel {
-    order: 2;
-    min-height: 270px;
+    order: 3;
+    min-height: 230px;
     max-height: 300px;
     margin-bottom: 14px;
   }

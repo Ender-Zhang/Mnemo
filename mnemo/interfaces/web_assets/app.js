@@ -117,6 +117,11 @@ const memoryCompass = document.querySelector("#memoryCompass");
 const memoryLayerDetail = document.querySelector("#memoryLayerDetail");
 const memoryStats = document.querySelector("#memoryStats");
 const memoryCountBadge = document.querySelector("#memoryCountBadge");
+const memoryCoverageLabel = document.querySelector("#memoryCoverageLabel");
+const memoryCoverageFill = document.querySelector("#memoryCoverageFill");
+const memoryActiveTitle = document.querySelector("#memoryActiveTitle");
+const memoryActiveSummary = document.querySelector("#memoryActiveSummary");
+const memoryActiveMeta = document.querySelector("#memoryActiveMeta");
 const memoryAvatar3d = document.querySelector("#memoryAvatar3d");
 const memoryOrbit = document.querySelector("#memoryOrbit");
 const settingsProviderForm = document.querySelector("#settingsProviderForm");
@@ -1210,7 +1215,10 @@ async function loadMemoryCompass() {
     return;
   }
   memoryCompass.replaceChildren(loadingRow("加载记忆罗盘"));
-  memoryLayerDetail.replaceChildren(textRow("选择一个维度继续查看摘要与证据。"));
+  memoryLayerDetail.replaceChildren(textRow("选择一个维度查看长期记忆。"));
+  setText(memoryActiveTitle, "维度详情");
+  setText(memoryActiveSummary, "正在加载记忆。");
+  setText(memoryActiveMeta, "未选择");
   try {
     const response = await fetch("/api/memory/ontology");
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1227,6 +1235,7 @@ function renderMemoryCompass(payload) {
   const counts = payload.counts || {};
   memoryCountBadge.textContent = `${counts.pages || 0} 稳定 · ${counts.candidates || 0} 候选`;
   renderMemoryStats(counts);
+  renderMemoryCoverage(counts, dimensions.length || MEMORY_DIMENSIONS.length);
   renderMemoryOrbit(dimensions);
   const cards = dimensions.map((dimension) => memoryDimensionCard(dimension));
   memoryCompass.replaceChildren(...cards);
@@ -1236,19 +1245,30 @@ function renderMemoryCompass(payload) {
 
 function renderMemoryStats(counts) {
   const rows = [
-    ["稳定记忆", counts.pages || 0],
-    ["候选信号", counts.candidates || 0],
-    ["覆盖维度", counts.covered_dimensions || 0],
-  ].map(([label, value]) => {
+    ["稳定", counts.pages || 0, "可直接引用"],
+    ["候选", counts.candidates || 0, "等待整理"],
+    ["覆盖", counts.covered_dimensions || 0, "已触达维度"],
+  ].map(([label, value, hint]) => {
     const row = document.createElement("div");
     const strong = document.createElement("strong");
     strong.textContent = String(value);
     const span = document.createElement("span");
     span.textContent = label;
-    row.append(strong, span);
+    const small = document.createElement("small");
+    small.textContent = hint;
+    row.append(strong, span, small);
     return row;
   });
   memoryStats.replaceChildren(...rows);
+}
+
+function renderMemoryCoverage(counts, totalDimensions) {
+  const total = Math.max(1, Number(totalDimensions || MEMORY_DIMENSIONS.length));
+  const covered = Math.min(total, Number(counts.covered_dimensions || 0));
+  setText(memoryCoverageLabel, `${covered}/${total}`);
+  if (memoryCoverageFill) {
+    memoryCoverageFill.style.setProperty("--coverage", `${Math.round((covered / total) * 100)}%`);
+  }
 }
 
 function memoryDimensionCard(dimension) {
@@ -1256,17 +1276,23 @@ function memoryDimensionCard(dimension) {
   button.type = "button";
   button.className = "memory-dimension-card";
   button.dataset.dimension = dimension.dimension;
+  const total = Number(dimension.pages || 0) + Number(dimension.candidates || 0);
+  const head = document.createElement("span");
+  head.className = "memory-dimension-head";
   const title = document.createElement("strong");
   title.textContent = dimensionLabel(dimension.dimension);
-  const count = document.createElement("span");
-  count.textContent = `${dimension.pages || 0}/${dimension.candidates || 0}`;
+  const count = document.createElement("em");
+  count.textContent = `${total} 条`;
+  head.append(title, count);
+  const counts = document.createElement("span");
+  counts.className = "memory-dimension-counts";
+  counts.textContent = `${dimension.pages || 0} 稳定 · ${dimension.candidates || 0} 候选`;
   const summary = document.createElement("p");
   summary.textContent = dimension.summary || "尚未沉淀稳定信号。";
   const meter = document.createElement("i");
   meter.className = "memory-meter";
-  const total = Number(dimension.pages || 0) + Number(dimension.candidates || 0);
   meter.style.setProperty("--level", `${Math.min(100, total * 18)}%`);
-  button.append(title, count, summary, meter);
+  button.append(head, counts, summary, meter);
   button.addEventListener("click", () => loadMemoryDimension(dimension.dimension));
   return button;
 }
@@ -1324,13 +1350,18 @@ async function loadMemoryDimension(dimensionName) {
 
 function renderMemoryDimensionDetail(payload) {
   hideMemoryMarkdown();
+  setText(memoryActiveTitle, dimensionLabel(payload.dimension));
+  setText(memoryActiveSummary, payload.summary || "暂无摘要。");
+  setText(memoryActiveMeta, `${payload.counts?.pages || 0} 稳定 · ${payload.counts?.candidates || 0} 候选`);
   const header = document.createElement("div");
   header.className = "memory-layer-header";
   const title = document.createElement("strong");
   title.textContent = dimensionLabel(payload.dimension);
   const summary = document.createElement("p");
   summary.textContent = payload.summary || "";
-  header.append(title, summary);
+  const meta = document.createElement("span");
+  meta.textContent = `${payload.counts?.pages || 0} 稳定 · ${payload.counts?.candidates || 0} 候选`;
+  header.append(title, meta, summary);
 
   const stable = memoryDetailSection("稳定记忆", payload.pages || []);
   const candidates = memoryDetailSection("候选信号", payload.candidates || []);
@@ -1340,8 +1371,12 @@ function renderMemoryDimensionDetail(payload) {
 function memoryDetailSection(titleText, entries) {
   const section = document.createElement("section");
   section.className = "memory-detail-section";
+  const header = document.createElement("header");
   const title = document.createElement("h3");
   title.textContent = titleText;
+  const count = document.createElement("span");
+  count.textContent = `${entries.length} 条`;
+  header.append(title, count);
   const list = document.createElement("div");
   list.className = "memory-detail-list";
   if (!entries.length) {
@@ -1350,7 +1385,7 @@ function memoryDetailSection(titleText, entries) {
   for (const item of entries) {
     list.appendChild(memoryLayerItem(item));
   }
-  section.append(title, list);
+  section.append(header, list);
   return section;
 }
 
@@ -1358,17 +1393,20 @@ function memoryLayerItem(item) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "memory-detail-card";
+  button.title = "查看记忆详情";
+  const type = document.createElement("span");
+  type.className = "memory-detail-type";
+  type.textContent = memoryKindLabel(item.kind || "memory");
   const title = document.createElement("strong");
   title.textContent = item.title || "Memory";
   const summary = document.createElement("p");
   summary.textContent = item.summary || "";
   const meta = document.createElement("span");
   meta.textContent = [
-    memoryKindLabel(item.kind || "memory"),
     memoryStatusLabel(item.status),
     confidenceLabel(item.confidence),
   ].filter(Boolean).join(" · ");
-  button.append(title, summary, meta);
+  button.append(type, title, summary, meta);
   button.addEventListener("click", () => loadMemoryItem(item.kind, item.id));
   return button;
 }
