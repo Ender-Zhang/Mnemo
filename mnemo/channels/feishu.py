@@ -591,6 +591,8 @@ class FeishuWebSocketService:
         event_handler = (
             _EventDispatcherHandler.builder(self.config.encrypt_key, self.config.verification_token)
             .register_p2_im_message_receive_v1(self._on_message_event)
+            .register_p2_im_message_reaction_created_v1(self._on_ignored_event)
+            .register_p2_im_message_reaction_deleted_v1(self._on_ignored_event)
             .build()
         )
         client = _FeishuWSClient(
@@ -610,6 +612,9 @@ class FeishuWebSocketService:
 
     def _on_message_event(self, data: Any) -> None:
         self.service.handle_websocket_event(data)
+
+    def _on_ignored_event(self, data: Any) -> None:
+        return None
 
 class FeishuHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True

@@ -36,6 +36,12 @@ class FeishuChannelTests(unittest.TestCase):
         self.assertIn("mnemo channels feishu serve", content)
         self.assertIn("FEISHU_APP_ID", content)
 
+    def test_feishu_websocket_registers_reaction_event_noops(self) -> None:
+        channel = Path(__file__).resolve().parents[1] / "mnemo" / "channels" / "feishu.py"
+        content = channel.read_text(encoding="utf-8")
+        self.assertIn("register_p2_im_message_reaction_created_v1(self._on_ignored_event)", content)
+        self.assertIn("register_p2_im_message_reaction_deleted_v1(self._on_ignored_event)", content)
+
     def test_feishu_webhook_challenge_and_token_auth(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config = FeishuChannelConfig(
