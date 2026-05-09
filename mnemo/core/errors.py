@@ -53,6 +53,10 @@ class ProviderPayloadError(ProviderError):
     """Raised when a provider response cannot be parsed or normalized."""
 
 
+class ProviderSafetyError(ProviderError):
+    """Raised when a provider blocks a request with a safety/content filter."""
+
+
 def _provider_error_detail(body: str | None) -> str | None:
     if not body:
         return None

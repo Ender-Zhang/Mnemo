@@ -126,6 +126,35 @@ class LocalRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(skip_event["payload"]["reason"], "insufficient_structured_signal")
 
+    def test_provider_runtime_marks_content_filter_as_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="text_delta",
+                            text="The request was rejected because it was considered high risk",
+                        ),
+                        ProviderEvent(type="completed", metadata={"finish_reason": "content_filter"}),
+                    ]
+                ]
+            )
+            events = []
+
+            with self.assertRaises(MnemoError) as context:
+                for event in ProviderAgentRuntime(provider).stream(RunRequest(message="hello", state_dir=tmp)):
+                    events.append(event)
+
+            event_types = [event.type for event in events]
+            self.assertIn("provider rejected request as high risk", str(context.exception))
+            self.assertIn("run.error", event_types)
+            self.assertNotIn("assistant.delta", event_types)
+            self.assertNotIn("assistant.message", event_types)
+
+            failed_run = StateStore(tmp).get_run(events[-1].run_id)
+            self.assertEqual(failed_run["status"], "failed")
+            self.assertIn("provider rejected request as high risk", failed_run["output_text"])
+
     def test_provider_dream_uses_model_selected_candidate_promotion(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = StateStore(tmp)

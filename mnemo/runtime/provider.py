@@ -4,10 +4,15 @@ from collections.abc import Iterator
 from typing import Any
 
 from ..core.config import DEFAULT_MAX_TOOL_ROUNDS
-from ..core.errors import MnemoError
+from ..core.errors import MnemoError, ProviderSafetyError
 from ..core.models import ChatEvent, RunRequest, RunResult, ToolExecutionPolicy, ToolResult
 from ..memory import MemoryEngine
 from ..providers import ProviderAdapter, ProviderRunInput, provider_capabilities_for_adapter
+from ..providers.safety import (
+    is_provider_rejection_prefix,
+    provider_rejection_reason_from_metadata,
+    provider_rejection_reason_from_text,
+)
 from ..prompt import PromptAssembler, load_prompt_bootstrap
 from ..skills import SkillService, default_skill_roots
 from ..storage import StateStore
@@ -141,12 +146,14 @@ class ProviderAgentRuntime:
         messages = assembled_prompt.messages()
         response_parts: list[str] = []
         tool_results: list[ToolResult] = []
+        completion_metadata: list[dict[str, Any]] = []
 
         try:
             for tool_round in range(self.max_tool_rounds + 1):
                 tool_calls = []
                 completed = []
                 assistant_parts: list[str] = []
+                pending_text = ""
                 for provider_event in self.provider.stream(
                     ProviderRunInput(
                         messages=messages,
@@ -161,15 +168,22 @@ class ProviderAgentRuntime:
                     )
                 ):
                     if provider_event.type == "text_delta" and provider_event.text:
-                        assistant_parts.append(provider_event.text)
-                        response_parts.append(provider_event.text)
-                        yield emit("assistant.delta", {"text": provider_event.text})
+                        pending_text += provider_event.text
+                        if is_provider_rejection_prefix("".join(response_parts) + pending_text):
+                            continue
+                        rejection_reason = provider_rejection_reason_from_text(
+                            "".join(response_parts) + pending_text
+                        )
+                        if rejection_reason:
+                            raise ProviderSafetyError(rejection_reason)
+                        assistant_parts.append(pending_text)
+                        response_parts.append(pending_text)
+                        yield emit("assistant.delta", {"text": pending_text})
+                        pending_text = ""
                     elif provider_event.type == "tool_call" and provider_event.tool_call:
                         tool_calls.append(provider_event.tool_call)
                     elif provider_event.type == "completed":
                         completed.append(provider_event)
-
-                assistant_text = "".join(assistant_parts)
 
                 if store.is_run_cancelled(run_id):
                     yield from cancellation_result(
@@ -193,7 +207,21 @@ class ProviderAgentRuntime:
                         "tool_call_count": len(tool_calls),
                     },
                 )
+                completion_metadata = [event.metadata for event in completed]
+                rejection_reason = provider_rejection_reason_from_metadata(completion_metadata)
+                if rejection_reason:
+                    raise ProviderSafetyError(rejection_reason)
+                rejection_reason = provider_rejection_reason_from_text(
+                    "".join(response_parts) + pending_text
+                )
+                if rejection_reason:
+                    raise ProviderSafetyError(rejection_reason)
+                if pending_text:
+                    assistant_parts.append(pending_text)
+                    response_parts.append(pending_text)
+                    yield emit("assistant.delta", {"text": pending_text})
 
+                assistant_text = "".join(assistant_parts)
                 if not tool_calls:
                     break
 
@@ -276,6 +304,7 @@ class ProviderAgentRuntime:
                         }
                     )
                     completed = []
+                    pending_text = ""
                     for provider_event in self.provider.stream(
                         ProviderRunInput(
                             messages=messages,
@@ -291,8 +320,17 @@ class ProviderAgentRuntime:
                         )
                     ):
                         if provider_event.type == "text_delta" and provider_event.text:
-                            response_parts.append(provider_event.text)
-                            yield emit("assistant.delta", {"text": provider_event.text})
+                            pending_text += provider_event.text
+                            if is_provider_rejection_prefix("".join(response_parts) + pending_text):
+                                continue
+                            rejection_reason = provider_rejection_reason_from_text(
+                                "".join(response_parts) + pending_text
+                            )
+                            if rejection_reason:
+                                raise ProviderSafetyError(rejection_reason)
+                            response_parts.append(pending_text)
+                            yield emit("assistant.delta", {"text": pending_text})
+                            pending_text = ""
                         elif provider_event.type == "tool_call":
                             ledger.append(
                                 run_id,
@@ -316,9 +354,25 @@ class ProviderAgentRuntime:
                             "tool_budget_exhausted": True,
                         },
                     )
+                    completion_metadata = [event.metadata for event in completed]
+                    rejection_reason = provider_rejection_reason_from_metadata(completion_metadata)
+                    if rejection_reason:
+                        raise ProviderSafetyError(rejection_reason)
+                    rejection_reason = provider_rejection_reason_from_text("".join(response_parts) + pending_text)
+                    if rejection_reason:
+                        raise ProviderSafetyError(rejection_reason)
+                    if pending_text:
+                        response_parts.append(pending_text)
+                        yield emit("assistant.delta", {"text": pending_text})
                     break
 
             response = _final_response_text(response_parts, tool_results)
+            rejection_reason = provider_rejection_reason_from_metadata(completion_metadata)
+            if rejection_reason:
+                raise ProviderSafetyError(rejection_reason)
+            rejection_reason = provider_rejection_reason_from_text(response)
+            if rejection_reason:
+                raise ProviderSafetyError(rejection_reason)
             checkpoint = _checkpoint(store, mission_id, request.message, response, run_id, tool_results)
             store.update_mission_checkpoint(mission_id, checkpoint)
             yield emit("assistant.message", {"text": response, "final": True})

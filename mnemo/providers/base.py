@@ -13,11 +13,17 @@ from ..core.errors import (
     ProviderConnectionError,
     ProviderError,
     ProviderPayloadError,
+    ProviderSafetyError,
     ProviderStatusError,
     ProviderTimeoutError,
 )
 from ..core.models import ToolCallEnvelope, ToolSpec
 from .capabilities import usage_cache_metrics
+from .safety import (
+    is_provider_rejection_prefix,
+    provider_rejection_reason_from_metadata,
+    provider_rejection_reason_from_text,
+)
 
 
 ProviderEventType = Literal["text_delta", "tool_call", "completed"]
@@ -123,6 +129,7 @@ class OpenAIProviderAdapter:
         tool_call_chunks: dict[int, dict[str, Any]] = {}
         last_payload: dict[str, Any] = {}
         last_choice: dict[str, Any] = {}
+        pending_text = ""
 
         try:
             with urllib_request.urlopen(http_request, timeout=self.config.timeout_s) as response:
@@ -143,11 +150,24 @@ class OpenAIProviderAdapter:
                     if not isinstance(delta, dict):
                         raise ProviderPayloadError("provider stream delta is not an object")
 
+                    rejection_reason = provider_rejection_reason_from_metadata(
+                        (_completion_metadata(payload, choice, self.name),)
+                    )
+                    if rejection_reason:
+                        raise ProviderSafetyError(rejection_reason)
+
                     content = delta.get("content")
                     if content:
                         if not isinstance(content, str):
                             raise ProviderPayloadError("provider stream content is not a string")
-                        yield ProviderEvent(type="text_delta", text=content)
+                        pending_text += content
+                        if is_provider_rejection_prefix(pending_text):
+                            continue
+                        rejection_reason = provider_rejection_reason_from_text(pending_text)
+                        if rejection_reason:
+                            raise ProviderSafetyError(rejection_reason)
+                        yield ProviderEvent(type="text_delta", text=pending_text)
+                        pending_text = ""
 
                     _accumulate_stream_tool_calls(delta.get("tool_calls"), tool_call_chunks)
         except urllib_error.HTTPError as exc:
@@ -161,12 +181,23 @@ class OpenAIProviderAdapter:
         except OSError as exc:
             raise ProviderConnectionError("provider is unreachable") from exc
 
+        rejection_reason = provider_rejection_reason_from_text(pending_text)
+        if rejection_reason:
+            raise ProviderSafetyError(rejection_reason)
+        if pending_text:
+            yield ProviderEvent(type="text_delta", text=pending_text)
+
         for tool_call in _parse_stream_tool_calls(tool_call_chunks, risk_by_tool_name, self.name):
             yield ProviderEvent(type="tool_call", tool_call=tool_call)
         yield ProviderEvent(type="completed", metadata=_completion_metadata(last_payload, last_choice, self.name))
 
     def _events_from_payload(self, payload: dict[str, Any], tools: Sequence[ToolSpec]) -> Iterable[ProviderEvent]:
         choice = _first_choice(payload)
+        rejection_reason = provider_rejection_reason_from_metadata(
+            (_completion_metadata(payload, choice, self.name),)
+        )
+        if rejection_reason:
+            raise ProviderSafetyError(rejection_reason)
         message = choice.get("message")
         if not isinstance(message, dict):
             raise ProviderPayloadError("provider response missing choices[0].message")
@@ -175,6 +206,9 @@ class OpenAIProviderAdapter:
         if content is not None:
             if not isinstance(content, str):
                 raise ProviderPayloadError("provider response message content is not a string")
+            rejection_reason = provider_rejection_reason_from_text(content)
+            if rejection_reason:
+                raise ProviderSafetyError(rejection_reason)
             if content:
                 yield ProviderEvent(type="text_delta", text=content)
 
@@ -252,6 +286,7 @@ class AnthropicProviderAdapter:
         tool_blocks: dict[int, dict[str, Any]] = {}
         last_delta_payload: dict[str, Any] = {}
         message_payload: dict[str, Any] = {}
+        pending_text = ""
 
         try:
             with urllib_request.urlopen(http_request, timeout=self.config.timeout_s) as response:
@@ -268,6 +303,11 @@ class AnthropicProviderAdapter:
                             message_payload = message
                     elif event_type == "message_delta":
                         last_delta_payload = payload
+                        rejection_reason = provider_rejection_reason_from_metadata(
+                            (_anthropic_completion_metadata(message_payload, last_delta_payload),)
+                        )
+                        if rejection_reason:
+                            raise ProviderSafetyError(rejection_reason)
                     elif event_type == "content_block_start":
                         _anthropic_stream_block_start(payload, tool_blocks)
                     elif event_type == "content_block_delta":
@@ -279,7 +319,14 @@ class AnthropicProviderAdapter:
                             if not isinstance(text, str):
                                 raise ProviderPayloadError("provider stream text delta is not a string")
                             if text:
-                                yield ProviderEvent(type="text_delta", text=text)
+                                pending_text += text
+                                if is_provider_rejection_prefix(pending_text):
+                                    continue
+                                rejection_reason = provider_rejection_reason_from_text(pending_text)
+                                if rejection_reason:
+                                    raise ProviderSafetyError(rejection_reason)
+                                yield ProviderEvent(type="text_delta", text=pending_text)
+                                pending_text = ""
                         elif delta.get("type") == "input_json_delta":
                             _anthropic_stream_json_delta(payload, tool_blocks)
                     elif event_type == "message_stop":
@@ -295,11 +342,22 @@ class AnthropicProviderAdapter:
         except OSError as exc:
             raise ProviderConnectionError("provider is unreachable") from exc
 
+        rejection_reason = provider_rejection_reason_from_text(pending_text)
+        if rejection_reason:
+            raise ProviderSafetyError(rejection_reason)
+        if pending_text:
+            yield ProviderEvent(type="text_delta", text=pending_text)
+
         for tool_call in _parse_anthropic_stream_tool_calls(tool_blocks, risk_by_tool_name, self.name):
             yield ProviderEvent(type="tool_call", tool_call=tool_call)
         yield ProviderEvent(type="completed", metadata=_anthropic_completion_metadata(message_payload, last_delta_payload))
 
     def _events_from_payload(self, payload: dict[str, Any], tools: Sequence[ToolSpec]) -> Iterable[ProviderEvent]:
+        rejection_reason = provider_rejection_reason_from_metadata(
+            (_anthropic_completion_metadata(payload, payload),)
+        )
+        if rejection_reason:
+            raise ProviderSafetyError(rejection_reason)
         content = payload.get("content")
         if not isinstance(content, list):
             raise ProviderPayloadError("provider response missing content blocks")
@@ -312,6 +370,9 @@ class AnthropicProviderAdapter:
                 text = block.get("text")
                 if not isinstance(text, str):
                     raise ProviderPayloadError("provider response text block is not a string")
+                rejection_reason = provider_rejection_reason_from_text(text)
+                if rejection_reason:
+                    raise ProviderSafetyError(rejection_reason)
                 if text:
                     yield ProviderEvent(type="text_delta", text=text)
             elif block_type == "tool_use":

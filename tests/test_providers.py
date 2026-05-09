@@ -7,7 +7,7 @@ import threading
 import unittest
 from typing import Any
 
-from mnemo.core.errors import ProviderPayloadError, ProviderStatusError, ProviderTimeoutError
+from mnemo.core.errors import ProviderPayloadError, ProviderSafetyError, ProviderStatusError, ProviderTimeoutError
 from mnemo.core.models import ToolSpec
 from mnemo.providers import (
     AnthropicProviderAdapter,
@@ -121,6 +121,54 @@ class ProviderAdapterTests(unittest.TestCase):
         self.assertEqual([event.type for event in events], ["text_delta", "text_delta", "completed"])
         self.assertEqual([event.text for event in events[:2]], ["Hel", "lo"])
         self.assertEqual(events[-1].metadata["id"], "chatcmpl_stream")
+        self.assertTrue(server.requests[0]["body"]["stream"])
+
+    def test_openai_provider_raises_safety_error_for_content_filter(self) -> None:
+        with FakeOpenAIServer(
+            {
+                "id": "chatcmpl_blocked",
+                "model": "test-model",
+                "choices": [
+                    {
+                        "message": {
+                            "content": "The request was rejected because it was considered high risk",
+                        },
+                        "finish_reason": "content_filter",
+                    }
+                ],
+            }
+        ) as server:
+            adapter = OpenAIProviderAdapter(ProviderConfig(base_url=server.base_url, model="test-model"))
+
+            with self.assertRaises(ProviderSafetyError) as context:
+                list(adapter.stream(ProviderRunInput(messages=[{"role": "user", "content": "Hi"}], tools=[])))
+
+        self.assertEqual(str(context.exception), "provider rejected request as high risk")
+        self.assertEqual(server.requests[0]["path"], "/chat/completions")
+
+    def test_openai_provider_stream_suppresses_high_risk_rejection_text(self) -> None:
+        with FakeOpenAIStreamServer(
+            [
+                {
+                    "id": "chatcmpl_blocked_stream",
+                    "model": "test-model",
+                    "choices": [
+                        {
+                            "delta": {
+                                "content": "The request was rejected because it was considered high risk",
+                            },
+                            "finish_reason": "content_filter",
+                        }
+                    ],
+                }
+            ]
+        ) as server:
+            adapter = OpenAIProviderAdapter(ProviderConfig(base_url=server.base_url, model="test-model", stream=True))
+
+            with self.assertRaises(ProviderSafetyError) as context:
+                list(adapter.stream(ProviderRunInput(messages=[{"role": "user", "content": "Hi"}], tools=[])))
+
+        self.assertEqual(str(context.exception), "provider rejected request as high risk")
         self.assertTrue(server.requests[0]["body"]["stream"])
 
     def test_openai_provider_parses_streamed_tool_call_chunks(self) -> None:

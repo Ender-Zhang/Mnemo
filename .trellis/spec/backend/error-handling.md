@@ -13,6 +13,7 @@
 - `ProviderTimeoutError(message: str)`
 - `ProviderConnectionError(message: str)`
 - `ProviderPayloadError(message: str)`
+- `ProviderSafetyError(message: str)`
 - `ProviderConfig(timeout_s: float, retry_count: int = 0, retry_backoff_s: float = 0.0, retry_status_codes=(429, 500, 502, 503, 504))`
 - CLI: `mnemo config smoke --provider openai-compatible --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
 - CLI: `mnemo config smoke --provider anthropic --base-url <url> --model <model> [--api-key-env ENV|--api-key KEY] [--json]`
@@ -58,6 +59,7 @@
 - Provider adapters raise `ProviderTimeoutError` for socket/URL timeout conditions.
 - Provider adapters raise `ProviderConnectionError` for unreachable endpoints.
 - Provider adapters raise `ProviderPayloadError` for invalid or non-object JSON payloads.
+- Provider adapters raise `ProviderSafetyError` when provider metadata reports `content_filter` or the endpoint returns its high-risk rejection sentinel as assistant text; the rejected text must not be emitted as a normal assistant response.
 - Non-streaming provider JSON requests retry timeout errors, connection errors, and `retry_status_codes` up to `retry_count`.
 - Streaming provider requests remain single-attempt because retrying after partial deltas can duplicate model output or tool calls.
 - Retry config resolves from CLI args, config file, or `MNEMO_RETRY_COUNT` / `MNEMO_RETRY_BACKOFF_S`.
@@ -194,6 +196,7 @@
 - CLI success for OpenAI-compatible streaming smoke.
 - CLI success for Anthropic smoke.
 - CLI failure for provider status errors.
+- Provider adapter and runtime failure for provider safety/content-filter blocks without emitting the rejected assistant text as a completed response.
 - Existing provider adapter status/payload/timeout tests still pass.
 - Provider retry tests for OpenAI-compatible and Anthropic non-streaming calls.
 - Config resolver test for `retry_count`, `retry_backoff_s`, and `max_tool_rounds`.
