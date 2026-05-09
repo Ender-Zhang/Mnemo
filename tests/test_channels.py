@@ -203,7 +203,11 @@ class FeishuChannelTests(unittest.TestCase):
                             ),
                         ]
                     )
-                    status, _, body = server.request("POST", "/feishu/webhook", _message_payload(text="stream please"))
+                    status, _, body = server.request(
+                        "POST",
+                        "/feishu/webhook",
+                        _message_payload(text="stream please", chat_type="group", thread_id="omt_thread"),
+                    )
                     self.assertEqual(status, 200, body)
                     self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
 
@@ -211,12 +215,14 @@ class FeishuChannelTests(unittest.TestCase):
                     replied = api.requests_for("/open-apis/im/v1/messages/om_msg_1/reply")
                     updates = api.requests_for("/open-apis/cardkit/v1/cards/card_reply/elements/content/content")
                     closes = api.requests_for("/open-apis/cardkit/v1/cards/card_reply/settings")
+                    card_updates = api.requests_for("/open-apis/cardkit/v1/cards/card_reply")
                     self.assertEqual(created[0]["body"]["type"], "card_json")
                     card_payload = json.loads(created[0]["body"]["data"])
                     self.assertTrue(card_payload["config"]["streaming_mode"])
                     self.assertEqual(card_payload["body"]["elements"][0]["element_id"], "content")
                     self.assertEqual(card_payload["body"]["elements"][0]["content"], "\u200b")
                     self.assertEqual(replied[0]["body"]["msg_type"], "interactive")
+                    self.assertTrue(replied[0]["body"]["reply_in_thread"])
                     reply_content = json.loads(replied[0]["body"]["content"])
                     self.assertEqual(reply_content["data"]["card_id"], "card_reply")
                     self.assertGreaterEqual(len(updates), 2)
@@ -224,6 +230,16 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertIn("hello world", updates[-1]["body"]["content"])
                     settings = json.loads(closes[-1]["body"]["settings"])
                     self.assertFalse(settings["config"]["streaming_mode"])
+                    self.assertEqual(len(card_updates), 1)
+                    terminal_card = json.loads(card_updates[-1]["body"]["card"]["data"])
+                    self.assertFalse(terminal_card["config"]["streaming_mode"])
+                    footer = terminal_card["body"]["elements"][-1]
+                    self.assertEqual(footer["text_size"], "notation")
+                    self.assertIn("已完成", footer["i18n_content"]["zh_cn"])
+                    self.assertIn("耗时", footer["i18n_content"]["zh_cn"])
+                    session_file = Path(tmp) / "channels" / "feishu_sessions.json"
+                    sessions = json.loads(session_file.read_text(encoding="utf-8"))
+                    self.assertEqual(sessions["oc_chat#thread:omt_thread"], "conv_stream")
 
     def test_feishu_final_edit_failure_sends_final_reply_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -338,6 +354,9 @@ class FeishuChannelTests(unittest.TestCase):
                 status = feishu_channel_status(tmp)
                 self.assertEqual(status["bot_name"], "MnemoBot")
                 self.assertTrue(status["streaming"])
+                self.assertTrue(status["footer_status"])
+                self.assertTrue(status["footer_elapsed"])
+                self.assertTrue(status["thread_session"])
                 self.assertNotIn("secret_test", json.dumps(status, ensure_ascii=False))
 
     def test_feishu_saved_config_requires_credentials(self) -> None:
@@ -346,11 +365,35 @@ class FeishuChannelTests(unittest.TestCase):
                 save_feishu_saved_config(tmp, {"app_id": "cli_only"})
 
 
-def _message_payload(*, text: str = "hello", token: str = "verify-token") -> dict[str, Any]:
+def _message_payload(
+    *,
+    text: str = "hello",
+    token: str = "verify-token",
+    event_id: str = "evt_1",
+    message_id: str = "om_msg_1",
+    chat_id: str = "oc_chat",
+    chat_type: str = "p2p",
+    root_id: str = "",
+    parent_id: str = "",
+    thread_id: str = "",
+) -> dict[str, Any]:
+    message = {
+        "message_id": message_id,
+        "chat_id": chat_id,
+        "chat_type": chat_type,
+        "message_type": "text",
+        "content": dumps({"text": text}),
+    }
+    if root_id:
+        message["root_id"] = root_id
+    if parent_id:
+        message["parent_id"] = parent_id
+    if thread_id:
+        message["thread_id"] = thread_id
     return {
         "schema": "2.0",
         "header": {
-            "event_id": "evt_1",
+            "event_id": event_id,
             "event_type": "im.message.receive_v1",
             "token": token,
         },
@@ -363,13 +406,7 @@ def _message_payload(*, text: str = "hello", token: str = "verify-token") -> dic
                     "union_id": "on_user",
                 },
             },
-            "message": {
-                "message_id": "om_msg_1",
-                "chat_id": "oc_chat",
-                "chat_type": "p2p",
-                "message_type": "text",
-                "content": dumps({"text": text}),
-            },
+            "message": message,
         },
     }
 
@@ -493,6 +530,9 @@ class FakeFeishuApiServer:
                     self._send_json({"code": 0, "data": {"message_id": "om_reply", "msg_type": parsed.get("msg_type")}})
                     return
                 if path == "/open-apis/cardkit/v1/cards/card_reply/elements/content/content":
+                    self._send_json({"code": 0, "data": {"card_id": "card_reply"}})
+                    return
+                if path == "/open-apis/cardkit/v1/cards/card_reply":
                     self._send_json({"code": 0, "data": {"card_id": "card_reply"}})
                     return
                 self._send_json({"code": 404, "msg": "not found"}, status=404)

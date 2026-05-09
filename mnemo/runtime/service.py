@@ -314,6 +314,9 @@ def _feishu_sidecar(config: WebServiceConfig, primary_command: tuple[str, ...]) 
     if config.workspace_root:
         command.extend(["--workspace-root", str(_service_path(config.workspace_root))])
     command.append("--streaming" if bool(saved.get("streaming", True)) else "--no-streaming")
+    command.append("--footer-status" if bool(saved.get("footer_status", True)) else "--no-footer-status")
+    command.append("--footer-elapsed" if bool(saved.get("footer_elapsed", True)) else "--no-footer-elapsed")
+    command.append("--thread-session" if bool(saved.get("thread_session", True)) else "--no-thread-session")
     _append_runtime_args(command, runtime)
     paths = web_service_paths(config.state_dir)
     return {

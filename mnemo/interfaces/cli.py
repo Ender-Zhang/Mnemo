@@ -628,6 +628,48 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Disable Feishu streaming cards and fall back to rich-post message edits.",
     )
+    footer_status_group = feishu_serve_parser.add_mutually_exclusive_group()
+    footer_status_group.add_argument(
+        "--footer-status",
+        dest="footer_status",
+        action="store_true",
+        default=None,
+        help="Show official Feishu card footer completion status.",
+    )
+    footer_status_group.add_argument(
+        "--no-footer-status",
+        dest="footer_status",
+        action="store_false",
+        help="Hide Feishu card footer completion status.",
+    )
+    footer_elapsed_group = feishu_serve_parser.add_mutually_exclusive_group()
+    footer_elapsed_group.add_argument(
+        "--footer-elapsed",
+        dest="footer_elapsed",
+        action="store_true",
+        default=None,
+        help="Show official Feishu card footer elapsed time.",
+    )
+    footer_elapsed_group.add_argument(
+        "--no-footer-elapsed",
+        dest="footer_elapsed",
+        action="store_false",
+        help="Hide Feishu card footer elapsed time.",
+    )
+    thread_session_group = feishu_serve_parser.add_mutually_exclusive_group()
+    thread_session_group.add_argument(
+        "--thread-session",
+        dest="thread_session",
+        action="store_true",
+        default=None,
+        help="Use a separate Mnemo conversation for each Feishu topic/thread.",
+    )
+    thread_session_group.add_argument(
+        "--no-thread-session",
+        dest="thread_session",
+        action="store_false",
+        help="Use one Mnemo conversation per Feishu chat even inside topics/threads.",
+    )
     feishu_serve_parser.add_argument("--bot-open-id", help="Bot open_id for group @mention checks, or FEISHU_BOT_OPEN_ID")
     feishu_serve_parser.add_argument("--bot-name", help="Bot name fallback for group @mention checks, or FEISHU_BOT_NAME")
     feishu_serve_parser.add_argument(
@@ -1313,6 +1355,12 @@ def _cmd_channels(args: argparse.Namespace) -> int:
         print(f"Config: {status.get('config_path', '')}")
         print(f"Domain: {status.get('domain', '') or '-'}")
         print(f"Connection: {status.get('connection', '') or '-'}")
+        print(
+            "Footer: "
+            f"status={str(bool(status.get('footer_status'))).lower()} "
+            f"elapsed={str(bool(status.get('footer_elapsed'))).lower()}"
+        )
+        print(f"Thread Session: {str(bool(status.get('thread_session'))).lower()}")
         print(f"Bot: {status.get('bot_name', '') or status.get('bot_open_id', '') or '-'}")
         return 0
     if args.feishu_command != "serve":
@@ -1343,6 +1391,24 @@ def _feishu_channel_config_from_args(args: argparse.Namespace) -> FeishuChannelC
     saved_streaming = saved.get("streaming")
     default_streaming = bool(saved_streaming) if saved_streaming is not None else True
     streaming = args.streaming if args.streaming is not None else _env_bool("FEISHU_STREAMING", default_streaming)
+    default_footer_status = bool(saved["footer_status"]) if "footer_status" in saved else True
+    default_footer_elapsed = bool(saved["footer_elapsed"]) if "footer_elapsed" in saved else True
+    default_thread_session = bool(saved["thread_session"]) if "thread_session" in saved else True
+    footer_status = (
+        args.footer_status
+        if args.footer_status is not None
+        else _env_bool("FEISHU_FOOTER_STATUS", default_footer_status)
+    )
+    footer_elapsed = (
+        args.footer_elapsed
+        if args.footer_elapsed is not None
+        else _env_bool("FEISHU_FOOTER_ELAPSED", default_footer_elapsed)
+    )
+    thread_session = (
+        args.thread_session
+        if args.thread_session is not None
+        else _env_bool("FEISHU_THREAD_SESSION", default_thread_session)
+    )
     return FeishuChannelConfig(
         state_dir=runtime.state_dir,
         workspace_root=args.workspace_root,
@@ -1361,6 +1427,9 @@ def _feishu_channel_config_from_args(args: argparse.Namespace) -> FeishuChannelC
         bot_open_id=_first_env_string(args.bot_open_id, "FEISHU_BOT_OPEN_ID") or str(saved.get("bot_open_id") or ""),
         bot_name=_first_env_string(args.bot_name, "FEISHU_BOT_NAME") or str(saved.get("bot_name") or ""),
         streaming=streaming,
+        footer_status=footer_status,
+        footer_elapsed=footer_elapsed,
+        thread_session=thread_session,
         provider=runtime.provider,
         base_url=runtime.base_url,
         model=runtime.model,

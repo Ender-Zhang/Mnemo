@@ -1822,7 +1822,9 @@ function renderFeishuStatus(status) {
   if (current.configured) {
     const bot = current.bot_name || current.bot_open_id || current.app_id || "已配置机器人";
     const streaming = current.streaming === false ? "非流式" : "流式卡片";
-    detail.textContent = `${current.domain || "feishu"} · ${bot} · ${current.connection || "websocket"} · ${streaming}`;
+    const footer = current.footer_status === false && current.footer_elapsed === false ? "无页脚" : "状态/耗时";
+    const thread = current.thread_session === false ? "按群连续" : "话题上下文";
+    detail.textContent = `${current.domain || "feishu"} · ${bot} · ${current.connection || "websocket"} · ${streaming} · ${footer} · ${thread}`;
   } else {
     detail.textContent = "扫码后会自动创建并保存机器人配置。";
   }

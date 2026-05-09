@@ -109,6 +109,9 @@ class FeishuChannelConfig:
     bot_open_id: str = ""
     bot_name: str = ""
     streaming: bool = True
+    footer_status: bool = True
+    footer_elapsed: bool = True
+    thread_session: bool = True
     provider: str = "local"
     base_url: str | None = None
     model: str | None = None
@@ -152,6 +155,9 @@ class FeishuInboundMessage:
     sender_type: str
     sender_ids: tuple[str, ...]
     mentions: tuple[dict[str, str], ...]
+    root_id: str = ""
+    parent_id: str = ""
+    thread_id: str = ""
 
 
 @dataclass
@@ -161,6 +167,7 @@ class FeishuStreamingCard:
     chat_id: str
     sequence: int = 1
     content: str = ""
+    started_at: float = 0.0
 
 
 class FeishuApiError(MnemoError):
@@ -221,14 +228,24 @@ class FeishuClient:
             message_ids.append(self._send_post(chat_id, content))
         return message_ids
 
-    def start_streaming_card(self, chat_id: str, reply_to_message_id: str = "") -> FeishuStreamingCard:
+    def start_streaming_card(
+        self,
+        chat_id: str,
+        reply_to_message_id: str = "",
+        *,
+        reply_in_thread: bool = False,
+    ) -> FeishuStreamingCard:
         if not self.config.app_id or not self.config.app_secret:
             raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
         card_id = self._create_streaming_card(_FEISHU_STREAM_START_TEXT)
-        message_id = self._reply_interactive_card(reply_to_message_id, card_id) if reply_to_message_id else ""
+        message_id = (
+            self._reply_interactive_card(reply_to_message_id, card_id, reply_in_thread=reply_in_thread)
+            if reply_to_message_id
+            else ""
+        )
         if not message_id:
             message_id = self._send_interactive_card(chat_id, card_id)
-        return FeishuStreamingCard(card_id=card_id, message_id=message_id, chat_id=chat_id)
+        return FeishuStreamingCard(card_id=card_id, message_id=message_id, chat_id=chat_id, started_at=time.time())
 
     def update_streaming_card(self, card: FeishuStreamingCard, markdown: str) -> None:
         text = str(markdown or "").strip() or _FEISHU_STREAM_START_TEXT
@@ -244,10 +261,11 @@ class FeishuClient:
         )
         card.content = text
 
-    def close_streaming_card(self, card: FeishuStreamingCard, markdown: str) -> None:
+    def close_streaming_card(self, card: FeishuStreamingCard, markdown: str, *, is_error: bool = False) -> None:
         text = str(markdown or "").strip() or "（空响应）"
         if text != card.content:
             self.update_streaming_card(card, text)
+        elapsed_ms = _elapsed_ms_since(card.started_at)
         card.sequence += 1
         self._patch(
             f"/open-apis/cardkit/v1/cards/{card.card_id}/settings",
@@ -265,6 +283,11 @@ class FeishuClient:
                 "uuid": _streaming_card_uuid(card.card_id, card.sequence),
             },
         )
+        if self.config.footer_status or self.config.footer_elapsed:
+            try:
+                self._update_streaming_card_entity(card, text, elapsed_ms=elapsed_ms, is_error=is_error)
+            except FeishuApiError:
+                pass
 
     def add_reaction(self, message_id: str, emoji_type: str = _FEISHU_ACK_EMOJI_TYPE) -> str:
         if not self.config.app_id or not self.config.app_secret:
@@ -297,7 +320,7 @@ class FeishuClient:
             {},
             {
                 "type": "card_json",
-                "data": dumps(_streaming_card_payload(markdown)),
+                "data": dumps(_streaming_card_payload(markdown, self.config)),
             },
         )
         data = response.get("data") if isinstance(response.get("data"), dict) else {}
@@ -318,16 +341,49 @@ class FeishuClient:
         )
         return _message_id_from_response(response)
 
-    def _reply_interactive_card(self, message_id: str, card_id: str) -> str:
+    def _update_streaming_card_entity(
+        self,
+        card: FeishuStreamingCard,
+        markdown: str,
+        *,
+        elapsed_ms: int,
+        is_error: bool,
+    ) -> None:
+        card.sequence += 1
+        self._put(
+            f"/open-apis/cardkit/v1/cards/{card.card_id}",
+            {},
+            {
+                "card": {
+                    "type": "card_json",
+                    "data": dumps(
+                        _streaming_card_payload(
+                            markdown,
+                            self.config,
+                            status="error" if is_error else "complete",
+                            elapsed_ms=elapsed_ms,
+                        )
+                    ),
+                },
+                "sequence": card.sequence,
+                "uuid": _streaming_card_uuid(card.card_id, card.sequence),
+            },
+        )
+        card.content = markdown
+
+    def _reply_interactive_card(self, message_id: str, card_id: str, *, reply_in_thread: bool = False) -> str:
         if not message_id:
             return ""
+        payload: dict[str, Any] = {
+            "msg_type": "interactive",
+            "content": dumps(_interactive_card_content(card_id)),
+        }
+        if reply_in_thread:
+            payload["reply_in_thread"] = True
         response = self._post(
             f"/open-apis/im/v1/messages/{message_id}/reply",
             {},
-            {
-                "msg_type": "interactive",
-                "content": dumps(_interactive_card_content(card_id)),
-            },
+            payload,
         )
         return _message_id_from_response(response)
 
@@ -541,7 +597,7 @@ class FeishuChannelService:
 
     def _process_message(self, message: FeishuInboundMessage) -> None:
         self._safe_add_reaction(message)
-        lock = self._chat_lock(message.chat_id)
+        lock = self._chat_lock(self._session_key(message))
         with lock:
             reply_message_id = ""
             streaming_card: FeishuStreamingCard | None = None
@@ -587,7 +643,11 @@ class FeishuChannelService:
 
     def _try_start_streaming_card(self, message: FeishuInboundMessage) -> FeishuStreamingCard | None:
         try:
-            return self.client.start_streaming_card(message.chat_id, reply_to_message_id=message.message_id)
+            return self.client.start_streaming_card(
+                message.chat_id,
+                reply_to_message_id=message.message_id,
+                reply_in_thread=self._reply_in_thread(message),
+            )
         except Exception:
             return None
 
@@ -626,7 +686,7 @@ class FeishuChannelService:
 
         response = final_response or "".join(parts) or "（空响应）"
         if conversation_id:
-            self._session_store.record(message.chat_id, conversation_id)
+            self._session_store.record(self._session_key(message), conversation_id)
         return response
 
     def _safe_replace_streaming_markdown(self, message_id: str, chat_id: str, markdown: str) -> bool:
@@ -661,7 +721,7 @@ class FeishuChannelService:
 
     def _send_streaming_card_failure(self, card: FeishuStreamingCard, text: str) -> None:
         try:
-            self.client.close_streaming_card(card, text)
+            self.client.close_streaming_card(card, text, is_error=True)
             return
         except Exception:
             pass
@@ -692,7 +752,7 @@ class FeishuChannelService:
             pass
 
     def _mnemo_request(self, message: FeishuInboundMessage) -> RunRequest:
-        conversation_id = self._session_store.conversation_id(message.chat_id)
+        conversation_id = self._session_store.conversation_id(self._session_key(message))
         return RunRequest(
             message=message.text,
             state_dir=self.config.state_dir,
@@ -714,8 +774,17 @@ class FeishuChannelService:
             result = run_provider(request, _anthropic_adapter(self.config), max_tool_rounds=self.config.max_tool_rounds)
         else:
             raise MnemoError(f"unsupported provider: {self.config.provider}")
-        self._session_store.record(message.chat_id, result.conversation_id)
+        self._session_store.record(self._session_key(message), result.conversation_id)
         return result
+
+    def _session_key(self, message: FeishuInboundMessage) -> str:
+        thread_id = _message_thread_id(message)
+        if self.config.thread_session and message.chat_type != "p2p" and thread_id:
+            return f"{message.chat_id}#thread:{thread_id}"
+        return message.chat_id
+
+    def _reply_in_thread(self, message: FeishuInboundMessage) -> bool:
+        return self.config.thread_session and message.chat_type != "p2p" and bool(_message_thread_id(message))
 
     def _stream_mnemo_events(self, message: FeishuInboundMessage):
         request = self._mnemo_request(message)
@@ -935,6 +1004,9 @@ def save_feishu_saved_config(
     connection: str = "websocket",
     webhook_path: str = _DEFAULT_WEBHOOK_PATH,
     streaming: bool = True,
+    footer_status: bool = True,
+    footer_elapsed: bool = True,
+    thread_session: bool = True,
 ) -> dict[str, Any]:
     app_id = str(credentials.get("app_id") or credentials.get("client_id") or "").strip()
     app_secret = str(credentials.get("app_secret") or credentials.get("client_secret") or "").strip()
@@ -946,6 +1018,9 @@ def save_feishu_saved_config(
         "domain": _normalize_domain(str(credentials.get("domain") or "feishu")),
         "connection": _normalize_connection(connection),
         "streaming": bool(streaming),
+        "footer_status": bool(footer_status),
+        "footer_elapsed": bool(footer_elapsed),
+        "thread_session": bool(thread_session),
         "webhook_path": _normalize_path(webhook_path),
         "app_id": app_id,
         "app_secret": app_secret,
@@ -984,6 +1059,9 @@ def feishu_channel_status(state_dir: str | Path) -> dict[str, Any]:
         "domain": str(saved.get("domain") or ""),
         "connection": str(saved.get("connection") or ""),
         "streaming": bool(saved.get("streaming", True)),
+        "footer_status": bool(saved.get("footer_status", True)),
+        "footer_elapsed": bool(saved.get("footer_elapsed", True)),
+        "thread_session": bool(saved.get("thread_session", True)),
         "webhook_path": str(saved.get("webhook_path") or _DEFAULT_WEBHOOK_PATH),
         "app_id": _mask_secret(str(saved.get("app_id") or "")),
         "owner_open_id": str(saved.get("owner_open_id") or ""),
@@ -1169,6 +1247,9 @@ def _extract_inbound_message(payload: dict[str, Any]) -> FeishuInboundMessage | 
         sender_type=str(sender.get("sender_type") or ""),
         sender_ids=sender_ids,
         mentions=_mentions(message),
+        root_id=str(message.get("root_id") or ""),
+        parent_id=str(message.get("parent_id") or ""),
+        thread_id=str(message.get("thread_id") or ""),
     )
 
 
@@ -1195,6 +1276,9 @@ def _extract_inbound_message_from_sdk_event(data: Any) -> FeishuInboundMessage |
         sender_type=str(getattr(sender, "sender_type", "") or ""),
         sender_ids=sender_ids,
         mentions=_sdk_mentions(message),
+        root_id=str(getattr(message, "root_id", "") or ""),
+        parent_id=str(getattr(message, "parent_id", "") or ""),
+        thread_id=str(getattr(message, "thread_id", "") or ""),
     )
 
 
@@ -1345,29 +1429,89 @@ def _interactive_card_content(card_id: str) -> dict[str, Any]:
     return {"type": "card", "data": {"card_id": card_id}}
 
 
-def _streaming_card_payload(markdown: str) -> dict[str, Any]:
+def _streaming_card_payload(
+    markdown: str,
+    config: FeishuChannelConfig | None = None,
+    *,
+    status: str = "streaming",
+    elapsed_ms: int | None = None,
+) -> dict[str, Any]:
     text = str(markdown or "").strip() or _FEISHU_STREAM_START_TEXT
+    elements: list[dict[str, Any]] = [
+        {
+            "tag": "markdown",
+            "element_id": _FEISHU_STREAM_CARD_ELEMENT_ID,
+            "content": text,
+            "text_align": "left",
+            "text_size": "normal",
+            "margin": "0px 0px 0px 0px",
+        }
+    ]
+    footer = _streaming_card_footer_element(config, status=status, elapsed_ms=elapsed_ms)
+    if footer:
+        elements.append(footer)
     return {
         "schema": "2.0",
         "config": {
-            "streaming_mode": True,
+            "streaming_mode": status == "streaming",
             "summary": {"content": _streaming_card_summary(text)},
         },
         "body": {
             "direction": "vertical",
             "padding": "12px 12px 12px 12px",
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "element_id": _FEISHU_STREAM_CARD_ELEMENT_ID,
-                    "content": text,
-                    "text_align": "left",
-                    "text_size": "normal",
-                    "margin": "0px 0px 0px 0px",
-                }
-            ],
+            "elements": elements,
         },
     }
+
+
+def _streaming_card_footer_element(
+    config: FeishuChannelConfig | None,
+    *,
+    status: str,
+    elapsed_ms: int | None,
+) -> dict[str, Any] | None:
+    if config is None or status not in {"complete", "error"}:
+        return None
+    zh_parts: list[str] = []
+    en_parts: list[str] = []
+    if config.footer_status:
+        if status == "error":
+            zh_parts.append("出错")
+            en_parts.append("Error")
+        else:
+            zh_parts.append("已完成")
+            en_parts.append("Completed")
+    if config.footer_elapsed and elapsed_ms is not None:
+        elapsed = _format_elapsed_ms(elapsed_ms)
+        zh_parts.append(f"耗时 {elapsed}")
+        en_parts.append(f"Elapsed {elapsed}")
+    if not zh_parts:
+        return None
+    zh_content = " · ".join(zh_parts)
+    en_content = " · ".join(en_parts)
+    if status == "error":
+        zh_content = f"<font color='red'>{zh_content}</font>"
+        en_content = f"<font color='red'>{en_content}</font>"
+    return {
+        "tag": "markdown",
+        "content": zh_content,
+        "i18n_content": {"zh_cn": zh_content, "en_us": en_content},
+        "text_size": "notation",
+        "margin": "8px 0px 0px 0px",
+    }
+
+
+def _format_elapsed_ms(elapsed_ms: int) -> str:
+    seconds = max(0, elapsed_ms) / 1000
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    return f"{int(seconds // 60)}m {round(seconds % 60)}s"
+
+
+def _elapsed_ms_since(started_at: float) -> int:
+    if started_at <= 0:
+        return 0
+    return max(0, int((time.time() - started_at) * 1000))
 
 
 def _streaming_card_summary(text: str) -> str:
@@ -1379,6 +1523,10 @@ def _streaming_card_summary(text: str) -> str:
 
 def _streaming_card_uuid(card_id: str, sequence: int) -> str:
     return f"mnemo-{card_id}-{sequence}"
+
+
+def _message_thread_id(message: FeishuInboundMessage) -> str:
+    return str(message.thread_id or message.root_id or message.parent_id or "").strip()
 
 
 def _event_text(event: ChatEvent) -> str:

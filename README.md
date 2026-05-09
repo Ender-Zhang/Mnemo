@@ -102,7 +102,7 @@ mnemo channels feishu onboard --state-dir .mnemo
 mnemo channels feishu serve --state-dir .mnemo --connection websocket
 ```
 
-The onboarding command uses Feishu/Lark scan-to-create registration and saves the returned app credentials to `.mnemo/channels/feishu_config.json` with `0600` permissions. CLI and Web status output masks secrets. When the saved connection is websocket, `mnemo service install/start/restart` also starts the Feishu listener as a service sidecar. Incoming messages receive a small emoji acknowledgement. Assistant replies default to Feishu official streaming cards (`channels.feishu.streaming=true` style behavior); `mnemo channels feishu serve --no-streaming` falls back to the legacy rich-post edit path.
+The onboarding command uses Feishu/Lark scan-to-create registration and saves the returned app credentials to `.mnemo/channels/feishu_config.json` with `0600` permissions. CLI and Web status output masks secrets. When the saved connection is websocket, `mnemo service install/start/restart` also starts the Feishu listener as a service sidecar. Incoming messages receive a small emoji acknowledgement. Assistant replies default to Feishu official streaming cards (`channels.feishu.streaming=true` style behavior) with status/elapsed footer metadata and topic/thread session isolation enabled; `mnemo channels feishu serve --no-streaming`, `--no-footer-status`, `--no-footer-elapsed`, or `--no-thread-session` can disable those surfaces.
 
 Existing self-built apps can still use webhook mode:
 
