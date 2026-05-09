@@ -312,3 +312,36 @@ Diagnosed bound Feishu bots not replying because only the web process was runnin
 ### Next Steps
 
 - None - task complete
+
+
+## Session 124: Feishu Markdown And Web Auth
+
+**Date**: 2026-05-09
+**Task**: Feishu Markdown And Web Auth
+**Branch**: `main`
+
+### Summary
+
+Rendered Feishu replies as rich post Markdown, added password-gated Web access through MNEMO_WEB_PASSWORD/MNEMO_WEB_PASSWORD_SHA256 with signed HttpOnly sessions, restarted mem.day.qzz.io with a local password, and verified tests plus deployment health.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e1f2360` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
