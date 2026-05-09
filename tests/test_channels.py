@@ -93,7 +93,7 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertEqual(sent["receive_id"], "oc_chat")
                     self.assertEqual(sent["msg_type"], "post")
                     sent_content = json.loads(sent["content"])
-                    self.assertIn("正在思考", sent_content["zh_cn"]["content"][0][0]["text"])
+                    self.assertEqual(sent_content["zh_cn"]["content"][0][0]["text"], "\u200b")
 
                     update_requests = api.requests_for("/open-apis/im/v1/messages/om_reply")
                     self.assertGreaterEqual(len(update_requests), 1)
@@ -215,6 +215,7 @@ class FeishuChannelTests(unittest.TestCase):
                     card_payload = json.loads(created[0]["body"]["data"])
                     self.assertTrue(card_payload["config"]["streaming_mode"])
                     self.assertEqual(card_payload["body"]["elements"][0]["element_id"], "content")
+                    self.assertEqual(card_payload["body"]["elements"][0]["content"], "\u200b")
                     self.assertEqual(replied[0]["body"]["msg_type"], "interactive")
                     reply_content = json.loads(replied[0]["body"]["content"])
                     self.assertEqual(reply_content["data"]["card_id"], "card_reply")

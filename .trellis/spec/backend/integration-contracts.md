@@ -305,7 +305,7 @@
 - Assistant replies default to Feishu official streaming cards when `streaming=true`: create a CardKit card through `/open-apis/cardkit/v1/cards`, send or reply with an `interactive` card message, update the card element through `/open-apis/cardkit/v1/cards/:card_id/elements/:element_id/content`, then close streaming mode through `/open-apis/cardkit/v1/cards/:card_id/settings`.
 - If streaming-card startup fails, or `--no-streaming` / `FEISHU_STREAMING=false` is set, assistant replies fall back to Feishu/Lark rich `post` messages with Markdown blocks when possible; send failures fall back to a structural rich-post conversion and error replies may remain plain text.
 - Feishu inbound messages may receive a best-effort emoji reaction through `/open-apis/im/v1/messages/:message_id/reactions`; reaction failures must not block runtime processing.
-- Legacy rich-post streaming is implemented by sending one placeholder rich post, then editing that message through `/open-apis/im/v1/messages/:message_id` with throttled partial content and one final edit; partial edits must stay below the platform's 20-edit limit.
+- Legacy rich-post streaming is implemented by sending one invisible placeholder rich post, then editing that message through `/open-apis/im/v1/messages/:message_id` with throttled partial content and one final edit; partial edits must stay below the platform's 20-edit limit.
 - Per-chat execution is serialized so a chat cannot overlap multiple Mnemo turns.
 - Feishu chat ids map to Mnemo conversation ids in state-local channel metadata so follow-up messages keep continuity.
 - Group messages honor the mention gate when `require_mention` is true and a bot identity is configured; DMs are accepted.
