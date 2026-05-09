@@ -30,6 +30,10 @@
 - `MemoryEngine.load_latest_dream_report() -> dict[str, Any] | None`
 - `MemoryEngine.load_dream_report(report_id: str | None = None, *, latest: bool = False) -> dict[str, Any] | None`
 - `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7, *, candidate_ids: list[str] | set[str] | None = None, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
+- `run_dream_with_provider(*, state_dir: str | Path, provider: ProviderAdapter, workspace_root: str | Path | None = None, limit: int = 20, since: float | None = None, max_tool_rounds: int = 3, persist: bool = True) -> dict[str, Any]`
+- `ScheduleService.tick(*, now: float | str | None = None, limit: int = 50, kind: str | None = None, dream_runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> dict[str, Any]`
+- `ensure_default_dream_schedule(state_dir: str | Path, *, now: float | str | None = None, schedule: str = "daily", limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
+- `mnemo.interfaces.web._AutoDreamScheduler.tick_once(*, now: float | str | None = None) -> dict[str, Any]`
 - `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
 - `MemoryEngine.load_or_compile_l1_snapshot(limit: int = 50) -> dict[str, Any] | None`
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
@@ -137,6 +141,10 @@
 - Dream action result payloads must contain ids, statuses, counts, and compact eval/replacement metadata only; they must not copy full memory bodies or raw transcripts.
 - Dream reports are compact JSON documents persisted under `runs/dream-reports/` with `delta`, `plan`, `execution`, and `health_after`.
 - Due Dream scheduled items run model-led Dream maintenance when a provider-backed runner is supplied; otherwise they call `MemoryEngine.dream_maintenance()` only to persist a `model_required` no-op report. They persist the latest report card on the scheduled item.
+- `ensure_default_dream_schedule()` creates one active service-owned Dream scheduled item only when no active Dream item already exists; an existing paused/disabled service-owned auto item is respected and must not be duplicated.
+- `serve_web()` starts a low-priority auto Dream scheduler thread that ensures the default Dream schedule, then periodically calls `ScheduleService.tick(kind="dream", dream_runner=...)` so web service uptime is enough to run Dream without user commands.
+- Web auto Dream must not consume a due item with local deterministic fallback. If no provider-backed runner is available, it leaves the default Dream item due and reports `provider_required`; with a misconfigured provider, the scheduled tick records the compact failure for retry.
+- Auto Dream scheduling is only a trigger and budget surface; the model still chooses every memory maintenance tool call through `run_dream_with_provider()`.
 - MCP Dream registration is a thin facade over `ScheduleService.add_dream()` and must not bypass the scheduled maintenance path.
 - SDK/HTTP Dream registration is the same kind of thin facade; due execution remains `ScheduleService.tick()`.
 - Dream scheduled ticks refresh the L1 snapshot through the normal Dream execution result, and tick/report payloads expose only snapshot counts and report ids.
@@ -305,7 +313,8 @@
 - Good: apply explicit Dream maintenance actions through existing MemoryEngine tools and record skipped action reasons compactly.
 - Good: persist Dream reports as compact managed-state JSON so status/report inspection does not require another schema surface.
 - Good: schedule Dream as a bounded maintenance trigger while keeping consolidation/actions inside MemoryEngine.
-- Base: deterministic dream fallback may execute the current delta while provider-led Dream runs are not yet wired.
+- Good: let the web service auto-register one Dream trigger and tick only due Dream items when a provider-backed runner is available.
+- Base: provider-led Dream runs execute through the bounded tool bundle; without provider-selected tools or explicit actions, Dream records `model_required` no-op metadata rather than promoting by rule.
 - Base: deterministic QueryPlanner is a retrieval helper, not a mandatory pre-run workflow.
 - Bad: overwrite an active memory page directly from a conflicting candidate.
 - Bad: bypass `MemoryEngine.write_candidate()` from tools or W0 ingestion.

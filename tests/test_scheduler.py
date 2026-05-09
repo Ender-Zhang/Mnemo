@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from mnemo.runtime import DaemonRunner, ScheduleService, run_local
-from mnemo.runtime.scheduler import next_due_time, parse_schedule_time
+from mnemo.runtime.scheduler import ensure_default_dream_schedule, next_due_time, parse_schedule_time
 from mnemo.storage import StateStore
 
 
@@ -100,6 +100,69 @@ class ScheduleServiceTests(unittest.TestCase):
             self.assertEqual(result["processed"][0]["status"], "dream_completed")
             self.assertEqual(updated["status"], "active")
             self.assertEqual(updated["next_run_at"], 70.0)
+
+    def test_ensure_default_dream_schedule_creates_immediate_auto_item_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first = ensure_default_dream_schedule(tmp, now=42)
+            second = ensure_default_dream_schedule(tmp, now=99)
+
+            item = first["item"]
+            self.assertTrue(first["created"])
+            self.assertFalse(second["created"])
+            self.assertEqual(second["item"]["id"], item["id"])
+            self.assertEqual(item["kind"], "dream")
+            self.assertEqual(item["source"], "service")
+            self.assertEqual(item["status"], "active")
+            self.assertEqual(item["next_run_at"], 42.0)
+            self.assertTrue(item["metadata"]["auto_dream"])
+            self.assertEqual(item["metadata"]["dream"]["limit"], 20)
+            self.assertEqual(len(ScheduleService(tmp).list_items(kind="dream", status=None, limit=10)), 1)
+
+    def test_ensure_default_dream_schedule_respects_disabled_auto_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first = ensure_default_dream_schedule(tmp, now=42)
+            service = ScheduleService(tmp)
+            service.update_status(first["item"]["id"], "disabled")
+
+            second = ensure_default_dream_schedule(tmp, now=99)
+
+            self.assertFalse(second["created"])
+            self.assertEqual(second["item"]["id"], first["item"]["id"])
+            self.assertEqual(second["item"]["status"], "disabled")
+            self.assertEqual(service.list_items(kind="dream", status="active", limit=10), [])
+
+    def test_tick_can_process_only_due_dream_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = ScheduleService(tmp)
+            cron = service.add_cron(message="remember: should stay queued later", schedule="once", next_run_at=0)
+            dream = service.add_dream(schedule="once", next_run_at=0, limit=5)
+
+            def fake_dream_runner(_item: dict) -> dict:
+                return {
+                    "id": "dream_fake",
+                    "completed_at": 1,
+                    "execution": {
+                        "mode": "model_tool_calls",
+                        "result": {
+                            "promoted": [],
+                            "rejected": [],
+                            "skipped": [],
+                            "conflicts": [],
+                            "counts": {"tool_calls": 0},
+                            "actions": {"counts": {"applied": 0, "skipped": 0}},
+                            "snapshot": {"page_count": 0},
+                        },
+                    },
+                }
+
+            result = service.tick(now=1, limit=10, kind="dream", dream_runner=fake_dream_runner)
+
+            store = StateStore(tmp)
+            self.assertEqual([item["scheduled_item_id"] for item in result["processed"]], [dream["id"]])
+            self.assertEqual(store.get_scheduled_item(dream["id"])["status"], "completed")
+            self.assertEqual(store.get_scheduled_item(cron["id"])["status"], "active")
+            self.assertEqual(store.get_scheduled_item(cron["id"])["next_run_at"], 0.0)
+            self.assertEqual(store.list_queue_items(status=None), [])
 
     def test_watch_feedback_records_model_sparsify_decision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

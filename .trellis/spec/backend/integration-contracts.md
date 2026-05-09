@@ -117,7 +117,9 @@
 
 ### 2. Signatures
 - `build_http_server(WebServerConfig(...)) -> ThreadingHTTPServer`
+- `serve_web(WebServerConfig(...)) -> None`
 - `serve_api(WebServerConfig(...)) -> None`
+- `mnemo.interfaces.web._AutoDreamScheduler.tick_once(*, now: float | str | None = None) -> dict[str, Any]`
 - `GET /api/core/schema -> { "api_schema": mnemo_core_api_schema() }`
 - `GET /api/core/openapi.json -> OpenAPI 3.1.0 document`
 - `POST /api/core/context`
@@ -136,6 +138,9 @@
 
 ### 3. Contracts
 - HTTP core routes are thin transports over `MnemoClient`; they must not duplicate memory search, prompt assembly, runtime execution, eval, or external command adapter logic.
+- `serve_web()` owns web-service background duties: it starts the stdlib HTTP server and a daemon auto Dream scheduler that ensures one default service-owned Dream item and ticks only due Dream items.
+- The auto Dream scheduler must build its provider runner from live web runtime settings each tick, so settings/env changes apply without process-local rule fallback.
+- The auto Dream scheduler must leave due Dream items untouched when the runtime provider is `local`; misconfigured provider-backed runs are recorded as scheduled tick failures for retry.
 - HTTP core responses wrap SDK results as `{ "method": "<method>", "result": <sdk payload> }`.
 - Hyphenated paths map to snake-case API methods, for example `/api/core/external-run` maps to `external_run`.
 - `/api/core/openapi.json` is compact discovery for current core methods; it is not generated client code.
@@ -162,12 +167,15 @@
 - Good: add HTTP routes by extending the core method dispatcher and SDK schema together.
 - Good: keep HTTP payloads compact and aligned with SDK/MCP output shapes.
 - Good: keep Web UI helper routes as read-only projections over existing services with compact payloads.
+- Good: keep service background jobs routed through existing scheduler/runtime services instead of route handlers.
 - Base: stdlib HTTP server is enough for local and lightweight remote deployments.
 - Bad: adding route-specific memory/runtime behavior that bypasses `MnemoClient`.
+- Bad: letting web background Dream tick watch/cron items or run deterministic memory promotion rules.
 - Bad: returning raw provider tool schemas, full transcripts, or external command stdout bodies through HTTP.
 
 ### 6. Tests Required
 - Web tests for schema, OpenAPI discovery, method dispatch including schedule-dream, schedule-watch, schedule-cron, and runtime-status, compactness, and JSON error handling.
+- Web tests for auto Dream scheduler default registration and provider-backed due tick behavior.
 - Web tests for `/api/catalog` compactness and Skills/Tools static asset hooks.
 - CLI tests for `mnemo api serve --help`.
 - Package install smoke coverage for `mnemo.interfaces.web`.

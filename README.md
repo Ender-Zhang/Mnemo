@@ -132,6 +132,7 @@ mnemo daemon status --state-dir .mnemo
 
 mnemo schedule add --kind cron --message "Run memory maintenance" --schedule daily --state-dir .mnemo
 mnemo schedule add --kind watch --target "Rust progress" --instruction "Check blockers and decide whether to notify me" --schedule weekly --state-dir .mnemo
+mnemo schedule add --kind dream --schedule daily --state-dir .mnemo
 mnemo schedule feedback <watch_id> --outcome no_feedback --action sparsify --policy-schedule weekly --state-dir .mnemo
 mnemo schedule list --state-dir .mnemo
 mnemo schedule tick --state-dir .mnemo
@@ -179,7 +180,7 @@ mnemo tools uninstall <name> --state-dir .mnemo
 mnemo tools rollback <name> --reason "bad activation" --state-dir .mnemo
 ```
 
-Normal turns do not mutate stable memory directly. They write candidates and working notes; DreamCycle collects a compact delta, exposes a model-facing maintenance plan, persists a report, and uses local consolidation as fallback until provider-led idle runs are wired. Skills and tools follow the same model-directed pattern: propose, evaluate, review, then promote.
+Normal turns do not mutate stable memory directly. They write candidates and working notes; DreamCycle collects a compact delta, exposes a model-facing maintenance plan, and persists compact reports. `mnemo web` automatically ensures one service-owned Dream schedule and ticks due Dream items in the background when a provider-backed runner is configured; there is no deterministic promotion fallback. Skills and tools follow the same model-directed pattern: propose, evaluate, review, then promote.
 
 ## External Integration
 

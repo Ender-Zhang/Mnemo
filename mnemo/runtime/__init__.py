@@ -5,7 +5,7 @@ from .dream import run_dream_with_provider
 from .external import ExternalRunRequest, ExternalRuntimeError, run_external
 from .local import LocalAgentRuntime, run_local, stream_local
 from .provider import ProviderAgentRuntime, run_provider, stream_provider
-from .scheduler import ScheduleService, parse_schedule_time, scheduled_item_stats
+from .scheduler import ScheduleService, ensure_default_dream_schedule, parse_schedule_time, scheduled_item_stats
 from .service import WebServiceConfig, service_status
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "ScheduleService",
     "WebServiceConfig",
     "build_context_capsule",
+    "ensure_default_dream_schedule",
     "parse_schedule_time",
     "result_as_dict",
     "run_local",

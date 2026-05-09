@@ -15,6 +15,9 @@ WATCH_FEEDBACK_OUTCOMES = ("notified", "silent", "no_feedback", "useful", "not_u
 WATCH_POLICY_ACTIONS = ("keep", "sparsify", "pause", "disable")
 DEFAULT_DREAM_LIMIT = 20
 DEFAULT_DREAM_MIN_CONFIDENCE = 0.7
+DEFAULT_AUTO_DREAM_SCHEDULE = "daily"
+DEFAULT_AUTO_DREAM_TITLE = "Automatic Dream maintenance"
+AUTO_DREAM_SOURCE = "service"
 
 
 class ScheduleService:
@@ -167,11 +170,16 @@ class ScheduleService:
         *,
         now: float | str | None = None,
         limit: int = 50,
+        kind: str | None = None,
         dream_runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         self.store.initialize()
         tick_at = parse_schedule_time(now) if now is not None else time.time()
-        due_items = self.store.due_scheduled_items(now=tick_at, limit=limit)
+        clean_kind = _normalize_tick_kind(kind) if kind is not None else None
+        fetch_limit = max(int(limit), 1000) if clean_kind else int(limit)
+        due_items = self.store.due_scheduled_items(now=tick_at, limit=fetch_limit)
+        if clean_kind:
+            due_items = [item for item in due_items if item.get("kind") == clean_kind][: max(0, int(limit))]
         processed: list[dict[str, Any]] = []
         for item in due_items:
             processed.append(self._enqueue_due_item(item, now=tick_at, dream_runner=dream_runner))
@@ -277,6 +285,31 @@ class ScheduleService:
             return {"scheduled_item_id": item_id, "status": "failed", "error": str(exc)}
 
 
+def ensure_default_dream_schedule(
+    state_dir: str | Path,
+    *,
+    now: float | str | None = None,
+    schedule: str = DEFAULT_AUTO_DREAM_SCHEDULE,
+    limit: int = DEFAULT_DREAM_LIMIT,
+    min_confidence: float = DEFAULT_DREAM_MIN_CONFIDENCE,
+) -> dict[str, Any]:
+    service = ScheduleService(state_dir)
+    existing = _existing_default_dream_schedule(service)
+    if existing:
+        return {"created": False, "item": existing}
+
+    item = service.add_dream(
+        title=DEFAULT_AUTO_DREAM_TITLE,
+        schedule=schedule,
+        source=AUTO_DREAM_SOURCE,
+        next_run_at=parse_schedule_time(now) if now is not None else time.time(),
+        limit=limit,
+        min_confidence=min_confidence,
+        metadata={"auto_dream": True},
+    )
+    return {"created": True, "item": item}
+
+
 def scheduled_item_stats(store: StateStore) -> dict[str, Any]:
     items = store.list_scheduled_items(status=None, limit=1000)
     counts: dict[str, dict[str, int]] = {}
@@ -369,6 +402,25 @@ def _normalize_schedule(schedule: str) -> str:
     if normalized.startswith("at:"):
         return f"at:{normalized.split(':', 1)[1].strip()}"
     return normalized
+
+
+def _normalize_tick_kind(kind: str) -> str:
+    normalized = str(kind or "").strip().casefold()
+    if normalized not in {"watch", "cron", "dream"}:
+        raise ValueError(f"invalid scheduled item kind: {kind}")
+    return normalized
+
+
+def _existing_default_dream_schedule(service: ScheduleService) -> dict[str, Any] | None:
+    items = service.list_items(kind="dream", status=None, limit=1000)
+    for item in items:
+        if item.get("status") == "active":
+            return item
+    for item in items:
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        if metadata.get("auto_dream"):
+            return item
+    return None
 
 
 def _normalize_watch_feedback_outcome(value: str) -> str:

@@ -32,9 +32,10 @@ from ..channels import (
     start_feishu_qr_onboarding,
 )
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
-from ..runtime import stream_local, stream_provider
+from ..runtime import run_dream_with_provider, stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
+from ..runtime.scheduler import DEFAULT_DREAM_LIMIT, ScheduleService, ensure_default_dream_schedule
 from ..memory import MemoryEngine
 from ..memory.wiki import materialize_memory_page, memory_page_wiki_path, memory_page_wiki_ref
 from ..memory.query import MEMORY_ONTOLOGY_DIMENSIONS, is_known_memory_dimension, normalize_memory_dimension
@@ -73,6 +74,7 @@ _AUTH_COOKIE_NAME = "mnemo_web_session"
 _AUTH_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
 _AUTH_PASSWORD_ENV = "MNEMO_WEB_PASSWORD"
 _AUTH_PASSWORD_HASH_ENV = "MNEMO_WEB_PASSWORD_SHA256"
+_AUTO_DREAM_TICK_INTERVAL_SECONDS = 300.0
 
 _MEMORY_DIMENSION_LABELS = {
     "identity": "身份",
@@ -114,7 +116,10 @@ class MnemoHTTPServer(ThreadingHTTPServer):
 
 
 def serve_web(config: WebServerConfig) -> None:
+    config = _resolved_web_config(config)
     server = build_http_server(config)
+    auto_dream = _AutoDreamScheduler(config)
+    auto_dream.start()
     host, port = server.server_address
     print(f"Mnemo web listening on http://{host}:{port}")
     try:
@@ -122,6 +127,7 @@ def serve_web(config: WebServerConfig) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        auto_dream.stop()
         server.server_close()
 
 
@@ -681,6 +687,117 @@ def _stream_events(config: WebServerConfig, request: RunRequest):
         yield from stream_provider(request, provider, max_tool_rounds=config.max_tool_rounds)
         return
     raise ValueError(f"unsupported provider: {config.provider}")
+
+
+class _AutoDreamScheduler:
+    def __init__(
+        self,
+        config: WebServerConfig,
+        *,
+        interval_s: float = _AUTO_DREAM_TICK_INTERVAL_SECONDS,
+        limit: int = 5,
+    ) -> None:
+        self.config = config
+        self.interval_s = max(1.0, float(interval_s))
+        self.limit = max(1, int(limit))
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self._run, name="mnemo-auto-dream", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5)
+
+    def tick_once(self, *, now: float | str | None = None) -> dict[str, Any]:
+        if not self._lock.acquire(blocking=False):
+            return {"processed": [], "skipped": "busy"}
+        try:
+            ensured = ensure_default_dream_schedule(self.config.state_dir, now=now)
+            dream_runner = _dream_runner_for_web_config(self.config)
+            if dream_runner is None:
+                return {"processed": [], "auto_dream": ensured, "skipped": "provider_required"}
+            result = ScheduleService(self.config.state_dir).tick(
+                now=now,
+                limit=self.limit,
+                kind="dream",
+                dream_runner=dream_runner,
+            )
+            result["auto_dream"] = ensured
+            return result
+        finally:
+            self._lock.release()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.tick_once()
+            except Exception as exc:
+                print(f"Mnemo auto Dream scheduler error: {exc}")
+            if self._stop.wait(self.interval_s):
+                break
+
+
+def _dream_runner_for_web_config(config: WebServerConfig) -> Callable[[dict[str, Any]], dict[str, Any]] | None:
+    effective = _effective_web_config(config)
+    if effective.provider == "local":
+        return None
+    if effective.provider == "openai-compatible":
+        if not effective.base_url or not effective.model:
+            return _failing_dream_runner("openai-compatible provider requires base_url and model")
+        provider = OpenAIProviderAdapter(
+            ProviderConfig(
+                base_url=effective.base_url,
+                model=effective.model,
+                api_key=effective.api_key,
+                timeout_s=effective.timeout_s,
+                retry_count=effective.retry_count,
+                retry_backoff_s=effective.retry_backoff_s,
+                stream=True,
+            )
+        )
+    elif effective.provider == "anthropic":
+        if not effective.model:
+            return _failing_dream_runner("anthropic provider requires model")
+        provider = AnthropicProviderAdapter(
+            ProviderConfig(
+                base_url=effective.base_url or _ANTHROPIC_DEFAULT_BASE_URL,
+                model=effective.model,
+                api_key=effective.api_key,
+                timeout_s=effective.timeout_s,
+                retry_count=effective.retry_count,
+                retry_backoff_s=effective.retry_backoff_s,
+                stream=True,
+            )
+        )
+    else:
+        return _failing_dream_runner(f"unsupported provider: {effective.provider}")
+
+    def run(item: dict[str, Any]) -> dict[str, Any]:
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        dream_config = metadata.get("dream") if isinstance(metadata.get("dream"), dict) else {}
+        return run_dream_with_provider(
+            state_dir=effective.state_dir,
+            provider=provider,
+            workspace_root=effective.workspace_root,
+            limit=int(dream_config.get("limit") or DEFAULT_DREAM_LIMIT),
+            max_tool_rounds=effective.max_tool_rounds,
+        )
+
+    return run
+
+
+def _failing_dream_runner(message: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    def run(_item: dict[str, Any]) -> dict[str, Any]:
+        raise ValueError(message)
+
+    return run
 
 
 def _effective_web_config(config: WebServerConfig) -> WebServerConfig:

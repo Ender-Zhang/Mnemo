@@ -56,6 +56,8 @@
 - `StateStore.update_scheduled_item_status(item_id: str, status: str) -> dict[str, Any]`
 - `StateStore.record_scheduled_item_tick(item_id: str, *, next_run_at: float | None, queue_id: str | None = None, status: str | None = None, error: str | None = None, now: float | None = None) -> dict[str, Any]`
 - `StateStore.update_scheduled_item_policy(item_id: str, *, schedule: str | None = None, status: str | None = None, next_run_at: float | None = None, update_next_run_at: bool = False, metadata: dict[str, Any] | None = None) -> dict[str, Any]`
+- `ScheduleService.tick(*, now: float | str | None = None, limit: int = 50, kind: str | None = None, dream_runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> dict[str, Any]`
+- `ensure_default_dream_schedule(state_dir: str | Path, *, now: float | str | None = None, schedule: str = "daily", limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
 - `StateStore.list_working_notes(status: str | None = "open", limit: int = 50) -> list[dict[str, Any]]`
 - `StateStore.list_memory_links(source_id: str) -> list[dict[str, Any]]`
 - `StateStore.list_memory_backlinks(target_id: str) -> list[dict[str, Any]]`
@@ -140,7 +142,9 @@
 - Scheduled item kinds are `watch`, `cron`, and `dream`; statuses are `active`, `paused`, `completed`, and `disabled`.
 - `due_scheduled_items()` returns only active rows with `next_run_at <= now`, ordered by due time then creation time.
 - Scheduled items do not execute work directly; due processing must enqueue existing `run_queue` requests with `metadata.source="scheduler"`.
-- Dream scheduled items are the exception: due processing runs bounded `MemoryEngine.dream_maintenance()` directly, persists a compact Dream report, stores the latest compact report card in `scheduled_items.metadata.last_dream_report`, and does not enqueue `run_queue`.
+- Dream scheduled items are the exception: due processing runs bounded Dream maintenance directly, uses a provider-backed Dream runner when one is supplied, otherwise persists a compact `model_required` report, stores the latest compact report card in `scheduled_items.metadata.last_dream_report`, and does not enqueue `run_queue`.
+- `ScheduleService.tick(kind="dream")` filters due processing to Dream items only; background service ticks use this mode so they do not enqueue unrelated watch/cron work.
+- `ensure_default_dream_schedule()` creates a service-owned Dream registration with `metadata.auto_dream=true`, immediate first due time, and no duplicate if any active Dream schedule exists or a paused/disabled auto Dream item already exists.
 - One-shot schedules become `completed` after a successful tick; recurring schedules stay `active` with an advanced `next_run_at`.
 - Watch feedback is stored in `scheduled_items.metadata.watch_feedback` as compact counts, streaks, recent bounded outcomes, and the last explicit model/user decision.
 - `update_scheduled_item_policy()` is the only storage API for applying Watch policy changes such as sparse schedule, paused, or disabled status.
@@ -221,7 +225,8 @@
 - Good: expose artifact bodies through explicit artifact lookup APIs instead of duplicating bodies in chat events.
 - Good: store user decisions as Inbox items and return item ids in chat events.
 - Good: process proactive work by enqueueing `run_queue` items so scheduled runs reuse the same runtime harness as user turns.
-- Good: process Dream scheduled items through `MemoryEngine.dream_maintenance()` because Dream is memory maintenance, not a user task run.
+- Good: process Dream scheduled items through the bounded Dream maintenance path because Dream is memory maintenance, not a user task run.
+- Good: use `ScheduleService.tick(kind="dream")` for service-owned background Dream ticks so unrelated due watch/cron registrations are left for normal scheduler/daemon processing.
 - Good: record Watch learning as compact metadata and apply explicit model/user decisions through `ScheduleService`.
 - Good: expose browser replay by `ChatEvent.event_id`, not internal run-event sequence.
 - Good: expose L4 session recall as bounded snippets with provenance ids, not full transcripts.

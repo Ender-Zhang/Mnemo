@@ -21,6 +21,46 @@ class WebInterfaceTests(unittest.TestCase):
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
                 self.assertTrue(getattr(server.server, "daemon_threads", False))
 
+    def test_auto_dream_scheduler_tick_creates_and_runs_default_dream_schedule(self) -> None:
+        original_runner_factory = web_module._dream_runner_for_web_config
+
+        def fake_runner_factory(_config: WebServerConfig):
+            def run(_item: dict) -> dict:
+                return {
+                    "id": "dream_web_fake",
+                    "completed_at": 1,
+                    "execution": {
+                        "mode": "model_tool_calls",
+                        "result": {
+                            "promoted": [],
+                            "rejected": [],
+                            "skipped": [],
+                            "conflicts": [],
+                            "counts": {"tool_calls": 0},
+                            "actions": {"counts": {"applied": 0, "skipped": 0}},
+                            "snapshot": {"page_count": 0},
+                        },
+                    },
+                }
+
+            return run
+
+        web_module._dream_runner_for_web_config = fake_runner_factory
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                scheduler = web_module._AutoDreamScheduler(WebServerConfig(state_dir=tmp, port=0))
+                result = scheduler.tick_once(now=1)
+                item = StateStore(tmp).list_scheduled_items(kind="dream", status=None, limit=10)[0]
+        finally:
+            web_module._dream_runner_for_web_config = original_runner_factory
+
+        self.assertTrue(result["auto_dream"]["created"])
+        self.assertEqual(result["processed"][0]["status"], "dream_completed")
+        self.assertEqual(item["source"], "service")
+        self.assertEqual(item["status"], "active")
+        self.assertEqual(item["next_run_at"], 86401.0)
+        self.assertEqual(item["metadata"]["last_dream_report"]["id"], "dream_web_fake")
+
     def test_web_chat_streams_chat_events_and_preserves_ids(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
