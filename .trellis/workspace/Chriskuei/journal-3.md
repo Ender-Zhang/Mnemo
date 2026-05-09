@@ -279,3 +279,36 @@ Added unified install onboarding, service management, API credential setup, and 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 123: Feishu Service Sidecar
+
+**Date**: 2026-05-09
+**Task**: Feishu Service Sidecar
+**Branch**: `main`
+
+### Summary
+
+Diagnosed bound Feishu bots not replying because only the web process was running, added an automatic websocket Feishu sidecar to the Mnemo service launcher, verified mem.day.qzz.io and live listener health, and covered sidecar inclusion/secret-redaction with CLI tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e099f45` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
