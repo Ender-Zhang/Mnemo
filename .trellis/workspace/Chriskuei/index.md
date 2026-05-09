@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 128
+- **Total Sessions**: 129
 - **Last Active**: 2026-05-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~503 | Active |
+| `journal-3.md` | ~563 | Active |
 | `journal-2.md` | ~1973 | Archived |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 129 | 2026-05-09 | Hide Feishu Stream Placeholder | `e28ad3c` | `main` |
 | 128 | 2026-05-09 | Feishu Official Streaming Cards | `d3b554e` | `main` |
 | 127 | 2026-05-09 | Auto Dream Web Scheduler | `548b954` | `main` |
 | 126 | 2026-05-09 | Feishu streaming replies | `dbb69a5` | `main` |

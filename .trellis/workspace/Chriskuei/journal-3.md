@@ -501,3 +501,63 @@ Replaced the default Feishu reply streaming path with official CardKit streaming
 ### Next Steps
 
 - None - task complete
+
+
+## Session 129: Hide Feishu Stream Placeholder
+
+**Date**: 2026-05-09
+**Task**: Hide Feishu Stream Placeholder
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+### Summary
+
+Removed the visible Feishu reply startup text so official streaming cards and legacy rich-post fallback start with an invisible placeholder until the first model content arrives.
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| Feishu channel | Changed the initial streaming placeholder from visible `正在思考...` text to a zero-width placeholder while preserving card create/update/close behavior. |
+| Fallback | Updated the legacy rich-post fallback expectation so the first temporary post is invisible before throttled stream edits replace it. |
+| Specification | Updated the backend Feishu integration contract to document the invisible placeholder behavior. |
+| Verification | Passed channel/CLI tests, checked whitespace, restarted `mnemo-web` and `mnemo-feishu`, and verified the public tunnel health endpoint. |
+
+### Testing
+
+- [OK] `.venv/bin/python -m unittest tests.test_channels tests.test_cli`
+- [OK] `git diff --check`
+- [OK] `rg -n "正在思考" mnemo tests .trellis/spec README.md` returned no matches.
+- [OK] Restarted `mnemo-web` and `mnemo-feishu`; `https://mem.day.qzz.io/api/health` returned `ok: true`, and Feishu websocket connected.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e28ad3c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
