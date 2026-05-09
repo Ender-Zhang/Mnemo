@@ -265,6 +265,72 @@
 - CLI tests for JSON output, config packaging, serve transport selection, and error normalization.
 - Package install smoke import coverage for `mnemo.mcp`.
 
+## Scenario: Proactive Feishu Delivery Loop
+
+### 1. Scope / Trigger
+- Trigger: changes to `mnemo/runtime/proactive.py`, scheduled Watch/Cron due processing, Web background service duties, Feishu proactive target discovery, or runtime status payloads.
+- Goal: let service-owned background work proactively reach the user in Feishu while preserving quiet-hours, active-conversation grace, delivery frequency, and secret redaction.
+
+### 2. Signatures
+- `mnemo.runtime.proactive.ProactiveService(state_dir, executor, workspace_root=None, feishu_client_factory=None)`
+- `ProactiveService.tick(now=None, schedule_limit=20, drain_limit=3) -> dict[str, Any]`
+- `ProactiveService.stage_completed_queue_item(processed, now=None) -> dict[str, Any]`
+- `ProactiveService.flush_pending(now=None, limit=10) -> dict[str, Any]`
+- `mnemo.runtime.proactive.proactive_status(state_dir) -> dict[str, Any]`
+- `mnemo.channels.feishu.feishu_proactive_targets(state_dir) -> list[dict[str, Any]]`
+- `FeishuClient.send_markdown(receive_id, markdown, receive_id_type="chat_id") -> list[str]`
+- Web background: `mnemo.interfaces.web._ProactiveScheduler.tick_once(now=None) -> dict[str, Any]`
+- SDK/runtime status: `MnemoClient.runtime_status(...)[ "proactive" ]`
+
+### 3. Contracts
+- `serve_web()` starts `_ProactiveScheduler` beside `_AutoDreamScheduler`; Dream remains provider-backed through the existing Dream scheduler, while proactive Watch/Cron uses `ScheduleService.tick(kind="watch"|"cron")`.
+- Watch/Cron due items still enter `run_queue` and are executed through `DaemonRunner.drain()` with the normal runtime executor; proactive delivery must not create a second agent loop.
+- Only completed queue items with metadata `{source:"scheduler", scheduled_kind:"watch"|"cron"}` are staged for delivery.
+- Watch prompts include the scheduled item id and ask the model to explicitly mark silent final responses with `[silent]`; delivery policy suppresses those responses and records `mnemo_watch_feedback(outcome="silent")`.
+- Feishu targets come from state-local QR config and session/activity metadata. Prefer saved `owner_open_id` delivery with `receive_id_type="open_id"`; existing chat sessions remain fallback targets with `receive_id_type="chat_id"`.
+- Proactive delivery state is stored in `<state_dir>/channels/proactive_state.json`; compact status must omit message bodies, provider secrets, app secrets, and raw Feishu payloads.
+- Quiet-hours defer pending deliveries until the quiet window ends. Active Feishu conversations defer until `last_interaction_at + active_conversation_grace_minutes`.
+- Per-target/per-scheduled-item cooldown and daily caps defer rather than drop pending deliveries.
+- Missing Feishu config or missing target keeps delivery pending with a compact defer reason; send failures retry with bounded backoff and become `failed` after the retry attempt limit.
+- `runtime_status()` returns compact proactive counts, target metadata, and recent delivery cards without bodies.
+
+### 4. Validation & Error Matrix
+| Case | Expected Behavior | Test Point |
+| --- | --- | --- |
+| Due Cron with saved Feishu owner | Scheduler queues, daemon drains, Feishu receives Markdown via `receive_id_type=open_id` | `tests/test_proactive.py` |
+| Quiet-hours active | Delivery remains pending with `last_defer_reason=quiet_hours`; no Feishu request is sent | `tests/test_proactive.py` |
+| Missing Feishu binding | Delivery remains pending with `feishu_not_configured`; no secret-bearing error leaks | `tests/test_proactive.py` |
+| Watch model says silent | No Feishu message is sent and Watch feedback records `silent` | `tests/test_proactive.py` |
+| Runtime status | Response includes `proactive` compact status and no run output bodies | `tests/test_sdk.py`, `tests/test_web.py` |
+
+### 5. Good/Base/Bad Cases
+- Good: build delivery content from completed `RunResult.response` and deliver only after the normal runtime has recorded the run.
+- Good: defer for user-protection policy failures so a useful proactive result can be delivered at the next appropriate time.
+- Good: use `receive_id_type=open_id` for owner-targeted proactive DMs instead of depending on a prior chat id.
+- Base: local runtime can run proactive tests without provider credentials; production service should use live Web runtime settings.
+- Bad: directly calling a provider from the delivery layer, bypassing `DaemonRunner` and `run_provider()`.
+- Bad: sending proactive messages during quiet-hours or immediately after an inbound Feishu message.
+- Bad: exposing `body`, app secrets, access tokens, or raw Feishu responses from status APIs.
+
+### 6. Tests Required
+- Unit tests for due schedule drain and Feishu owner delivery.
+- Unit tests for quiet-hours deferral, missing Feishu config, and model-silent Watch suppression.
+- Existing channel tests must keep inbound reply behavior and Markdown rendering intact.
+- Existing scheduler/web/sdk tests must keep Dream, schedule registration, and runtime status contracts intact.
+
+### 7. Wrong vs Correct
+#### Wrong
+```python
+FeishuClient(config).send_markdown(chat_id, provider_call(prompt))
+```
+
+#### Correct
+```python
+ScheduleService(state_dir).tick(kind="watch")
+DaemonRunner(state_dir).drain(runtime_executor)
+ProactiveService(state_dir, executor=runtime_executor).flush_pending()
+```
+
 ## Scenario: Feishu/Lark Messaging Channel
 
 ### 1. Scope / Trigger
@@ -278,7 +344,8 @@
 - `mnemo.channels.feishu_channel_status(state_dir) -> dict[str, Any]`
 - `mnemo.channels.build_feishu_server(config: FeishuChannelConfig) -> ThreadingHTTPServer`
 - `mnemo.channels.serve_feishu(config: FeishuChannelConfig) -> None`
-- `FeishuClient.start_streaming_card(chat_id: str, reply_to_message_id: str = "") -> FeishuStreamingCard`
+- `FeishuClient.send_markdown(receive_id: str, markdown: str, receive_id_type="chat_id") -> list[str]`
+- `FeishuClient.start_streaming_card(chat_id: str, reply_to_message_id: str = "", receive_id_type="chat_id") -> FeishuStreamingCard`
 - `FeishuClient.update_streaming_card(card: FeishuStreamingCard, markdown: str) -> None`
 - `FeishuClient.close_streaming_card(card: FeishuStreamingCard, markdown: str) -> None`
 - CLI: `mnemo channels feishu onboard [--domain feishu|lark] [--timeout-s S] [--state-dir DIR] [--json]`
@@ -306,6 +373,7 @@
 - Topic/thread messages use `reply_in_thread=true` and state-local conversation keys scoped by thread id when `thread_session=true`, so Feishu topic groups can run independent Mnemo conversations in the same chat.
 - If streaming-card startup fails, or `--no-streaming` / `FEISHU_STREAMING=false` is set, assistant replies fall back to Feishu/Lark rich `post` messages with Markdown blocks when possible; send failures fall back to a structural rich-post conversion and error replies may remain plain text.
 - Feishu inbound messages may receive a best-effort emoji reaction through `/open-apis/im/v1/messages/:message_id/reactions`; reaction failures must not block runtime processing.
+- Feishu websocket SDK logging must stay at WARNING or quieter because INFO connection logs can include signed websocket URL parameters.
 - Legacy rich-post streaming is implemented by sending one invisible placeholder rich post, then editing that message through `/open-apis/im/v1/messages/:message_id` with throttled partial content and one final edit; partial edits must stay below the platform's 20-edit limit.
 - Per-chat execution is serialized so a chat cannot overlap multiple Mnemo turns.
 - Feishu chat ids map to Mnemo conversation ids in state-local channel metadata so follow-up messages keep continuity.
@@ -365,6 +433,8 @@
 - Feishu sidecar provider flags are derived from non-secret runtime settings; raw app secrets remain in `channels/feishu_config.json` and provider keys remain in the service env file.
 - Feishu sidecar logs are separate: `<state_dir>/logs/mnemo-feishu.log` and `<state_dir>/logs/mnemo-feishu.error.log`.
 - The service supervisor exits if either web or Feishu sidecar exits; launchd/systemd/detached restart policy may then relaunch the whole service.
+- launchd, systemd, and detached managers execute the generated launcher directly so either shell launchers or Python supervisor launchers honor their shebang.
+- `service_status(state_dir)` only treats a launchd/systemd unit as installed for that state dir when the manager file points at that state dir's generated launcher; global services for other state dirs must not make temp dry-run status look running.
 - Service manager selection is `launchd` on macOS, `systemd --user` on Linux, and detached process fallback when no supported manager is available or an explicit mode is requested.
 - `--dry-run` writes service files for inspection but must not call `launchctl`, `systemctl`, or spawn a detached process.
 - The install script runs `mnemo onboard` by default; non-interactive installs pass `--non-interactive --skip-feishu` to avoid blocking on QR or prompts.
@@ -377,6 +447,7 @@
 | Non-interactive provider onboard | Settings are saved, service env has only named secret variables, stdout is secret-free | `tests/test_cli.py` |
 | Web password auth | Unauthenticated app/API requests are gated, login sets an HttpOnly session cookie, and secrets stay out of responses | `tests/test_web.py` |
 | Service dry-run install | Launcher/meta files are written, status is compact, and no process is started | `tests/test_cli.py` |
+| Service manager files | launchd/systemd execute the generated launcher directly, not through `/bin/sh` | `tests/test_cli.py` |
 | Feishu websocket config | Service dry-run launcher includes a Feishu sidecar and no app/API secrets | `tests/test_cli.py` |
 | Feishu webhook config | Service dry-run launcher skips the websocket sidecar | `tests/test_cli.py` |
 | Install script syntax/docs | `bash -n` passes and the script references onboard plus Feishu fallback commands | `tests/test_channels.py` |
@@ -393,6 +464,7 @@
 
 ### 6. Tests Required
 - CLI tests for onboard help, non-interactive runtime setup, service env permissions, service dry-run install, and service status.
+- CLI tests for launchd/systemd launcher invocation shape and state-dir-specific service status.
 - CLI tests for Feishu sidecar inclusion/exclusion and secret-free launcher/status output.
 - Install script syntax checks.
 - Package smoke coverage for the service helper module.

@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Feishu/channel/scheduler errors must be compact and redact secrets"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "Cross-layer SDK/API/Feishu contracts for proactive delivery"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "Persist compact runtime/proactive observability instead of stdout logging"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature spans service, storage, Feishu channel, web status, tests"}

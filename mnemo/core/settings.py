@@ -29,6 +29,14 @@ _DEFAULT_SETTINGS: dict[str, Any] = {
         "retry_backoff_s": 0.0,
         "max_tool_rounds": 12,
     },
+    "proactive": {
+        "enabled": True,
+        "channel": "feishu",
+        "cooldown_minutes": 30,
+        "active_conversation_grace_minutes": 3,
+        "max_per_day_per_item": 2,
+        "retry_backoff_minutes": 5,
+    },
 }
 
 
@@ -55,6 +63,11 @@ def load_user_settings(state_dir: str | Path) -> dict[str, Any]:
             settings["runtime"] = _normalize_runtime_settings({**settings["runtime"], **raw["runtime"]})
         except ValueError:
             return settings
+    if isinstance(raw.get("proactive"), dict):
+        try:
+            settings["proactive"] = _normalize_proactive_settings({**settings["proactive"], **raw["proactive"]})
+        except ValueError:
+            return settings
     return settings
 
 
@@ -70,6 +83,10 @@ def save_user_settings(state_dir: str | Path, patch: dict[str, Any]) -> dict[str
         if not isinstance(patch["runtime"], dict):
             raise ValueError("runtime must be an object")
         settings["runtime"] = _normalize_runtime_settings({**settings["runtime"], **patch["runtime"]})
+    if "proactive" in patch:
+        if not isinstance(patch["proactive"], dict):
+            raise ValueError("proactive must be an object")
+        settings["proactive"] = _normalize_proactive_settings({**settings["proactive"], **patch["proactive"]})
     if "api_key" in patch:
         raise ValueError("api_key cannot be stored in settings; use api_key_env")
 
@@ -112,6 +129,40 @@ def _normalize_runtime_settings(value: dict[str, Any]) -> dict[str, Any]:
             maximum=60.0,
         ),
         "max_tool_rounds": _normalize_int(value.get("max_tool_rounds"), "runtime max_tool_rounds", minimum=1, maximum=64),
+    }
+
+
+def _normalize_proactive_settings(value: dict[str, Any]) -> dict[str, Any]:
+    channel = _normalize_text(value.get("channel"), "proactive channel", limit=80) or "feishu"
+    if channel not in {"feishu"}:
+        raise ValueError("proactive channel must be feishu")
+    return {
+        "enabled": bool(value.get("enabled", True)),
+        "channel": channel,
+        "cooldown_minutes": _normalize_int(
+            value.get("cooldown_minutes"),
+            "proactive cooldown_minutes",
+            minimum=0,
+            maximum=24 * 60,
+        ),
+        "active_conversation_grace_minutes": _normalize_int(
+            value.get("active_conversation_grace_minutes"),
+            "proactive active_conversation_grace_minutes",
+            minimum=0,
+            maximum=60,
+        ),
+        "max_per_day_per_item": _normalize_int(
+            value.get("max_per_day_per_item"),
+            "proactive max_per_day_per_item",
+            minimum=1,
+            maximum=24,
+        ),
+        "retry_backoff_minutes": _normalize_int(
+            value.get("retry_backoff_minutes"),
+            "proactive retry_backoff_minutes",
+            minimum=1,
+            maximum=24 * 60,
+        ),
     }
 
 

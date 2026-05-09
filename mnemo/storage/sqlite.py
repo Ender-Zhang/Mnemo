@@ -850,6 +850,20 @@ class StateStore:
             rows = conn.execute(sql, params).fetchall()
         return [_queue_item_from_row(row) for row in rows]
 
+    def get_queue_item(self, queue_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, message, conversation_id, mission_id, metadata_json, status, attempts,
+                       worker_id, run_id, available_at, claimed_at, heartbeat_at, completed_at,
+                       last_error, created_at, updated_at
+                FROM run_queue
+                WHERE id = ?
+                """,
+                (queue_id,),
+            ).fetchone()
+        return _queue_item_from_row(row) if row else None
+
     def claim_next_queue_item(self, worker_id: str) -> dict[str, Any] | None:
         clean_worker_id = worker_id.strip() or "worker"
         now = time.time()

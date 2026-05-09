@@ -517,8 +517,11 @@ def _run_message(item: dict[str, Any]) -> str:
         return (
             f"Watch check: {item.get('title')}\n"
             f"Instruction: {item.get('instruction')}\n"
+            f"Scheduled item id: {item.get('id')}\n"
             "Decide whether the user should be notified, whether an Inbox item is needed, "
-            "or whether this should stay silent."
+            "or whether this should stay silent. If this should stay silent, make the final "
+            "response start with [silent]. When you decide, record mnemo_watch_feedback for "
+            "this scheduled item with outcome silent or notified."
         )
     return str(item.get("instruction") or "")
 

@@ -237,6 +237,8 @@ class MnemoClient:
         store = self._store()
         inbox_items = store.list_inbox_items(status="open", limit=bounded_limit)
         generated_tools = store.list_generated_tools(status=None, limit=100)
+        from ..runtime.proactive import proactive_status
+
         return {
             "kind": "runtime_status",
             "version": "mnemo.runtime_status.v1",
@@ -251,6 +253,7 @@ class MnemoClient:
             },
             "generated_tools": _status_counts(generated_tools),
             "scheduled": scheduled_item_stats(store),
+            "proactive": proactive_status(self.state_dir),
         }
 
     def run(

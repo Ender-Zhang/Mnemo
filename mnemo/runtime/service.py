@@ -218,11 +218,11 @@ def service_status(state_dir: str | Path) -> dict[str, Any]:
     manager = _installed_manager(paths) or "none"
     running = False
     pid: int | None = None
-    if paths.launchd_plist.exists() and shutil.which("launchctl"):
+    if _launchd_plist_matches(paths) and shutil.which("launchctl"):
         running, pid = _launchd_running()
         if running:
             manager = "launchd"
-    if not running and paths.systemd_unit.exists() and shutil.which("systemctl"):
+    if not running and _systemd_unit_matches(paths) and shutil.which("systemctl"):
         running = _systemd_running()
         manager = "systemd"
     if not running:
@@ -516,7 +516,7 @@ def _write_launchd_plist(paths: WebServicePaths) -> None:
     paths.launchd_plist.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "Label": LAUNCHD_LABEL,
-        "ProgramArguments": ["/bin/sh", str(paths.launcher)],
+        "ProgramArguments": [str(paths.launcher)],
         "RunAtLoad": True,
         "KeepAlive": True,
         "StandardOutPath": str(paths.stdout_log),
@@ -534,7 +534,7 @@ def _write_systemd_unit(paths: WebServicePaths) -> None:
         "After=default.target\n\n"
         "[Service]\n"
         "Type=simple\n"
-        f"ExecStart=/bin/sh {shlex.quote(str(paths.launcher))}\n"
+        f"ExecStart={shlex.quote(str(paths.launcher))}\n"
         "Restart=always\n"
         "RestartSec=3\n"
         f"StandardOutput=append:{paths.stdout_log}\n"
@@ -571,7 +571,7 @@ def _start_detached(paths: WebServicePaths) -> None:
     stderr = paths.stderr_log.open("ab")
     try:
         proc = subprocess.Popen(
-            ["/bin/sh", str(paths.launcher)],
+            [str(paths.launcher)],
             stdout=stdout,
             stderr=stderr,
             stdin=subprocess.DEVNULL,
@@ -651,13 +651,32 @@ def _select_manager(mode: str) -> str:
 
 
 def _installed_manager(paths: WebServicePaths) -> str | None:
-    if paths.launchd_plist.exists():
+    if _launchd_plist_matches(paths):
         return "launchd"
-    if paths.systemd_unit.exists():
+    if _systemd_unit_matches(paths):
         return "systemd"
     if paths.pid_file.exists():
         return "detached"
     return None
+
+
+def _launchd_plist_matches(paths: WebServicePaths) -> bool:
+    try:
+        payload = plistlib.loads(paths.launchd_plist.read_bytes())
+    except (OSError, plistlib.InvalidFileException):
+        return False
+    args = payload.get("ProgramArguments") if isinstance(payload, dict) else None
+    if not isinstance(args, list):
+        return False
+    return str(paths.launcher) in {str(item) for item in args}
+
+
+def _systemd_unit_matches(paths: WebServicePaths) -> bool:
+    try:
+        content = paths.systemd_unit.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return str(paths.launcher) in content
 
 
 def _launchd_running() -> tuple[bool, int | None]:
@@ -709,7 +728,7 @@ def _service_result(
     return {
         "action": action,
         "manager": manager,
-        "installed": paths.launchd_plist.exists() or paths.systemd_unit.exists() or paths.launcher.exists(),
+        "installed": _launchd_plist_matches(paths) or _systemd_unit_matches(paths) or paths.launcher.exists(),
         "running": running,
         "pid": pid,
         "state_dir": str(paths.state_dir),

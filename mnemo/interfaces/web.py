@@ -32,9 +32,10 @@ from ..channels import (
     start_feishu_qr_onboarding,
 )
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
-from ..runtime import run_dream_with_provider, stream_local, stream_provider
+from ..runtime import run_dream_with_provider, run_local, run_provider, stream_local, stream_provider
 from ..runtime.approvals import resolve_inbox_item_with_actions
 from ..runtime.ledger import RunLedger
+from ..runtime.proactive import ProactiveService, proactive_status
 from ..runtime.scheduler import DEFAULT_DREAM_LIMIT, ScheduleService, ensure_default_dream_schedule
 from ..memory import MemoryEngine
 from ..memory.wiki import materialize_memory_page, memory_page_wiki_path, memory_page_wiki_ref
@@ -119,7 +120,9 @@ def serve_web(config: WebServerConfig) -> None:
     config = _resolved_web_config(config)
     server = build_http_server(config)
     auto_dream = _AutoDreamScheduler(config)
+    proactive = _ProactiveScheduler(config)
     auto_dream.start()
+    proactive.start()
     host, port = server.server_address
     print(f"Mnemo web listening on http://{host}:{port}")
     try:
@@ -127,6 +130,7 @@ def serve_web(config: WebServerConfig) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        proactive.stop()
         auto_dream.stop()
         server.server_close()
 
@@ -744,6 +748,97 @@ class _AutoDreamScheduler:
                 break
 
 
+class _ProactiveScheduler:
+    def __init__(
+        self,
+        config: WebServerConfig,
+        *,
+        interval_s: float = 60.0,
+        schedule_limit: int = 20,
+        drain_limit: int = 3,
+    ) -> None:
+        self.config = config
+        self.interval_s = max(1.0, float(interval_s))
+        self.schedule_limit = max(1, int(schedule_limit))
+        self.drain_limit = max(1, int(drain_limit))
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None:
+            return
+        self._thread = threading.Thread(target=self._run, name="mnemo-proactive", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5)
+
+    def tick_once(self, *, now: float | str | None = None) -> dict[str, Any]:
+        if not self._lock.acquire(blocking=False):
+            return {"kind": "proactive_tick", "skipped": "busy"}
+        try:
+            service = ProactiveService(
+                self.config.state_dir,
+                workspace_root=self.config.workspace_root,
+                executor=_run_executor_for_web_config(self.config),
+            )
+            return service.tick(now=now, schedule_limit=self.schedule_limit, drain_limit=self.drain_limit)
+        finally:
+            self._lock.release()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self.tick_once()
+            except Exception as exc:
+                print(f"Mnemo proactive scheduler error: {exc}")
+            if self._stop.wait(self.interval_s):
+                break
+
+
+def _run_executor_for_web_config(config: WebServerConfig) -> Callable[[RunRequest], Any]:
+    def execute(request: RunRequest) -> Any:
+        effective = _effective_web_config(config)
+        if effective.provider == "local":
+            return run_local(request)
+        if effective.provider == "openai-compatible":
+            if not effective.base_url or not effective.model:
+                raise ValueError("openai-compatible provider requires base_url and model")
+            provider = OpenAIProviderAdapter(
+                ProviderConfig(
+                    base_url=effective.base_url,
+                    model=effective.model,
+                    api_key=effective.api_key,
+                    timeout_s=effective.timeout_s,
+                    retry_count=effective.retry_count,
+                    retry_backoff_s=effective.retry_backoff_s,
+                    stream=False,
+                )
+            )
+            return run_provider(request, provider, max_tool_rounds=effective.max_tool_rounds)
+        if effective.provider == "anthropic":
+            if not effective.model:
+                raise ValueError("anthropic provider requires model")
+            provider = AnthropicProviderAdapter(
+                ProviderConfig(
+                    base_url=effective.base_url or _ANTHROPIC_DEFAULT_BASE_URL,
+                    model=effective.model,
+                    api_key=effective.api_key,
+                    timeout_s=effective.timeout_s,
+                    retry_count=effective.retry_count,
+                    retry_backoff_s=effective.retry_backoff_s,
+                    stream=False,
+                )
+            )
+            return run_provider(request, provider, max_tool_rounds=effective.max_tool_rounds)
+        raise ValueError(f"unsupported provider: {effective.provider}")
+
+    return execute
+
+
 def _dream_runner_for_web_config(config: WebServerConfig) -> Callable[[dict[str, Any]], dict[str, Any]] | None:
     effective = _effective_web_config(config)
     if effective.provider == "local":
@@ -1148,6 +1243,7 @@ def _settings_payload(config: WebServerConfig) -> dict[str, Any]:
         "channels": {
             "feishu": feishu_status,
         },
+        "proactive": proactive_status(config.state_dir),
         "permissions": {
             "open_decisions": len(open_decisions),
             "risk_policy": [

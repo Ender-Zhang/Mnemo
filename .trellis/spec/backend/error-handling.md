@@ -68,7 +68,7 @@
 - Web artifact endpoint errors are JSON: missing `artifact_id` returns 400, unknown artifact id returns 404; related artifact metadata must omit bodies.
 - Web Inbox resolve endpoint errors are JSON: missing fields or invalid resolution return 400, unknown item id returns 404.
 - Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404; valid actions are `accept`, `this_time`, `reject`, and `undo`.
-- Web settings endpoint errors are JSON: invalid quiet-hours or runtime-provider payloads return 400, raw API key storage is rejected, and settings summaries do not expose provider secrets.
+- Web settings endpoint errors are JSON: invalid quiet-hours, runtime-provider, or proactive-service payloads return 400, raw API key storage is rejected, and settings summaries do not expose provider secrets.
 - Web auth errors are compact: wrong or missing passwords return JSON 401 for API callers, protected page requests receive the login page, and password values are never echoed.
 - HTTP core API errors are JSON: invalid JSON or bad fields return 400, unknown methods return 404, and expected `MnemoError` service failures map to 400 or 404 without traceback.
 - HTTP `schedule-dream` validates `next_run_at` as a string, number, or null and returns compact JSON errors for invalid payload shapes.

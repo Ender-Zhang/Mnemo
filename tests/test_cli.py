@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import plistlib
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ from typing import Any
 
 from mnemo.channels import save_feishu_saved_config
 from mnemo.memory import MemoryEngine
+from mnemo.runtime.service import LAUNCHD_LABEL, WebServicePaths, _write_launchd_plist, _write_systemd_unit
 from mnemo.storage import StateStore
 
 
@@ -200,6 +202,34 @@ class CliTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(supervisor_check.returncode, 0, supervisor_check.stderr)
+
+    def test_service_manager_files_execute_launcher_directly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = WebServicePaths(
+                state_dir=root,
+                service_dir=root / "service",
+                env_file=root / "service" / "mnemo-web.env",
+                meta_file=root / "service" / "mnemo-web.json",
+                launcher=root / "service" / "mnemo-web.sh",
+                pid_file=root / "service" / "mnemo-web.pid",
+                stdout_log=root / "logs" / "mnemo-web.log",
+                stderr_log=root / "logs" / "mnemo-web.error.log",
+                feishu_stdout_log=root / "logs" / "mnemo-feishu.log",
+                feishu_stderr_log=root / "logs" / "mnemo-feishu.error.log",
+                launchd_plist=root / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist",
+                systemd_unit=root / "systemd" / "mnemo-web.service",
+            )
+            paths.service_dir.mkdir(parents=True)
+            paths.launcher.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+            _write_launchd_plist(paths)
+            _write_systemd_unit(paths)
+
+            plist = plistlib.loads(paths.launchd_plist.read_bytes())
+            self.assertEqual(plist["ProgramArguments"], [str(paths.launcher)])
+            unit = paths.systemd_unit.read_text(encoding="utf-8")
+            self.assertIn(f"ExecStart={paths.launcher}", unit)
+            self.assertNotIn("/bin/sh", unit)
 
     def test_service_dry_run_skips_feishu_sidecar_for_webhook_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

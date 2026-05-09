@@ -41,6 +41,7 @@ class FeishuChannelTests(unittest.TestCase):
         content = channel.read_text(encoding="utf-8")
         self.assertIn("register_p2_im_message_reaction_created_v1(self._on_ignored_event)", content)
         self.assertIn("register_p2_im_message_reaction_deleted_v1(self._on_ignored_event)", content)
+        self.assertIn("log_level=_lark_oapi.LogLevel.WARNING", content)
 
     def test_feishu_webhook_challenge_and_token_auth(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

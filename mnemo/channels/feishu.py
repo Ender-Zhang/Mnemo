@@ -165,6 +165,7 @@ class FeishuStreamingCard:
     card_id: str
     message_id: str
     chat_id: str
+    receive_id_type: str = "chat_id"
     sequence: int = 1
     content: str = ""
     started_at: float = 0.0
@@ -181,13 +182,13 @@ class FeishuClient:
         self._token_expires_at = 0.0
         self._token_lock = threading.Lock()
 
-    def send_text(self, chat_id: str, text: str) -> None:
+    def send_text(self, chat_id: str, text: str, *, receive_id_type: str = "chat_id") -> None:
         if not self.config.app_id or not self.config.app_secret:
             raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
         for chunk in _split_text(text or "（空响应）", _TEXT_CHUNK_SIZE):
             self._post(
                 "/open-apis/im/v1/messages",
-                {"receive_id_type": "chat_id"},
+                {"receive_id_type": _normalize_receive_id_type(receive_id_type)},
                 {
                     "receive_id": chat_id,
                     "msg_type": "text",
@@ -195,28 +196,37 @@ class FeishuClient:
                 },
             )
 
-    def send_markdown(self, chat_id: str, markdown: str) -> list[str]:
+    def send_markdown(self, chat_id: str, markdown: str, *, receive_id_type: str = "chat_id") -> list[str]:
         if not self.config.app_id or not self.config.app_secret:
             raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
         text = str(markdown or "").strip() or "（空响应）"
+        receive_type = _normalize_receive_id_type(receive_id_type)
         sent_any = False
         message_ids: list[str] = []
         try:
             for content in _feishu_markdown_post_payloads(text, markdown_tag=True):
-                message_ids.append(self._send_post(chat_id, content))
+                message_ids.append(self._send_post(chat_id, content, receive_id_type=receive_type))
                 sent_any = True
         except FeishuApiError:
             if sent_any:
                 raise
             message_ids = []
             for content in _feishu_markdown_post_payloads(text, markdown_tag=False):
-                message_ids.append(self._send_post(chat_id, content))
+                message_ids.append(self._send_post(chat_id, content, receive_id_type=receive_type))
         return message_ids
 
-    def replace_markdown(self, message_id: str, chat_id: str, markdown: str) -> list[str]:
+    def replace_markdown(
+        self,
+        message_id: str,
+        chat_id: str,
+        markdown: str,
+        *,
+        receive_id_type: str = "chat_id",
+    ) -> list[str]:
         if not self.config.app_id or not self.config.app_secret:
             raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
         text = str(markdown or "").strip() or "（空响应）"
+        receive_type = _normalize_receive_id_type(receive_id_type)
         payloads = _feishu_markdown_post_payloads(text, markdown_tag=True)
         try:
             self._update_post(message_id, payloads[0])
@@ -225,7 +235,7 @@ class FeishuClient:
             self._update_post(message_id, payloads[0])
         message_ids = [message_id]
         for content in payloads[1:]:
-            message_ids.append(self._send_post(chat_id, content))
+            message_ids.append(self._send_post(chat_id, content, receive_id_type=receive_type))
         return message_ids
 
     def start_streaming_card(
@@ -234,9 +244,11 @@ class FeishuClient:
         reply_to_message_id: str = "",
         *,
         reply_in_thread: bool = False,
+        receive_id_type: str = "chat_id",
     ) -> FeishuStreamingCard:
         if not self.config.app_id or not self.config.app_secret:
             raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
+        receive_type = _normalize_receive_id_type(receive_id_type)
         card_id = self._create_streaming_card(_FEISHU_STREAM_START_TEXT)
         message_id = (
             self._reply_interactive_card(reply_to_message_id, card_id, reply_in_thread=reply_in_thread)
@@ -244,8 +256,14 @@ class FeishuClient:
             else ""
         )
         if not message_id:
-            message_id = self._send_interactive_card(chat_id, card_id)
-        return FeishuStreamingCard(card_id=card_id, message_id=message_id, chat_id=chat_id, started_at=time.time())
+            message_id = self._send_interactive_card(chat_id, card_id, receive_id_type=receive_type)
+        return FeishuStreamingCard(
+            card_id=card_id,
+            message_id=message_id,
+            chat_id=chat_id,
+            receive_id_type=receive_type,
+            started_at=time.time(),
+        )
 
     def update_streaming_card(self, card: FeishuStreamingCard, markdown: str) -> None:
         text = str(markdown or "").strip() or _FEISHU_STREAM_START_TEXT
@@ -302,10 +320,10 @@ class FeishuClient:
         data = response.get("data") if isinstance(response.get("data"), dict) else {}
         return str(data.get("reaction_id") or "")
 
-    def _send_post(self, chat_id: str, content: dict[str, Any]) -> str:
+    def _send_post(self, chat_id: str, content: dict[str, Any], *, receive_id_type: str = "chat_id") -> str:
         response = self._post(
             "/open-apis/im/v1/messages",
-            {"receive_id_type": "chat_id"},
+            {"receive_id_type": _normalize_receive_id_type(receive_id_type)},
             {
                 "receive_id": chat_id,
                 "msg_type": "post",
@@ -329,10 +347,10 @@ class FeishuClient:
             raise FeishuApiError("Feishu did not return card_id for streaming card")
         return card_id
 
-    def _send_interactive_card(self, chat_id: str, card_id: str) -> str:
+    def _send_interactive_card(self, chat_id: str, card_id: str, *, receive_id_type: str = "chat_id") -> str:
         response = self._post(
             "/open-apis/im/v1/messages",
-            {"receive_id_type": "chat_id"},
+            {"receive_id_type": _normalize_receive_id_type(receive_id_type)},
             {
                 "receive_id": chat_id,
                 "msg_type": "interactive",
@@ -499,6 +517,7 @@ class FeishuChannelService:
         self._threads: list[threading.Thread] = []
         self._threads_lock = threading.Lock()
         self._session_store = _FeishuSessionStore(config.state_dir)
+        self._activity_store = _FeishuActivityStore(config.state_dir)
         StateStore(config.state_dir).initialize()
 
     def handle_webhook(self, headers: dict[str, str], body_bytes: bytes) -> tuple[HTTPStatus, dict[str, Any] | str]:
@@ -537,6 +556,7 @@ class FeishuChannelService:
             return "duplicate"
         if not self._is_allowed(message):
             return "ignored"
+        self._activity_store.record_message(self._session_key(message), message)
         self._process_in_background(message)
         return "ok"
 
@@ -715,7 +735,7 @@ class FeishuChannelService:
         except Exception:
             pass
         try:
-            self.client.send_markdown(card.chat_id, markdown)
+            self.client.send_markdown(card.chat_id, markdown, receive_id_type=card.receive_id_type)
         except Exception:
             pass
 
@@ -726,7 +746,7 @@ class FeishuChannelService:
         except Exception:
             pass
         try:
-            self.client.send_text(card.chat_id, text)
+            self.client.send_text(card.chat_id, text, receive_id_type=card.receive_id_type)
         except Exception:
             pass
 
@@ -833,7 +853,7 @@ class FeishuWebSocketService:
         client = _FeishuWSClient(
             app_id=self.config.app_id,
             app_secret=self.config.app_secret,
-            log_level=_lark_oapi.LogLevel.INFO,
+            log_level=_lark_oapi.LogLevel.WARNING,
             event_handler=event_handler,
             domain=domain,
         )
@@ -980,6 +1000,118 @@ class _FeishuSessionStore:
         if not isinstance(parsed, dict):
             return {}
         return {str(key): str(value) for key, value in parsed.items() if key and value}
+
+
+class _FeishuActivityStore:
+    def __init__(self, state_dir: str | Path) -> None:
+        self.path = Path(state_dir).expanduser() / "channels" / "feishu_activity.json"
+        self._lock = threading.Lock()
+
+    def record_message(self, session_key: str, message: FeishuInboundMessage) -> None:
+        if not session_key or not message.chat_id:
+            return
+        now = time.time()
+        with self._lock:
+            data = self._read()
+            sessions = data.setdefault("sessions", {})
+            if not isinstance(sessions, dict):
+                sessions = {}
+                data["sessions"] = sessions
+            sessions[session_key] = {
+                "chat_id": message.chat_id,
+                "chat_type": message.chat_type,
+                "thread_id": _message_thread_id(message),
+                "sender_ids": list(message.sender_ids),
+                "last_interaction_at": now,
+                "updated_at": now,
+            }
+            self._write(data)
+
+    def records(self) -> dict[str, dict[str, Any]]:
+        sessions = self._read().get("sessions")
+        if not isinstance(sessions, dict):
+            return {}
+        records: dict[str, dict[str, Any]] = {}
+        for key, value in sessions.items():
+            if isinstance(value, dict):
+                records[str(key)] = dict(value)
+        return records
+
+    def _read(self) -> dict[str, Any]:
+        try:
+            parsed = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"version": "mnemo.feishu.activity.v1", "sessions": {}}
+        if not isinstance(parsed, dict):
+            return {"version": "mnemo.feishu.activity.v1", "sessions": {}}
+        parsed.setdefault("version", "mnemo.feishu.activity.v1")
+        parsed.setdefault("sessions", {})
+        return parsed
+
+    def _write(self, data: dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=".feishu_activity.", dir=str(self.path.parent))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, sort_keys=True)
+                handle.write("\n")
+            os.replace(tmp_name, self.path)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+
+
+def feishu_proactive_targets(state_dir: str | Path) -> list[dict[str, Any]]:
+    """Return compact, secret-free Feishu targets eligible for proactive delivery."""
+
+    saved = load_feishu_saved_config(state_dir)
+    sessions = _FeishuSessionStore(state_dir)._read()
+    activity = _FeishuActivityStore(state_dir).records()
+    targets: list[dict[str, Any]] = []
+
+    owner_open_id = str(saved.get("owner_open_id") or "").strip()
+    if owner_open_id:
+        targets.append(
+            {
+                "key": f"owner:{owner_open_id}",
+                "receive_id": owner_open_id,
+                "receive_id_type": "open_id",
+                "chat_id": "",
+                "chat_type": "p2p",
+                "conversation_id": "",
+                "last_interaction_at": _latest_owner_interaction(activity, owner_open_id),
+                "source": "owner_open_id",
+            }
+        )
+
+    for session_key, conversation_id in sessions.items():
+        record = activity.get(session_key, {})
+        chat_id = str(record.get("chat_id") or _chat_id_from_session_key(session_key)).strip()
+        if not chat_id:
+            continue
+        targets.append(
+            {
+                "key": session_key,
+                "receive_id": chat_id,
+                "receive_id_type": "chat_id",
+                "chat_id": chat_id,
+                "chat_type": str(record.get("chat_type") or ""),
+                "conversation_id": conversation_id,
+                "last_interaction_at": _optional_float_value(record.get("last_interaction_at")),
+                "source": "session",
+            }
+        )
+
+    deduped: dict[tuple[str, str], dict[str, Any]] = {}
+    for target in targets:
+        deduped[(str(target["receive_id_type"]), str(target["receive_id"]))] = target
+    return sorted(
+        deduped.values(),
+        key=lambda item: (
+            0 if item.get("source") == "owner_open_id" else 1,
+            -float(item.get("last_interaction_at") or 0.0),
+        ),
+    )
 
 
 def feishu_saved_config_path(state_dir: str | Path) -> Path:
@@ -1529,6 +1661,29 @@ def _message_thread_id(message: FeishuInboundMessage) -> str:
     return str(message.thread_id or message.root_id or message.parent_id or "").strip()
 
 
+def _chat_id_from_session_key(session_key: str) -> str:
+    return str(session_key or "").split("#thread:", 1)[0].strip()
+
+
+def _optional_float_value(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _latest_owner_interaction(activity: dict[str, dict[str, Any]], owner_open_id: str) -> float | None:
+    latest = 0.0
+    for record in activity.values():
+        sender_ids = record.get("sender_ids") if isinstance(record.get("sender_ids"), list) else []
+        if owner_open_id and owner_open_id not in {str(item) for item in sender_ids}:
+            continue
+        value = _optional_float_value(record.get("last_interaction_at"))
+        if value is not None:
+            latest = max(latest, value)
+    return latest or None
+
+
 def _event_text(event: ChatEvent) -> str:
     data = event.data if isinstance(event.data, dict) else {}
     return str(data.get("text") or data.get("delta") or data.get("content") or "")
@@ -1792,6 +1947,13 @@ def _normalize_domain(domain: str) -> str:
 
 def _normalize_connection(connection: str) -> str:
     return "websocket" if str(connection or "").strip().lower() == "websocket" else "webhook"
+
+
+def _normalize_receive_id_type(receive_id_type: str) -> str:
+    normalized = str(receive_id_type or "chat_id").strip().lower()
+    if normalized not in {"chat_id", "open_id", "user_id", "union_id", "email"}:
+        raise FeishuApiError(f"unsupported Feishu receive_id_type: {receive_id_type}")
+    return normalized
 
 
 def _mask_secret(value: str) -> str:

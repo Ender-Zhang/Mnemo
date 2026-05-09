@@ -245,7 +245,7 @@ _SCHEMA: dict[str, Any] = {
             },
         },
         "runtime_status": {
-            "description": "Return compact queue, run, inbox, generated-tool, and scheduled-item status.",
+            "description": "Return compact queue, run, inbox, generated-tool, scheduled-item, and proactive status.",
             "side_effects": "read_only",
             "input_schema": {
                 "type": "object",
@@ -256,7 +256,15 @@ _SCHEMA: dict[str, Any] = {
             },
             "output_schema": {
                 "type": "object",
-                "required": ["kind", "queue", "recent_runs", "open_inbox", "generated_tools", "scheduled"],
+                "required": [
+                    "kind",
+                    "queue",
+                    "recent_runs",
+                    "open_inbox",
+                    "generated_tools",
+                    "scheduled",
+                    "proactive",
+                ],
                 "properties": {
                     "kind": {"const": "runtime_status"},
                     "version": {"type": "string"},
@@ -265,6 +273,7 @@ _SCHEMA: dict[str, Any] = {
                     "open_inbox": {"type": "object"},
                     "generated_tools": {"type": "object"},
                     "scheduled": {"type": "object"},
+                    "proactive": {"type": "object"},
                 },
             },
         },
