@@ -622,3 +622,36 @@ Adapted additional official Feishu/OpenClaw card behavior for Mnemo replies: ter
 ### Next Steps
 
 - None - task complete
+
+
+## Session 131: Feishu proactive delivery
+
+**Date**: 2026-05-09
+**Task**: Feishu proactive delivery
+**Branch**: `main`
+
+### Summary
+
+Implemented proactive Watch/Cron delivery to Feishu with quiet-hours, active conversation grace, rate limiting, delivery state, runtime status, service launcher fixes, tests, and service restart verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `17d474d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

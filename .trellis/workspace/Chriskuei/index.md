@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 130
+- **Total Sessions**: 131
 - **Last Active**: 2026-05-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~624 | Active |
+| `journal-3.md` | ~657 | Active |
 | `journal-2.md` | ~1973 | Archived |
 | `journal-1.md` | ~1998 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 131 | 2026-05-09 | Feishu proactive delivery | `17d474d` | `main` |
 | 130 | 2026-05-09 | Feishu Card Footer Metadata | `027474e` | `main` |
 | 129 | 2026-05-09 | Hide Feishu Stream Placeholder | `e28ad3c` | `main` |
 | 128 | 2026-05-09 | Feishu Official Streaming Cards | `d3b554e` | `main` |
