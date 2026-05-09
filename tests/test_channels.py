@@ -84,7 +84,7 @@ class FeishuChannelTests(unittest.TestCase):
 
                     reaction_requests = api.requests_for("/open-apis/im/v1/messages/om_msg_1/reactions")
                     self.assertEqual(len(reaction_requests), 1)
-                    self.assertEqual(reaction_requests[0]["body"]["reaction_type"]["emoji_type"], "SMILE")
+                    self.assertEqual(reaction_requests[0]["body"]["reaction_type"]["emoji_type"], "THINKING")
 
                     send_requests = api.requests_for("/open-apis/im/v1/messages")
                     self.assertEqual(len(send_requests), 1)
