@@ -378,3 +378,43 @@ Converted Settings from drawer/mobile sheet behavior into a normal standalone ha
 ### Next Steps
 
 - None - task complete
+
+
+## Session 126: Feishu streaming replies
+
+**Date**: 2026-05-09
+**Task**: Feishu streaming replies
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| Feishu channel | Added best-effort emoji reactions on inbound messages and streamed replies by sending a placeholder rich post, then editing the same message with throttled partial content. |
+| Runtime integration | Routed Feishu websocket/webhook processing through `stream_local()` / `stream_provider()` while preserving the existing non-streaming helper for compatibility. |
+| Resilience | Final edit failures now fall back to sending a new final rich-post reply, and reaction/edit failures do not block Mnemo processing. |
+| Documentation | Updated backend integration contracts, README, and Hermes acknowledgement notices for reaction and streamed-edit behavior. |
+| Verification | Passed `python -m unittest discover -s tests`, Feishu channel tests, CLI/Web/runtime/provider focused tests, package install smoke, and local/public `/api/health`; restarted `mnemo-web` and `mnemo-feishu`. |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dbb69a5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
