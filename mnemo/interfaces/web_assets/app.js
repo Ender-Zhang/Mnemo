@@ -1821,7 +1821,8 @@ function renderFeishuStatus(status) {
   const detail = document.createElement("span");
   if (current.configured) {
     const bot = current.bot_name || current.bot_open_id || current.app_id || "已配置机器人";
-    detail.textContent = `${current.domain || "feishu"} · ${bot} · ${current.connection || "websocket"}`;
+    const streaming = current.streaming === false ? "非流式" : "流式卡片";
+    detail.textContent = `${current.domain || "feishu"} · ${bot} · ${current.connection || "websocket"} · ${streaming}`;
   } else {
     detail.textContent = "扫码后会自动创建并保存机器人配置。";
   }

@@ -102,7 +102,7 @@ mnemo channels feishu onboard --state-dir .mnemo
 mnemo channels feishu serve --state-dir .mnemo --connection websocket
 ```
 
-The onboarding command uses Feishu/Lark scan-to-create registration and saves the returned app credentials to `.mnemo/channels/feishu_config.json` with `0600` permissions. CLI and Web status output masks secrets. When the saved connection is websocket, `mnemo service install/start/restart` also starts the Feishu listener as a service sidecar. Incoming messages receive a small emoji acknowledgement, and assistant replies stream by editing the bot's rich-post reply until the final answer is ready.
+The onboarding command uses Feishu/Lark scan-to-create registration and saves the returned app credentials to `.mnemo/channels/feishu_config.json` with `0600` permissions. CLI and Web status output masks secrets. When the saved connection is websocket, `mnemo service install/start/restart` also starts the Feishu listener as a service sidecar. Incoming messages receive a small emoji acknowledgement. Assistant replies default to Feishu official streaming cards (`channels.feishu.streaming=true` style behavior); `mnemo channels feishu serve --no-streaming` falls back to the legacy rich-post edit path.
 
 Existing self-built apps can still use webhook mode:
 
@@ -224,4 +224,4 @@ CI also builds the package, installs the wheel outside the checkout, and runs `t
 ## Acknowledgments
 
 Web tool separation between compact search metadata and page fetch/extraction is acknowledged in `THIRD_PARTY_NOTICES.md`.
-The one-click installer, service/onboard flow, Feishu scan-to-create onboarding, and Feishu channel explicitly reference safe boundary patterns from NousResearch Hermes Agent and OpenClaw while keeping Mnemo's implementation routed through Mnemo runtime services.
+The one-click installer, service/onboard flow, Feishu scan-to-create onboarding, and Feishu channel explicitly reference safe boundary patterns from NousResearch Hermes Agent, OpenClaw, and Feishu's official PersonalAgent streaming-card guidance while keeping Mnemo's implementation routed through Mnemo runtime services.

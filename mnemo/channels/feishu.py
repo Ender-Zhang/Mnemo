@@ -15,7 +15,7 @@ import tempfile
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -49,6 +49,8 @@ _FEISHU_STREAM_SUFFIX = "\n\n_生成中..._"
 _FEISHU_STREAM_EDIT_INTERVAL_S = 1.0
 _FEISHU_STREAM_EDIT_MIN_CHARS = 120
 _FEISHU_STREAM_MAX_PARTIAL_EDITS = 19
+_FEISHU_STREAM_CARD_ELEMENT_ID = "content"
+_FEISHU_STREAM_CARD_SUMMARY_LIMIT = 120
 
 try:
     import lark_oapi as _lark_oapi  # type: ignore[import-not-found]
@@ -84,6 +86,10 @@ class FeishuChannelConfig:
     callback deduplication, per-chat serialization, and background handling.
     The implementation here is Mnemo-specific and routes into Mnemo runtime
     services instead of copying Hermes' gateway loop.
+
+    Feishu streaming cards follow Feishu's official PersonalAgent guidance
+    and OpenClaw's `channels.feishu.streaming=true` behavior at the API
+    boundary, while keeping Mnemo's runtime loop local to this project.
     """
 
     state_dir: str
@@ -102,6 +108,7 @@ class FeishuChannelConfig:
     require_mention: bool = True
     bot_open_id: str = ""
     bot_name: str = ""
+    streaming: bool = True
     provider: str = "local"
     base_url: str | None = None
     model: str | None = None
@@ -145,6 +152,15 @@ class FeishuInboundMessage:
     sender_type: str
     sender_ids: tuple[str, ...]
     mentions: tuple[dict[str, str], ...]
+
+
+@dataclass
+class FeishuStreamingCard:
+    card_id: str
+    message_id: str
+    chat_id: str
+    sequence: int = 1
+    content: str = ""
 
 
 class FeishuApiError(MnemoError):
@@ -205,6 +221,51 @@ class FeishuClient:
             message_ids.append(self._send_post(chat_id, content))
         return message_ids
 
+    def start_streaming_card(self, chat_id: str, reply_to_message_id: str = "") -> FeishuStreamingCard:
+        if not self.config.app_id or not self.config.app_secret:
+            raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
+        card_id = self._create_streaming_card(_FEISHU_STREAM_START_TEXT)
+        message_id = self._reply_interactive_card(reply_to_message_id, card_id) if reply_to_message_id else ""
+        if not message_id:
+            message_id = self._send_interactive_card(chat_id, card_id)
+        return FeishuStreamingCard(card_id=card_id, message_id=message_id, chat_id=chat_id)
+
+    def update_streaming_card(self, card: FeishuStreamingCard, markdown: str) -> None:
+        text = str(markdown or "").strip() or _FEISHU_STREAM_START_TEXT
+        card.sequence += 1
+        self._put(
+            f"/open-apis/cardkit/v1/cards/{card.card_id}/elements/{_FEISHU_STREAM_CARD_ELEMENT_ID}/content",
+            {},
+            {
+                "content": text,
+                "sequence": card.sequence,
+                "uuid": _streaming_card_uuid(card.card_id, card.sequence),
+            },
+        )
+        card.content = text
+
+    def close_streaming_card(self, card: FeishuStreamingCard, markdown: str) -> None:
+        text = str(markdown or "").strip() or "（空响应）"
+        if text != card.content:
+            self.update_streaming_card(card, text)
+        card.sequence += 1
+        self._patch(
+            f"/open-apis/cardkit/v1/cards/{card.card_id}/settings",
+            {},
+            {
+                "settings": dumps(
+                    {
+                        "config": {
+                            "streaming_mode": False,
+                            "summary": {"content": _streaming_card_summary(text)},
+                        }
+                    }
+                ),
+                "sequence": card.sequence,
+                "uuid": _streaming_card_uuid(card.card_id, card.sequence),
+            },
+        )
+
     def add_reaction(self, message_id: str, emoji_type: str = _FEISHU_ACK_EMOJI_TYPE) -> str:
         if not self.config.app_id or not self.config.app_secret:
             raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to add reactions")
@@ -226,6 +287,46 @@ class FeishuClient:
                 "receive_id": chat_id,
                 "msg_type": "post",
                 "content": dumps(content),
+            },
+        )
+        return _message_id_from_response(response)
+
+    def _create_streaming_card(self, markdown: str) -> str:
+        response = self._post(
+            "/open-apis/cardkit/v1/cards",
+            {},
+            {
+                "type": "card_json",
+                "data": dumps(_streaming_card_payload(markdown)),
+            },
+        )
+        data = response.get("data") if isinstance(response.get("data"), dict) else {}
+        card_id = str(data.get("card_id") or "")
+        if not card_id:
+            raise FeishuApiError("Feishu did not return card_id for streaming card")
+        return card_id
+
+    def _send_interactive_card(self, chat_id: str, card_id: str) -> str:
+        response = self._post(
+            "/open-apis/im/v1/messages",
+            {"receive_id_type": "chat_id"},
+            {
+                "receive_id": chat_id,
+                "msg_type": "interactive",
+                "content": dumps(_interactive_card_content(card_id)),
+            },
+        )
+        return _message_id_from_response(response)
+
+    def _reply_interactive_card(self, message_id: str, card_id: str) -> str:
+        if not message_id:
+            return ""
+        response = self._post(
+            f"/open-apis/im/v1/messages/{message_id}/reply",
+            {},
+            {
+                "msg_type": "interactive",
+                "content": dumps(_interactive_card_content(card_id)),
             },
         )
         return _message_id_from_response(response)
@@ -280,6 +381,9 @@ class FeishuClient:
     def _put(self, path: str, query: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_json("PUT", path, query, payload, token=self._tenant_access_token())
 
+    def _patch(self, path: str, query: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request_json("PATCH", path, query, payload, token=self._tenant_access_token())
+
     def _request_json(
         self,
         method: str,
@@ -291,7 +395,10 @@ class FeishuClient:
     ) -> dict[str, Any]:
         url = self._url(path, query)
         body = dumps(payload).encode("utf-8") if payload is not None else None
-        headers = {"Content-Type": "application/json; charset=utf-8"}
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "User-Agent": "Mnemo/0.1 FeishuChannel",
+        }
         if token:
             headers["Authorization"] = f"Bearer {token}"
         request = Request(url, data=body, headers=headers, method=method)
@@ -437,13 +544,29 @@ class FeishuChannelService:
         lock = self._chat_lock(message.chat_id)
         with lock:
             reply_message_id = ""
+            streaming_card: FeishuStreamingCard | None = None
             try:
-                reply_ids = self.client.send_markdown(message.chat_id, _FEISHU_STREAM_START_TEXT)
-                reply_message_id = reply_ids[0] if reply_ids else ""
-                response = self._stream_reply(message, reply_message_id)
-                self._finalize_reply(message.chat_id, reply_message_id, response)
+                if self.config.streaming:
+                    streaming_card = self._try_start_streaming_card(message)
+                if streaming_card is not None:
+                    response = self._stream_reply(message, self._streaming_card_partial_updater(streaming_card))
+                    self._finalize_streaming_card(streaming_card, response)
+                else:
+                    reply_ids = self.client.send_markdown(message.chat_id, _FEISHU_STREAM_START_TEXT)
+                    reply_message_id = reply_ids[0] if reply_ids else ""
+                    response = self._stream_reply(
+                        message,
+                        lambda current: self._safe_replace_streaming_markdown(
+                            reply_message_id, message.chat_id, current
+                        ),
+                    )
+                    self._finalize_reply(message.chat_id, reply_message_id, response)
             except Exception as exc:
-                self._send_failure_reply(message.chat_id, reply_message_id, f"Mnemo 处理失败：{exc}")
+                failure = f"Mnemo 处理失败：{exc}"
+                if streaming_card is not None:
+                    self._send_streaming_card_failure(streaming_card, failure)
+                else:
+                    self._send_failure_reply(message.chat_id, reply_message_id, failure)
             finally:
                 with self._threads_lock:
                     self._threads = [thread for thread in self._threads if thread.is_alive()]
@@ -462,7 +585,17 @@ class FeishuChannelService:
         except Exception:
             pass
 
-    def _stream_reply(self, message: FeishuInboundMessage, reply_message_id: str) -> str:
+    def _try_start_streaming_card(self, message: FeishuInboundMessage) -> FeishuStreamingCard | None:
+        try:
+            return self.client.start_streaming_card(message.chat_id, reply_to_message_id=message.message_id)
+        except Exception:
+            return None
+
+    def _stream_reply(
+        self,
+        message: FeishuInboundMessage,
+        update_partial: Callable[[str], bool],
+    ) -> str:
         parts: list[str] = []
         final_response = ""
         conversation_id = ""
@@ -482,12 +615,11 @@ class FeishuChannelService:
 
             current = final_response or "".join(parts)
             if (
-                reply_message_id
-                and current
+                current
                 and partial_edits < _FEISHU_STREAM_MAX_PARTIAL_EDITS
                 and _should_update_stream(current, last_sent=last_sent, last_sent_at=last_sent_at)
             ):
-                if self._safe_replace_streaming_markdown(reply_message_id, message.chat_id, current):
+                if update_partial(current):
                     last_sent = current
                     last_sent_at = time.time()
                     partial_edits += 1
@@ -498,11 +630,45 @@ class FeishuChannelService:
         return response
 
     def _safe_replace_streaming_markdown(self, message_id: str, chat_id: str, markdown: str) -> bool:
+        if not message_id:
+            return False
         try:
             self.client.replace_markdown(message_id, chat_id, _streaming_markdown_preview(markdown))
             return True
         except Exception:
             return False
+
+    def _streaming_card_partial_updater(self, card: FeishuStreamingCard) -> Callable[[str], bool]:
+        def update(markdown: str) -> bool:
+            try:
+                self.client.update_streaming_card(card, markdown)
+                return True
+            except Exception:
+                return False
+
+        return update
+
+    def _finalize_streaming_card(self, card: FeishuStreamingCard, markdown: str) -> None:
+        try:
+            self.client.close_streaming_card(card, markdown)
+            return
+        except Exception:
+            pass
+        try:
+            self.client.send_markdown(card.chat_id, markdown)
+        except Exception:
+            pass
+
+    def _send_streaming_card_failure(self, card: FeishuStreamingCard, text: str) -> None:
+        try:
+            self.client.close_streaming_card(card, text)
+            return
+        except Exception:
+            pass
+        try:
+            self.client.send_text(card.chat_id, text)
+        except Exception:
+            pass
 
     def _finalize_reply(self, chat_id: str, message_id: str, markdown: str) -> None:
         if message_id:
@@ -768,6 +934,7 @@ def save_feishu_saved_config(
     *,
     connection: str = "websocket",
     webhook_path: str = _DEFAULT_WEBHOOK_PATH,
+    streaming: bool = True,
 ) -> dict[str, Any]:
     app_id = str(credentials.get("app_id") or credentials.get("client_id") or "").strip()
     app_secret = str(credentials.get("app_secret") or credentials.get("client_secret") or "").strip()
@@ -778,6 +945,7 @@ def save_feishu_saved_config(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "domain": _normalize_domain(str(credentials.get("domain") or "feishu")),
         "connection": _normalize_connection(connection),
+        "streaming": bool(streaming),
         "webhook_path": _normalize_path(webhook_path),
         "app_id": app_id,
         "app_secret": app_secret,
@@ -815,6 +983,7 @@ def feishu_channel_status(state_dir: str | Path) -> dict[str, Any]:
         "config_path": str(feishu_saved_config_path(state_dir)),
         "domain": str(saved.get("domain") or ""),
         "connection": str(saved.get("connection") or ""),
+        "streaming": bool(saved.get("streaming", True)),
         "webhook_path": str(saved.get("webhook_path") or _DEFAULT_WEBHOOK_PATH),
         "app_id": _mask_secret(str(saved.get("app_id") or "")),
         "owner_open_id": str(saved.get("owner_open_id") or ""),
@@ -1170,6 +1339,46 @@ def _split_text(text: str, limit: int) -> list[str]:
 def _message_id_from_response(response: dict[str, Any]) -> str:
     data = response.get("data") if isinstance(response.get("data"), dict) else {}
     return str(data.get("message_id") or "")
+
+
+def _interactive_card_content(card_id: str) -> dict[str, Any]:
+    return {"type": "card", "data": {"card_id": card_id}}
+
+
+def _streaming_card_payload(markdown: str) -> dict[str, Any]:
+    text = str(markdown or "").strip() or _FEISHU_STREAM_START_TEXT
+    return {
+        "schema": "2.0",
+        "config": {
+            "streaming_mode": True,
+            "summary": {"content": _streaming_card_summary(text)},
+        },
+        "body": {
+            "direction": "vertical",
+            "padding": "12px 12px 12px 12px",
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "element_id": _FEISHU_STREAM_CARD_ELEMENT_ID,
+                    "content": text,
+                    "text_align": "left",
+                    "text_size": "normal",
+                    "margin": "0px 0px 0px 0px",
+                }
+            ],
+        },
+    }
+
+
+def _streaming_card_summary(text: str) -> str:
+    body = " ".join(str(text or "").split()) or "Mnemo"
+    if len(body) <= _FEISHU_STREAM_CARD_SUMMARY_LIMIT:
+        return body
+    return body[: _FEISHU_STREAM_CARD_SUMMARY_LIMIT - 1].rstrip() + "..."
+
+
+def _streaming_card_uuid(card_id: str, sequence: int) -> str:
+    return f"mnemo-{card_id}-{sequence}"
 
 
 def _event_text(event: ChatEvent) -> str:

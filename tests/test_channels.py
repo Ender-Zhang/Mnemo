@@ -74,6 +74,7 @@ class FeishuChannelTests(unittest.TestCase):
                     app_secret="secret_test",
                     verification_token="verify-token",
                     api_base_url=api.base_url,
+                    streaming=False,
                 )
                 with RunningFeishuChannel(config) as server:
                     payload = _message_payload(text="hello from feishu")
@@ -124,6 +125,7 @@ class FeishuChannelTests(unittest.TestCase):
                     app_secret="secret_test",
                     verification_token="verify-token",
                     api_base_url=api.base_url,
+                    streaming=False,
                 )
                 with RunningFeishuChannel(config) as server:
                     markdown = "# 今日计划\n\n- **重点** 看 [文档](https://example.com)\n\n```python\nprint(1)\n```"
@@ -165,7 +167,7 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertIn("- **重点** 看 [文档](https://example.com)", rendered)
                     self.assertIn("```python", rendered)
 
-    def test_feishu_reply_streams_by_editing_bot_message(self) -> None:
+    def test_feishu_reply_uses_official_streaming_card(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with FakeFeishuApiServer() as api:
                 config = FeishuChannelConfig(
@@ -205,15 +207,22 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertEqual(status, 200, body)
                     self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
 
-                    updates = api.requests_for("/open-apis/im/v1/messages/om_reply")
+                    created = api.requests_for("/open-apis/cardkit/v1/cards")
+                    replied = api.requests_for("/open-apis/im/v1/messages/om_msg_1/reply")
+                    updates = api.requests_for("/open-apis/cardkit/v1/cards/card_reply/elements/content/content")
+                    closes = api.requests_for("/open-apis/cardkit/v1/cards/card_reply/settings")
+                    self.assertEqual(created[0]["body"]["type"], "card_json")
+                    card_payload = json.loads(created[0]["body"]["data"])
+                    self.assertTrue(card_payload["config"]["streaming_mode"])
+                    self.assertEqual(card_payload["body"]["elements"][0]["element_id"], "content")
+                    self.assertEqual(replied[0]["body"]["msg_type"], "interactive")
+                    reply_content = json.loads(replied[0]["body"]["content"])
+                    self.assertEqual(reply_content["data"]["card_id"], "card_reply")
                     self.assertGreaterEqual(len(updates), 2)
-                    first_content = json.loads(updates[0]["body"]["content"])
-                    final_content = json.loads(updates[-1]["body"]["content"])
-                    first_text = "\n".join(block[0]["text"] for block in first_content["zh_cn"]["content"])
-                    final_text = "\n".join(block[0]["text"] for block in final_content["zh_cn"]["content"])
-                    self.assertIn("生成中", first_text)
-                    self.assertNotIn("生成中", final_text)
-                    self.assertIn("hello world", final_text)
+                    self.assertIn("hello", updates[0]["body"]["content"])
+                    self.assertIn("hello world", updates[-1]["body"]["content"])
+                    settings = json.loads(closes[-1]["body"]["settings"])
+                    self.assertFalse(settings["config"]["streaming_mode"])
 
     def test_feishu_final_edit_failure_sends_final_reply_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -226,6 +235,7 @@ class FeishuChannelTests(unittest.TestCase):
                     app_secret="secret_test",
                     verification_token="verify-token",
                     api_base_url=api.base_url,
+                    streaming=False,
                 )
                 with RunningFeishuChannel(config) as server:
                     server.service._stream_mnemo_events = lambda _message: iter(  # type: ignore[method-assign]
@@ -326,6 +336,7 @@ class FeishuChannelTests(unittest.TestCase):
                 self.assertEqual(saved["bot_name"], "MnemoBot")
                 status = feishu_channel_status(tmp)
                 self.assertEqual(status["bot_name"], "MnemoBot")
+                self.assertTrue(status["streaming"])
                 self.assertNotIn("secret_test", json.dumps(status, ensure_ascii=False))
 
     def test_feishu_saved_config_requires_credentials(self) -> None:
@@ -454,7 +465,13 @@ class FakeFeishuApiServer:
                 if path == "/open-apis/auth/v3/tenant_access_token/internal":
                     self._send_json({"code": 0, "tenant_access_token": "tenant-token", "expire": 7200})
                     return
+                if path == "/open-apis/cardkit/v1/cards":
+                    self._send_json({"code": 0, "data": {"card_id": "card_reply"}})
+                    return
                 if path == "/open-apis/im/v1/messages":
+                    self._send_json({"code": 0, "data": {"message_id": "om_reply"}})
+                    return
+                if path == "/open-apis/im/v1/messages/om_msg_1/reply":
                     self._send_json({"code": 0, "data": {"message_id": "om_reply"}})
                     return
                 if path == "/open-apis/im/v1/messages/om_msg_1/reactions":
@@ -473,6 +490,20 @@ class FakeFeishuApiServer:
                         self._send_json({"code": 230075, "msg": "message edit unavailable"}, status=400)
                         return
                     self._send_json({"code": 0, "data": {"message_id": "om_reply", "msg_type": parsed.get("msg_type")}})
+                    return
+                if path == "/open-apis/cardkit/v1/cards/card_reply/elements/content/content":
+                    self._send_json({"code": 0, "data": {"card_id": "card_reply"}})
+                    return
+                self._send_json({"code": 404, "msg": "not found"}, status=404)
+
+            def do_PATCH(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                parsed = json.loads(body) if body else {}
+                path = self.path.split("?", 1)[0]
+                fake.requests.append({"path": path, "headers": dict(self.headers), "body": parsed})
+                if path == "/open-apis/cardkit/v1/cards/card_reply/settings":
+                    self._send_json({"code": 0, "data": {"card_id": "card_reply"}})
                     return
                 self._send_json({"code": 404, "msg": "not found"}, status=404)
 

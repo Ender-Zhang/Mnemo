@@ -313,6 +313,7 @@ def _feishu_sidecar(config: WebServiceConfig, primary_command: tuple[str, ...]) 
     ]
     if config.workspace_root:
         command.extend(["--workspace-root", str(_service_path(config.workspace_root))])
+    command.append("--streaming" if bool(saved.get("streaming", True)) else "--no-streaming")
     _append_runtime_args(command, runtime)
     paths = web_service_paths(config.state_dir)
     return {

@@ -278,16 +278,19 @@
 - `mnemo.channels.feishu_channel_status(state_dir) -> dict[str, Any]`
 - `mnemo.channels.build_feishu_server(config: FeishuChannelConfig) -> ThreadingHTTPServer`
 - `mnemo.channels.serve_feishu(config: FeishuChannelConfig) -> None`
+- `FeishuClient.start_streaming_card(chat_id: str, reply_to_message_id: str = "") -> FeishuStreamingCard`
+- `FeishuClient.update_streaming_card(card: FeishuStreamingCard, markdown: str) -> None`
+- `FeishuClient.close_streaming_card(card: FeishuStreamingCard, markdown: str) -> None`
 - CLI: `mnemo channels feishu onboard [--domain feishu|lark] [--timeout-s S] [--state-dir DIR] [--json]`
 - CLI: `mnemo channels feishu status [--state-dir DIR] [--json]`
-- CLI: `mnemo channels feishu serve [--connection webhook|websocket] [--host HOST] [--port PORT] [--path PATH] [--state-dir DIR] [--workspace-root DIR] [--provider local|openai-compatible|anthropic] [--base-url URL] [--model MODEL] [--api-key-env ENV]`
+- CLI: `mnemo channels feishu serve [--connection webhook|websocket] [--streaming|--no-streaming] [--host HOST] [--port PORT] [--path PATH] [--state-dir DIR] [--workspace-root DIR] [--provider local|openai-compatible|anthropic] [--base-url URL] [--model MODEL] [--api-key-env ENV]`
 - HTTP: `GET /api/channels/feishu`
 - HTTP: `POST /api/channels/feishu/onboard/start`
 - HTTP: `POST /api/channels/feishu/onboard/poll`
 
 ### 3. Contracts
 - Feishu webhook mode is a transport facade over `run_local()` / `run_provider()` and `stream_local()` / `stream_provider()`; it must not duplicate prompt assembly, memory, tools, or provider orchestration.
-- Feishu credentials resolve from explicit flags or environment variables: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_VERIFICATION_TOKEN`, `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, `FEISHU_BOT_NAME`, and optional `FEISHU_API_BASE_URL`.
+- Feishu credentials resolve from explicit flags or environment variables: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_VERIFICATION_TOKEN`, `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, `FEISHU_BOT_NAME`, `FEISHU_STREAMING`, and optional `FEISHU_API_BASE_URL`.
 - QR onboarding uses Feishu/Lark app registration device flow, requests `PersonalAgent` with `client_secret` auth, and stores the returned app credentials in `<state_dir>/channels/feishu_config.json`.
 - The saved Feishu config is the only channel secret persistence exception; it must be state-local, mode `0600` where supported, and never returned unmasked through Web/CLI status payloads.
 - Non-QR secrets must not be persisted, logged, returned in JSON, or printed by CLI help beyond variable names.
@@ -298,10 +301,11 @@
 - When configured, verification-token and signature checks use timing-safe comparison and return compact `401` responses on failure.
 - Encrypted webhook payloads are rejected with compact JSON until a dependency-free decrypt path is added.
 - Inbound `im.message.receive_v1` text messages are deduplicated by event/message id before runtime execution.
-- Message processing runs in a background thread and returns Feishu's webhook acknowledgement quickly; Feishu replies are sent through `/open-apis/im/v1/messages?receive_id_type=chat_id`.
-- Assistant replies from Mnemo are sent as Feishu/Lark rich `post` messages with Markdown blocks when possible; send failures fall back to a structural rich-post conversion and error replies may remain plain text.
+- Message processing runs in a background thread and returns Feishu's webhook acknowledgement quickly; Feishu fallback rich-post replies are sent through `/open-apis/im/v1/messages?receive_id_type=chat_id`.
+- Assistant replies default to Feishu official streaming cards when `streaming=true`: create a CardKit card through `/open-apis/cardkit/v1/cards`, send or reply with an `interactive` card message, update the card element through `/open-apis/cardkit/v1/cards/:card_id/elements/:element_id/content`, then close streaming mode through `/open-apis/cardkit/v1/cards/:card_id/settings`.
+- If streaming-card startup fails, or `--no-streaming` / `FEISHU_STREAMING=false` is set, assistant replies fall back to Feishu/Lark rich `post` messages with Markdown blocks when possible; send failures fall back to a structural rich-post conversion and error replies may remain plain text.
 - Feishu inbound messages may receive a best-effort emoji reaction through `/open-apis/im/v1/messages/:message_id/reactions`; reaction failures must not block runtime processing.
-- Feishu streaming is implemented by sending one placeholder rich post, then editing that message through `/open-apis/im/v1/messages/:message_id` with throttled partial content and one final edit; partial edits must stay below the platform's 20-edit limit.
+- Legacy rich-post streaming is implemented by sending one placeholder rich post, then editing that message through `/open-apis/im/v1/messages/:message_id` with throttled partial content and one final edit; partial edits must stay below the platform's 20-edit limit.
 - Per-chat execution is serialized so a chat cannot overlap multiple Mnemo turns.
 - Feishu chat ids map to Mnemo conversation ids in state-local channel metadata so follow-up messages keep continuity.
 - Group messages honor the mention gate when `require_mention` is true and a bot identity is configured; DMs are accepted.
@@ -313,9 +317,9 @@
 | URL verification | Returns the challenge JSON | `tests/test_channels.py` |
 | Invalid token/signature | Returns compact 401 without running Mnemo | `tests/test_channels.py` |
 | Duplicate callback | Returns duplicate acknowledgement and sends no second reply | `tests/test_channels.py` |
-| Valid text message | Runs Mnemo and sends one Feishu rich post reply | `tests/test_channels.py` |
-| Markdown reply | Preserves Markdown as Feishu rich post content instead of plain text | `tests/test_channels.py` |
-| Streaming reply | Sends one placeholder, adds a reaction, edits the reply during streaming, and finalizes without the streaming suffix | `tests/test_channels.py` |
+| Valid text message | Runs Mnemo and sends one Feishu rich post reply when streaming fallback is disabled | `tests/test_channels.py` |
+| Markdown reply | Preserves Markdown as Feishu rich post content instead of plain text on the fallback path | `tests/test_channels.py` |
+| Streaming reply | Creates a CardKit streaming card, replies with an interactive card, updates the content element, and closes streaming mode | `tests/test_channels.py` |
 | QR onboarding success | Starts registration, polls credentials, probes bot metadata, and saves masked status | `tests/test_channels.py` |
 | Web onboarding API | Starts/polls a session and never returns app secret | `tests/test_web.py` |
 | Missing app credentials | CLI exits with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -324,10 +328,12 @@
 ### 5. Good/Base/Bad Cases
 - Good: keep Feishu parsing, QR registration, auth checks, and outbound API calls inside `mnemo/channels/feishu.py`.
 - Good: use provider/runtime config resolution shared by the CLI, then call `run_provider()` or `run_local()`.
+- Good: use Feishu official CardKit streaming APIs when `streaming=true` instead of simulating streaming by repeatedly editing rich-post messages.
 - Base: webhook mode is enough for Cloudflare Tunnel or another HTTPS reverse proxy.
 - Base: QR scan-to-create defaults to websocket because it avoids manual webhook callback setup.
 - Bad: storing `FEISHU_APP_SECRET` in Web settings, browser storage, logs, or unmasked status payloads.
 - Bad: running a provider call synchronously before acknowledging Feishu's webhook callback.
+- Bad: using the rich-post edit loop when official streaming-card permissions are available.
 
 ### 6. Tests Required
 - Channel tests for challenge, token/signature failure, dedup, background runtime processing, outbound send shape, and session continuity file.

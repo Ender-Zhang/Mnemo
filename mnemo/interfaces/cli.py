@@ -614,6 +614,20 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Allow group messages without an @mention gate.",
     )
+    streaming_group = feishu_serve_parser.add_mutually_exclusive_group()
+    streaming_group.add_argument(
+        "--streaming",
+        dest="streaming",
+        action="store_true",
+        default=None,
+        help="Use Feishu official streaming cards for replies.",
+    )
+    streaming_group.add_argument(
+        "--no-streaming",
+        dest="streaming",
+        action="store_false",
+        help="Disable Feishu streaming cards and fall back to rich-post message edits.",
+    )
     feishu_serve_parser.add_argument("--bot-open-id", help="Bot open_id for group @mention checks, or FEISHU_BOT_OPEN_ID")
     feishu_serve_parser.add_argument("--bot-name", help="Bot name fallback for group @mention checks, or FEISHU_BOT_NAME")
     feishu_serve_parser.add_argument(
@@ -1326,6 +1340,9 @@ def _feishu_channel_config_from_args(args: argparse.Namespace) -> FeishuChannelC
         ]
         if str(item).strip()
     )
+    saved_streaming = saved.get("streaming")
+    default_streaming = bool(saved_streaming) if saved_streaming is not None else True
+    streaming = args.streaming if args.streaming is not None else _env_bool("FEISHU_STREAMING", default_streaming)
     return FeishuChannelConfig(
         state_dir=runtime.state_dir,
         workspace_root=args.workspace_root,
@@ -1343,6 +1360,7 @@ def _feishu_channel_config_from_args(args: argparse.Namespace) -> FeishuChannelC
         require_mention=not args.no_require_mention and _env_bool("FEISHU_REQUIRE_MENTION", True),
         bot_open_id=_first_env_string(args.bot_open_id, "FEISHU_BOT_OPEN_ID") or str(saved.get("bot_open_id") or ""),
         bot_name=_first_env_string(args.bot_name, "FEISHU_BOT_NAME") or str(saved.get("bot_name") or ""),
+        streaming=streaming,
         provider=runtime.provider,
         base_url=runtime.base_url,
         model=runtime.model,

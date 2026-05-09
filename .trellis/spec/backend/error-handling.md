@@ -27,7 +27,7 @@
 - CLI: `mnemo mcp config [--client generic|claude] [--command COMMAND] [--state-dir DIR] [--json]`
 - CLI: `mnemo channels feishu onboard [--domain feishu|lark] [--timeout-s S] [--state-dir DIR] [--json]`
 - CLI: `mnemo channels feishu status [--state-dir DIR] [--json]`
-- CLI: `mnemo channels feishu serve [--connection webhook|websocket] [--app-id APP_ID|FEISHU_APP_ID] [--app-secret APP_SECRET|FEISHU_APP_SECRET] [--verification-token TOKEN|FEISHU_VERIFICATION_TOKEN] [--encrypt-key KEY|FEISHU_ENCRYPT_KEY] [--state-dir DIR]`
+- CLI: `mnemo channels feishu serve [--connection webhook|websocket] [--streaming|--no-streaming] [--app-id APP_ID|FEISHU_APP_ID] [--app-secret APP_SECRET|FEISHU_APP_SECRET] [--verification-token TOKEN|FEISHU_VERIFICATION_TOKEN] [--encrypt-key KEY|FEISHU_ENCRYPT_KEY] [--state-dir DIR]`
 - CLI: `mnemo memory health [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory decay [--limit N] [--stale-confidence FLOAT] [--state-dir DIR] [--json]`
 - CLI: `mnemo memory tombstone <memory_id> --reason REASON [--target-type auto|candidate|page] [--replacement-id ID] [--eval-run-id RUN_ID] [--state-dir DIR] [--json]`
@@ -81,6 +81,7 @@
 - `mnemo channels feishu onboard` normalizes registration failures, denials, expired QR sessions, and timeouts to compact `mnemo:` errors and must not print app secrets.
 - `mnemo channels feishu status` is read-only and prints masked saved config metadata only.
 - `mnemo channels feishu serve` validates required app credentials from flags, env, or saved QR config at the CLI boundary and must not print app secrets.
+- Feishu streaming-card creation/update/close errors are normalized inside the channel: startup failures fall back to rich-post streaming, partial update failures do not abort the Mnemo run, and final close failures fall back to a normal Markdown reply.
 - Feishu webhook errors are compact HTTP responses: invalid JSON returns 400 JSON, invalid verification token/signature returns 401 text, unsupported encrypted payloads return 400 JSON, and duplicate callbacks return 200 JSON without re-running Mnemo.
 - `mnemo conversations show` and `mnemo missions show` normalize missing continuity ids this way.
 - `mnemo runs show`, `mnemo runs cancel`, `mnemo events`, `mnemo replay`, and `mnemo harness replay` normalize missing run ids this way.
