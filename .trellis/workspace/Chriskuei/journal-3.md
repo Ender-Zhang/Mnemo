@@ -345,3 +345,36 @@ Rendered Feishu replies as rich post Markdown, added password-gated Web access t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 125: Settings Standalone Page
+
+**Date**: 2026-05-09
+**Task**: Settings Standalone Page
+**Branch**: `main`
+
+### Summary
+
+Converted Settings from drawer/mobile sheet behavior into a normal standalone hash-routed page, removed overlay markup and CSS, updated asset tests/specs, restarted mem.day.qzz.io, and verified tests plus package smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f9f4361` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
