@@ -339,6 +339,11 @@
 - `mnemo onboard` initializes the state directory, writes non-secret runtime settings through `save_user_settings()`, and never stores raw API keys in `settings.json`.
 - A pasted or copied provider key may be written only to `<state_dir>/service/mnemo-web.env` with mode `0600`; CLI JSON/status output exposes only env var names.
 - The background service launches `python -m mnemo web ...` so the installed venv owns imports and the Web settings overlay remains the source of runtime provider configuration.
+- Service launchers resolve state and workspace paths to absolute paths before writing launchd/systemd/detached metadata.
+- When `<state_dir>/channels/feishu_config.json` contains saved credentials with `connection=websocket`, the service launcher also starts `python -m mnemo channels feishu serve --connection websocket ...` as a child sidecar.
+- Feishu sidecar provider flags are derived from non-secret runtime settings; raw app secrets remain in `channels/feishu_config.json` and provider keys remain in the service env file.
+- Feishu sidecar logs are separate: `<state_dir>/logs/mnemo-feishu.log` and `<state_dir>/logs/mnemo-feishu.error.log`.
+- The service supervisor exits if either web or Feishu sidecar exits; launchd/systemd/detached restart policy may then relaunch the whole service.
 - Service manager selection is `launchd` on macOS, `systemd --user` on Linux, and detached process fallback when no supported manager is available or an explicit mode is requested.
 - `--dry-run` writes service files for inspection but must not call `launchctl`, `systemctl`, or spawn a detached process.
 - The install script runs `mnemo onboard` by default; non-interactive installs pass `--non-interactive --skip-feishu` to avoid blocking on QR or prompts.
@@ -350,17 +355,22 @@
 | --- | --- | --- |
 | Non-interactive provider onboard | Settings are saved, service env has only named secret variables, stdout is secret-free | `tests/test_cli.py` |
 | Service dry-run install | Launcher/meta files are written, status is compact, and no process is started | `tests/test_cli.py` |
+| Feishu websocket config | Service dry-run launcher includes a Feishu sidecar and no app/API secrets | `tests/test_cli.py` |
+| Feishu webhook config | Service dry-run launcher skips the websocket sidecar | `tests/test_cli.py` |
 | Install script syntax/docs | `bash -n` passes and the script references onboard plus Feishu fallback commands | `tests/test_channels.py` |
 | Package install | Installed wheel exposes service helpers and CLI entrypoints | `tests/package_install_smoke.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: use `mnemo onboard --non-interactive --provider openai-compatible --base-url ... --model ... --api-key-env MNEMO_API_KEY --api-key ...` for unattended setup.
 - Good: keep service process-manager code in `mnemo/runtime/service.py` with CLI as a thin wrapper.
+- Good: let QR-bound Feishu websocket bots ride the normal Mnemo service lifecycle instead of requiring a second manual terminal.
 - Base: detached mode is acceptable where launchd/systemd are unavailable.
 - Bad: asking users to run `mnemo web` manually after the default installer completes.
+- Bad: QR onboarding that reports success but leaves no process consuming Feishu websocket events.
 - Bad: putting provider secrets in Web settings, installer logs, CLI JSON, launchd plist, or systemd unit files.
 
 ### 6. Tests Required
 - CLI tests for onboard help, non-interactive runtime setup, service env permissions, service dry-run install, and service status.
+- CLI tests for Feishu sidecar inclusion/exclusion and secret-free launcher/status output.
 - Install script syntax checks.
 - Package smoke coverage for the service helper module.

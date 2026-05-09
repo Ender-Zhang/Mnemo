@@ -12,6 +12,7 @@ from pathlib import Path
 from socketserver import ThreadingTCPServer
 from typing import Any
 
+from mnemo.channels import save_feishu_saved_config
 from mnemo.memory import MemoryEngine
 from mnemo.storage import StateStore
 
@@ -124,6 +125,100 @@ class CliTests(unittest.TestCase):
             status_payload = json.loads(status.stdout)["service"]
             self.assertTrue(status_payload["installed"])
             self.assertFalse(status_payload["running"])
+
+    def test_service_dry_run_adds_feishu_sidecar_for_websocket_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            save_feishu_saved_config(
+                tmp,
+                {
+                    "app_id": "cli_test",
+                    "app_secret": "secret_test",
+                    "domain": "feishu",
+                    "bot_name": "Mnemo",
+                },
+                connection="websocket",
+            )
+            onboard = _run_cli(
+                [
+                    "onboard",
+                    "--state-dir",
+                    tmp,
+                    "--non-interactive",
+                    "--skip-feishu",
+                    "--no-start-service",
+                    "--provider",
+                    "openai-compatible",
+                    "--base-url",
+                    "https://example.test/v1",
+                    "--model",
+                    "demo-model",
+                    "--api-key-env",
+                    "MNEMO_TEST_API_KEY",
+                    "--api-key",
+                    "secret-test-key",
+                    "--json",
+                ]
+            )
+            self.assertEqual(onboard.returncode, 0, onboard.stderr)
+
+            result = _run_cli(
+                [
+                    "service",
+                    "install",
+                    "--state-dir",
+                    tmp,
+                    "--mode",
+                    "detached",
+                    "--dry-run",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn("secret_test", result.stdout)
+            service = json.loads(result.stdout)["service"]
+            self.assertEqual([sidecar["name"] for sidecar in service["sidecars"]], ["feishu"])
+            self.assertTrue(service["sidecars"][0]["logs"]["stdout"].endswith("mnemo-feishu.log"))
+            launcher = Path(service["launcher"]).read_text(encoding="utf-8")
+            self.assertIn('"channels", "feishu", "serve"', launcher)
+            self.assertIn('"--connection", "websocket"', launcher)
+            self.assertIn('"--provider", "openai-compatible"', launcher)
+            self.assertNotIn("secret_test", launcher)
+            self.assertNotIn("secret-test-key", launcher)
+            supervisor_check = subprocess.run(
+                [service["launcher"], "--mnemo-supervisor-check"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(supervisor_check.returncode, 0, supervisor_check.stderr)
+
+    def test_service_dry_run_skips_feishu_sidecar_for_webhook_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            save_feishu_saved_config(
+                tmp,
+                {"app_id": "cli_test", "app_secret": "secret_test", "domain": "feishu"},
+                connection="webhook",
+            )
+            result = _run_cli(
+                [
+                    "service",
+                    "install",
+                    "--state-dir",
+                    tmp,
+                    "--mode",
+                    "detached",
+                    "--dry-run",
+                    "--json",
+                ]
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            service = json.loads(result.stdout)["service"]
+            self.assertEqual(service["sidecars"], [])
+            launcher = Path(service["launcher"]).read_text(encoding="utf-8")
+            self.assertNotIn("channels feishu serve", launcher)
 
     def test_init_and_run_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

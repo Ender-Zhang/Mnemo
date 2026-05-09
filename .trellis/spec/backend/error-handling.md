@@ -145,6 +145,7 @@
 | Feishu QR onboarding status | CLI/Web return compact masked status without app secret | `tests/test_cli.py`, `tests/test_web.py` |
 | Onboard runtime setup | CLI stores only redacted runtime settings and service-only env keys; raw API keys never appear in stdout | `tests/test_cli.py` |
 | Web service lifecycle | CLI service commands return compact manager/status payloads and normalize process-manager failures as `mnemo:` errors | `tests/test_cli.py` |
+| Feishu service sidecar | Service status/launcher metadata expose sidecar names/log paths but not app secrets or provider API keys | `tests/test_cli.py` |
 | Feishu webhook auth errors | Token/signature failures return compact HTTP 401 without running Mnemo | `tests/test_channels.py` |
 | Missing continuity id in CLI show | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
 | Missing run id in CLI trace/show/cancel | CLI exits non-zero with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -179,6 +180,7 @@
 - Base: service-layer `ValueError` is acceptable inside domain code when the CLI boundary converts it before user output.
 - Bad: print Authorization headers, API keys, or full provider error bodies to stdout.
 - Bad: storing raw API keys in `settings.json`, Web settings payloads, CLI JSON, or service status output.
+- Bad: including Feishu `app_secret` in launcher scripts, launchd plists, systemd units, or service JSON.
 - Bad: retry streaming calls after text/tool deltas have already been emitted.
 - Bad: reporting an observed user cancellation as `run.error`.
 - Bad: using a single-threaded web server that blocks cancellation while `/api/chat` streams.

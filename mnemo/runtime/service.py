@@ -42,12 +42,14 @@ class WebServicePaths:
     pid_file: Path
     stdout_log: Path
     stderr_log: Path
+    feishu_stdout_log: Path
+    feishu_stderr_log: Path
     launchd_plist: Path
     systemd_unit: Path
 
 
 def web_service_paths(state_dir: str | Path) -> WebServicePaths:
-    state = Path(state_dir).expanduser()
+    state = _service_path(state_dir)
     service_dir = state / "service"
     logs_dir = state / "logs"
     home = Path.home()
@@ -60,6 +62,8 @@ def web_service_paths(state_dir: str | Path) -> WebServicePaths:
         pid_file=service_dir / "mnemo-web.pid",
         stdout_log=logs_dir / "mnemo-web.log",
         stderr_log=logs_dir / "mnemo-web.error.log",
+        feishu_stdout_log=logs_dir / "mnemo-feishu.log",
+        feishu_stderr_log=logs_dir / "mnemo-feishu.error.log",
         launchd_plist=home / "Library" / "LaunchAgents" / f"{LAUNCHD_LABEL}.plist",
         systemd_unit=home / ".config" / "systemd" / "user" / SYSTEMD_UNIT,
     )
@@ -79,15 +83,19 @@ def build_web_service_command(
         "mnemo",
         "web",
         "--state-dir",
-        str(Path(state_dir).expanduser()),
+        str(_service_path(state_dir)),
         "--host",
         str(host),
         "--port",
         str(port),
     ]
     if workspace_root:
-        command.extend(["--workspace-root", str(Path(workspace_root).expanduser())])
+        command.extend(["--workspace-root", str(_service_path(workspace_root))])
     return tuple(command)
+
+
+def _service_path(path: str | Path) -> Path:
+    return Path(path).expanduser().resolve()
 
 
 def save_service_env(state_dir: str | Path, values: dict[str, str | None]) -> dict[str, Any]:
@@ -233,7 +241,8 @@ def _prepare_service_files(config: WebServiceConfig) -> WebServicePaths:
     if not paths.env_file.exists():
         _write_secret_env(paths.env_file, {})
     command = _resolved_command(config)
-    _write_launcher(paths, command)
+    sidecars = _service_sidecars(config, command)
+    _write_launcher(paths, command, sidecars)
     paths.meta_file.write_text(
         json.dumps(
             {
@@ -241,6 +250,14 @@ def _prepare_service_files(config: WebServiceConfig) -> WebServicePaths:
                 "port": int(config.port),
                 "workspace_root": config.workspace_root or "",
                 "command": list(command),
+                "sidecars": [
+                    {
+                        "name": sidecar["name"],
+                        "command": list(sidecar["command"]),
+                        "logs": sidecar["logs"],
+                    }
+                    for sidecar in sidecars
+                ],
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -261,6 +278,73 @@ def _resolved_command(config: WebServiceConfig) -> tuple[str, ...]:
     )
 
 
+def _service_sidecars(config: WebServiceConfig, primary_command: tuple[str, ...]) -> list[dict[str, Any]]:
+    sidecars: list[dict[str, Any]] = []
+    feishu = _feishu_sidecar(config, primary_command)
+    if feishu:
+        sidecars.append(feishu)
+    return sidecars
+
+
+def _feishu_sidecar(config: WebServiceConfig, primary_command: tuple[str, ...]) -> dict[str, Any] | None:
+    from ..channels.feishu import load_feishu_saved_config
+    from ..core.settings import load_user_settings
+
+    saved = load_feishu_saved_config(config.state_dir)
+    if not saved.get("app_id") or not saved.get("app_secret"):
+        return None
+    if str(saved.get("connection") or "").strip().lower() != "websocket":
+        return None
+
+    runtime = load_user_settings(config.state_dir).get("runtime", {})
+    runtime = runtime if isinstance(runtime, dict) else {}
+    python_executable = primary_command[0] if primary_command else sys.executable
+    command = [
+        python_executable,
+        "-m",
+        "mnemo",
+        "channels",
+        "feishu",
+        "serve",
+        "--state-dir",
+        str(_service_path(config.state_dir)),
+        "--connection",
+        "websocket",
+    ]
+    if config.workspace_root:
+        command.extend(["--workspace-root", str(_service_path(config.workspace_root))])
+    _append_runtime_args(command, runtime)
+    paths = web_service_paths(config.state_dir)
+    return {
+        "name": "feishu",
+        "command": tuple(command),
+        "logs": {"stdout": str(paths.feishu_stdout_log), "stderr": str(paths.feishu_stderr_log)},
+    }
+
+
+def _append_runtime_args(command: list[str], runtime: dict[str, Any]) -> None:
+    provider = str(runtime.get("provider") or "").strip()
+    if provider:
+        command.extend(["--provider", provider])
+    for field, flag in (
+        ("base_url", "--base-url"),
+        ("model", "--model"),
+        ("api_key_env", "--api-key-env"),
+    ):
+        value = str(runtime.get(field) or "").strip()
+        if value:
+            command.extend([flag, value])
+    for field, flag in (
+        ("timeout_s", "--timeout-s"),
+        ("retry_count", "--retry-count"),
+        ("retry_backoff_s", "--retry-backoff-s"),
+        ("max_tool_rounds", "--max-tool-rounds"),
+    ):
+        value = runtime.get(field)
+        if value is not None and value != "":
+            command.extend([flag, str(value)])
+
+
 def _write_secret_env(path: Path, env: dict[str, str]) -> None:
     lines = ["# Mnemo service-only environment. Do not commit this file."]
     for key in sorted(env):
@@ -275,9 +359,8 @@ def _write_secret_env(path: Path, env: dict[str, str]) -> None:
         pass
 
 
-def _write_launcher(paths: WebServicePaths, command: Iterable[str]) -> None:
-    command_text = " ".join(shlex.quote(part) for part in command)
-    body = (
+def _write_launcher(paths: WebServicePaths, command: Iterable[str], sidecars: list[dict[str, Any]]) -> None:
+    header = (
         "#!/usr/bin/env sh\n"
         "set -eu\n"
         f"mkdir -p {shlex.quote(str(paths.stdout_log.parent))}\n"
@@ -285,8 +368,12 @@ def _write_launcher(paths: WebServicePaths, command: Iterable[str]) -> None:
         f"  . {shlex.quote(str(paths.env_file))}\n"
         "fi\n"
         f"export MNEMO_STATE_DIR={shlex.quote(str(paths.state_dir))}\n"
-        f"exec {command_text}\n"
     )
+    if not sidecars:
+        command_text = " ".join(shlex.quote(part) for part in command)
+        body = header + f"exec {command_text}\n"
+    else:
+        body = _python_supervisor_body(paths, command, sidecars)
     tmp_path = paths.launcher.with_name(f"{paths.launcher.name}.tmp")
     tmp_path.write_text(body, encoding="utf-8")
     os.chmod(tmp_path, 0o700)
@@ -295,6 +382,130 @@ def _write_launcher(paths: WebServicePaths, command: Iterable[str]) -> None:
         os.chmod(paths.launcher, 0o700)
     except OSError:
         pass
+
+
+def _python_supervisor_body(paths: WebServicePaths, command: Iterable[str], sidecars: list[dict[str, Any]]) -> str:
+    primary_command = list(command)
+    commands = [
+        {
+            "name": "web",
+            "command": primary_command,
+            "stdout": str(paths.stdout_log),
+            "stderr": str(paths.stderr_log),
+        }
+    ]
+    for sidecar in sidecars:
+        commands.append(
+            {
+                "name": str(sidecar["name"]),
+                "command": list(sidecar["command"]),
+                "stdout": str(sidecar["logs"]["stdout"]),
+                "stderr": str(sidecar["logs"]["stderr"]),
+            }
+        )
+    shebang = str(primary_command[0] if primary_command else sys.executable)
+    payload = json.dumps(commands, ensure_ascii=False)
+    state_dir = json.dumps(str(paths.state_dir), ensure_ascii=False)
+    env_file = json.dumps(str(paths.env_file), ensure_ascii=False)
+    logs_dir = json.dumps(str(paths.stdout_log.parent), ensure_ascii=False)
+    return f"""#!{shebang}
+import os
+import shlex
+import signal
+import subprocess
+import sys
+import time
+
+COMMANDS = {payload}
+STATE_DIR = {state_dir}
+ENV_FILE = {env_file}
+LOGS_DIR = {logs_dir}
+
+
+def _load_env(path):
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            if not key or not key.replace("_", "").isalnum() or key[0].isdigit():
+                continue
+            try:
+                parts = shlex.split(value, posix=True)
+            except ValueError:
+                parts = [value.strip("'\\\"")]
+            os.environ[key] = parts[0] if parts else ""
+
+
+def _open_log(path):
+    return open(path, "ab", buffering=0)
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--mnemo-supervisor-check":
+        return 0
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    _load_env(ENV_FILE)
+    os.environ["MNEMO_STATE_DIR"] = STATE_DIR
+    children = []
+    log_handles = []
+
+    def cleanup():
+        for process, _name in children:
+            if process.poll() is None:
+                process.terminate()
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and any(process.poll() is None for process, _name in children):
+            time.sleep(0.2)
+        for process, _name in children:
+            if process.poll() is None:
+                process.kill()
+        for process, _name in children:
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        for handle in log_handles:
+            handle.close()
+
+    def handle_signal(_signum, _frame):
+        cleanup()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    try:
+        for item in COMMANDS:
+            stdout = _open_log(item["stdout"])
+            stderr = _open_log(item["stderr"])
+            log_handles.extend([stdout, stderr])
+            process = subprocess.Popen(item["command"], stdout=stdout, stderr=stderr)
+            children.append((process, item["name"]))
+        while True:
+            for process, _name in children:
+                code = process.poll()
+                if code is not None:
+                    cleanup()
+                    return code if code >= 0 else 128 - code
+            time.sleep(1)
+    except BaseException:
+        cleanup()
+        raise
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
 
 
 def _write_launchd_plist(paths: WebServicePaths) -> None:
@@ -418,7 +629,7 @@ def _pid_looks_like_mnemo_web(pid: int) -> bool:
     command = result.stdout.strip()
     if not command:
         return False
-    return "mnemo" in command and "web" in command
+    return ("mnemo" in command and "web" in command) or "mnemo-web.sh" in command
 
 
 def _select_manager(mode: str) -> str:
@@ -502,6 +713,7 @@ def _service_result(
         "launcher": str(paths.launcher),
         "env_file": str(paths.env_file),
         "logs": {"stdout": str(paths.stdout_log), "stderr": str(paths.stderr_log)},
+        "sidecars": _service_sidecar_status(paths),
         "skipped": skipped,
     }
 
@@ -525,3 +737,28 @@ def _service_env_summary(paths: WebServicePaths, env: dict[str, str]) -> dict[st
         "keys": sorted(env),
         "exists": paths.env_file.exists(),
     }
+
+
+def _service_sidecar_status(paths: WebServicePaths) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(paths.meta_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    sidecars = parsed.get("sidecars") if isinstance(parsed, dict) else None
+    if not isinstance(sidecars, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for sidecar in sidecars:
+        if not isinstance(sidecar, dict):
+            continue
+        logs = sidecar.get("logs") if isinstance(sidecar.get("logs"), dict) else {}
+        result.append(
+            {
+                "name": str(sidecar.get("name") or ""),
+                "logs": {
+                    "stdout": str(logs.get("stdout") or ""),
+                    "stderr": str(logs.get("stderr") or ""),
+                },
+            }
+        )
+    return result
