@@ -418,3 +418,45 @@ Converted Settings from drawer/mobile sheet behavior into a normal standalone ha
 ### Next Steps
 
 - None - task complete
+
+
+## Session 127: Auto Dream Web Scheduler
+
+**Date**: 2026-05-09
+**Task**: Auto Dream Web Scheduler
+**Branch**: `main`
+
+### Summary
+
+Added service-owned automatic Dream scheduling to `mnemo web`, kept execution provider-led with no deterministic promotion fallback, restarted the public service, and verified the first background Dream report.
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| Scheduler | Added `ensure_default_dream_schedule()` and `ScheduleService.tick(kind="dream")` so background ticks can create one default Dream trigger and avoid touching unrelated watch/cron work. |
+| Web service | Started a daemon auto Dream scheduler from `serve_web()`; it reads live runtime settings, only runs provider-backed Dream, and leaves due items pending when only local runtime is available. |
+| Documentation | Updated backend specs and README to document auto Dream as a trigger/budget surface, not a rules fallback. |
+| Verification | Passed focused scheduler/web tests, the Dream/runtime/SDK/MCP/CLI/Web regression suite, `git diff --check`, public `/api/health`, Feishu websocket capture, and confirmed `.mnemo/runs/dream-reports/latest.json` from the first background run. |
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `548b954` | feat(memory): auto-run dream from web service |
+
+### Testing
+
+- [OK] `.venv/bin/python -m unittest tests.test_scheduler tests.test_web`
+- [OK] `.venv/bin/python -m unittest tests.test_memory tests.test_runtime tests.test_scheduler tests.test_mcp tests.test_sdk tests.test_cli tests.test_web`
+- [OK] `git diff --check`
+- [OK] `curl https://mem.day.qzz.io/api/health`
+- [OK] First auto Dream schedule tick completed with `mode=model_tool_calls`.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
