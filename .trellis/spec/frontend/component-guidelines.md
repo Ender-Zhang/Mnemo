@@ -21,6 +21,7 @@
 - Programmatic composer writes from suggestions, recall rows, artifacts, memory actions, and toolbar buttons must refresh composer state immediately.
 - New conversation reset must clear the composer draft and visible activity rows so the user sees a clean chat surface.
 - Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
+- Settings must behave as a standalone page view like Memory, Skills, and Tools; do not render settings as a drawer, modal, or mobile bottom sheet over the chat view.
 - When Web auth is enabled, the first unauthenticated screen is a compact password form; it must not expose app data or store secrets in browser storage.
 
 ### 3. Contracts

@@ -24,6 +24,7 @@ tests/test_web.py     API and static asset behavior tests
 - `app.js` owns client state, NDJSON parsing, event de-duplication, and card rendering.
 - `app.css` owns layout and visual styling; avoid inline styles in generated DOM.
 - The default view is the GPT-like chat surface with one composer; memory, skills, tools, and settings are separate lightweight views in the same static shell.
+- Settings is a normal routed view (`#settings`), not an overlay drawer or sheet on top of chat.
 
 ### 4. Validation & Error Matrix
 | Case | Expected Behavior | Test Point |
@@ -34,7 +35,7 @@ tests/test_web.py     API and static asset behavior tests
 | Replay | `/api/events` supports full and incremental replay | `tests/test_web.py` |
 | Artifact viewer | `/api/artifacts` fetches body and compact related metadata on demand | `tests/test_web.py` |
 | Skills/tools catalog | `/api/catalog` serves compact skill cards and tool cards without skill bodies or raw tool schemas | `tests/test_web.py` |
-| Settings page | `/api/settings` serves compact settings summaries and runtime preferences, and web assets render the settings page | `tests/test_web.py` |
+| Settings page | `/api/settings` serves compact settings summaries and runtime preferences, and web assets render the standalone settings page | `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
 - Good: add new UI behavior by extending `app.js` render functions and asserting asset text in `tests/test_web.py`.
