@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "web auth and channel errors"}
+{"file": ".trellis/spec/backend/integration-contracts.md", "reason": "Feishu channel and web API contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "test and package smoke requirements"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "login gate and UI changes"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "session auth state"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "frontend quality checks"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "auth crosses HTTP and frontend"}

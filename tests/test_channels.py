@@ -9,6 +9,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from mnemo.channels import (
@@ -79,9 +80,11 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertEqual(len(send_requests), 1)
                     sent = send_requests[0]["body"]
                     self.assertEqual(sent["receive_id"], "oc_chat")
-                    self.assertEqual(sent["msg_type"], "text")
+                    self.assertEqual(sent["msg_type"], "post")
                     content = json.loads(sent["content"])
-                    self.assertIn("已创建一次 Mnemo 运行", content["text"])
+                    self.assertTrue(content["zh_cn"]["title"].startswith("已创建一次 Mnemo 运行"))
+                    self.assertEqual(content["zh_cn"]["content"][0][0]["tag"], "md")
+                    self.assertIn("已创建一次 Mnemo 运行", content["zh_cn"]["content"][0][0]["text"])
 
                     status, _, body = server.request("POST", "/feishu/webhook", payload)
                     self.assertEqual(status, 200, body)
@@ -92,6 +95,36 @@ class FeishuChannelTests(unittest.TestCase):
             session_file = Path(tmp) / "channels" / "feishu_sessions.json"
             sessions = json.loads(session_file.read_text(encoding="utf-8"))
             self.assertTrue(sessions["oc_chat"].startswith("conv_"))
+
+    def test_feishu_reply_sends_markdown_as_rich_post(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with FakeFeishuApiServer() as api:
+                config = FeishuChannelConfig(
+                    state_dir=tmp,
+                    port=0,
+                    app_id="cli_test",
+                    app_secret="secret_test",
+                    verification_token="verify-token",
+                    api_base_url=api.base_url,
+                )
+                with RunningFeishuChannel(config) as server:
+                    server.service._run_mnemo = lambda _message: SimpleNamespace(  # type: ignore[method-assign]
+                        response="# 今日计划\n\n- **重点** 看 [文档](https://example.com)\n\n```python\nprint(1)\n```",
+                        conversation_id="conv_markdown",
+                    )
+                    status, _, body = server.request("POST", "/feishu/webhook", _message_payload(text="markdown please"))
+                    self.assertEqual(status, 200, body)
+                    self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
+
+                    sent = api.requests_for("/open-apis/im/v1/messages")[0]["body"]
+                    self.assertEqual(sent["msg_type"], "post")
+                    content = json.loads(sent["content"])
+                    self.assertEqual(content["zh_cn"]["title"], "今日计划")
+                    blocks = content["zh_cn"]["content"]
+                    self.assertEqual(blocks[0][0]["tag"], "md")
+                    rendered = "\n".join(block[0]["text"] for block in blocks)
+                    self.assertIn("- **重点** 看 [文档](https://example.com)", rendered)
+                    self.assertIn("```python", rendered)
 
     def test_feishu_webhook_signature_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

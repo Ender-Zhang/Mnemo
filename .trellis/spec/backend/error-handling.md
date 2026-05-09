@@ -69,6 +69,7 @@
 - Web Inbox resolve endpoint errors are JSON: missing fields or invalid resolution return 400, unknown item id returns 404.
 - Web learning memory endpoint errors are JSON: missing fields or invalid action return 400, unknown candidate id returns 404; valid actions are `accept`, `this_time`, `reject`, and `undo`.
 - Web settings endpoint errors are JSON: invalid quiet-hours or runtime-provider payloads return 400, raw API key storage is rejected, and settings summaries do not expose provider secrets.
+- Web auth errors are compact: wrong or missing passwords return JSON 401 for API callers, protected page requests receive the login page, and password values are never echoed.
 - HTTP core API errors are JSON: invalid JSON or bad fields return 400, unknown methods return 404, and expected `MnemoError` service failures map to 400 or 404 without traceback.
 - HTTP `schedule-dream` validates `next_run_at` as a string, number, or null and returns compact JSON errors for invalid payload shapes.
 - HTTP `schedule-watch` and `schedule-cron` validate required fields and `next_run_at` as a string, number, or null, returning compact JSON errors for invalid payload shapes.
@@ -136,6 +137,7 @@
 | Web Inbox resolve endpoint | Valid resolve returns item payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web learning memory endpoint | Valid action returns compact candidate payload; missing/invalid/unknown ids return JSON errors | `tests/test_web.py` |
 | Web settings endpoint | Valid runtime and quiet-hours updates return settings payloads; invalid time/runtime payloads return JSON errors; API keys are not exposed | `tests/test_web.py` |
+| Web auth gate | Missing sessions return login/401, valid password sets a cookie, and raw passwords are not returned | `tests/test_web.py` |
 | HTTP core API errors | Invalid JSON, missing required fields, and unknown methods return compact JSON errors | `tests/test_web.py` |
 | HTTP Dream schedule errors | Invalid `next_run_at` returns compact JSON 400 without traceback | `tests/test_web.py` |
 | HTTP Watch/Cron schedule errors | Missing Watch target or invalid Cron `next_run_at` returns compact JSON 400 without traceback | `tests/test_web.py` |
@@ -180,6 +182,7 @@
 - Base: service-layer `ValueError` is acceptable inside domain code when the CLI boundary converts it before user output.
 - Bad: print Authorization headers, API keys, or full provider error bodies to stdout.
 - Bad: storing raw API keys in `settings.json`, Web settings payloads, CLI JSON, or service status output.
+- Bad: echoing `MNEMO_WEB_PASSWORD` in JSON responses, logs, or committed config.
 - Bad: including Feishu `app_secret` in launcher scripts, launchd plists, systemd units, or service JSON.
 - Bad: retry streaming calls after text/tool deltas have already been emitted.
 - Bad: reporting an observed user cancellation as `run.error`.

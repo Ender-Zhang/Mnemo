@@ -21,6 +21,7 @@
 - Programmatic composer writes from suggestions, recall rows, artifacts, memory actions, and toolbar buttons must refresh composer state immediately.
 - New conversation reset must clear the composer draft and visible activity rows so the user sees a clean chat surface.
 - Low-frequency settings live in a settings view launched from navigation; they must not become a dashboard-first flow for normal tasks.
+- When Web auth is enabled, the first unauthenticated screen is a compact password form; it must not expose app data or store secrets in browser storage.
 
 ### 3. Contracts
 - Render functions must tolerate missing optional fields with concise fallbacks.
@@ -69,6 +70,7 @@
 | Learning chip | Shows compact review text, accept/this-turn/reject, and post-resolution undo actions for exceptional review-gated memory | `tests/test_web.py`, `tests/test_runtime.py` |
 | Skills/tools catalog | Shows read-only compact catalog cards, local filters, and no skill bodies or raw tool schemas | `tests/test_web.py` |
 | Settings page | Shows compact low-frequency settings, saves quiet hours and runtime provider preferences, including `max_tool_rounds`, without raw secrets | `tests/test_web.py` |
+| Web auth login | Shows a password gate before the app shell and does not expose protected assets without a valid cookie | `tests/test_web.py` |
 | Feishu onboarding controls | Show QR onboarding state and masked channel status without browser-persisted secrets | `tests/test_web.py` |
 | Memory compass page | Loads compact L1 coverage, then L2/L3 memory detail and markdown on demand without raw secrets | `tests/test_web.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |

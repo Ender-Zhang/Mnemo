@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -140,6 +141,62 @@ class WebInterfaceTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 unknown_events = json.loads(unknown_body)["events"]
                 self.assertEqual(unknown_events[0]["event_id"], replay_events[0]["event_id"])
+
+    def test_web_password_auth_gates_frontend_and_api(self) -> None:
+        previous_password = os.environ.get("MNEMO_WEB_PASSWORD")
+        previous_hash = os.environ.get("MNEMO_WEB_PASSWORD_SHA256")
+        os.environ["MNEMO_WEB_PASSWORD"] = "test-web-password"
+        os.environ.pop("MNEMO_WEB_PASSWORD_SHA256", None)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                with RunningServer(WebServerConfig(state_dir=tmp, port=0)) as server:
+                    health_status, _, health_body = server.request("GET", "/api/health")
+                    login_status, _, login_body = server.request("GET", "/")
+                    asset_status, _, _ = server.request("GET", "/app.js")
+                    settings_status, _, settings_body = server.request("GET", "/api/settings")
+                    bad_status, _, bad_body = server.request(
+                        "POST", "/api/auth/login", {"password": "wrong-password"}
+                    )
+                    good_status, good_headers, good_body = server.request(
+                        "POST", "/api/auth/login", {"password": "test-web-password"}
+                    )
+                    cookie = good_headers.get("set-cookie", "")
+                    authed_status, _, authed_body = server.request("GET", "/", headers={"Cookie": cookie})
+                    authed_settings_status, _, authed_settings_body = server.request(
+                        "GET", "/api/settings", headers={"Cookie": cookie}
+                    )
+                    logout_status, logout_headers, _ = server.request(
+                        "POST", "/api/auth/logout", {}, headers={"Cookie": cookie}
+                    )
+        finally:
+            if previous_password is None:
+                os.environ.pop("MNEMO_WEB_PASSWORD", None)
+            else:
+                os.environ["MNEMO_WEB_PASSWORD"] = previous_password
+            if previous_hash is None:
+                os.environ.pop("MNEMO_WEB_PASSWORD_SHA256", None)
+            else:
+                os.environ["MNEMO_WEB_PASSWORD_SHA256"] = previous_hash
+
+        self.assertEqual(health_status, 200)
+        self.assertTrue(json.loads(health_body)["ok"])
+        self.assertEqual(login_status, 200)
+        self.assertIn("请输入访问密码", login_body)
+        self.assertEqual(asset_status, 401)
+        self.assertEqual(settings_status, 401)
+        self.assertEqual(json.loads(settings_body)["error"], "authentication required")
+        self.assertEqual(bad_status, 401)
+        self.assertNotIn("test-web-password", bad_body)
+        self.assertEqual(good_status, 200)
+        self.assertTrue(json.loads(good_body)["authenticated"])
+        self.assertIn("mnemo_web_session=", cookie)
+        self.assertNotIn("test-web-password", cookie)
+        self.assertEqual(authed_status, 200)
+        self.assertIn('id="chatView"', authed_body)
+        self.assertEqual(authed_settings_status, 200)
+        self.assertIn("runtime", authed_settings_body)
+        self.assertEqual(logout_status, 200)
+        self.assertIn("Max-Age=0", logout_headers.get("set-cookie", ""))
 
     def test_core_http_api_exposes_schema_openapi_and_sdk_methods(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1698,12 +1755,20 @@ class RunningServer:
         self.server.server_close()
         self.thread.join(timeout=1)
 
-    def request(self, method: str, path: str, payload: dict | None = None) -> tuple[int, dict[str, str], str]:
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: dict | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, dict[str, str], str]:
         host, port = self.server.server_address
         conn = http.client.HTTPConnection(host, port, timeout=5)
         body = json.dumps(payload) if payload is not None else None
-        headers = {"Content-Type": "application/json"} if body else {}
-        conn.request(method, path, body=body, headers=headers)
+        request_headers = dict(headers or {})
+        if body and "Content-Type" not in request_headers:
+            request_headers["Content-Type"] = "application/json"
+        conn.request(method, path, body=body, headers=request_headers)
         response = conn.getresponse()
         raw_body = response.read().decode("utf-8")
         response_headers = {key.casefold(): value for key, value in response.getheaders()}

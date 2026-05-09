@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
+import hmac
 from http import HTTPStatus
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 import json
@@ -10,6 +14,7 @@ import os
 from pathlib import Path
 import socket
 import threading
+import time
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
@@ -56,7 +61,18 @@ class WebServerConfig:
     max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS
 
 
+@dataclass(frozen=True)
+class WebAuthConfig:
+    enabled: bool
+    password_hash: str = ""
+    session_key: bytes = b""
+
+
 _ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
+_AUTH_COOKIE_NAME = "mnemo_web_session"
+_AUTH_MAX_AGE_SECONDS = 30 * 24 * 60 * 60
+_AUTH_PASSWORD_ENV = "MNEMO_WEB_PASSWORD"
+_AUTH_PASSWORD_HASH_ENV = "MNEMO_WEB_PASSWORD_SHA256"
 
 _MEMORY_DIMENSION_LABELS = {
     "identity": "身份",
@@ -144,21 +160,34 @@ def _resolved_web_config(config: WebServerConfig) -> WebServerConfig:
 def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
     feishu_onboard_sessions: dict[str, FeishuQrOnboardSession] = {}
     feishu_onboard_lock = threading.Lock()
+    auth_config = _web_auth_config()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "MnemoWeb/0.1"
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
+            if parsed.path == "/api/health":
+                effective = _effective_web_config(config)
+                self._send_json({"ok": True, "provider": effective.provider, "model": effective.model or ""})
+                return
+            if parsed.path == "/api/auth/session":
+                self._send_json(
+                    {"auth_required": auth_config.enabled, "authenticated": self._is_authenticated(auth_config)}
+                )
+                return
+            if parsed.path == "/login":
+                self._send_login_page()
+                return
+            if auth_config.enabled and not self._is_authenticated(auth_config):
+                self._send_auth_required(parsed.path)
+                return
             if parsed.path == "/":
                 self._send_asset("index.html", "text/html; charset=utf-8")
             elif parsed.path == "/app.css":
                 self._send_asset("app.css", "text/css; charset=utf-8")
             elif parsed.path == "/app.js":
                 self._send_asset("app.js", "application/javascript; charset=utf-8")
-            elif parsed.path == "/api/health":
-                effective = _effective_web_config(config)
-                self._send_json({"ok": True, "provider": effective.provider, "model": effective.model or ""})
             elif parsed.path == "/api/core/schema":
                 self._send_json({"api_schema": mnemo_core_api_schema()})
             elif parsed.path == "/api/core/openapi.json":
@@ -186,6 +215,15 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
+            if parsed.path == "/api/auth/login":
+                self._handle_auth_login(auth_config)
+                return
+            if parsed.path == "/api/auth/logout":
+                self._handle_auth_logout()
+                return
+            if auth_config.enabled and not self._is_authenticated(auth_config):
+                self._send_json({"error": "authentication required"}, status=HTTPStatus.UNAUTHORIZED)
+                return
             if parsed.path == "/api/chat":
                 self._handle_chat()
             elif parsed.path.startswith("/api/core/"):
@@ -204,6 +242,50 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 self._handle_feishu_onboard_poll()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
+
+        def _handle_auth_login(self, auth: WebAuthConfig) -> None:
+            if not auth.enabled:
+                self._send_json({"auth_required": False, "authenticated": True})
+                return
+            try:
+                body = self._read_json_body()
+                password = _required_string(body, "password")
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not _web_password_matches(auth, password):
+                self._send_json({"error": "invalid password"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._send_json(
+                {"auth_required": True, "authenticated": True},
+                headers={"Set-Cookie": _auth_cookie_header(auth)},
+            )
+
+        def _handle_auth_logout(self) -> None:
+            self._send_json(
+                {"authenticated": False},
+                headers={"Set-Cookie": f"{_AUTH_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"},
+            )
+
+        def _is_authenticated(self, auth: WebAuthConfig) -> bool:
+            if not auth.enabled:
+                return True
+            return _auth_cookie_is_valid(auth, str(self.headers.get("Cookie") or ""))
+
+        def _send_auth_required(self, path: str) -> None:
+            if path.startswith("/api/"):
+                self._send_json({"error": "authentication required"}, status=HTTPStatus.UNAUTHORIZED)
+                return
+            self._send_login_page(status=HTTPStatus.OK if path in {"", "/"} else HTTPStatus.UNAUTHORIZED)
+
+        def _send_login_page(self, status: HTTPStatus = HTTPStatus.OK) -> None:
+            content = _login_page_html().encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(content)
 
         def _handle_chat(self) -> None:
             try:
@@ -536,11 +618,18 @@ def _handler_for(config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
                 raise ValueError("request body must be a JSON object")
             return payload
 
-        def _send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
+        def _send_json(
+            self,
+            payload: dict[str, Any],
+            status: HTTPStatus = HTTPStatus.OK,
+            headers: dict[str, str] | None = None,
+        ) -> None:
             body = dumps(payload).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            for key, value in (headers or {}).items():
+                self.send_header(key, value)
             self.end_headers()
             self.wfile.write(body)
 
@@ -630,6 +719,124 @@ def _raw_runtime_settings(state_dir: str | Path) -> dict[str, Any]:
         return {}
     runtime = raw.get("runtime") if isinstance(raw, dict) else None
     return runtime if isinstance(runtime, dict) else {}
+
+
+def _web_auth_config() -> WebAuthConfig:
+    password = os.environ.get(_AUTH_PASSWORD_ENV) or ""
+    password_hash = os.environ.get(_AUTH_PASSWORD_HASH_ENV) or ""
+    if password:
+        password_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    password_hash = password_hash.strip().lower()
+    if not password_hash:
+        return WebAuthConfig(enabled=False)
+    if len(password_hash) != 64 or any(char not in "0123456789abcdef" for char in password_hash):
+        raise MnemoError(f"{_AUTH_PASSWORD_HASH_ENV} must be a 64-character SHA-256 hex digest")
+    session_key = hashlib.sha256(f"mnemo-web-session:{password_hash}".encode("utf-8")).digest()
+    return WebAuthConfig(enabled=True, password_hash=password_hash, session_key=session_key)
+
+
+def _web_password_matches(auth: WebAuthConfig, password: str) -> bool:
+    candidate = hashlib.sha256(str(password or "").encode("utf-8")).hexdigest()
+    return hmac.compare_digest(candidate, auth.password_hash)
+
+
+def _auth_cookie_header(auth: WebAuthConfig) -> str:
+    issued_at = str(int(time.time()))
+    signature = hmac.new(auth.session_key, issued_at.encode("utf-8"), hashlib.sha256).hexdigest()
+    raw = f"{issued_at}:{signature}".encode("utf-8")
+    token = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return f"{_AUTH_COOKIE_NAME}={token}; Path=/; Max-Age={_AUTH_MAX_AGE_SECONDS}; HttpOnly; SameSite=Lax"
+
+
+def _auth_cookie_is_valid(auth: WebAuthConfig, cookie_header: str) -> bool:
+    if not cookie_header:
+        return False
+    cookie = SimpleCookie()
+    try:
+        cookie.load(cookie_header)
+    except Exception:
+        return False
+    morsel = cookie.get(_AUTH_COOKIE_NAME)
+    if morsel is None:
+        return False
+    token = morsel.value
+    try:
+        padding = "=" * (-len(token) % 4)
+        raw = base64.urlsafe_b64decode((token + padding).encode("ascii")).decode("utf-8")
+        issued_text, signature = raw.split(":", 1)
+        issued_at = int(issued_text)
+    except Exception:
+        return False
+    now = int(time.time())
+    if issued_at > now + 60 or now - issued_at > _AUTH_MAX_AGE_SECONDS:
+        return False
+    expected = hmac.new(auth.session_key, issued_text.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
+def _login_page_html() -> str:
+    return """<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mnemo 登录</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f6f7f9; color: #17191f; }
+      main { width: min(360px, calc(100vw - 40px)); }
+      h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: 0; }
+      p { margin: 0 0 24px; color: #5c6370; line-height: 1.6; }
+      form { display: grid; gap: 12px; }
+      label { display: grid; gap: 8px; font-size: 13px; color: #4a5160; }
+      input { width: 100%; box-sizing: border-box; border: 1px solid #cdd3dc; border-radius: 8px; padding: 12px 14px; font: inherit; background: #fff; }
+      button { border: 0; border-radius: 8px; padding: 12px 14px; font: inherit; font-weight: 650; background: #17191f; color: #fff; cursor: pointer; }
+      button:disabled { cursor: progress; opacity: 0.7; }
+      .error { min-height: 20px; color: #b42318; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Mnemo</h1>
+      <p>请输入访问密码。</p>
+      <form id="loginForm">
+        <label>
+          密码
+          <input id="password" name="password" type="password" autocomplete="current-password" autofocus />
+        </label>
+        <button id="submit" type="submit">进入</button>
+        <div id="error" class="error" role="status"></div>
+      </form>
+    </main>
+    <script>
+      const form = document.querySelector("#loginForm");
+      const input = document.querySelector("#password");
+      const submit = document.querySelector("#submit");
+      const error = document.querySelector("#error");
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        error.textContent = "";
+        submit.disabled = true;
+        try {
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: input.value }),
+          });
+          if (!response.ok) {
+            error.textContent = "密码不正确";
+            return;
+          }
+          window.location.href = "/";
+        } catch (_error) {
+          error.textContent = "无法连接 Mnemo";
+        } finally {
+          submit.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>"""
 
 
 def _dispatch_core_api(config: WebServerConfig, method: str, body: dict[str, Any]) -> dict[str, Any]:

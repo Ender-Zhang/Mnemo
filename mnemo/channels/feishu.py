@@ -40,6 +40,8 @@ _LARK_ACCOUNTS_BASE_URL = "https://accounts.larksuite.com"
 _FEISHU_REGISTRATION_PATH = "/oauth/v1/app/registration"
 _ONBOARD_REQUEST_TIMEOUT_S = 10.0
 _TEXT_CHUNK_SIZE = 3900
+_POST_CONTENT_LIMIT_BYTES = 28_000
+_POST_MARKDOWN_BLOCK_LIMIT = 3500
 _SAVED_CONFIG_VERSION = "mnemo.feishu.channel.v1"
 
 try:
@@ -163,6 +165,32 @@ class FeishuClient:
                     "content": dumps({"text": chunk}),
                 },
             )
+
+    def send_markdown(self, chat_id: str, markdown: str) -> None:
+        if not self.config.app_id or not self.config.app_secret:
+            raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
+        text = str(markdown or "").strip() or "（空响应）"
+        sent_any = False
+        try:
+            for content in _feishu_markdown_post_payloads(text, markdown_tag=True):
+                self._send_post(chat_id, content)
+                sent_any = True
+        except FeishuApiError:
+            if sent_any:
+                raise
+            for content in _feishu_markdown_post_payloads(text, markdown_tag=False):
+                self._send_post(chat_id, content)
+
+    def _send_post(self, chat_id: str, content: dict[str, Any]) -> None:
+        self._post(
+            "/open-apis/im/v1/messages",
+            {"receive_id_type": "chat_id"},
+            {
+                "receive_id": chat_id,
+                "msg_type": "post",
+                "content": dumps(content),
+            },
+        )
 
     def bot_info(self) -> dict[str, str]:
         payload = self._request_json("GET", "/open-apis/bot/v3/info", {}, None, token=self._tenant_access_token())
@@ -358,7 +386,7 @@ class FeishuChannelService:
         with lock:
             try:
                 result = self._run_mnemo(message)
-                self.client.send_text(message.chat_id, result.response)
+                self.client.send_markdown(message.chat_id, result.response)
             except Exception as exc:
                 try:
                     self.client.send_text(message.chat_id, f"Mnemo 处理失败：{exc}")
@@ -981,6 +1009,182 @@ def _split_text(text: str, limit: int) -> list[str]:
     if len(text) <= limit:
         return [text]
     return [text[index : index + limit] for index in range(0, len(text), limit)]
+
+
+def _feishu_markdown_post_payloads(text: str, *, markdown_tag: bool) -> list[dict[str, Any]]:
+    title, body = _markdown_title_and_body(text)
+    segments = _markdown_segments(body or text)
+    blocks = [_markdown_segment_to_post_block(segment, markdown_tag=markdown_tag) for segment in segments]
+    blocks = [block for block in blocks if block]
+    if not blocks:
+        blocks = [[{"tag": "text", "text": "（空响应）"}]]
+    payloads: list[dict[str, Any]] = []
+    current: list[list[dict[str, Any]]] = []
+    for block in blocks:
+        trial = current + [block]
+        payload = _post_payload(title, trial)
+        if current and len(dumps(payload).encode("utf-8")) > _POST_CONTENT_LIMIT_BYTES:
+            payloads.append(_post_payload(title, current))
+            current = [block]
+        else:
+            current = trial
+    if current:
+        payloads.append(_post_payload(title, current))
+    return payloads
+
+
+def _post_payload(title: str, blocks: list[list[dict[str, Any]]]) -> dict[str, Any]:
+    return {"zh_cn": {"title": title or "Mnemo", "content": blocks}}
+
+
+def _markdown_title_and_body(text: str) -> tuple[str, str]:
+    lines = str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    title = ""
+    body: list[str] = []
+    removed_heading = False
+    for line in lines:
+        stripped = line.strip()
+        if not title and stripped:
+            heading = _markdown_heading_text(stripped)
+            title = _plain_markdown_text(heading or stripped)[:80] or "Mnemo"
+            if heading and not removed_heading:
+                removed_heading = True
+                continue
+        body.append(line)
+    return title or "Mnemo", "\n".join(body).strip()
+
+
+def _markdown_segments(text: str) -> list[str]:
+    lines = str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    segments: list[str] = []
+    current: list[str] = []
+    in_fence = False
+    for line in lines:
+        if line.strip().startswith("```"):
+            current.append(line)
+            in_fence = not in_fence
+            if not in_fence:
+                segments.extend(_split_text("\n".join(current).strip(), _POST_MARKDOWN_BLOCK_LIMIT))
+                current = []
+            continue
+        if not in_fence and not line.strip():
+            if current:
+                segments.extend(_split_text("\n".join(current).strip(), _POST_MARKDOWN_BLOCK_LIMIT))
+                current = []
+            continue
+        current.append(line)
+    if current:
+        segments.extend(_split_text("\n".join(current).strip(), _POST_MARKDOWN_BLOCK_LIMIT))
+    return [segment for segment in segments if segment]
+
+
+def _markdown_segment_to_post_block(segment: str, *, markdown_tag: bool) -> list[dict[str, Any]]:
+    if markdown_tag:
+        return [{"tag": "md", "text": segment}]
+    elements: list[dict[str, Any]] = []
+    lines = segment.splitlines() or [segment]
+    for index, line in enumerate(lines):
+        if index:
+            elements.append({"tag": "text", "text": "\n"})
+        elements.extend(_inline_post_elements(_structural_markdown_line(line)))
+    return elements
+
+
+def _structural_markdown_line(line: str) -> str:
+    stripped = str(line or "").strip()
+    if not stripped:
+        return ""
+    heading = _markdown_heading_text(stripped)
+    if heading:
+        return heading
+    if stripped.startswith(">"):
+        return "｜ " + stripped.lstrip("> ").strip()
+    if len(stripped) > 6 and stripped[:3].casefold() in {"- [", "* [", "+ ["}:
+        marker = "☑" if stripped[3:4].casefold() == "x" else "☐"
+        return f"{marker} {stripped[6:].strip()}"
+    unordered = stripped[2:] if stripped[:2] in {"- ", "* ", "+ "} else ""
+    if unordered:
+        return "• " + unordered.strip()
+    return stripped
+
+
+def _markdown_heading_text(stripped: str) -> str:
+    if not stripped.startswith("#"):
+        return ""
+    marker = len(stripped) - len(stripped.lstrip("#"))
+    if 1 <= marker <= 6 and len(stripped) > marker and stripped[marker : marker + 1].isspace():
+        return stripped[marker:].strip()
+    return ""
+
+
+def _plain_markdown_text(text: str) -> str:
+    value = str(text or "")
+    replacements = ("**", "__", "~~", "`", "*")
+    for item in replacements:
+        value = value.replace(item, "")
+    return " ".join(value.split()).strip()
+
+
+def _inline_post_elements(text: str) -> list[dict[str, Any]]:
+    elements: list[dict[str, Any]] = []
+    index = 0
+    while index < len(text):
+        start = text.find("[", index)
+        if start < 0:
+            elements.extend(_styled_text_elements(text[index:]))
+            break
+        end_label = text.find("]", start + 1)
+        if end_label < 0 or end_label + 1 >= len(text) or text[end_label + 1] != "(":
+            elements.extend(_styled_text_elements(text[index : start + 1]))
+            index = start + 1
+            continue
+        end_url = text.find(")", end_label + 2)
+        if end_url < 0:
+            elements.extend(_styled_text_elements(text[index : start + 1]))
+            index = start + 1
+            continue
+        href = text[end_label + 2 : end_url].strip()
+        label = _plain_markdown_text(text[start + 1 : end_label])
+        if not href.startswith(("http://", "https://")) or not label:
+            elements.extend(_styled_text_elements(text[index : end_url + 1]))
+            index = end_url + 1
+            continue
+        elements.extend(_styled_text_elements(text[index:start]))
+        elements.append({"tag": "a", "text": label, "href": href})
+        index = end_url + 1
+    return elements or [{"tag": "text", "text": text}]
+
+
+def _styled_text_elements(text: str, style: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+    if not text:
+        return []
+    tokens = (("**", "bold"), ("__", "bold"), ("~~", "lineThrough"), ("`", "bold"), ("*", "italic"))
+    best_start = -1
+    best_token = ""
+    best_style = ""
+    for token, item_style in tokens:
+        start = text.find(token)
+        if start >= 0 and (best_start < 0 or start < best_start or len(token) > len(best_token)):
+            best_start = start
+            best_token = token
+            best_style = item_style
+    if best_start < 0:
+        return [_post_text(text, style)] if text else []
+    end = text.find(best_token, best_start + len(best_token))
+    if end < 0:
+        return [_post_text(text, style)]
+    elements: list[dict[str, Any]] = []
+    elements.extend(_styled_text_elements(text[:best_start], style))
+    elements.extend(_styled_text_elements(text[best_start + len(best_token) : end], (*style, best_style)))
+    elements.extend(_styled_text_elements(text[end + len(best_token) :], style))
+    return elements
+
+
+def _post_text(text: str, style: tuple[str, ...] = ()) -> dict[str, Any]:
+    element: dict[str, Any] = {"tag": "text", "text": text}
+    if style:
+        element["style"] = list(dict.fromkeys(style))
+    return element
 
 
 def _normalize_path(path: str) -> str:

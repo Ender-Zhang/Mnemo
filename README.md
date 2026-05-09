@@ -80,6 +80,16 @@ Open `http://127.0.0.1:8765`. The UI is intentionally one chat box: it streams r
 
 Provider-backed web runs accept the same provider flags as `mnemo run`.
 
+To protect the web UI, set either a raw local password or a SHA-256 hash before starting the service:
+
+```bash
+export MNEMO_WEB_PASSWORD='replace-me'
+# or:
+export MNEMO_WEB_PASSWORD_SHA256='64-character-sha256-hex'
+```
+
+When configured, `/api/health` remains public for service checks, while the web shell and other API routes require a session cookie from the password login page. Do not commit these environment values.
+
 ## Feishu/Lark Channel
 
 Mnemo can create a personal Feishu/Lark bot by QR scan, then receive messages through the Feishu channel.

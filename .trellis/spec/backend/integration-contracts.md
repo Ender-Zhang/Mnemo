@@ -291,6 +291,7 @@
 - Encrypted webhook payloads are rejected with compact JSON until a dependency-free decrypt path is added.
 - Inbound `im.message.receive_v1` text messages are deduplicated by event/message id before runtime execution.
 - Message processing runs in a background thread and returns Feishu's webhook acknowledgement quickly; Feishu replies are sent through `/open-apis/im/v1/messages?receive_id_type=chat_id`.
+- Assistant replies from Mnemo are sent as Feishu/Lark rich `post` messages with Markdown blocks when possible; send failures fall back to a structural rich-post conversion and error replies may remain plain text.
 - Per-chat execution is serialized so a chat cannot overlap multiple Mnemo turns.
 - Feishu chat ids map to Mnemo conversation ids in state-local channel metadata so follow-up messages keep continuity.
 - Group messages honor the mention gate when `require_mention` is true and a bot identity is configured; DMs are accepted.
@@ -302,7 +303,8 @@
 | URL verification | Returns the challenge JSON | `tests/test_channels.py` |
 | Invalid token/signature | Returns compact 401 without running Mnemo | `tests/test_channels.py` |
 | Duplicate callback | Returns duplicate acknowledgement and sends no second reply | `tests/test_channels.py` |
-| Valid text message | Runs Mnemo and sends one Feishu text reply | `tests/test_channels.py` |
+| Valid text message | Runs Mnemo and sends one Feishu rich post reply | `tests/test_channels.py` |
+| Markdown reply | Preserves Markdown as Feishu rich post content instead of plain text | `tests/test_channels.py` |
 | QR onboarding success | Starts registration, polls credentials, probes bot metadata, and saves masked status | `tests/test_channels.py` |
 | Web onboarding API | Starts/polls a session and never returns app secret | `tests/test_web.py` |
 | Missing app credentials | CLI exits with `mnemo:` error and no traceback | `tests/test_cli.py` |
@@ -339,6 +341,7 @@
 - `mnemo onboard` initializes the state directory, writes non-secret runtime settings through `save_user_settings()`, and never stores raw API keys in `settings.json`.
 - A pasted or copied provider key may be written only to `<state_dir>/service/mnemo-web.env` with mode `0600`; CLI JSON/status output exposes only env var names.
 - The background service launches `python -m mnemo web ...` so the installed venv owns imports and the Web settings overlay remains the source of runtime provider configuration.
+- Web UI password protection resolves from `MNEMO_WEB_PASSWORD` or `MNEMO_WEB_PASSWORD_SHA256`; `/api/health` remains unauthenticated for service checks, while the app shell and non-auth API routes require a signed session cookie.
 - Service launchers resolve state and workspace paths to absolute paths before writing launchd/systemd/detached metadata.
 - When `<state_dir>/channels/feishu_config.json` contains saved credentials with `connection=websocket`, the service launcher also starts `python -m mnemo channels feishu serve --connection websocket ...` as a child sidecar.
 - Feishu sidecar provider flags are derived from non-secret runtime settings; raw app secrets remain in `channels/feishu_config.json` and provider keys remain in the service env file.
@@ -354,6 +357,7 @@
 | Case | Expected Behavior | Test Point |
 | --- | --- | --- |
 | Non-interactive provider onboard | Settings are saved, service env has only named secret variables, stdout is secret-free | `tests/test_cli.py` |
+| Web password auth | Unauthenticated app/API requests are gated, login sets an HttpOnly session cookie, and secrets stay out of responses | `tests/test_web.py` |
 | Service dry-run install | Launcher/meta files are written, status is compact, and no process is started | `tests/test_cli.py` |
 | Feishu websocket config | Service dry-run launcher includes a Feishu sidecar and no app/API secrets | `tests/test_cli.py` |
 | Feishu webhook config | Service dry-run launcher skips the websocket sidecar | `tests/test_cli.py` |
