@@ -561,3 +561,64 @@ Removed the visible Feishu reply startup text so official streaming cards and le
 ### Next Steps
 
 - None - task complete
+
+
+## Session 130: Feishu Card Footer Metadata
+
+**Date**: 2026-05-09
+**Task**: Feishu Card Footer Metadata
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+### Summary
+
+Adapted additional official Feishu/OpenClaw card behavior for Mnemo replies: terminal streaming cards now show status/elapsed footer metadata, and topic/thread messages can keep independent Mnemo conversations while replying in the thread.
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| Feishu CardKit | After closing streaming mode, Mnemo best-effort updates the final CardKit card with notation-sized status/elapsed footer metadata. |
+| Thread handling | Added `thread_session` support using Feishu `thread_id`/`root_id`/`parent_id` for conversation keys and `reply_in_thread=true` for streaming card replies. |
+| Configuration | Added CLI/env/status/service sidecar support for `footer_status`, `footer_elapsed`, and `thread_session` with disable flags. |
+| Web settings | Settings Feishu status now summarizes streaming, status/elapsed footer, and topic context mode without exposing secrets. |
+| Documentation | Updated README and backend integration contracts for the new Feishu official-card surfaces. |
+
+### Testing
+
+- [OK] `.venv/bin/python -m unittest tests.test_channels tests.test_cli tests.test_web`
+- [OK] `git diff --check`
+- [OK] Restarted `mnemo-web` and `mnemo-feishu`; public `/api/health` passed and Feishu websocket connected.
+- [OK] `mnemo channels feishu status --json` confirmed `streaming`, `footer_status`, `footer_elapsed`, and `thread_session` are enabled.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `027474e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
