@@ -23,10 +23,10 @@ from urllib.request import Request, urlopen
 from ..core.config import DEFAULT_MAX_TOOL_ROUNDS
 from ..core.errors import MnemoError
 from ..core.jsonutil import dumps
-from ..core.models import RunRequest
+from ..core.models import ChatEvent, RunRequest
 from ..core.workspace import resolve_workspace_root
 from ..providers import AnthropicProviderAdapter, OpenAIProviderAdapter, ProviderConfig
-from ..runtime import run_local, run_provider
+from ..runtime import run_local, run_provider, stream_local, stream_provider
 from ..storage import StateStore
 
 
@@ -43,6 +43,12 @@ _TEXT_CHUNK_SIZE = 3900
 _POST_CONTENT_LIMIT_BYTES = 28_000
 _POST_MARKDOWN_BLOCK_LIMIT = 3500
 _SAVED_CONFIG_VERSION = "mnemo.feishu.channel.v1"
+_FEISHU_ACK_EMOJI_TYPE = "SMILE"
+_FEISHU_STREAM_START_TEXT = "正在思考..."
+_FEISHU_STREAM_SUFFIX = "\n\n_生成中..._"
+_FEISHU_STREAM_EDIT_INTERVAL_S = 1.0
+_FEISHU_STREAM_EDIT_MIN_CHARS = 120
+_FEISHU_STREAM_MAX_PARTIAL_EDITS = 19
 
 try:
     import lark_oapi as _lark_oapi  # type: ignore[import-not-found]
@@ -166,27 +172,69 @@ class FeishuClient:
                 },
             )
 
-    def send_markdown(self, chat_id: str, markdown: str) -> None:
+    def send_markdown(self, chat_id: str, markdown: str) -> list[str]:
         if not self.config.app_id or not self.config.app_secret:
             raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
         text = str(markdown or "").strip() or "（空响应）"
         sent_any = False
+        message_ids: list[str] = []
         try:
             for content in _feishu_markdown_post_payloads(text, markdown_tag=True):
-                self._send_post(chat_id, content)
+                message_ids.append(self._send_post(chat_id, content))
                 sent_any = True
         except FeishuApiError:
             if sent_any:
                 raise
+            message_ids = []
             for content in _feishu_markdown_post_payloads(text, markdown_tag=False):
-                self._send_post(chat_id, content)
+                message_ids.append(self._send_post(chat_id, content))
+        return message_ids
 
-    def _send_post(self, chat_id: str, content: dict[str, Any]) -> None:
-        self._post(
+    def replace_markdown(self, message_id: str, chat_id: str, markdown: str) -> list[str]:
+        if not self.config.app_id or not self.config.app_secret:
+            raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to send replies")
+        text = str(markdown or "").strip() or "（空响应）"
+        payloads = _feishu_markdown_post_payloads(text, markdown_tag=True)
+        try:
+            self._update_post(message_id, payloads[0])
+        except FeishuApiError:
+            payloads = _feishu_markdown_post_payloads(text, markdown_tag=False)
+            self._update_post(message_id, payloads[0])
+        message_ids = [message_id]
+        for content in payloads[1:]:
+            message_ids.append(self._send_post(chat_id, content))
+        return message_ids
+
+    def add_reaction(self, message_id: str, emoji_type: str = _FEISHU_ACK_EMOJI_TYPE) -> str:
+        if not self.config.app_id or not self.config.app_secret:
+            raise FeishuApiError("FEISHU_APP_ID and FEISHU_APP_SECRET are required to add reactions")
+        if not message_id:
+            return ""
+        response = self._post(
+            f"/open-apis/im/v1/messages/{message_id}/reactions",
+            {},
+            {"reaction_type": {"emoji_type": emoji_type}},
+        )
+        data = response.get("data") if isinstance(response.get("data"), dict) else {}
+        return str(data.get("reaction_id") or "")
+
+    def _send_post(self, chat_id: str, content: dict[str, Any]) -> str:
+        response = self._post(
             "/open-apis/im/v1/messages",
             {"receive_id_type": "chat_id"},
             {
                 "receive_id": chat_id,
+                "msg_type": "post",
+                "content": dumps(content),
+            },
+        )
+        return _message_id_from_response(response)
+
+    def _update_post(self, message_id: str, content: dict[str, Any]) -> None:
+        self._put(
+            f"/open-apis/im/v1/messages/{message_id}",
+            {},
+            {
                 "msg_type": "post",
                 "content": dumps(content),
             },
@@ -228,6 +276,9 @@ class FeishuClient:
 
     def _post(self, path: str, query: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
         return self._request_json("POST", path, query, payload, token=self._tenant_access_token())
+
+    def _put(self, path: str, query: dict[str, str], payload: dict[str, Any]) -> dict[str, Any]:
+        return self._request_json("PUT", path, query, payload, token=self._tenant_access_token())
 
     def _request_json(
         self,
@@ -382,16 +433,17 @@ class FeishuChannelService:
         thread.start()
 
     def _process_message(self, message: FeishuInboundMessage) -> None:
+        self._safe_add_reaction(message)
         lock = self._chat_lock(message.chat_id)
         with lock:
+            reply_message_id = ""
             try:
-                result = self._run_mnemo(message)
-                self.client.send_markdown(message.chat_id, result.response)
+                reply_ids = self.client.send_markdown(message.chat_id, _FEISHU_STREAM_START_TEXT)
+                reply_message_id = reply_ids[0] if reply_ids else ""
+                response = self._stream_reply(message, reply_message_id)
+                self._finalize_reply(message.chat_id, reply_message_id, response)
             except Exception as exc:
-                try:
-                    self.client.send_text(message.chat_id, f"Mnemo 处理失败：{exc}")
-                except Exception:
-                    pass
+                self._send_failure_reply(message.chat_id, reply_message_id, f"Mnemo 处理失败：{exc}")
             finally:
                 with self._threads_lock:
                     self._threads = [thread for thread in self._threads if thread.is_alive()]
@@ -404,14 +456,86 @@ class FeishuChannelService:
                 self._chat_locks[chat_id] = lock
             return lock
 
-    def _run_mnemo(self, message: FeishuInboundMessage):
+    def _safe_add_reaction(self, message: FeishuInboundMessage) -> None:
+        try:
+            self.client.add_reaction(message.message_id)
+        except Exception:
+            pass
+
+    def _stream_reply(self, message: FeishuInboundMessage, reply_message_id: str) -> str:
+        parts: list[str] = []
+        final_response = ""
+        conversation_id = ""
+        last_sent = ""
+        last_sent_at = 0.0
+        partial_edits = 0
+        for event in self._stream_mnemo_events(message):
+            if event.type == "assistant.delta":
+                delta = _event_text(event)
+                if delta:
+                    parts.append(delta)
+            elif event.type == "assistant.message":
+                final_response = _event_text(event) or final_response
+            elif event.type == "run.completed":
+                final_response = _completed_response(event) or final_response
+                conversation_id = _completed_conversation_id(event) or event.conversation_id or conversation_id
+
+            current = final_response or "".join(parts)
+            if (
+                reply_message_id
+                and current
+                and partial_edits < _FEISHU_STREAM_MAX_PARTIAL_EDITS
+                and _should_update_stream(current, last_sent=last_sent, last_sent_at=last_sent_at)
+            ):
+                if self._safe_replace_streaming_markdown(reply_message_id, message.chat_id, current):
+                    last_sent = current
+                    last_sent_at = time.time()
+                    partial_edits += 1
+
+        response = final_response or "".join(parts) or "（空响应）"
+        if conversation_id:
+            self._session_store.record(message.chat_id, conversation_id)
+        return response
+
+    def _safe_replace_streaming_markdown(self, message_id: str, chat_id: str, markdown: str) -> bool:
+        try:
+            self.client.replace_markdown(message_id, chat_id, _streaming_markdown_preview(markdown))
+            return True
+        except Exception:
+            return False
+
+    def _finalize_reply(self, chat_id: str, message_id: str, markdown: str) -> None:
+        if message_id:
+            try:
+                self.client.replace_markdown(message_id, chat_id, markdown)
+                return
+            except Exception:
+                pass
+        self.client.send_markdown(chat_id, markdown)
+
+    def _send_failure_reply(self, chat_id: str, message_id: str, text: str) -> None:
+        if message_id:
+            try:
+                self.client.replace_markdown(message_id, chat_id, text)
+                return
+            except Exception:
+                pass
+        try:
+            self.client.send_text(chat_id, text)
+        except Exception:
+            pass
+
+    def _mnemo_request(self, message: FeishuInboundMessage) -> RunRequest:
         conversation_id = self._session_store.conversation_id(message.chat_id)
-        request = RunRequest(
+        return RunRequest(
             message=message.text,
             state_dir=self.config.state_dir,
             conversation_id=conversation_id,
             workspace_root=str(resolve_workspace_root(self.config.workspace_root, self.config.state_dir)),
         )
+
+    def _run_mnemo(self, message: FeishuInboundMessage):
+        request = self._mnemo_request(message)
         if self.config.provider == "local":
             result = run_local(request)
         elif self.config.provider == "openai-compatible":
@@ -426,6 +550,31 @@ class FeishuChannelService:
             raise MnemoError(f"unsupported provider: {self.config.provider}")
         self._session_store.record(message.chat_id, result.conversation_id)
         return result
+
+    def _stream_mnemo_events(self, message: FeishuInboundMessage):
+        request = self._mnemo_request(message)
+        if self.config.provider == "local":
+            yield from stream_local(request)
+            return
+        if self.config.provider == "openai-compatible":
+            if not self.config.base_url or not self.config.model:
+                raise MnemoError("openai-compatible provider requires base_url and model")
+            yield from stream_provider(
+                request,
+                _openai_adapter(self.config, stream=True),
+                max_tool_rounds=self.config.max_tool_rounds,
+            )
+            return
+        if self.config.provider == "anthropic":
+            if not self.config.model:
+                raise MnemoError("anthropic provider requires model")
+            yield from stream_provider(
+                request,
+                _anthropic_adapter(self.config, stream=True),
+                max_tool_rounds=self.config.max_tool_rounds,
+            )
+            return
+        raise MnemoError(f"unsupported provider: {self.config.provider}")
 
 
 class FeishuWebSocketService:
@@ -979,7 +1128,7 @@ def _is_signature_valid(headers: dict[str, str], body_bytes: bytes, encrypt_key:
     return hmac.compare_digest(computed, signature)
 
 
-def _openai_adapter(config: FeishuChannelConfig) -> OpenAIProviderAdapter:
+def _openai_adapter(config: FeishuChannelConfig, *, stream: bool = False) -> OpenAIProviderAdapter:
     return OpenAIProviderAdapter(
         ProviderConfig(
             base_url=config.base_url or "",
@@ -988,11 +1137,12 @@ def _openai_adapter(config: FeishuChannelConfig) -> OpenAIProviderAdapter:
             timeout_s=config.timeout_s,
             retry_count=config.retry_count,
             retry_backoff_s=config.retry_backoff_s,
+            stream=stream,
         )
     )
 
 
-def _anthropic_adapter(config: FeishuChannelConfig) -> AnthropicProviderAdapter:
+def _anthropic_adapter(config: FeishuChannelConfig, *, stream: bool = False) -> AnthropicProviderAdapter:
     return AnthropicProviderAdapter(
         ProviderConfig(
             base_url=config.base_url or "https://api.anthropic.com/v1",
@@ -1001,6 +1151,7 @@ def _anthropic_adapter(config: FeishuChannelConfig) -> AnthropicProviderAdapter:
             timeout_s=config.timeout_s,
             retry_count=config.retry_count,
             retry_backoff_s=config.retry_backoff_s,
+            stream=stream,
         )
     )
 
@@ -1009,6 +1160,46 @@ def _split_text(text: str, limit: int) -> list[str]:
     if len(text) <= limit:
         return [text]
     return [text[index : index + limit] for index in range(0, len(text), limit)]
+
+
+def _message_id_from_response(response: dict[str, Any]) -> str:
+    data = response.get("data") if isinstance(response.get("data"), dict) else {}
+    return str(data.get("message_id") or "")
+
+
+def _event_text(event: ChatEvent) -> str:
+    data = event.data if isinstance(event.data, dict) else {}
+    return str(data.get("text") or data.get("delta") or data.get("content") or "")
+
+
+def _completed_response(event: ChatEvent) -> str:
+    data = event.data if isinstance(event.data, dict) else {}
+    result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    return str(result.get("response") or "")
+
+
+def _completed_conversation_id(event: ChatEvent) -> str:
+    data = event.data if isinstance(event.data, dict) else {}
+    result = data.get("result") if isinstance(data.get("result"), dict) else {}
+    return str(result.get("conversation_id") or "")
+
+
+def _should_update_stream(text: str, *, last_sent: str, last_sent_at: float) -> bool:
+    if not text or text == last_sent:
+        return False
+    if not last_sent:
+        return True
+    if len(text) - len(last_sent) >= _FEISHU_STREAM_EDIT_MIN_CHARS:
+        return True
+    return time.time() - last_sent_at >= _FEISHU_STREAM_EDIT_INTERVAL_S
+
+
+def _streaming_markdown_preview(text: str) -> str:
+    body = str(text or "").strip()
+    budget = max(200, _POST_MARKDOWN_BLOCK_LIMIT - len(_FEISHU_STREAM_SUFFIX) - 20)
+    if len(body) > budget:
+        body = body[:budget].rstrip() + "\n..."
+    return f"{body}{_FEISHU_STREAM_SUFFIX}" if body else _FEISHU_STREAM_START_TEXT
 
 
 def _feishu_markdown_post_payloads(text: str, *, markdown_tag: bool) -> list[dict[str, Any]]:

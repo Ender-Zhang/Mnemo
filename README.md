@@ -102,7 +102,7 @@ mnemo channels feishu onboard --state-dir .mnemo
 mnemo channels feishu serve --state-dir .mnemo --connection websocket
 ```
 
-The onboarding command uses Feishu/Lark scan-to-create registration and saves the returned app credentials to `.mnemo/channels/feishu_config.json` with `0600` permissions. CLI and Web status output masks secrets. When the saved connection is websocket, `mnemo service install/start/restart` also starts the Feishu listener as a service sidecar.
+The onboarding command uses Feishu/Lark scan-to-create registration and saves the returned app credentials to `.mnemo/channels/feishu_config.json` with `0600` permissions. CLI and Web status output masks secrets. When the saved connection is websocket, `mnemo service install/start/restart` also starts the Feishu listener as a service sidecar. Incoming messages receive a small emoji acknowledgement, and assistant replies stream by editing the bot's rich-post reply until the final answer is ready.
 
 Existing self-built apps can still use webhook mode:
 

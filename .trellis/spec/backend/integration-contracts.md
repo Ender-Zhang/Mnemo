@@ -278,7 +278,7 @@
 - HTTP: `POST /api/channels/feishu/onboard/poll`
 
 ### 3. Contracts
-- Feishu webhook mode is a transport facade over `run_local()` / `run_provider()`; it must not duplicate prompt assembly, memory, tools, or provider orchestration.
+- Feishu webhook mode is a transport facade over `run_local()` / `run_provider()` and `stream_local()` / `stream_provider()`; it must not duplicate prompt assembly, memory, tools, or provider orchestration.
 - Feishu credentials resolve from explicit flags or environment variables: `FEISHU_APP_ID`, `FEISHU_APP_SECRET`, `FEISHU_VERIFICATION_TOKEN`, `FEISHU_ENCRYPT_KEY`, `FEISHU_ALLOWED_USERS`, `FEISHU_BOT_OPEN_ID`, `FEISHU_BOT_NAME`, and optional `FEISHU_API_BASE_URL`.
 - QR onboarding uses Feishu/Lark app registration device flow, requests `PersonalAgent` with `client_secret` auth, and stores the returned app credentials in `<state_dir>/channels/feishu_config.json`.
 - The saved Feishu config is the only channel secret persistence exception; it must be state-local, mode `0600` where supported, and never returned unmasked through Web/CLI status payloads.
@@ -292,6 +292,8 @@
 - Inbound `im.message.receive_v1` text messages are deduplicated by event/message id before runtime execution.
 - Message processing runs in a background thread and returns Feishu's webhook acknowledgement quickly; Feishu replies are sent through `/open-apis/im/v1/messages?receive_id_type=chat_id`.
 - Assistant replies from Mnemo are sent as Feishu/Lark rich `post` messages with Markdown blocks when possible; send failures fall back to a structural rich-post conversion and error replies may remain plain text.
+- Feishu inbound messages may receive a best-effort emoji reaction through `/open-apis/im/v1/messages/:message_id/reactions`; reaction failures must not block runtime processing.
+- Feishu streaming is implemented by sending one placeholder rich post, then editing that message through `/open-apis/im/v1/messages/:message_id` with throttled partial content and one final edit; partial edits must stay below the platform's 20-edit limit.
 - Per-chat execution is serialized so a chat cannot overlap multiple Mnemo turns.
 - Feishu chat ids map to Mnemo conversation ids in state-local channel metadata so follow-up messages keep continuity.
 - Group messages honor the mention gate when `require_mention` is true and a bot identity is configured; DMs are accepted.
@@ -305,6 +307,7 @@
 | Duplicate callback | Returns duplicate acknowledgement and sends no second reply | `tests/test_channels.py` |
 | Valid text message | Runs Mnemo and sends one Feishu rich post reply | `tests/test_channels.py` |
 | Markdown reply | Preserves Markdown as Feishu rich post content instead of plain text | `tests/test_channels.py` |
+| Streaming reply | Sends one placeholder, adds a reaction, edits the reply during streaming, and finalizes without the streaming suffix | `tests/test_channels.py` |
 | QR onboarding success | Starts registration, polls credentials, probes bot metadata, and saves masked status | `tests/test_channels.py` |
 | Web onboarding API | Starts/polls a session and never returns app secret | `tests/test_web.py` |
 | Missing app credentials | CLI exits with `mnemo:` error and no traceback | `tests/test_cli.py` |

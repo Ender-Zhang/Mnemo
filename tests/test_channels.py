@@ -9,7 +9,6 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from mnemo.channels import (
@@ -21,6 +20,7 @@ from mnemo.channels import (
     save_feishu_saved_config,
     start_feishu_qr_onboarding,
 )
+from mnemo.core.models import ChatEvent
 from mnemo.core.jsonutil import dumps
 
 
@@ -76,12 +76,23 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertEqual(json.loads(body), {"code": 0, "msg": "ok"})
                     self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
 
+                    reaction_requests = api.requests_for("/open-apis/im/v1/messages/om_msg_1/reactions")
+                    self.assertEqual(len(reaction_requests), 1)
+                    self.assertEqual(reaction_requests[0]["body"]["reaction_type"]["emoji_type"], "SMILE")
+
                     send_requests = api.requests_for("/open-apis/im/v1/messages")
                     self.assertEqual(len(send_requests), 1)
                     sent = send_requests[0]["body"]
                     self.assertEqual(sent["receive_id"], "oc_chat")
                     self.assertEqual(sent["msg_type"], "post")
-                    content = json.loads(sent["content"])
+                    sent_content = json.loads(sent["content"])
+                    self.assertIn("正在思考", sent_content["zh_cn"]["content"][0][0]["text"])
+
+                    update_requests = api.requests_for("/open-apis/im/v1/messages/om_reply")
+                    self.assertGreaterEqual(len(update_requests), 1)
+                    updated = update_requests[-1]["body"]
+                    self.assertEqual(updated["msg_type"], "post")
+                    content = json.loads(updated["content"])
                     self.assertTrue(content["zh_cn"]["title"].startswith("已创建一次 Mnemo 运行"))
                     self.assertEqual(content["zh_cn"]["content"][0][0]["tag"], "md")
                     self.assertIn("已创建一次 Mnemo 运行", content["zh_cn"]["content"][0][0]["text"])
@@ -91,6 +102,7 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertEqual(json.loads(body), {"code": 0, "msg": "duplicate"})
                     self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
                     self.assertEqual(len(api.requests_for("/open-apis/im/v1/messages")), 1)
+                    self.assertEqual(len(api.requests_for("/open-apis/im/v1/messages/om_msg_1/reactions")), 1)
 
             session_file = Path(tmp) / "channels" / "feishu_sessions.json"
             sessions = json.loads(session_file.read_text(encoding="utf-8"))
@@ -108,23 +120,137 @@ class FeishuChannelTests(unittest.TestCase):
                     api_base_url=api.base_url,
                 )
                 with RunningFeishuChannel(config) as server:
-                    server.service._run_mnemo = lambda _message: SimpleNamespace(  # type: ignore[method-assign]
-                        response="# 今日计划\n\n- **重点** 看 [文档](https://example.com)\n\n```python\nprint(1)\n```",
-                        conversation_id="conv_markdown",
+                    markdown = "# 今日计划\n\n- **重点** 看 [文档](https://example.com)\n\n```python\nprint(1)\n```"
+                    server.service._stream_mnemo_events = lambda _message: iter(  # type: ignore[method-assign]
+                        [
+                            _chat_event("assistant.delta", {"text": markdown}, conversation_id="conv_markdown"),
+                            _chat_event(
+                                "assistant.message",
+                                {"text": markdown, "final": True},
+                                conversation_id="conv_markdown",
+                            ),
+                            _chat_event(
+                                "run.completed",
+                                {
+                                    "status": "completed",
+                                    "result": {
+                                        "conversation_id": "conv_markdown",
+                                        "mission_id": "mis_markdown",
+                                        "run_id": "run_markdown",
+                                        "response": markdown,
+                                        "tool_results": [],
+                                    },
+                                },
+                                conversation_id="conv_markdown",
+                            ),
+                        ]
                     )
                     status, _, body = server.request("POST", "/feishu/webhook", _message_payload(text="markdown please"))
                     self.assertEqual(status, 200, body)
                     self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
 
-                    sent = api.requests_for("/open-apis/im/v1/messages")[0]["body"]
-                    self.assertEqual(sent["msg_type"], "post")
-                    content = json.loads(sent["content"])
+                    updated = api.requests_for("/open-apis/im/v1/messages/om_reply")[-1]["body"]
+                    self.assertEqual(updated["msg_type"], "post")
+                    content = json.loads(updated["content"])
                     self.assertEqual(content["zh_cn"]["title"], "今日计划")
                     blocks = content["zh_cn"]["content"]
                     self.assertEqual(blocks[0][0]["tag"], "md")
                     rendered = "\n".join(block[0]["text"] for block in blocks)
                     self.assertIn("- **重点** 看 [文档](https://example.com)", rendered)
                     self.assertIn("```python", rendered)
+
+    def test_feishu_reply_streams_by_editing_bot_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with FakeFeishuApiServer() as api:
+                config = FeishuChannelConfig(
+                    state_dir=tmp,
+                    port=0,
+                    app_id="cli_test",
+                    app_secret="secret_test",
+                    verification_token="verify-token",
+                    api_base_url=api.base_url,
+                )
+                with RunningFeishuChannel(config) as server:
+                    server.service._stream_mnemo_events = lambda _message: iter(  # type: ignore[method-assign]
+                        [
+                            _chat_event("assistant.delta", {"text": "hello"}),
+                            _chat_event("assistant.delta", {"text": " world" * 30}),
+                            _chat_event(
+                                "assistant.message",
+                                {"text": "hello" + " world" * 30, "final": True},
+                            ),
+                            _chat_event(
+                                "run.completed",
+                                {
+                                    "status": "completed",
+                                    "result": {
+                                        "conversation_id": "conv_stream",
+                                        "mission_id": "mis_stream",
+                                        "run_id": "run_stream",
+                                        "response": "hello" + " world" * 30,
+                                        "tool_results": [],
+                                    },
+                                },
+                                conversation_id="conv_stream",
+                            ),
+                        ]
+                    )
+                    status, _, body = server.request("POST", "/feishu/webhook", _message_payload(text="stream please"))
+                    self.assertEqual(status, 200, body)
+                    self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
+
+                    updates = api.requests_for("/open-apis/im/v1/messages/om_reply")
+                    self.assertGreaterEqual(len(updates), 2)
+                    first_content = json.loads(updates[0]["body"]["content"])
+                    final_content = json.loads(updates[-1]["body"]["content"])
+                    first_text = "\n".join(block[0]["text"] for block in first_content["zh_cn"]["content"])
+                    final_text = "\n".join(block[0]["text"] for block in final_content["zh_cn"]["content"])
+                    self.assertIn("生成中", first_text)
+                    self.assertNotIn("生成中", final_text)
+                    self.assertIn("hello world", final_text)
+
+    def test_feishu_final_edit_failure_sends_final_reply_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            with FakeFeishuApiServer() as api:
+                api.fail_put = True
+                config = FeishuChannelConfig(
+                    state_dir=tmp,
+                    port=0,
+                    app_id="cli_test",
+                    app_secret="secret_test",
+                    verification_token="verify-token",
+                    api_base_url=api.base_url,
+                )
+                with RunningFeishuChannel(config) as server:
+                    server.service._stream_mnemo_events = lambda _message: iter(  # type: ignore[method-assign]
+                        [
+                            _chat_event("assistant.delta", {"text": "fallback answer"}),
+                            _chat_event("assistant.message", {"text": "fallback answer", "final": True}),
+                            _chat_event(
+                                "run.completed",
+                                {
+                                    "status": "completed",
+                                    "result": {
+                                        "conversation_id": "conv_fallback",
+                                        "mission_id": "mis_fallback",
+                                        "run_id": "run_fallback",
+                                        "response": "fallback answer",
+                                        "tool_results": [],
+                                    },
+                                },
+                                conversation_id="conv_fallback",
+                            ),
+                        ]
+                    )
+                    status, _, body = server.request("POST", "/feishu/webhook", _message_payload(text="fallback please"))
+                    self.assertEqual(status, 200, body)
+                    self.assertTrue(server.service.wait_for_idle(timeout_s=5.0))
+
+                    sends = api.requests_for("/open-apis/im/v1/messages")
+                    self.assertEqual(len(sends), 2)
+                    fallback_content = json.loads(sends[-1]["body"]["content"])
+                    fallback_text = "\n".join(block[0]["text"] for block in fallback_content["zh_cn"]["content"])
+                    self.assertIn("fallback answer", fallback_text)
 
     def test_feishu_webhook_signature_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -230,6 +356,25 @@ def _message_payload(*, text: str = "hello", token: str = "verify-token") -> dic
     }
 
 
+def _chat_event(
+    event_type: str,
+    data: dict[str, Any],
+    *,
+    conversation_id: str = "conv_stream",
+    mission_id: str = "mis_stream",
+    run_id: str = "run_stream",
+) -> ChatEvent:
+    return ChatEvent(
+        event_id=f"evt_{event_type.replace('.', '_')}",
+        type=event_type,  # type: ignore[arg-type]
+        run_id=run_id,
+        conversation_id=conversation_id,
+        mission_id=mission_id,
+        data=data,
+        created_at=0.0,
+    )
+
+
 class RunningFeishuChannel:
     def __init__(self, config: FeishuChannelConfig) -> None:
         self.server = build_feishu_server(config)
@@ -261,6 +406,7 @@ class RunningFeishuChannel:
 class FakeFeishuApiServer:
     def __init__(self) -> None:
         self.requests: list[dict[str, Any]] = []
+        self.fail_put = False
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), self._handler())
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
@@ -304,6 +450,23 @@ class FakeFeishuApiServer:
                     return
                 if path == "/open-apis/im/v1/messages":
                     self._send_json({"code": 0, "data": {"message_id": "om_reply"}})
+                    return
+                if path == "/open-apis/im/v1/messages/om_msg_1/reactions":
+                    self._send_json({"code": 0, "data": {"reaction_id": "reaction_1"}})
+                    return
+                self._send_json({"code": 404, "msg": "not found"}, status=404)
+
+            def do_PUT(self) -> None:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(length).decode("utf-8")
+                parsed = json.loads(body) if body else {}
+                path = self.path.split("?", 1)[0]
+                fake.requests.append({"path": path, "headers": dict(self.headers), "body": parsed})
+                if path == "/open-apis/im/v1/messages/om_reply":
+                    if fake.fail_put:
+                        self._send_json({"code": 230075, "msg": "message edit unavailable"}, status=400)
+                        return
+                    self._send_json({"code": 0, "data": {"message_id": "om_reply", "msg_type": parsed.get("msg_type")}})
                     return
                 self._send_json({"code": 404, "msg": "not found"}, status=404)
 
