@@ -460,3 +460,44 @@ Added service-owned automatic Dream scheduling to `mnemo web`, kept execution pr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 128: Feishu Official Streaming Cards
+
+**Date**: 2026-05-09
+**Task**: Feishu Official Streaming Cards
+**Branch**: `main`
+
+### Summary
+
+Replaced the default Feishu reply streaming path with official CardKit streaming cards, kept rich-post edit streaming as an explicit fallback, restarted the public web/Feishu services, and verified the tunnel.
+
+### Main Changes
+
+| Area | Summary |
+|------|---------|
+| Feishu channel | Added `FeishuStreamingCard` plus CardKit create/update/close helpers using interactive card replies and `streaming=true` by default. |
+| Configuration | Added `--streaming` / `--no-streaming`, `FEISHU_STREAMING`, saved-config/status `streaming`, and service sidecar propagation. |
+| Fallback | Kept the old rich-post edit loop only for disabled streaming or startup fallback; final card close failures send a normal Markdown reply. |
+| Documentation | Updated README and backend contracts to acknowledge Feishu official/OpenClaw streaming-card behavior and document the API boundary. |
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d3b554e` | feat(channels): use Feishu streaming cards |
+
+### Testing
+
+- [OK] `.venv/bin/python -m unittest tests.test_channels tests.test_cli`
+- [OK] `.venv/bin/python -m unittest tests.test_channels tests.test_cli tests.test_web`
+- [OK] `git diff --check`
+- [OK] Restarted `mnemo-web` and `mnemo-feishu`; local and public `/api/health` passed, and Feishu websocket connected with `--streaming`.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
