@@ -370,6 +370,7 @@ ProactiveService(state_dir, executor=runtime_executor).flush_pending()
 - Inbound `im.message.receive_v1` text messages are deduplicated by event/message id before runtime execution.
 - Message processing runs in a background thread and returns Feishu's webhook acknowledgement quickly; Feishu fallback rich-post replies are sent through `/open-apis/im/v1/messages?receive_id_type=chat_id`.
 - Assistant replies default to Feishu official streaming cards when `streaming=true`: create a CardKit card through `/open-apis/cardkit/v1/cards`, send or reply with an `interactive` card message, update the card element through `/open-apis/cardkit/v1/cards/:card_id/elements/:element_id/content`, close streaming mode through `/open-apis/cardkit/v1/cards/:card_id/settings`, then best-effort update the final card through `/open-apis/cardkit/v1/cards/:card_id` with status/elapsed footer metadata when enabled.
+- Before the first assistant content arrives, Feishu streaming and rich-post fallback replies may loop compact ellipsis placeholders (`.`, `..`, `...`); placeholders must stop before the first real content update, and the rich-post fallback path must reserve enough edit budget for content/final updates under the platform edit limit.
 - Topic/thread messages use `reply_in_thread=true` and state-local conversation keys scoped by thread id when `thread_session=true`, so Feishu topic groups can run independent Mnemo conversations in the same chat.
 - If streaming-card startup fails, or `--no-streaming` / `FEISHU_STREAMING=false` is set, assistant replies fall back to Feishu/Lark rich `post` messages with Markdown blocks when possible; send failures fall back to a structural rich-post conversion and error replies may remain plain text.
 - Feishu inbound messages may receive a best-effort emoji reaction through `/open-apis/im/v1/messages/:message_id/reactions`; reaction failures must not block runtime processing.
@@ -389,6 +390,7 @@ ProactiveService(state_dir, executor=runtime_executor).flush_pending()
 | Valid text message | Runs Mnemo and sends one Feishu rich post reply when streaming fallback is disabled | `tests/test_channels.py` |
 | Markdown reply | Preserves Markdown as Feishu rich post content instead of plain text on the fallback path | `tests/test_channels.py` |
 | Streaming reply | Creates a CardKit streaming card, replies with an interactive card, updates the content element, closes streaming mode, and updates the final footer | `tests/test_channels.py` |
+| Initial reply placeholder | Shows looping ellipsis before first content and replaces it with real assistant content | `tests/test_channels.py` |
 | QR onboarding success | Starts registration, polls credentials, probes bot metadata, and saves masked status | `tests/test_channels.py` |
 | Web onboarding API | Starts/polls a session and never returns app secret | `tests/test_web.py` |
 | Missing app credentials | CLI exits with `mnemo:` error and no traceback | `tests/test_cli.py` |

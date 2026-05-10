@@ -44,11 +44,16 @@ _POST_CONTENT_LIMIT_BYTES = 28_000
 _POST_MARKDOWN_BLOCK_LIMIT = 3500
 _SAVED_CONFIG_VERSION = "mnemo.feishu.channel.v1"
 _FEISHU_ACK_EMOJI_TYPE = "THINKING"
-_FEISHU_STREAM_START_TEXT = "\u200b"
+_FEISHU_STREAM_START_TEXT = "."
+_FEISHU_STREAM_PLACEHOLDER_FRAMES = (".", "..", "...")
+_FEISHU_STREAM_PLACEHOLDER_INTERVAL_S = 1.0
+_FEISHU_STREAM_PLACEHOLDER_MAX_UPDATES = 60
+_FEISHU_RICH_POST_PLACEHOLDER_MAX_UPDATES = 3
 _FEISHU_STREAM_SUFFIX = "\n\n_生成中..._"
 _FEISHU_STREAM_EDIT_INTERVAL_S = 1.0
 _FEISHU_STREAM_EDIT_MIN_CHARS = 120
 _FEISHU_STREAM_MAX_PARTIAL_EDITS = 19
+_FEISHU_RICH_POST_MAX_PARTIAL_EDITS = 16
 _FEISHU_STREAM_CARD_ELEMENT_ID = "content"
 _FEISHU_STREAM_CARD_SUMMARY_LIMIT = 120
 
@@ -635,6 +640,8 @@ class FeishuChannelService:
                         lambda current: self._safe_replace_streaming_markdown(
                             reply_message_id, message.chat_id, current
                         ),
+                        partial_edit_limit=_FEISHU_RICH_POST_MAX_PARTIAL_EDITS,
+                        placeholder_max_updates=_FEISHU_RICH_POST_PLACEHOLDER_MAX_UPDATES,
                     )
                     self._finalize_reply(message.chat_id, reply_message_id, response)
             except Exception as exc:
@@ -675,6 +682,9 @@ class FeishuChannelService:
         self,
         message: FeishuInboundMessage,
         update_partial: Callable[[str], bool],
+        *,
+        partial_edit_limit: int = _FEISHU_STREAM_MAX_PARTIAL_EDITS,
+        placeholder_max_updates: int = _FEISHU_STREAM_PLACEHOLDER_MAX_UPDATES,
     ) -> str:
         parts: list[str] = []
         final_response = ""
@@ -682,27 +692,45 @@ class FeishuChannelService:
         last_sent = ""
         last_sent_at = 0.0
         partial_edits = 0
-        for event in self._stream_mnemo_events(message):
-            if event.type == "assistant.delta":
-                delta = _event_text(event)
-                if delta:
-                    parts.append(delta)
-            elif event.type == "assistant.message":
-                final_response = _event_text(event) or final_response
-            elif event.type == "run.completed":
-                final_response = _completed_response(event) or final_response
-                conversation_id = _completed_conversation_id(event) or event.conversation_id or conversation_id
+        update_lock = threading.Lock()
+        placeholder_stop, placeholder_thread = _start_stream_placeholder_loop(
+            update_partial,
+            update_lock,
+            max_updates=placeholder_max_updates,
+        )
 
-            current = final_response or "".join(parts)
-            if (
-                current
-                and partial_edits < _FEISHU_STREAM_MAX_PARTIAL_EDITS
-                and _should_update_stream(current, last_sent=last_sent, last_sent_at=last_sent_at)
-            ):
-                if update_partial(current):
-                    last_sent = current
-                    last_sent_at = time.time()
-                    partial_edits += 1
+        def stop_placeholder() -> None:
+            placeholder_stop.set()
+            if placeholder_thread.is_alive() and placeholder_thread is not threading.current_thread():
+                placeholder_thread.join(timeout=0.2)
+
+        try:
+            for event in self._stream_mnemo_events(message):
+                if event.type == "assistant.delta":
+                    delta = _event_text(event)
+                    if delta:
+                        parts.append(delta)
+                elif event.type == "assistant.message":
+                    final_response = _event_text(event) or final_response
+                elif event.type == "run.completed":
+                    final_response = _completed_response(event) or final_response
+                    conversation_id = _completed_conversation_id(event) or event.conversation_id or conversation_id
+
+                current = final_response or "".join(parts)
+                if (
+                    current
+                    and partial_edits < partial_edit_limit
+                    and _should_update_stream(current, last_sent=last_sent, last_sent_at=last_sent_at)
+                ):
+                    stop_placeholder()
+                    with update_lock:
+                        updated = update_partial(current)
+                    if updated:
+                        last_sent = current
+                        last_sent_at = time.time()
+                        partial_edits += 1
+        finally:
+            stop_placeholder()
 
         response = final_response or "".join(parts) or "（空响应）"
         if conversation_id:
@@ -1709,6 +1737,32 @@ def _should_update_stream(text: str, *, last_sent: str, last_sent_at: float) -> 
     if len(text) - len(last_sent) >= _FEISHU_STREAM_EDIT_MIN_CHARS:
         return True
     return time.time() - last_sent_at >= _FEISHU_STREAM_EDIT_INTERVAL_S
+
+
+def _start_stream_placeholder_loop(
+    update_partial: Callable[[str], bool],
+    update_lock: threading.Lock,
+    *,
+    max_updates: int,
+) -> tuple[threading.Event, threading.Thread]:
+    stop_event = threading.Event()
+
+    def run() -> None:
+        frame_index = 1
+        for _ in range(max(0, max_updates)):
+            frame = _FEISHU_STREAM_PLACEHOLDER_FRAMES[frame_index % len(_FEISHU_STREAM_PLACEHOLDER_FRAMES)]
+            frame_index += 1
+            with update_lock:
+                if stop_event.is_set():
+                    return
+                if not update_partial(frame):
+                    return
+            if stop_event.wait(_FEISHU_STREAM_PLACEHOLDER_INTERVAL_S):
+                return
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return stop_event, thread
 
 
 def _streaming_markdown_preview(text: str) -> str:

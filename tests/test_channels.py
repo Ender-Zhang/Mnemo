@@ -20,6 +20,7 @@ from mnemo.channels import (
     save_feishu_saved_config,
     start_feishu_qr_onboarding,
 )
+from mnemo.channels.feishu import FeishuChannelService, FeishuInboundMessage
 from mnemo.core.models import ChatEvent
 from mnemo.core.jsonutil import dumps
 
@@ -94,7 +95,7 @@ class FeishuChannelTests(unittest.TestCase):
                     self.assertEqual(sent["receive_id"], "oc_chat")
                     self.assertEqual(sent["msg_type"], "post")
                     sent_content = json.loads(sent["content"])
-                    self.assertEqual(sent_content["zh_cn"]["content"][0][0]["text"], "\u200b")
+                    self.assertEqual(sent_content["zh_cn"]["content"][0][0]["text"], ".")
 
                     update_requests = api.requests_for("/open-apis/im/v1/messages/om_reply")
                     self.assertGreaterEqual(len(update_requests), 1)
@@ -221,14 +222,16 @@ class FeishuChannelTests(unittest.TestCase):
                     card_payload = json.loads(created[0]["body"]["data"])
                     self.assertTrue(card_payload["config"]["streaming_mode"])
                     self.assertEqual(card_payload["body"]["elements"][0]["element_id"], "content")
-                    self.assertEqual(card_payload["body"]["elements"][0]["content"], "\u200b")
+                    self.assertEqual(card_payload["body"]["elements"][0]["content"], ".")
                     self.assertEqual(replied[0]["body"]["msg_type"], "interactive")
                     self.assertTrue(replied[0]["body"]["reply_in_thread"])
                     reply_content = json.loads(replied[0]["body"]["content"])
                     self.assertEqual(reply_content["data"]["card_id"], "card_reply")
-                    self.assertGreaterEqual(len(updates), 2)
-                    self.assertIn("hello", updates[0]["body"]["content"])
-                    self.assertIn("hello world", updates[-1]["body"]["content"])
+                    update_contents = [request["body"]["content"] for request in updates]
+                    real_updates = [content for content in update_contents if "hello" in content]
+                    self.assertGreaterEqual(len(real_updates), 2)
+                    self.assertIn("hello", real_updates[0])
+                    self.assertIn("hello world", real_updates[-1])
                     settings = json.loads(closes[-1]["body"]["settings"])
                     self.assertFalse(settings["config"]["streaming_mode"])
                     self.assertEqual(len(card_updates), 1)
@@ -241,6 +244,60 @@ class FeishuChannelTests(unittest.TestCase):
                     session_file = Path(tmp) / "channels" / "feishu_sessions.json"
                     sessions = json.loads(session_file.read_text(encoding="utf-8"))
                     self.assertEqual(sessions["oc_chat#thread:omt_thread"], "conv_stream")
+
+    def test_feishu_reply_cycles_ellipsis_before_first_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = FeishuChannelService(FeishuChannelConfig(state_dir=tmp))
+            first_placeholder = threading.Event()
+            updates: list[str] = []
+
+            def update_partial(text: str) -> bool:
+                updates.append(text)
+                if text in {".", "..", "..."}:
+                    first_placeholder.set()
+                return True
+
+            def stream_events(_message: FeishuInboundMessage):
+                self.assertTrue(first_placeholder.wait(timeout=2.0))
+                yield _chat_event("assistant.delta", {"text": "answer"}, conversation_id="conv_placeholder")
+                yield _chat_event(
+                    "assistant.message",
+                    {"text": "answer", "final": True},
+                    conversation_id="conv_placeholder",
+                )
+                yield _chat_event(
+                    "run.completed",
+                    {
+                        "status": "completed",
+                        "result": {
+                            "conversation_id": "conv_placeholder",
+                            "mission_id": "mis_placeholder",
+                            "run_id": "run_placeholder",
+                            "response": "answer",
+                            "tool_results": [],
+                        },
+                    },
+                    conversation_id="conv_placeholder",
+                )
+
+            service._stream_mnemo_events = stream_events  # type: ignore[method-assign]
+            message = FeishuInboundMessage(
+                event_id="evt_placeholder",
+                message_id="om_placeholder",
+                chat_id="oc_placeholder",
+                chat_type="p2p",
+                text="slow turn",
+                sender_type="user",
+                sender_ids=("ou_user",),
+                mentions=(),
+            )
+
+            response = service._stream_reply(message, update_partial)
+
+            self.assertEqual(response, "answer")
+            self.assertEqual(updates[0], "..")
+            self.assertEqual(updates[-1], "answer")
+            self.assertNotIn("正在思考", "".join(updates))
 
     def test_feishu_final_edit_failure_sends_final_reply_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
