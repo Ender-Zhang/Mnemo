@@ -99,6 +99,11 @@
 - `ask_user` is `write` risk because it persists an Inbox decision item.
 - `ask_user` is a last-resort tool for blocked authority, missing information, or irreversible high-impact choices; it must not be used for routine confirmations.
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and natural-language option labels; streamed `decision.card` events must not contain raw tool traces.
+- `schedule_list(kind="all", status="active", limit=20)` is read-only and returns compact scheduled-item cards so the model can inspect existing proactive watches/reminders before creating duplicates.
+- `schedule_watch(target, instruction, schedule="daily", next_run_at?)` is write risk and creates a durable model-led Watch through `ScheduleService.add_watch(source="model")`; it registers future work only and must not enqueue or deliver immediately.
+- `schedule_cron(message, schedule="once", title?, next_run_at?)` is write risk and creates a durable scheduled Mnemo task through `ScheduleService.add_cron(source="model")`; due execution remains owned by scheduler/proactive tick.
+- `schedule_update_status(item_id, status, next_run_at?)` is write risk and can pause, resume, disable, or complete an existing scheduled item; resuming an item without a due time must compute a future/now due time from its schedule.
+- Compact scheduled-tool results include item id, kind, title, status, schedule, source, next run, last run, bounded instruction preview, and compact Watch feedback only.
 - `watch_feedback(item_id, outcome, decision?)` is `write` risk because it mutates scheduled Watch metadata and may alter schedule/status.
 - `watch_feedback` records compact outcome counts/streaks and applies only explicit model/user policy decisions such as `keep`, `sparsify`, `pause`, or `disable`.
 - Compact `watch_feedback` results include item id/title, outcome, decision action, status, and schedule, not raw notification bodies or full run traces.
@@ -145,6 +150,7 @@
 | Browser connector | External policy gates URL open; dry-run validates HTTP/HTTPS URL without launching browser | `tests/test_standard_tools.py` |
 | App connector | Admin policy gates OS app open; path traversal is rejected before opener execution | `tests/test_standard_tools.py` |
 | Ask user decision | Creates a persistent Inbox item and returns compact decision evidence | `tests/test_tools.py`, `tests/test_web.py` |
+| Schedule tools | Provider-native schedule tools create/list/update compact scheduled items without immediate enqueue/delivery | `tests/test_tools.py`, `tests/test_runtime.py` |
 | Watch feedback decision | Applies explicit Watch policy and returns compact evidence | `tests/test_tools.py`, `tests/test_scheduler.py` |
 | Provider tool result feedback | Send `compact_tool_result`, not full raw payload | Runtime/provider tests |
 | Prompt metadata | Records compact tool schema count/names/estimate without raw schema payloads | `tests/test_prompt.py`, `tests/test_cli.py` |
@@ -236,6 +242,7 @@
 - File patch: assert admin gating, exact edit success, path traversal rejection, and ambiguous replacement handling.
 - Connector tools: assert default policy denial, dry-run success, compact evidence, URL validation, web fetch text/JSON preview feedback, search ad filtering, and workspace path traversal rejection.
 - Ask-user decisions: assert persistent Inbox item id appears in compact evidence and `decision.card` payload.
+- Schedule tools: assert model-facing Watch/Cron creation uses `source="model"`, list output stays compact, update status mutates only the selected scheduled item, and provider runtime exposes/executed schedule tools.
 - Watch feedback: assert model policy updates schedule/status and compact evidence omits raw notification bodies.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - Provider runtime tool budget: assert final-round tool calls are executed, the final provider request has `tools=()`, metadata includes `tool_budget_exhausted=true`, unexecuted tool-call markup is suppressed, and no `run.error` is emitted when a final response is produced.

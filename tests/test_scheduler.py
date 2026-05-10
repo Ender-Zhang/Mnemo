@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from mnemo.runtime import DaemonRunner, ScheduleService, run_local
-from mnemo.runtime.scheduler import ensure_default_dream_schedule, next_due_time, parse_schedule_time
+from mnemo.runtime.scheduler import ensure_default_dream_schedule, next_due_time, parse_schedule_time, scheduled_prompt_items
 from mnemo.storage import StateStore
 
 
@@ -48,6 +48,8 @@ class ScheduleServiceTests(unittest.TestCase):
             updated = store.get_scheduled_item(item["id"])
             self.assertEqual(result["processed"][0]["queue_id"], queue[0]["id"])
             self.assertIn("Watch check: Rust progress", queue[0]["message"])
+            self.assertIn("record watch_feedback", queue[0]["message"])
+            self.assertNotIn("mnemo_watch_feedback", queue[0]["message"])
             self.assertEqual(queue[0]["metadata"]["scheduled_item_id"], item["id"])
             self.assertEqual(updated["status"], "active")
             self.assertEqual(updated["next_run_at"], 70.0)
@@ -163,6 +165,21 @@ class ScheduleServiceTests(unittest.TestCase):
             self.assertEqual(store.get_scheduled_item(cron["id"])["status"], "active")
             self.assertEqual(store.get_scheduled_item(cron["id"])["next_run_at"], 0.0)
             self.assertEqual(store.list_queue_items(status=None), [])
+
+    def test_scheduled_prompt_items_include_active_and_paused_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            service = ScheduleService(tmp)
+            active = service.add_watch(target="Active watch", instruction="Check active", schedule="daily")
+            paused = service.add_watch(target="Paused watch", instruction="Check paused", schedule="daily")
+            completed = service.add_cron(message="done", schedule="once", next_run_at=0)
+            dream = service.add_dream(schedule="daily")
+            service.update_status(paused["id"], "paused")
+            service.update_status(completed["id"], "completed")
+
+            cards = scheduled_prompt_items(StateStore(tmp), limit=10)
+
+            self.assertEqual([item["id"] for item in cards], [active["id"], paused["id"]])
+            self.assertNotIn(dream["id"], [item["id"] for item in cards])
 
     def test_watch_feedback_records_model_sparsify_decision(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

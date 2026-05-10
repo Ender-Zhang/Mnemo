@@ -27,6 +27,7 @@ from .common import (
 )
 from .learning import build_learning_packet
 from .ledger import RunLedger
+from .scheduler import scheduled_prompt_items
 from .state import resolve_conversation, resolve_mission
 
 
@@ -114,6 +115,7 @@ class LocalAgentRuntime:
             memory_snapshot=memory_engine.load_or_compile_l1_snapshot(),
             memory_cards=memory_engine.context_cards(request.message, limit=5),
             skill_cards=SkillService(store, roots=default_skill_roots(request.state_dir)).context_cards(limit=12),
+            scheduled_items=scheduled_prompt_items(store),
             mode=request.prompt_mode,
         )
         ledger.append(

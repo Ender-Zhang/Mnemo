@@ -111,6 +111,85 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertIn("Watch feedback recorded", compact["summary"])
             self.assertEqual(compact["evidence"][0]["kind"], "watch_feedback")
 
+    def test_schedule_tools_register_list_and_update_proactive_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            harness = ToolHarness(store=store, ledger=RunLedger(store))
+
+            watch = harness.execute(
+                ToolCallEnvelope(
+                    name="schedule_watch",
+                    arguments={
+                        "target": "Fat loss check-in",
+                        "instruction": "Check whether a short non-intrusive fitness nudge is useful.",
+                        "schedule": "daily",
+                        "next_run_at": 0,
+                    },
+                    call_id="call_schedule_watch",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            listed = harness.execute(
+                ToolCallEnvelope(
+                    name="schedule_list",
+                    arguments={"kind": "watch", "status": "active"},
+                    call_id="call_schedule_list",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+            paused = harness.execute(
+                ToolCallEnvelope(
+                    name="schedule_update_status",
+                    arguments={"item_id": watch.result["item"]["id"], "status": "paused"},
+                    call_id="call_schedule_pause",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            stored = store.get_scheduled_item(watch.result["item"]["id"])
+            self.assertTrue(watch.ok)
+            self.assertEqual(watch.result["item"]["kind"], "watch")
+            self.assertEqual(stored["source"], "model")
+            self.assertEqual(stored["metadata"]["source"], "model")
+            self.assertTrue(listed.ok)
+            self.assertEqual(listed.result["count"], 1)
+            self.assertEqual(listed.result["items"][0]["id"], watch.result["item"]["id"])
+            self.assertEqual(paused.result["item"]["status"], "paused")
+            self.assertEqual(compact_tool_result(watch)["evidence"][0]["kind"], "scheduled_item")
+            self.assertEqual(compact_tool_result(listed)["evidence"][0]["kind"], "scheduled_items")
+
+    def test_schedule_cron_tool_registers_compact_task(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="schedule_cron",
+                    arguments={
+                        "title": "Morning note",
+                        "message": "Draft a short morning plan.",
+                        "schedule": "once",
+                        "next_run_at": 0,
+                    },
+                    call_id="call_schedule_cron",
+                    risk="write",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            stored = store.get_scheduled_item(result.result["item"]["id"])
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["item"]["kind"], "cron")
+            self.assertEqual(result.result["item"]["title"], "Morning note")
+            self.assertEqual(stored["instruction"], "Draft a short morning plan.")
+            self.assertEqual(compact_tool_result(result)["summary"], "Scheduled cron: Morning note.")
+
     def test_harness_blocks_disallowed_risk_without_calling_handler(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

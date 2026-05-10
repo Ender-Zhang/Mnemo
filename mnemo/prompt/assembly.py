@@ -98,6 +98,7 @@ class PromptAssembler:
         memory_snapshot: dict[str, Any] | None = None,
         memory_cards: Sequence[dict[str, Any]] | None = None,
         skill_cards: Sequence[dict[str, Any]] | None = None,
+        scheduled_items: Sequence[dict[str, Any]] | None = None,
         runtime_context: Mapping[str, Any] | None = None,
         token_budget: int | None = DEFAULT_PROMPT_TOKEN_BUDGET,
         mode: PromptMode = "full",
@@ -117,6 +118,7 @@ class PromptAssembler:
             memory_snapshot=memory_snapshot,
             memory_cards=memory_cards or (),
             skill_cards=skill_cards or (),
+            scheduled_items=scheduled_items or (),
             runtime_context=resolved_runtime_context,
         )
         kept_blocks, dropped_blocks = _apply_budget(blocks, token_budget)
@@ -141,6 +143,7 @@ class PromptAssembler:
         memory_snapshot: dict[str, Any] | None,
         memory_cards: Sequence[dict[str, Any]],
         skill_cards: Sequence[dict[str, Any]],
+        scheduled_items: Sequence[dict[str, Any]],
         runtime_context: Mapping[str, str],
     ) -> list[PromptBlock]:
         if mode == "none":
@@ -173,6 +176,8 @@ class PromptAssembler:
                 blocks.append(self._memory_index(memory_cards))
             if skill_cards:
                 blocks.append(self._skill_index(skill_cards))
+            if scheduled_items:
+                blocks.append(self._scheduled_items(scheduled_items))
 
         blocks.extend(
             [
@@ -395,6 +400,35 @@ class PromptAssembler:
             cache_segment="daily_context",
             priority=34,
             can_drop=True,
+        )
+
+    def _scheduled_items(self, items: Sequence[dict[str, Any]]) -> PromptBlock:
+        lines = [
+            "Active and paused scheduled items:",
+            "Check these before creating duplicate proactive watches or reminders.",
+        ]
+        for item in items[:12]:
+            title = _compact(item.get("title") or "untitled", limit=80)
+            instruction = _compact(item.get("instruction") or "", limit=140)
+            line = (
+                f"- {item.get('id', '')} [{item.get('kind', 'item')}:{item.get('status', 'unknown')}] "
+                f"{title}; schedule={item.get('schedule', '')}; next={item.get('next_run_at')}"
+            )
+            if instruction:
+                line = f"{line}; instruction={instruction}"
+            lines.append(line)
+        return _block(
+            id="schedule.active",
+            role="developer",
+            layer="runtime",
+            title="Active Schedules",
+            content="\n".join(lines),
+            source="scheduler",
+            cache_policy="turn",
+            cache_segment="turn",
+            priority=33,
+            can_drop=True,
+            metadata={"count": len(items)},
         )
 
     def _current_turn(self, current_user_message: str) -> PromptBlock:

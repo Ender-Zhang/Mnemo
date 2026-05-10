@@ -327,6 +327,17 @@ def scheduled_item_stats(store: StateStore) -> dict[str, Any]:
     }
 
 
+def scheduled_prompt_items(store: StateStore, *, limit: int = 12) -> list[dict[str, Any]]:
+    """Return user-facing active/paused schedules small enough to include in a turn prompt."""
+    items = store.list_scheduled_items(status=None, limit=max(int(limit) * 3, int(limit)))
+    visible = [
+        item
+        for item in items
+        if item.get("status") in {"active", "paused"} and item.get("kind") in {"watch", "cron"}
+    ]
+    return visible[: max(0, int(limit))]
+
+
 def parse_schedule_time(value: float | int | str | None) -> float:
     if value is None:
         return time.time()
@@ -520,7 +531,7 @@ def _run_message(item: dict[str, Any]) -> str:
             f"Scheduled item id: {item.get('id')}\n"
             "Decide whether the user should be notified, whether an Inbox item is needed, "
             "or whether this should stay silent. If this should stay silent, make the final "
-            "response start with [silent]. When you decide, record mnemo_watch_feedback for "
+            "response start with [silent]. When you decide, record watch_feedback for "
             "this scheduled item with outcome silent or notified."
         )
     return str(item.get("instruction") or "")

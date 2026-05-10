@@ -84,6 +84,31 @@ class PromptAssemblerTests(unittest.TestCase):
         self.assertEqual(runtime_metadata["metadata"]["timezone"], "Asia/Shanghai")
         self.assertFalse(runtime_metadata["metadata"]["location_known"])
 
+    def test_scheduled_items_are_turn_scoped_prompt_context(self) -> None:
+        prompt = PromptAssembler().assemble(
+            "继续督促我",
+            scheduled_items=[
+                {
+                    "id": "sched_test",
+                    "kind": "watch",
+                    "title": "Fat loss check-in",
+                    "status": "active",
+                    "schedule": "daily",
+                    "next_run_at": 123.0,
+                    "instruction": "Decide whether to send a short non-intrusive nudge.",
+                }
+            ],
+            token_budget=None,
+        )
+        block = next(item for item in prompt.blocks if item.id == "schedule.active")
+        metadata = next(item for item in prompt.metadata()["blocks"] if item["id"] == "schedule.active")
+
+        self.assertEqual(block.cache_policy, "turn")
+        self.assertTrue(block.can_drop)
+        self.assertIn("Fat loss check-in", block.content)
+        self.assertIn("Check these before creating duplicate", block.content)
+        self.assertEqual(metadata["metadata"]["count"], 1)
+
     def test_bootstrap_context_adds_soul_and_workspace_blocks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

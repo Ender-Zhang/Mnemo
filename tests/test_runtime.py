@@ -278,6 +278,48 @@ class LocalRuntimeTests(unittest.TestCase):
             self.assertTrue(tool_result["ok"])
             self.assertEqual(store.get_skill("chat-skill")["status"], "active")
 
+    def test_provider_runtime_can_create_proactive_watch_from_chat_tool_call(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            provider = FakeProvider(
+                [
+                    [
+                        ProviderEvent(
+                            type="tool_call",
+                            tool_call=ToolCallEnvelope(
+                                name="schedule_watch",
+                                arguments={
+                                    "target": "Fat loss check-in",
+                                    "instruction": "Decide whether to send a short fitness nudge.",
+                                    "schedule": "daily",
+                                    "next_run_at": 0,
+                                },
+                                call_id="call_schedule_watch",
+                                provider="fake",
+                                risk="write",
+                            ),
+                        ),
+                        ProviderEvent(type="completed"),
+                    ],
+                    [ProviderEvent(type="text_delta", text="我会每天检查。"), ProviderEvent(type="completed")],
+                ]
+            )
+
+            events = list(
+                ProviderAgentRuntime(provider, enable_learning_reflection=False).stream(
+                    RunRequest(message="每天督促我减脂", state_dir=tmp)
+                )
+            )
+            store = StateStore(tmp)
+            watches = store.list_scheduled_items(kind="watch", status="active", limit=10)
+            tool_result = events[-1].data["result"]["tool_results"][0]
+
+            self.assertIn("schedule_watch", [tool.name for tool in provider.requests[0].tools])
+            self.assertEqual(watches[0]["title"], "Fat loss check-in")
+            self.assertEqual(watches[0]["source"], "model")
+            self.assertEqual(tool_result["name"], "schedule_watch")
+            self.assertTrue(tool_result["ok"])
+            self.assertEqual(provider.requests[1].messages[-1]["role"], "tool")
+
     def test_provider_runtime_returns_web_fetch_content_to_next_tool_round(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             provider = FakeProvider(

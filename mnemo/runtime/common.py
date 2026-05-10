@@ -123,6 +123,14 @@ def tool_result_summary(result: ToolResult) -> str:
         return "产物已更新。"
     if result.name == "ask_user":
         return "需要用户处理。"
+    if result.name == "schedule_list":
+        return f"找到 {result.result.get('count', 0)} 个计划。"
+    if result.name in {"schedule_watch", "schedule_cron"}:
+        item = result.result.get("item") if isinstance(result.result.get("item"), dict) else {}
+        return f"已创建计划：{item.get('title') or item.get('id') or 'scheduled item'}。"
+    if result.name == "schedule_update_status":
+        item = result.result.get("item") if isinstance(result.result.get("item"), dict) else {}
+        return f"计划状态已更新为 {item.get('status', 'unknown')}。"
     return "工具调用已完成。"
 
 

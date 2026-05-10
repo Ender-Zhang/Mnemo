@@ -17,6 +17,7 @@ from ..runtime import (
     run_external,
     run_local,
     scheduled_item_stats,
+    scheduled_prompt_items,
 )
 from ..runtime.common import build_tool_bundle
 from ..runtime.ledger import RunLedger
@@ -66,6 +67,7 @@ class MnemoClient:
             memory_snapshot=memory.load_l1_snapshot(),
             memory_cards=memory_cards,
             skill_cards=skill_cards,
+            scheduled_items=scheduled_prompt_items(store),
             token_budget=max(512, int(budget_tokens)),
             mode=prompt_mode,
         )

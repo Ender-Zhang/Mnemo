@@ -307,6 +307,70 @@ CORE_TOOL_SPECS = [
         ),
     ),
     ToolSpec(
+        name="schedule_list",
+        description="List compact active, paused, completed, or disabled scheduled proactive items before creating duplicates or changing an existing plan.",
+        risk="read",
+        input_schema=_schema(
+            [],
+            {
+                "kind": {"type": "string", "enum": ["watch", "cron", "dream", "all"], "default": "all"},
+                "status": {
+                    "type": "string",
+                    "enum": ["active", "paused", "completed", "disabled", "all"],
+                    "default": "active",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="schedule_watch",
+        description=(
+            "Register a durable model-led Watch for recurring proactive checks. Use when the user asks Mnemo "
+            "to monitor,督促, follow up, or decide later whether a proactive Feishu message is useful."
+        ),
+        risk="write",
+        input_schema=_schema(
+            ["target", "instruction"],
+            {
+                "target": {"type": "string"},
+                "instruction": {"type": "string"},
+                "schedule": {"type": "string", "default": "daily"},
+                "next_run_at": {"type": ["string", "number", "null"]},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="schedule_cron",
+        description=(
+            "Register a durable scheduled Mnemo task or reminder that enqueues a normal run when due and can "
+            "be delivered through the proactive channel."
+        ),
+        risk="write",
+        input_schema=_schema(
+            ["message"],
+            {
+                "message": {"type": "string"},
+                "schedule": {"type": "string", "default": "once"},
+                "title": {"type": "string"},
+                "next_run_at": {"type": ["string", "number", "null"]},
+            },
+        ),
+    ),
+    ToolSpec(
+        name="schedule_update_status",
+        description="Pause, resume, disable, or complete an existing scheduled proactive item by id.",
+        risk="write",
+        input_schema=_schema(
+            ["item_id", "status"],
+            {
+                "item_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["active", "paused", "disabled", "completed"]},
+                "next_run_at": {"type": ["string", "number", "null"]},
+            },
+        ),
+    ),
+    ToolSpec(
         name="watch_feedback",
         description="Record compact feedback for a Watch and apply an explicit model policy decision such as sparsify, pause, or disable.",
         risk="write",
@@ -551,6 +615,10 @@ class ToolRegistry:
             "skill_install": self._skill_install,
             "artifact_update": self._artifact_update,
             "ask_user": self._ask_user,
+            "schedule_list": self._schedule_list,
+            "schedule_watch": self._schedule_watch,
+            "schedule_cron": self._schedule_cron,
+            "schedule_update_status": self._schedule_update_status,
             "watch_feedback": self._watch_feedback,
             **standard_tool_handlers(),
             "memory_write_candidate": self._memory_write_candidate,
@@ -886,6 +954,74 @@ class ToolRegistry:
                     {"id": "ignored", "label": "稍后"},
                 ],
             }
+        }
+
+    def _schedule_list(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        kind = _schedule_kind_filter(args.get("kind"))
+        status = _schedule_status_filter(args.get("status"))
+        limit = _bounded_limit(args.get("limit"), default=20, maximum=100)
+        from ..runtime.scheduler import ScheduleService
+
+        items = ScheduleService(context.store.state_dir).list_items(kind=kind, status=status, limit=limit)
+        cards = [_scheduled_tool_card(item) for item in items]
+        return {
+            "kind": "scheduled_items",
+            "version": "mnemo.schedule_list_tool.v1",
+            "filters": {"kind": kind or "all", "status": status or "all", "limit": limit},
+            "count": len(cards),
+            "items": cards,
+        }
+
+    def _schedule_watch(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        from ..runtime.scheduler import ScheduleService
+
+        item = ScheduleService(context.store.state_dir).add_watch(
+            target=_require_str(args, "target"),
+            instruction=_require_str(args, "instruction"),
+            schedule=str(args.get("schedule") or "daily"),
+            source="model",
+            next_run_at=_optional_schedule_time_arg(args.get("next_run_at")),
+            metadata={"source": "model", "run_id": context.run_id, "mission_id": context.mission_id},
+        )
+        return {"kind": "scheduled_item", "version": "mnemo.schedule_watch_tool.v1", "item": _scheduled_tool_card(item)}
+
+    def _schedule_cron(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        from ..runtime.scheduler import ScheduleService
+
+        item = ScheduleService(context.store.state_dir).add_cron(
+            title=_optional_str(args, "title"),
+            message=_require_str(args, "message"),
+            schedule=str(args.get("schedule") or "once"),
+            source="model",
+            next_run_at=_optional_schedule_time_arg(args.get("next_run_at")),
+            metadata={"source": "model", "run_id": context.run_id, "mission_id": context.mission_id},
+        )
+        return {"kind": "scheduled_item", "version": "mnemo.schedule_cron_tool.v1", "item": _scheduled_tool_card(item)}
+
+    def _schedule_update_status(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
+        item_id = _require_str(args, "item_id")
+        status = _schedule_status_value(_require_str(args, "status"))
+        next_run_at = _optional_schedule_time_arg(args.get("next_run_at"))
+        if next_run_at is None:
+            from ..runtime.scheduler import next_due_time, parse_schedule_time
+
+            existing = context.store.get_scheduled_item(item_id)
+            if not existing:
+                raise ValueError(f"scheduled item not found: {item_id}")
+            if status == "active" and existing.get("next_run_at") is None:
+                next_run_at = next_due_time(str(existing.get("schedule") or ""), after=parse_schedule_time(None))
+                if next_run_at is None:
+                    next_run_at = parse_schedule_time(None)
+        updated = context.store.update_scheduled_item_policy(
+            item_id,
+            status=status,
+            next_run_at=next_run_at,
+            update_next_run_at=next_run_at is not None,
+        )
+        return {
+            "kind": "scheduled_item",
+            "version": "mnemo.schedule_update_status_tool.v1",
+            "item": _scheduled_tool_card(updated),
         }
 
     def _watch_feedback(self, args: dict[str, Any], context: ToolContext) -> dict[str, Any]:
@@ -1352,6 +1488,14 @@ def _tool_summary(result: ToolResult) -> str:
         return "Artifact updated."
     if result.name == "ask_user":
         return "User review requested."
+    if result.name == "schedule_list":
+        return f"Listed {result.result.get('count', 0)} scheduled items."
+    if result.name in {"schedule_watch", "schedule_cron"}:
+        item = result.result.get("item") or {}
+        return f"Scheduled {item.get('kind', 'item')}: {item.get('title', 'untitled')}."
+    if result.name == "schedule_update_status":
+        item = result.result.get("item") or {}
+        return f"Scheduled item {item.get('id', 'unknown')} status={item.get('status', 'unknown')}."
     if result.name == "watch_feedback":
         item = result.result.get("item") or {}
         feedback = result.result.get("feedback") or {}
@@ -1483,6 +1627,29 @@ def _tool_evidence(result: ToolResult) -> list[dict[str, Any]]:
     if result.name == "memory_read":
         memory = result.result.get("memory") or {}
         return [_evidence("memory", memory.get("id"), str(memory.get("claim") or memory.get("title") or "Memory"))]
+    if result.name == "schedule_list":
+        items = result.result.get("items") if isinstance(result.result.get("items"), list) else []
+        return [
+            {
+                "kind": "scheduled_items",
+                "summary": f"{len(items)} items",
+                "filters": result.result.get("filters") or {},
+                "items": items[:10],
+            }
+        ]
+    if result.name in {"schedule_watch", "schedule_cron", "schedule_update_status"}:
+        item = result.result.get("item") if isinstance(result.result.get("item"), dict) else {}
+        return [
+            {
+                "kind": "scheduled_item",
+                "id": item.get("id"),
+                "item_kind": item.get("kind"),
+                "title": item.get("title"),
+                "status": item.get("status"),
+                "schedule": item.get("schedule"),
+                "next_run_at": item.get("next_run_at"),
+            }
+        ]
     if result.name == "watch_feedback":
         item = result.result.get("item") or {}
         feedback = result.result.get("feedback") or {}
@@ -1916,6 +2083,65 @@ def _query_matches(query: str, *values: Any) -> bool:
         return False
     haystack = " ".join(str(value or "") for value in values).casefold()
     return all(term in haystack for term in terms)
+
+
+def _scheduled_tool_card(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    feedback = metadata.get("watch_feedback") if isinstance(metadata.get("watch_feedback"), dict) else {}
+    card: dict[str, Any] = {
+        "id": item.get("id"),
+        "kind": item.get("kind"),
+        "title": item.get("title"),
+        "status": item.get("status"),
+        "schedule": item.get("schedule"),
+        "source": item.get("source"),
+        "next_run_at": item.get("next_run_at"),
+        "last_run_at": item.get("last_run_at"),
+    }
+    instruction = _preview(str(item.get("instruction") or ""), limit=220)
+    if instruction:
+        card["instruction_preview"] = instruction
+    if item.get("last_error"):
+        card["last_error"] = _preview(str(item.get("last_error") or ""), limit=180)
+    if feedback:
+        card["watch_feedback"] = {
+            "last_outcome": feedback.get("last_outcome"),
+            "last_decision": feedback.get("last_decision"),
+            "counts": feedback.get("counts") if isinstance(feedback.get("counts"), dict) else {},
+        }
+    return card
+
+
+def _schedule_kind_filter(value: Any) -> str | None:
+    normalized = str(value or "all").strip().casefold()
+    if normalized == "all":
+        return None
+    if normalized not in {"watch", "cron", "dream"}:
+        raise ValueError(f"invalid scheduled item kind: {value}")
+    return normalized
+
+
+def _schedule_status_filter(value: Any) -> str | None:
+    normalized = str(value or "active").strip().casefold()
+    if normalized == "all":
+        return None
+    return _schedule_status_value(normalized)
+
+
+def _schedule_status_value(value: Any) -> str:
+    normalized = str(value or "").strip().casefold()
+    if normalized not in {"active", "paused", "completed", "disabled"}:
+        raise ValueError(f"invalid scheduled item status: {value}")
+    return normalized
+
+
+def _optional_schedule_time_arg(value: Any) -> float | str | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value).strip()
+    return text or None
 
 
 def _preview(value: str, limit: int = 220) -> str:

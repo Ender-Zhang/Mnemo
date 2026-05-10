@@ -10,7 +10,7 @@
 - `load_prompt_bootstrap(state_dir: str | Path, *, workspace_root: str | Path | None = None, per_file_char_limit=BOOTSTRAP_FILE_CHAR_LIMIT, total_char_limit=BOOTSTRAP_TOTAL_CHAR_LIMIT) -> PromptBootstrapContext`
 - `mnemo.core.injection.injection_warnings(value: str) -> list[str]`
 - `mnemo.runtime.learning.learning_reflection_messages(packet: dict[str, Any]) -> list[dict[str, str]]`
-- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, runtime_context=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET, mode: PromptMode = "full") -> AssembledPrompt`
+- `PromptAssembler.assemble(current_user_message: str, *, mission=None, checkpoint=None, tool_specs=None, soul_context=None, workspace_context=None, memory_snapshot=None, memory_cards=None, skill_cards=None, scheduled_items=None, runtime_context=None, token_budget=DEFAULT_PROMPT_TOKEN_BUDGET, mode: PromptMode = "full") -> AssembledPrompt`
 - `AssembledPrompt.messages() -> list[dict[str, str]]`
 - `AssembledPrompt.metadata() -> dict[str, Any]`
 
@@ -37,6 +37,9 @@
 - `memory.l1_snapshot` is daily-cache context and must appear before turn-scoped `memory.index`.
 - `memory.l1_snapshot` is a compact index, not a replacement for `memory_search` / `memory_read`.
 - Runtime may materialize a missing `memory.l1_snapshot` from active pages before assembly so basic identity/preferences can be answered from the progressive memory layer without immediate tool lookup.
+- `schedule.active` is a turn-scoped droppable block in `full` mode when active or paused scheduled items exist.
+- Runtime and SDK context assembly pass active/paused user-facing Watch/Cron items through `scheduled_prompt_items()` so the model can inspect existing proactive watches/reminders before creating duplicates.
+- `schedule.active` includes only compact item ids, kind/status, title, schedule, next run, and bounded instruction previews; it must not include queued run output bodies, proactive delivery bodies, or full feedback history.
 - Prompt text should tell the model to answer directly from visible Soul/L1/memory index context when it fully resolves the turn, and reserve retrieval tools for missing, stale, conflicting, or evidence-detail needs.
 - `memory.index` consumes `MemoryEngine.context_cards()` output; rejected, tombstoned, archived, private-deleted, and review-gated memory candidates must be filtered before prompt assembly.
 - CLI inspection of the same compiled context is read-only: `mnemo memory snapshot`.
@@ -70,6 +73,7 @@
 | Memory index cards | Prompt-facing memory cards exclude rejected/tombstoned/review-gated candidates | `tests/test_memory.py`, `tests/test_runtime.py` |
 | Runtime context present | Executable prompt modes include turn-scoped current date/time/timezone/location context before the current user turn | `tests/test_prompt.py`, `tests/test_runtime.py` |
 | Missing runtime location | Prompt says user location is not provided and metadata omits raw location | `tests/test_prompt.py` |
+| Scheduled items present | Full prompt includes compact turn-scoped `schedule.active` context without queued outputs or delivery bodies | `tests/test_prompt.py`, `tests/test_scheduler.py` |
 | CLI snapshot inspection | Existing compiled snapshot is inspectable without full page bodies | `tests/test_cli.py` |
 | Tight prompt budget with tools | May drop `tools.cards`; tool schema metadata remains present | `tests/test_prompt.py` |
 | Prompt inspect metadata | Includes compact tool schema metadata without raw schemas | `tests/test_cli.py` |
@@ -98,6 +102,7 @@
 - Runtime/CLI/Web tests that assert Soul and workspace bootstrap are passed through request boundaries.
 - Runtime/provider tests that assert daily L1 memory snapshot content reaches provider messages when present.
 - Runtime/provider tests that assert the prompt includes current runtime context before the current user turn.
+- Prompt/runtime tests that assert active/paused scheduled items are included as compact turn context when present.
 - Runtime/provider tests that assert learning reflection messages contain a compact packet and no raw tool schema payload.
 - Prompt mode tests that assert disclosure boundaries for `minimal`, `capsule`, and `none`.
 
