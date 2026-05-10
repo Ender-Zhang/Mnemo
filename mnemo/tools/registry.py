@@ -308,7 +308,11 @@ CORE_TOOL_SPECS = [
     ),
     ToolSpec(
         name="schedule_list",
-        description="List compact active, paused, completed, or disabled scheduled proactive items before creating duplicates or changing an existing plan.",
+        description=(
+            "List compact scheduled proactive items before creating duplicates or changing a plan. "
+            "This only inspects state; if the user asked to add a reminder/watch and no duplicate exists, "
+            "call schedule_watch or schedule_cron before replying."
+        ),
         risk="read",
         input_schema=_schema(
             [],
@@ -1489,7 +1493,13 @@ def _tool_summary(result: ToolResult) -> str:
     if result.name == "ask_user":
         return "User review requested."
     if result.name == "schedule_list":
-        return f"Listed {result.result.get('count', 0)} scheduled items."
+        count = int(result.result.get("count") or 0)
+        if count == 0:
+            return (
+                "No scheduled items found. schedule_list only inspected state; if the user requested "
+                "a new proactive reminder or watch, call schedule_watch or schedule_cron before replying."
+            )
+        return f"Listed {count} scheduled items. Inspect for duplicates before creating or changing a schedule."
     if result.name in {"schedule_watch", "schedule_cron"}:
         item = result.result.get("item") or {}
         return f"Scheduled {item.get('kind', 'item')}: {item.get('title', 'untitled')}."

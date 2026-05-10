@@ -164,6 +164,26 @@ class ToolHarnessBoundaryTests(unittest.TestCase):
             self.assertEqual(compact_tool_result(watch)["evidence"][0]["kind"], "scheduled_item")
             self.assertEqual(compact_tool_result(listed)["evidence"][0]["kind"], "scheduled_items")
 
+    def test_empty_schedule_list_feedback_tells_model_to_create_requested_schedule(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store, run_id, mission_id = _store_with_run(tmp)
+            result = ToolHarness(store=store, ledger=RunLedger(store)).execute(
+                ToolCallEnvelope(
+                    name="schedule_list",
+                    arguments={"kind": "watch", "status": "all"},
+                    call_id="call_empty_schedule_list",
+                    risk="read",
+                ),
+                run_id=run_id,
+                mission_id=mission_id,
+            )
+
+            compact = compact_tool_result(result)
+            self.assertTrue(result.ok)
+            self.assertEqual(result.result["count"], 0)
+            self.assertIn("only inspected state", compact["summary"])
+            self.assertIn("schedule_watch", compact["summary"])
+
     def test_schedule_cron_tool_registers_compact_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store, run_id, mission_id = _store_with_run(tmp)

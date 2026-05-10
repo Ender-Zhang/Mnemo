@@ -100,6 +100,7 @@
 - `ask_user` is a last-resort tool for blocked authority, missing information, or irreversible high-impact choices; it must not be used for routine confirmations.
 - `ask_user` returns compact decision data with `item_id`, question, reason, status, and natural-language option labels; streamed `decision.card` events must not contain raw tool traces.
 - `schedule_list(kind="all", status="active", limit=20)` is read-only and returns compact scheduled-item cards so the model can inspect existing proactive watches/reminders before creating duplicates.
+- Empty `schedule_list` compact feedback must explicitly say it only inspected state and that a user-requested new reminder/watch still requires `schedule_watch` or `schedule_cron`.
 - `schedule_watch(target, instruction, schedule="daily", next_run_at?)` is write risk and creates a durable model-led Watch through `ScheduleService.add_watch(source="model")`; it registers future work only and must not enqueue or deliver immediately.
 - `schedule_cron(message, schedule="once", title?, next_run_at?)` is write risk and creates a durable scheduled Mnemo task through `ScheduleService.add_cron(source="model")`; due execution remains owned by scheduler/proactive tick.
 - `schedule_update_status(item_id, status, next_run_at?)` is write risk and can pause, resume, disable, or complete an existing scheduled item; resuming an item without a due time must compute a future/now due time from its schedule.
@@ -242,7 +243,7 @@
 - File patch: assert admin gating, exact edit success, path traversal rejection, and ambiguous replacement handling.
 - Connector tools: assert default policy denial, dry-run success, compact evidence, URL validation, web fetch text/JSON preview feedback, search ad filtering, and workspace path traversal rejection.
 - Ask-user decisions: assert persistent Inbox item id appears in compact evidence and `decision.card` payload.
-- Schedule tools: assert model-facing Watch/Cron creation uses `source="model"`, list output stays compact, update status mutates only the selected scheduled item, and provider runtime exposes/executed schedule tools.
+- Schedule tools: assert model-facing Watch/Cron creation uses `source="model"`, empty list feedback tells the model to create a requested schedule, list output stays compact, update status mutates only the selected scheduled item, and provider runtime exposes/executed schedule tools.
 - Watch feedback: assert model policy updates schedule/status and compact evidence omits raw notification bodies.
 - Provider runtime: assert tool specs are passed to the adapter and tool results are returned as `role="tool"` messages.
 - Provider runtime tool budget: assert final-round tool calls are executed, the final provider request has `tools=()`, metadata includes `tool_budget_exhausted=true`, unexecuted tool-call markup is suppressed, and no `run.error` is emitted when a final response is produced.
