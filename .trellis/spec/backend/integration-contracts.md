@@ -286,7 +286,9 @@
 - `serve_web()` starts `_ProactiveScheduler` beside `_AutoDreamScheduler`; Dream remains provider-backed through the existing Dream scheduler, while proactive Watch/Cron uses `ScheduleService.tick(kind="watch"|"cron")`.
 - Watch/Cron due items still enter `run_queue` and are executed through `DaemonRunner.drain()` with the normal runtime executor; proactive delivery must not create a second agent loop.
 - Only completed queue items with metadata `{source:"scheduler", scheduled_kind:"watch"|"cron"}` are staged for delivery.
-- Watch prompts include the scheduled item id and ask the model to explicitly mark silent final responses with `[silent]`; delivery policy suppresses those responses and records `mnemo_watch_feedback(outcome="silent")`.
+- Watch prompts include the scheduled item id for context, but the final model response is the exact user-visible push body. Routine notified/silent outcomes are recorded by the delivery layer; prompts must not ask the model to write routine `watch_feedback` calls into the final response.
+- Watch prompts ask the model to explicitly mark silent final responses with `[silent]`; delivery policy suppresses those responses and records `mnemo_watch_feedback(outcome="silent")`.
+- Watch delivery must also suppress contaminated final responses that contain internal scheduling/tool/channel state such as `[silent]` outside the prefix, `watch_feedback`, scheduled-item traces, or Feishu delivery-state explanations.
 - Feishu targets come from state-local QR config and session/activity metadata. Prefer saved `owner_open_id` delivery with `receive_id_type="open_id"`; existing chat sessions remain fallback targets with `receive_id_type="chat_id"`.
 - Proactive delivery state is stored in `<state_dir>/channels/proactive_state.json`; compact status must omit message bodies, provider secrets, app secrets, and raw Feishu payloads.
 - Quiet-hours defer pending deliveries until the quiet window ends. Active Feishu conversations defer until `last_interaction_at + active_conversation_grace_minutes`.
@@ -301,6 +303,7 @@
 | Quiet-hours active | Delivery remains pending with `last_defer_reason=quiet_hours`; no Feishu request is sent | `tests/test_proactive.py` |
 | Missing Feishu binding | Delivery remains pending with `feishu_not_configured`; no secret-bearing error leaks | `tests/test_proactive.py` |
 | Watch model says silent | No Feishu message is sent and Watch feedback records `silent` | `tests/test_proactive.py` |
+| Watch output contains internal state | No Feishu message is sent and Watch feedback records `silent` | `tests/test_proactive.py` |
 | Runtime status | Response includes `proactive` compact status and no run output bodies | `tests/test_sdk.py`, `tests/test_web.py` |
 
 ### 5. Good/Base/Bad Cases
@@ -314,7 +317,7 @@
 
 ### 6. Tests Required
 - Unit tests for due schedule drain and Feishu owner delivery.
-- Unit tests for quiet-hours deferral, missing Feishu config, and model-silent Watch suppression.
+- Unit tests for quiet-hours deferral, missing Feishu config, model-silent Watch suppression, and internal Watch output contamination suppression.
 - Existing channel tests must keep inbound reply behavior and Markdown rendering intact.
 - Existing scheduler/web/sdk tests must keep Dream, schedule registration, and runtime status contracts intact.
 

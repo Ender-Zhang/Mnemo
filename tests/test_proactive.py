@@ -117,6 +117,33 @@ class ProactiveServiceTests(unittest.TestCase):
             self.assertEqual(updated["metadata"]["watch_feedback"]["last_outcome"], "silent")
             self.assertEqual(proactive_status(tmp)["counts"]["suppressed"], 1)
 
+    def test_watch_internal_output_contamination_is_suppressed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = RecordingFeishuClient()
+            save_feishu_saved_config(
+                tmp,
+                {"app_id": "cli_test", "app_secret": "secret_test", "open_id": "ou_owner"},
+            )
+            watch = ScheduleService(tmp).add_watch(
+                target="Daily cut reminder",
+                instruction="Remind the user if it is time to train.",
+                schedule="once",
+                next_run_at=0,
+            )
+
+            result = ProactiveService(
+                tmp,
+                executor=contaminated_watch_executor,
+                feishu_client_factory=lambda _config: fake,
+            ).tick(now=1, schedule_limit=10, drain_limit=5)
+
+            self.assertEqual(fake.messages, [])
+            self.assertEqual(result["staged"][0]["status"], "suppressed")
+            self.assertEqual(result["staged"][0]["reason"], "internal_watch_output")
+            updated = StateStore(tmp).get_scheduled_item(watch["id"])
+            self.assertEqual(updated["metadata"]["watch_feedback"]["last_outcome"], "silent")
+            self.assertEqual(proactive_status(tmp)["counts"]["suppressed"], 1)
+
 
 class RecordingFeishuClient:
     def __init__(self) -> None:
@@ -141,6 +168,27 @@ def silent_executor(request: RunRequest) -> RunResult:
     mission_id = request.mission_id or store.create_mission(conversation_id, "silent proactive")
     run_id = store.create_run(conversation_id, mission_id, request.message)
     response = "[silent] No meaningful update."
+    store.complete_run(run_id, response)
+    return RunResult(
+        conversation_id=conversation_id,
+        mission_id=mission_id,
+        run_id=run_id,
+        response=response,
+        tool_results=[],
+    )
+
+
+def contaminated_watch_executor(request: RunRequest) -> RunResult:
+    store = StateStore(request.state_dir)
+    store.initialize()
+    conversation_id = request.conversation_id or store.create_conversation("contaminated proactive")
+    mission_id = request.mission_id or store.create_mission(conversation_id, "contaminated proactive")
+    run_id = store.create_run(conversation_id, mission_id, request.message)
+    response = (
+        "今天早上8点，正好是力量训练时间，发一条简短提醒。"
+        "[silent] 已记录 watch_feedback outcome=notified。"
+        "但用户在飞书端不会看到我直接的通知，等待下次有飞书能力时补发。"
+    )
     store.complete_run(run_id, response)
     return RunResult(
         conversation_id=conversation_id,

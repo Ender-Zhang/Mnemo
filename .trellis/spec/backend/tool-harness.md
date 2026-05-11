@@ -108,6 +108,7 @@
 - `watch_feedback(item_id, outcome, decision?)` is `write` risk because it mutates scheduled Watch metadata and may alter schedule/status.
 - `watch_feedback` records compact outcome counts/streaks and applies only explicit model/user policy decisions such as `keep`, `sparsify`, `pause`, or `disable`.
 - Compact `watch_feedback` results include item id/title, outcome, decision action, status, and schedule, not raw notification bodies or full run traces.
+- Due Watch prompts must frame the final assistant response as the exact user-visible push body. They must not ask the model to record routine notified/silent `watch_feedback`; the proactive delivery layer records those outcomes after suppression or successful delivery.
 - Denied `external` and `admin` tool calls create persisted Inbox `tool_approval` Decision Cards and must not execute the denied handler.
 - Denied high-risk tool results include compact decision metadata and evidence; raw tool schemas and large arguments must not be exposed in streamed cards.
 - Accepted open `tool_approval` Inbox decisions execute the stored tool call once through `ToolHarness` with an approval policy limited to the approved tool name.

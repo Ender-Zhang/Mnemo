@@ -26,6 +26,22 @@ from .scheduler import ScheduleService
 PROACTIVE_STATE_VERSION = "mnemo.proactive.v1"
 PROACTIVE_WORKER_ID = f"proactive:{os.getpid()}"
 _DELIVERY_RETRY_ATTEMPT_LIMIT = 5
+_INTERNAL_WATCH_OUTPUT_PATTERNS = (
+    "watch_feedback",
+    "scheduled item",
+    "scheduled_item",
+    "watch check",
+    "outcome=",
+    "本轮 watch",
+    "本轮watch",
+    "飞书 channel",
+    "feishu channel",
+    "飞书投递",
+    "投递通道",
+    "通知未发出",
+    "实际通知未发出",
+    "用户在飞书端不会看到",
+)
 
 
 RunExecutor = Callable[[RunRequest], RunResult]
@@ -128,13 +144,22 @@ class ProactiveService:
             "last_error": "",
             "feedback_recorded": False,
         }
-        if scheduled_kind == "watch" and _is_model_silent(body):
+        if scheduled_kind == "watch":
+            suppress_reason = _watch_suppression_reason(body)
+        else:
+            suppress_reason = ""
+        if suppress_reason:
             delivery["status"] = "suppressed"
             delivery["suppressed_at"] = timestamp
-            delivery["suppress_reason"] = "model_silent"
-            self._record_watch_feedback(scheduled_item_id, outcome="silent", note=_strip_silent_marker(body), now=timestamp)
+            delivery["suppress_reason"] = suppress_reason
+            self._record_watch_feedback(
+                scheduled_item_id,
+                outcome="silent",
+                note=_compact_text(_strip_silent_marker(body), limit=160),
+                now=timestamp,
+            )
             self._state.upsert_delivery(delivery)
-            return {"status": "suppressed", "reason": "model_silent", "delivery_id": delivery_id}
+            return {"status": "suppressed", "reason": suppress_reason, "delivery_id": delivery_id}
         self._state.upsert_delivery(delivery)
         return {"status": "staged", "delivery_id": delivery_id, "scheduled_kind": scheduled_kind}
 
@@ -554,6 +579,19 @@ def _is_model_silent(text: str) -> bool:
     return normalized.startswith("[silent]") or normalized.startswith("silent:") or normalized.startswith("静默:")
 
 
+def _watch_suppression_reason(text: str) -> str:
+    normalized = str(text or "").strip().casefold()
+    if not normalized:
+        return ""
+    if _is_model_silent(text):
+        return "model_silent"
+    if "[silent]" in normalized or "silent:" in normalized or "静默:" in normalized:
+        return "internal_watch_output"
+    if any(pattern in normalized for pattern in _INTERNAL_WATCH_OUTPUT_PATTERNS):
+        return "internal_watch_output"
+    return ""
+
+
 def _strip_silent_marker(text: str) -> str:
     stripped = str(text or "").strip()
     lowered = stripped.casefold()
@@ -587,6 +625,10 @@ def _optional_float(value: Any) -> float | None:
 
 def _compact_error(exc: Exception) -> str:
     return " ".join(str(exc).split())[:240]
+
+
+def _compact_text(value: Any, *, limit: int = 240) -> str:
+    return " ".join(str(value or "").split())[:limit]
 
 
 def _compact_target(target: dict[str, Any]) -> dict[str, Any]:

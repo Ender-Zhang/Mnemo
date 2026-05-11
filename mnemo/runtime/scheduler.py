@@ -530,9 +530,14 @@ def _run_message(item: dict[str, Any]) -> str:
             f"Instruction: {item.get('instruction')}\n"
             f"Scheduled item id: {item.get('id')}\n"
             "Decide whether the user should be notified, whether an Inbox item is needed, "
-            "or whether this should stay silent. If this should stay silent, make the final "
-            "response start with [silent]. When you decide, record watch_feedback for "
-            "this scheduled item with outcome silent or notified."
+            "or whether this should stay silent. The final assistant response is the exact "
+            "user-visible push body. If notifying, keep it short, direct, and actionable. "
+            "If this should stay silent, make the final response start with [silent] and "
+            "only include a short internal note after the marker. Do not mention Watch, "
+            "scheduled item ids, tool names, watch_feedback, Feishu/channel delivery state, "
+            "or whether delivery succeeded in the final response. Use watch_feedback only "
+            "for explicit policy changes such as keep, sparsify, pause, or disable, not for "
+            "routine notified/silent outcomes."
         )
     return str(item.get("instruction") or "")
 
