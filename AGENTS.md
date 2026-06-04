@@ -23,4 +23,5 @@ Keep this managed block so 'trellis update' can refresh the instructions.
 
 # Local Deployment Note
 
-- After making code changes in this project, restart the local `mnemo-web` service so the Cloudflare Tunnel at `https://mem.day.qzz.io` reflects the current workspace. Verify via `/api/health` and, for tool changes, `/api/core/context`.
+- This repo is now a memory-only service. Use `mnemo-memory serve --state-dir .mnemo-memory --host 127.0.0.1 --port 8765` for local HTTP checks.
+- Verify service health with `/api/health` and memory API shape with `/api/schema`.

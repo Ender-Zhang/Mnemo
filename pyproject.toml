@@ -3,29 +3,26 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mnemo"
+name = "mnemo-memory"
 version = "0.1.0"
-description = "Personal AI runtime with durable chat, memory, skills, tools, and harnesses"
+description = "Memory-only service for agent recall, candidate-first learning, and maintenance"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
-[project.optional-dependencies]
-feishu = [
-  "lark-oapi>=1.4.8",
-  "qrcode>=7.4",
-]
-
 [project.scripts]
-mnemo = "mnemo.interfaces.cli:main"
+mnemo-memory = "mnemo_memory.interfaces.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["mnemo*"]
+include = ["mnemo_memory*"]
 exclude = ["tests*", "design*"]
 
 [tool.setuptools.package-data]
-"mnemo.interfaces" = ["web_assets/*"]
+mnemo_memory = [
+  "interfaces/web_assets/index.html",
+  "interfaces/web_assets/assets/*",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
