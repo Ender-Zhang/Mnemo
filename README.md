@@ -2,6 +2,10 @@
 
 Mnemo Memory 是一个面向 agent 的纯记忆服务。它负责存储长期个人记忆，采用“候选优先”的写入流程，提供紧凑的 recall/context API，并支持有边界的记忆维护；原项目里的聊天运行时、旧 Web UI、飞书通道、skills/tools 演化、daemon 队列和通用 external-run harness 都已移除。
 
+## 完整导览
+
+如果你想先理解项目结构、记忆生命周期、存储/审核/检索/溯源链路和代码走读，请看 [Mnemo Memory Service 项目导览](docs/memory-service-guide.md)。
+
 ## 安装
 
 ```bash
