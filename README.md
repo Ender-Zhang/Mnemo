@@ -45,6 +45,24 @@ mnemo-memory serve \
 
 当前 HTTP API 不做 bearer token 校验，方便本地多个 agent 直接调用。默认仍绑定 `127.0.0.1`，不要在不可信网络里暴露这个端口。
 
+也可以直接用启动脚本。脚本会读取项目根目录的 `.env`，初始化状态目录，然后启动 HTTP API 和 WebUI。如果要配置模型，在 `.env` 里放：
+
+```bash
+MNEMO_MEMORY_BASE_URL=https://api.openai.com/v1
+MNEMO_MEMORY_MODEL=gpt-4.1-mini
+MNEMO_MEMORY_API_KEY=replace-me
+```
+
+```bash
+bash scripts/start_memory_service.sh
+```
+
+可选参数：
+
+```bash
+bash scripts/start_memory_service.sh --state-dir .mnemo-memory --host 127.0.0.1 --port 8765
+```
+
 ### 3. 在 WebUI 里配置 API
 
 打开 `http://127.0.0.1:8765/`，进入“设置”，填写：
