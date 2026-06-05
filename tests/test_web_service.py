@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+import json
 import re
 from threading import Thread
 import tempfile
@@ -10,12 +11,12 @@ from urllib.request import Request, urlopen
 
 
 class MemoryWebServiceTests(unittest.TestCase):
-    def test_webui_static_routes_are_public_but_api_keeps_token_auth(self) -> None:
+    def test_webui_static_routes_and_api_are_public(self) -> None:
         from mnemo_memory.interfaces.web import MemoryWebConfig, build_http_server
 
         with tempfile.TemporaryDirectory() as tmp:
             server = build_http_server(
-                MemoryWebConfig(state_dir=tmp, host="127.0.0.1", port=0, auth_token="dev-token")
+                MemoryWebConfig(state_dir=tmp, host="127.0.0.1", port=0, auth_token="ignored-token")
             )
             thread = Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -31,13 +32,13 @@ class MemoryWebServiceTests(unittest.TestCase):
                 self.assertEqual(fallback.status, HTTPStatus.OK)
                 self.assertIn("text/html", fallback.content_type)
 
-                with self.assertRaises(HTTPError) as unauthorized:
-                    _get(base + "/api/schema")
-                self.assertEqual(unauthorized.exception.code, HTTPStatus.UNAUTHORIZED)
-
-                schema = _get(base + "/api/schema", token="dev-token")
+                schema = _get(base + "/api/schema")
                 self.assertEqual(schema.status, HTTPStatus.OK)
                 self.assertIn("application/json", schema.content_type)
+
+                search = _post(base + "/api/memory/search", {"query": "coffee", "limit": 1})
+                self.assertEqual(search.status, HTTPStatus.OK)
+                self.assertIn("application/json", search.content_type)
 
                 asset_paths = re.findall(r'/(assets/[^"]+)', index.body)
                 self.assertTrue(asset_paths)
@@ -75,10 +76,23 @@ class HttpResponse:
         self.body = body
 
 
-def _get(url: str, *, token: str | None = None) -> HttpResponse:
+def _get(url: str) -> HttpResponse:
     request = Request(url)
-    if token:
-        request.add_header("Authorization", f"Bearer {token}")
+    with urlopen(request, timeout=5) as response:
+        return HttpResponse(
+            status=response.status,
+            content_type=response.headers.get("Content-Type", ""),
+            body=response.read().decode("utf-8", errors="replace"),
+        )
+
+
+def _post(url: str, body: dict[str, object]) -> HttpResponse:
+    request = Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
     with urlopen(request, timeout=5) as response:
         return HttpResponse(
             status=response.status,

@@ -113,6 +113,58 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(provenance["events"][0]["excerpt"], "Please show where each memory came from.")
             self.assertTrue(str(provenance["events"][0]["raw_hash"]).startswith("sha256:"))
 
+    def test_ingest_event_keeps_coffee_slot_answer_as_ephemeral_observation(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            result = client.ingest_event(
+                text="冰美式",
+                source="unit-test",
+                actor="user",
+                mission_id="coffee-order-123",
+                conversation_id="conv-coffee",
+                message_id="msg-coffee",
+                context=[
+                    {"role": "user", "content": "帮我买杯咖啡"},
+                    {"role": "assistant", "content": "想要哪个咖啡？"},
+                ],
+            )
+
+            self.assertEqual(result["kind"], "memory_event_ingest")
+            self.assertEqual(result["memory_candidates"], [])
+            self.assertEqual(result["working_notes"][0]["retention"], "ephemeral")
+            note = client._store().list_working_notes(status="open", limit=1)[0]
+            self.assertIn("冰美式", note["content"])
+            self.assertEqual(note["metadata"]["event_id"], result["event"]["id"])
+            self.assertEqual(client.list(kind="candidate", limit=10)["items"], [])
+
+    def test_ingest_event_extracts_explicit_long_term_preference_candidate(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            result = client.ingest_event(
+                text="我以后默认都喝冰美式。",
+                source="unit-test",
+                actor="user",
+                mission_id="coffee-order-123",
+                conversation_id="conv-coffee",
+                message_id="msg-coffee-preference",
+                scope="user:demo",
+                auto_promote=True,
+            )
+
+            self.assertEqual(result["working_notes"], [])
+            self.assertEqual(result["memory_candidates"][0]["status"], "draft")
+            self.assertEqual(result["memory_candidates"][0]["scope"], "user:demo")
+            self.assertEqual(result["promotions"][0]["decision"], "promoted")
+            promoted_id = result["promotions"][0]["page_id"]
+            search = client.search("冰美式 咖啡 偏好", limit=5)
+            self.assertEqual(search["matches"][0]["id"], promoted_id)
+
     def test_promote_candidate_runs_review_guards_by_default(self) -> None:
         from mnemo_memory import MemoryClient
 
@@ -149,6 +201,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertEqual(schema["schema_version"], "mnemo_memory.api.v1")
         self.assertNotIn("run", schema["methods"])
         self.assertNotIn("external_run", schema["methods"])
+        self.assertIn("ingest_event", schema["methods"])
         self.assertIn("update", schema["methods"])
         self.assertIn("list", schema["methods"])
         self.assertIn("provenance", schema["methods"])
@@ -192,6 +245,27 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(result["kind"], "memory_provenance")
             self.assertEqual(result["memory_id"], candidate_id)
             self.assertEqual(result["events"][0]["source"], "http-test")
+
+    def test_http_dispatch_ingests_raw_event(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.web import dispatch_memory_api
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            result = dispatch_memory_api(
+                client,
+                "ingest-event",
+                {
+                    "text": "冰美式",
+                    "source": "http-test",
+                    "mission_id": "coffee-order-123",
+                    "context": [{"role": "assistant", "content": "想要哪个咖啡？"}],
+                },
+            )
+
+            self.assertEqual(result["kind"], "memory_event_ingest")
+            self.assertEqual(result["memory_candidates"], [])
+            self.assertEqual(result["working_notes"][0]["retention"], "ephemeral")
 
     def test_http_dispatch_force_promotes_candidate(self) -> None:
         from mnemo_memory import MemoryClient
@@ -256,6 +330,7 @@ class MemoryServiceTests(unittest.TestCase):
             names = {tool["name"] for tool in server.tools()}
 
             self.assertIn("mnemo_memory_update", names)
+            self.assertIn("mnemo_memory_ingest_event", names)
             self.assertIn("mnemo_memory_search", names)
             self.assertIn("mnemo_memory_provenance", names)
             self.assertIn("mnemo_memory_dream_run", names)

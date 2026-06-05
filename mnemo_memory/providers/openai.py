@@ -45,6 +45,49 @@ class OpenAICompatibleMemoryMaintainer:
             return []
         return [action for action in actions if isinstance(action, dict)]
 
+    def extract_event_memory(self, *, event: dict[str, Any], context: list[dict[str, Any]]) -> dict[str, Any]:
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You classify one conversation event for long-term memory. Return JSON only with "
+                        "facts and observations arrays. Facts are durable user preferences, identity, goals, "
+                        "boundaries, or project context. Observations are task-local or uncertain context. "
+                        "Do not infer a durable preference from a single slot-filling answer such as a coffee "
+                        "choice unless the user explicitly says it is a default, habit, usual preference, or "
+                        "future instruction."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": dumps(
+                        {
+                            "event": event,
+                            "context": context,
+                            "fact_schema": {
+                                "claim": "durable claim text",
+                                "dimension": "preferences|identity|goals|boundaries|context|history|patterns",
+                                "scope": "memory scope",
+                                "confidence": "0.0-1.0",
+                            },
+                            "observation_schema": {
+                                "content": "task-local context",
+                                "retention": "ephemeral|memory_candidate",
+                                "dimension": "context",
+                                "scope": "memory scope",
+                            },
+                        }
+                    ),
+                },
+            ],
+            "temperature": 0,
+        }
+        response = self._post_json("/chat/completions", payload)
+        parsed = _parse_json_object(_message_content(response))
+        return parsed if isinstance(parsed, dict) else {}
+
     def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         base = str(self.config.base_url or "").rstrip("/")
         req = request.Request(

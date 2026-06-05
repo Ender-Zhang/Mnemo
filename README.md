@@ -16,9 +16,9 @@ pip install -e .
 
 包名是 `mnemo-memory`，Python import path 是 `mnemo_memory`，命令行入口是 `mnemo-memory`。
 
-## 快速开始：启动服务和配置 Token
+## 快速开始：启动服务
 
-下面这套流程可以直接把本地记忆服务跑起来，并让 WebUI 和其他 agent 通过 token 调用。
+下面这套流程可以直接把本地记忆服务跑起来，并让 WebUI 和其他 agent 直接调用。
 
 ### 1. 初始化状态目录
 
@@ -28,33 +28,13 @@ mnemo-memory init --state-dir .mnemo-memory
 
 `.mnemo-memory` 是本地记忆数据目录，里面会保存 SQLite 数据库、记忆页和维护报告。想给不同用户做强隔离时，可以给每个用户使用不同的 `--state-dir`。
 
-### 2. 准备访问 Token
-
-本项目当前没有账号注册接口。这里的“注册 token”指的是：你在启动服务时用 `--auth-token` 把一串密钥注册到当前服务进程里；之后 WebUI、HTTP API、其他 agent 都必须带这个 token 才能调用受保护 API。
-
-本地开发可以先用固定 token：
-
-```bash
-export MNEMO_TOKEN=dev-token
-```
-
-稍微正式一点可以生成随机 token：
-
-```bash
-export MNEMO_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-echo "$MNEMO_TOKEN"
-```
-
-请保存好这个 token。服务重启时如果换了 `--auth-token`，WebUI 和调用方也要同步更新。
-
-### 3. 启动记忆服务
+### 2. 启动记忆服务
 
 ```bash
 mnemo-memory serve \
   --state-dir .mnemo-memory \
   --host 127.0.0.1 \
-  --port 8765 \
-  --auth-token "$MNEMO_TOKEN"
+  --port 8765
 ```
 
 启动后：
@@ -63,31 +43,23 @@ mnemo-memory serve \
 - 健康检查：`http://127.0.0.1:8765/api/health`
 - API Schema：`http://127.0.0.1:8765/api/schema`
 
-`/api/health` 可以不带 token 访问，其他 API 需要 `Authorization: Bearer <token>`。
+当前 HTTP API 不做 bearer token 校验，方便本地多个 agent 直接调用。默认仍绑定 `127.0.0.1`，不要在不可信网络里暴露这个端口。
 
-### 4. 在 WebUI 里配置 Token
+### 3. 在 WebUI 里配置 API
 
 打开 `http://127.0.0.1:8765/`，进入“设置”，填写：
 
 - `API Base`: `http://127.0.0.1:8765`
-- `Bearer Token`: `$MNEMO_TOKEN` 对应的实际 token 字符串，例如 `dev-token`
 - `默认 Source`: 例如 `webui`
 
 配置后点击 `Refresh`，顶部状态显示 `Running` 就表示 WebUI 已经连上服务。
 
-### 5. 让其他 agent 调用服务
-
-其他 agent 通过 HTTP 调用时，统一带上：
-
-```bash
--H "Authorization: Bearer $MNEMO_TOKEN"
-```
+### 4. 让其他 agent 调用服务
 
 例如写入一条用户记忆：
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/memory/update \
-  -H "Authorization: Bearer $MNEMO_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "source": "agent:user_123",
@@ -112,10 +84,32 @@ curl -X POST http://127.0.0.1:8765/api/memory/update \
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/memory/search \
-  -H "Authorization: Bearer $MNEMO_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"query": "user_123 简洁 实现进度更新", "limit": 10}'
 ```
+
+如果上层 agent 只有原始对话事件，还没有抽好 `facts`，可以使用事件摄入口。它会先记录 source event，再把明显长期的信息整理成候选记忆；一次性任务槽位回答会进入 ephemeral working note，不会直接变成长期记忆。
+
+例如咖啡订单里用户只回答“冰美式”：
+
+```bash
+curl -X POST http://127.0.0.1:8765/api/memory/ingest-event \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source": "agent:coffee_order",
+    "actor": "user",
+    "mission_id": "coffee_order_123",
+    "conversation_id": "conv_123",
+    "message_id": "msg_789",
+    "text": "冰美式",
+    "context": [
+      {"role": "user", "content": "帮我买杯咖啡"},
+      {"role": "assistant", "content": "想要哪个咖啡？"}
+    ]
+  }'
+```
+
+如果用户明确说“我以后默认都喝冰美式”，事件摄入口会生成候选记忆。需要自动尝试提升时可传 `auto_promote: true`，服务端仍会走审核门。
 
 ## 记忆保存与搜索流程
 
@@ -137,7 +131,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    S["启动服务 mnemo-memory serve --auth-token"] --> A["调用方携带 Bearer Token"]
+    S["启动服务 mnemo-memory serve"] --> A["调用方直接访问 HTTP API"]
 
     subgraph W["保存记忆流程"]
         A --> U["调用 update API 或 CLI update"]
@@ -286,7 +280,6 @@ mnemo-memory search "user_123 简洁 实现进度更新" \
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/memory/update \
-  -H 'Authorization: Bearer dev-token' \
   -H 'Content-Type: application/json' \
   -d '{
     "source": "agent:user_123",
@@ -301,22 +294,18 @@ curl -X POST http://127.0.0.1:8765/api/memory/update \
   }'
 
 curl -X POST http://127.0.0.1:8765/api/memory/promote-candidate \
-  -H 'Authorization: Bearer dev-token' \
   -H 'Content-Type: application/json' \
   -d '{"candidate_id": "mem_xxxxxxxxxxxxxxxx", "min_confidence": 0.7}'
 
 curl -X POST http://127.0.0.1:8765/api/memory/force-promote-candidate \
-  -H 'Authorization: Bearer dev-token' \
   -H 'Content-Type: application/json' \
   -d '{"candidate_id": "mem_xxxxxxxxxxxxxxxx"}'
 
 curl -X POST http://127.0.0.1:8765/api/memory/search \
-  -H 'Authorization: Bearer dev-token' \
   -H 'Content-Type: application/json' \
   -d '{"query": "user_123 简洁 实现进度更新", "limit": 10}'
 
 curl -X POST http://127.0.0.1:8765/api/memory/provenance \
-  -H 'Authorization: Bearer dev-token' \
   -H 'Content-Type: application/json' \
   -d '{"memory_id": "mempg_xxxxxxxxxxxxxxxx"}'
 ```
@@ -365,27 +354,25 @@ provenance = client.provenance(results["matches"][0]["id"])
 ## HTTP API
 
 ```bash
-mnemo-memory serve --state-dir .mnemo-memory --host 127.0.0.1 --port 8765 --auth-token dev-token
+mnemo-memory serve --state-dir .mnemo-memory --host 127.0.0.1 --port 8765
 curl http://127.0.0.1:8765/api/health
-curl http://127.0.0.1:8765/api/schema -H 'Authorization: Bearer dev-token'
+curl http://127.0.0.1:8765/api/schema
 curl -X POST http://127.0.0.1:8765/api/memory/search \
-  -H 'Authorization: Bearer dev-token' \
   -H 'Content-Type: application/json' \
   -d '{"query":"实现进度更新"}'
 ```
 
-HTTP 默认绑定到 `127.0.0.1`。使用 `--auth-token` 后，API 请求必须带上 `Authorization: Bearer <token>`。
-同一个命令也会在 `http://127.0.0.1:8765/` 提供本地 WebUI；静态 UI 路由是公开的，API 调用仍然使用 bearer token 保护。
+HTTP 默认绑定到 `127.0.0.1`，API 当前不要求 bearer token，方便本地多个 agent 直接调用。同一个命令也会在 `http://127.0.0.1:8765/` 提供本地 WebUI。
 
 ## WebUI
 
 内置 WebUI 是一个本地操作台，用来搜索、查看、写入、审核和维护记忆：
 
 ```bash
-mnemo-memory serve --state-dir .mnemo-memory --auth-token dev-token
+mnemo-memory serve --state-dir .mnemo-memory
 ```
 
-打开 `http://127.0.0.1:8765/`，在“设置”里输入 `dev-token`，然后可以在后台里完成：
+打开 `http://127.0.0.1:8765/`，然后可以在后台里完成：
 
 - 搜索和查看稳定记忆页或候选记忆
 - 添加 facts 和 observations

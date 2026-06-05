@@ -30,6 +30,8 @@ def main(argv: list[str] | None = None) -> int:
             facts = json.loads(args.facts_json) if args.facts_json else args.facts
             _print(MemoryClient(state_dir=args.state_dir).update(facts=facts, source=args.source), args.json)
             return 0
+        if args.command == "ingest-event":
+            return _cmd_ingest_event(args)
         if args.command == "promote":
             _print(
                 MemoryClient(state_dir=args.state_dir).promote_candidate(
@@ -85,6 +87,30 @@ def build_parser() -> argparse.ArgumentParser:
     update.add_argument("--facts-json")
     update.add_argument("--source", default="cli")
     update.add_argument("--json", action="store_true")
+
+    ingest_event = subparsers.add_parser("ingest-event", help="Ingest one raw conversation event")
+    _state(ingest_event)
+    ingest_event.add_argument("text", nargs="+")
+    ingest_event.add_argument("--context-json")
+    ingest_event.add_argument("--source", default="cli")
+    ingest_event.add_argument("--actor")
+    ingest_event.add_argument("--event-type", default="message")
+    ingest_event.add_argument("--run-id")
+    ingest_event.add_argument("--mission-id")
+    ingest_event.add_argument("--conversation-id")
+    ingest_event.add_argument("--message-id")
+    ingest_event.add_argument("--agent-id")
+    ingest_event.add_argument("--scope")
+    ingest_event.add_argument("--auto-promote", action="store_true")
+    ingest_event.add_argument("--min-confidence", type=float, default=0.7)
+    ingest_event.add_argument("--use-provider", action="store_true")
+    ingest_event.add_argument("--provider")
+    ingest_event.add_argument("--base-url")
+    ingest_event.add_argument("--model")
+    ingest_event.add_argument("--api-key")
+    ingest_event.add_argument("--api-key-env")
+    ingest_event.add_argument("--timeout-s", type=float)
+    ingest_event.add_argument("--json", action="store_true")
 
     promote = subparsers.add_parser("promote", help="Review and promote a memory candidate")
     _state(promote)
@@ -143,9 +169,45 @@ def build_parser() -> argparse.ArgumentParser:
     _state(serve_api)
     serve_api.add_argument("--host", default="127.0.0.1")
     serve_api.add_argument("--port", type=int, default=8765)
-    serve_api.add_argument("--auth-token")
+    serve_api.add_argument("--auth-token", help="Deprecated compatibility option; HTTP API access is open.")
 
     return parser
+
+
+def _cmd_ingest_event(args: argparse.Namespace) -> int:
+    context = json.loads(args.context_json) if args.context_json else []
+    if not isinstance(context, list):
+        raise ValueError("context-json must be a JSON array")
+    config = ConfigOverrides(
+        state_dir=args.state_dir,
+        provider=args.provider,
+        base_url=args.base_url,
+        model=args.model,
+        api_key=args.api_key,
+        api_key_env=args.api_key_env,
+        timeout_s=args.timeout_s,
+    )
+    _print(
+        MemoryClient(state_dir=args.state_dir).ingest_event(
+            text=" ".join(args.text),
+            source=args.source,
+            actor=args.actor,
+            event_type=args.event_type,
+            context=context,
+            run_id=args.run_id,
+            mission_id=args.mission_id,
+            conversation_id=args.conversation_id,
+            message_id=args.message_id,
+            agent_id=args.agent_id,
+            scope=args.scope,
+            auto_promote=args.auto_promote,
+            min_confidence=args.min_confidence,
+            use_provider=args.use_provider,
+            config=config,
+        ),
+        args.json,
+    )
+    return 0
 
 
 def _cmd_dream(args: argparse.Namespace) -> int:

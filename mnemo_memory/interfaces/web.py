@@ -22,6 +22,7 @@ class MemoryWebConfig:
     state_dir: str | Path = DEFAULT_STATE_DIR
     host: str = "127.0.0.1"
     port: int = 8765
+    # Kept for CLI/config compatibility; HTTP API access is currently open.
     auth_token: str | None = None
 
 
@@ -75,6 +76,25 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             source=str(body.get("source") or "http"),
             run_id=_optional(body.get("run_id")),
             mission_id=_optional(body.get("mission_id")),
+        )
+    if method == "ingest-event":
+        return client.ingest_event(
+            text=_required(body, "text"),
+            source=str(body.get("source") or "http"),
+            actor=_optional(body.get("actor")),
+            event_type=str(body.get("event_type") or "message"),
+            context=body.get("context") if isinstance(body.get("context"), list) else [],
+            run_id=_optional(body.get("run_id")),
+            mission_id=_optional(body.get("mission_id")),
+            conversation_id=_optional(body.get("conversation_id")),
+            message_id=_optional(body.get("message_id")),
+            agent_id=_optional(body.get("agent_id")),
+            event_at=body.get("event_at"),
+            observed_at=body.get("observed_at"),
+            scope=_optional(body.get("scope")),
+            auto_promote=bool(body.get("auto_promote", False)),
+            min_confidence=float(body.get("min_confidence") or 0.7),
+            use_provider=bool(body.get("use_provider", False)),
         )
     if method == "read":
         return client.read(_required(body, "memory_id"))
@@ -143,9 +163,6 @@ def _handler(config: MemoryWebConfig):
             if not parsed.path.startswith("/api/"):
                 self._send_static(parsed.path)
                 return
-            if not self._authorized():
-                self._send({"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
             if parsed.path == "/api/schema":
                 self._send({"api_schema": memory_api_schema()})
                 return
@@ -158,9 +175,6 @@ def _handler(config: MemoryWebConfig):
 
         def do_POST(self) -> None:
             parsed = urlparse(self.path)
-            if not self._authorized():
-                self._send({"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
-                return
             prefix = "/api/memory/"
             if not parsed.path.startswith(prefix):
                 self._send({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
@@ -185,11 +199,6 @@ def _handler(config: MemoryWebConfig):
             if not isinstance(parsed, dict):
                 raise ValueError("request body must be a JSON object")
             return parsed
-
-        def _authorized(self) -> bool:
-            if not config.auth_token:
-                return True
-            return self.headers.get("Authorization") == f"Bearer {config.auth_token}"
 
         def _send(self, payload: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
             body = dumps(payload).encode("utf-8")

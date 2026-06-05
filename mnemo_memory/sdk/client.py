@@ -177,6 +177,164 @@ class MemoryClient:
             "skipped": skipped,
         }
 
+    def ingest_event(
+        self,
+        *,
+        text: str,
+        source: str = "sdk",
+        actor: str | None = None,
+        event_type: str = "message",
+        context: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+        run_id: str | None = None,
+        mission_id: str | None = None,
+        conversation_id: str | None = None,
+        message_id: str | None = None,
+        agent_id: str | None = None,
+        event_at: float | int | str | None = None,
+        observed_at: float | int | str | None = None,
+        scope: str | None = None,
+        auto_promote: bool = False,
+        min_confidence: float = 0.7,
+        use_provider: bool = False,
+        config: ConfigOverrides | None = None,
+    ) -> dict[str, Any]:
+        clean_text = _normalize_event_text(text)
+        if not clean_text:
+            raise ValueError("event text is required")
+
+        store = self._store()
+        engine = MemoryEngine(store)
+        effective_run_id = run_id or new_id("memrun")
+        effective_mission_id = mission_id or "memory-service"
+        normalized_context = _normalize_context(context)
+        effective_scope = str(scope or "").strip() or "global"
+
+        event = store.add_memory_event(
+            source=source,
+            event_at=event_at,
+            observed_at=observed_at,
+            agent_id=agent_id,
+            run_id=effective_run_id,
+            mission_id=effective_mission_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            actor=actor,
+            excerpt=clean_text,
+            raw={"text": clean_text, "context": normalized_context},
+            metadata={
+                "event_type": event_type or "message",
+                "scope": effective_scope,
+                "context": normalized_context,
+            },
+        )
+
+        extraction = _extract_event_memory(
+            clean_text,
+            context=normalized_context,
+            scope=effective_scope,
+            mission_id=effective_mission_id,
+        )
+        if use_provider:
+            resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
+            provider_extraction = OpenAICompatibleMemoryMaintainer(resolved).extract_event_memory(
+                event={
+                    "text": clean_text,
+                    "source": source,
+                    "actor": actor,
+                    "event_type": event_type,
+                    "scope": effective_scope,
+                    "run_id": effective_run_id,
+                    "mission_id": effective_mission_id,
+                    "conversation_id": conversation_id,
+                    "message_id": message_id,
+                },
+                context=normalized_context,
+            )
+            extraction = _merge_event_extractions(extraction, provider_extraction)
+
+        memory_candidates: list[dict[str, Any]] = []
+        working_notes: list[dict[str, Any]] = []
+        skipped: list[dict[str, Any]] = []
+
+        for fact in extraction["facts"]:
+            normalized = _normalize_fact(
+                {
+                    **fact,
+                    "event_at": event.get("event_at"),
+                    "observed_at": event.get("observed_at"),
+                    "actor": actor,
+                    "agent_id": agent_id,
+                    "conversation_id": conversation_id,
+                    "message_id": message_id,
+                    "excerpt": clean_text,
+                }
+            )
+            if not normalized["claim"]:
+                skipped.append({"kind": "fact", "reason": "empty_claim"})
+                continue
+            result = engine.write_candidate(
+                effective_run_id,
+                normalized["claim"],
+                dimension=normalized["dimension"],
+                scope=normalized["scope"],
+                confidence=normalized["confidence"],
+                evidence=[_evidence(source, fact, event)],
+                created_at=event["observed_at"],
+            )
+            memory_candidates.append(
+                {
+                    "candidate_id": result["candidate_id"],
+                    "event_id": event["id"],
+                    "status": result["status"],
+                    "dimension": normalized["dimension"],
+                    "scope": normalized["scope"],
+                    "safety": result["safety"],
+                    "quality": result["quality"],
+                }
+            )
+
+        for observation in extraction["observations"]:
+            content, metadata = _normalize_observation(
+                {
+                    **observation,
+                    "metadata": {
+                        **(observation.get("metadata") if isinstance(observation.get("metadata"), dict) else {}),
+                        "event_id": event["id"],
+                        "event_type": event_type or "message",
+                    },
+                },
+                source,
+            )
+            if not content:
+                skipped.append({"kind": "observation", "reason": "empty_content"})
+                continue
+            note_id = store.add_working_note(effective_mission_id, effective_run_id, content, metadata=metadata)
+            working_notes.append({"note_id": note_id, "status": "open", "retention": metadata["retention"]})
+
+        promotions: list[dict[str, Any]] = []
+        if auto_promote:
+            for candidate in memory_candidates:
+                if candidate.get("status") == "draft":
+                    promotions.append(
+                        engine.promote_candidate(
+                            str(candidate["candidate_id"]),
+                            min_confidence=min_confidence,
+                        )
+                    )
+
+        return {
+            "kind": "memory_event_ingest",
+            "version": "mnemo_memory.ingest_event.v1",
+            "run_id": effective_run_id,
+            "mission_id": effective_mission_id,
+            "event": event,
+            "extraction": extraction,
+            "memory_candidates": memory_candidates,
+            "working_notes": working_notes,
+            "promotions": promotions,
+            "skipped": skipped,
+        }
+
     def read(self, memory_id: str) -> dict[str, Any]:
         store = self._store()
         candidate = store.get_memory_candidate(memory_id)
@@ -348,6 +506,149 @@ def _is_tombstoned_status(status: Any) -> bool:
     return "tombstone" in normalized or "private_delete" in normalized or "deleted" in normalized
 
 
+def _normalize_event_text(text: Any) -> str:
+    return " ".join(str(text or "").split())
+
+
+def _normalize_context(context: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None) -> list[dict[str, str]]:
+    normalized: list[dict[str, str]] = []
+    for item in context or []:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or item.get("actor") or "").strip()
+        content = _normalize_event_text(item.get("content") or item.get("text") or "")
+        if not content:
+            continue
+        normalized.append({"role": role or "unknown", "content": content[:1000]})
+    return normalized[-8:]
+
+
+def _extract_event_memory(
+    text: str,
+    *,
+    context: list[dict[str, str]],
+    scope: str,
+    mission_id: str,
+) -> dict[str, Any]:
+    fact = _heuristic_event_fact(text, scope=scope)
+    if fact:
+        return {
+            "kind": "event_memory_extraction",
+            "strategy": "heuristic",
+            "facts": [fact],
+            "observations": [],
+        }
+    return {
+        "kind": "event_memory_extraction",
+        "strategy": "heuristic",
+        "facts": [],
+        "observations": [
+            {
+                "content": _event_observation_text(text, context),
+                "retention": "ephemeral",
+                "dimension": "context",
+                "scope": f"mission:{mission_id}" if mission_id else scope,
+            }
+        ],
+    }
+
+
+def _merge_event_extractions(local: dict[str, Any], provider: dict[str, Any]) -> dict[str, Any]:
+    facts = _dict_list(provider.get("facts"))
+    observations = _dict_list(provider.get("observations"))
+    if not facts and not observations:
+        return local
+    return {
+        "kind": "event_memory_extraction",
+        "strategy": "provider",
+        "fallback": local,
+        "facts": facts,
+        "observations": observations,
+    }
+
+
+def _heuristic_event_fact(text: str, *, scope: str) -> dict[str, Any] | None:
+    if _has_preference_memory_marker(text) or (_has_future_memory_marker(text) and _known_preference_subject(text)):
+        return {
+            "claim": _preference_claim(text),
+            "dimension": "preferences",
+            "scope": scope,
+            "confidence": 0.88,
+        }
+    if _has_goal_memory_marker(text):
+        return {
+            "claim": f"用户 目标：{_goal_subject(text)}。",
+            "dimension": "goals",
+            "scope": scope,
+            "confidence": 0.82,
+        }
+    return None
+
+
+def _has_preference_memory_marker(text: str) -> bool:
+    lowered = f" {text.casefold()} "
+    return any(marker in lowered for marker in _PREFERENCE_EVENT_MARKERS)
+
+
+def _has_future_memory_marker(text: str) -> bool:
+    lowered = f" {text.casefold()} "
+    return any(marker in lowered for marker in _FUTURE_EVENT_MARKERS)
+
+
+def _has_goal_memory_marker(text: str) -> bool:
+    lowered = f" {text.casefold()} "
+    return any(marker in lowered for marker in _GOAL_EVENT_MARKERS)
+
+
+def _preference_claim(text: str) -> str:
+    subject = _preference_subject(text)
+    return f"用户 偏好：{subject}；通常作为长期默认偏好。"
+
+
+def _preference_subject(text: str) -> str:
+    normalized = _normalize_event_text(text).strip("。.!！?")
+    for value, subject in _KNOWN_PREFERENCE_SUBJECTS:
+        if value in normalized.casefold():
+            return subject
+    result = normalized
+    for marker in _PREFERENCE_STRIP_MARKERS:
+        result = result.replace(marker, "")
+    result = _normalize_event_text(result).strip("，,。.!！?")
+    return result or normalized
+
+
+def _known_preference_subject(text: str) -> bool:
+    lowered = text.casefold()
+    return any(value in lowered for value, _subject in _KNOWN_PREFERENCE_SUBJECTS)
+
+
+def _goal_subject(text: str) -> str:
+    result = _normalize_event_text(text).strip("。.!！?")
+    for marker in _GOAL_STRIP_MARKERS:
+        result = result.replace(marker, "")
+    result = _normalize_event_text(result).strip("，,。.!！?")
+    return result or _normalize_event_text(text)
+
+
+def _event_observation_text(text: str, context: list[dict[str, str]]) -> str:
+    prompt = _last_assistant_prompt(context)
+    if prompt:
+        return f"当前任务中，用户针对“{prompt}”回答：{text}"
+    return f"当前任务中，用户输入：{text}"
+
+
+def _last_assistant_prompt(context: list[dict[str, str]]) -> str | None:
+    for item in reversed(context):
+        role = item.get("role", "").casefold()
+        if role in {"assistant", "agent", "system"} and item.get("content"):
+            return item["content"][:160]
+    return None
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    return [item for item in value or [] if isinstance(item, dict)] if isinstance(value, list) else []
+
+
 def _normalize_fact(fact: Any) -> dict[str, Any]:
     if isinstance(fact, str):
         return {"claim": " ".join(fact.split()), "dimension": "context", "scope": "global", "confidence": 0.5}
@@ -373,6 +674,7 @@ def _normalize_observation(observation: Any, source: str) -> tuple[str, dict[str
     retention = str(observation.get("retention") or "ephemeral")
     if retention not in {"ephemeral", "memory_candidate"}:
         retention = "ephemeral"
+    extra_metadata = observation.get("metadata") if isinstance(observation.get("metadata"), dict) else {}
     return (
         content,
         {
@@ -381,6 +683,7 @@ def _normalize_observation(observation: Any, source: str) -> tuple[str, dict[str
             "dimension": str(observation.get("dimension") or "context"),
             "scope": str(observation.get("scope") or "global"),
             "confidence": _confidence(observation.get("confidence"), default=0.5),
+            **extra_metadata,
         },
     )
 
@@ -467,6 +770,92 @@ def _dedupe_strings(values: list[str]) -> list[str]:
             seen.add(clean)
             result.append(clean)
     return result
+
+
+_PREFERENCE_EVENT_MARKERS = (
+    "默认",
+    "通常",
+    "一般",
+    "每次",
+    "总是",
+    "一直",
+    "习惯",
+    "喜欢",
+    "偏好",
+    " prefer ",
+    " prefers ",
+    " preference ",
+    " like ",
+    " likes ",
+    " usually ",
+    " always ",
+    " default ",
+)
+
+_FUTURE_EVENT_MARKERS = (
+    "以后",
+    "以后都",
+    "长期",
+    " from now on ",
+)
+
+_GOAL_EVENT_MARKERS = (
+    "目标",
+    "计划",
+    "想要",
+    "希望",
+    "学习",
+    " goal ",
+    " goals ",
+    " plan ",
+    " plans ",
+    " want to ",
+    " wants to ",
+    " hope to ",
+    " learn ",
+    " learning ",
+)
+
+_PREFERENCE_STRIP_MARKERS = (
+    "我",
+    "以后",
+    "以后都",
+    "默认",
+    "都",
+    "通常",
+    "一般",
+    "每次",
+    "总是",
+    "一直",
+    "长期",
+    "习惯",
+    "喜欢",
+    "偏好",
+    "会",
+    "喝",
+    "要",
+)
+
+_KNOWN_PREFERENCE_SUBJECTS = (
+    ("冰美式", "冰美式咖啡"),
+    ("iced americano", "iced americano coffee"),
+    ("热拿铁", "热拿铁咖啡"),
+    ("拿铁", "拿铁咖啡"),
+    ("latte", "latte coffee"),
+    ("美式", "美式咖啡"),
+    ("americano", "americano coffee"),
+)
+
+_GOAL_STRIP_MARKERS = (
+    "我",
+    "以后",
+    "目标是",
+    "计划",
+    "想要",
+    "希望",
+    "准备",
+    "会",
+)
 
 
 def _confidence(value: Any, *, default: float) -> float:

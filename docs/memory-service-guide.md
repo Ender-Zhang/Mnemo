@@ -164,8 +164,8 @@ HTTP server 使用 Python stdlib `ThreadingHTTPServer`，没有新增运行时�
 - `GET /`：WebUI
 - `GET /assets/*`：Vite 静态资源
 - `GET /api/health`：健康检查，公开
-- `GET /api/schema`：API schema，需要 token
-- `POST /api/memory/<method>`：记忆 API，需要 token
+- `GET /api/schema`：API schema，公开
+- `POST /api/memory/<method>`：记忆 API，公开
 
 `dispatch_memory_api()` 把 HTTP method 名映射到 `MemoryClient` 方法，例如：
 
@@ -198,7 +198,7 @@ WebUI 是本地管理后台。它不绕过 API，所有记忆操作都通过 HTT
 - 写入：`update`
 - 审核：`promote-candidate`, `reject-candidate`
 - 维护：`dream-status`, `dream-run`, `snapshot`, `tombstones`
-- 设置：API Base、Bearer token、默认 source、是否使用模型审核
+- 设置：API Base、默认 source、是否使用模型审核
 
 ## 一条记忆完整走一趟
 
@@ -229,7 +229,6 @@ Agent 希望保存成记忆：
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/memory/update \
-  -H "Authorization: Bearer $MNEMO_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "source": "agent:user_123",
@@ -304,7 +303,6 @@ HTTP POST /api/memory/update
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/memory/promote-candidate \
-  -H "Authorization: Bearer $MNEMO_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"candidate_id": "mem_xxx", "min_confidence": 0.7}'
 ```
@@ -377,7 +375,6 @@ MemoryLearningMixin._promote_candidate_unchecked()
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/memory/search \
-  -H "Authorization: Bearer $MNEMO_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query": "user_123 简洁 项目进度", "limit": 10}'
 ```
@@ -443,7 +440,6 @@ HTTP 示例：
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/memory/provenance \
-  -H "Authorization: Bearer $MNEMO_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"memory_id": "mempg_xxx"}'
 ```
@@ -632,7 +628,7 @@ WebUI 里打开“设置 -> 使用模型审核”，再点击“维护 -> Run Dr
 | 写入记忆 | `update` | `submitMemory()` |
 | 候选审核 | `promote-candidate`, `reject-candidate` | `promoteCandidate()`, `rejectCandidate()` |
 | 维护 | `dream-run`, `snapshot` | `runDream()`, `compileSnapshot()` |
-| 设置 | localStorage | `apiBase`, `authToken`, `useProvider` state |
+| 设置 | localStorage | `apiBase`, `useProvider` state |
 
 前端源码在 `webui/`，构建产物提交到 `mnemo_memory/interfaces/web_assets/`。因此安装 Python 包后不需要 Node 也能访问 WebUI。
 
@@ -652,9 +648,8 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 
-export MNEMO_TOKEN=dev-token
 mnemo-memory init --state-dir .mnemo-memory
-mnemo-memory serve --state-dir .mnemo-memory --host 127.0.0.1 --port 8765 --auth-token "$MNEMO_TOKEN"
+mnemo-memory serve --state-dir .mnemo-memory --host 127.0.0.1 --port 8765
 ```
 
 打开：
@@ -666,7 +661,6 @@ http://127.0.0.1:8765/
 WebUI 设置：
 
 - API Base: `http://127.0.0.1:8765`
-- Bearer Token: `dev-token`
 - 默认 Source: `webui` 或你的 agent 名称
 
 ### Python 最小例子
@@ -780,12 +774,11 @@ git diff --check
 
 浏览器 QA 推荐路径：
 
-1. 启动 `mnemo-memory serve --auth-token dev-token`。
+1. 启动 `mnemo-memory serve`。
 2. 打开 `http://127.0.0.1:8765/`。
-3. 在设置里填 token。
-4. 写入一条 fact。
-5. promote 候选。
-6. 搜索该记忆。
+3. 写入一条 fact。
+4. promote 候选。
+5. 搜索该记忆。
 7. 点开详情，确认“来源时间线”显示事件、候选和稳定页。
 
 ## 读代码顺序
