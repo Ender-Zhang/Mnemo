@@ -6,7 +6,6 @@ from typing import Any
 from ..core.config import ConfigOverrides, DEFAULT_STATE_DIR, resolve_memory_config
 from ..core.ids import new_id
 from ..memory import MemoryEngine
-from ..providers.openai import OpenAICompatibleMemoryMaintainer
 from ..storage import StateStore
 from .schema import memory_api_schema
 
@@ -235,6 +234,8 @@ class MemoryClient:
             mission_id=effective_mission_id,
         )
         if use_provider:
+            from ..providers.openai import OpenAICompatibleMemoryMaintainer
+
             resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
             provider_extraction = OpenAICompatibleMemoryMaintainer(resolved).extract_event_memory(
                 event={
@@ -446,6 +447,8 @@ class MemoryClient:
     ) -> dict[str, Any]:
         engine = self._engine()
         if use_provider and actions is None:
+            from ..providers.openai import OpenAICompatibleMemoryMaintainer
+
             resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
             maintainer = OpenAICompatibleMemoryMaintainer(resolved)
             delta = engine.collect_dream_delta(limit=limit)

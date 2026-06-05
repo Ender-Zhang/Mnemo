@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
 from pathlib import Path
+import socketserver
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -15,6 +16,14 @@ from ..sdk import MemoryClient, memory_api_schema
 
 
 _WEB_ASSETS_DIR = Path(__file__).with_name("web_assets")
+
+
+class _MemoryThreadingHTTPServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
 
 
 @dataclass(frozen=True)
@@ -28,7 +37,7 @@ class MemoryWebConfig:
 
 def build_http_server(config: MemoryWebConfig) -> ThreadingHTTPServer:
     handler = _handler(config)
-    return ThreadingHTTPServer((config.host, int(config.port)), handler)
+    return _MemoryThreadingHTTPServer((config.host, int(config.port)), handler)
 
 
 def serve_http(config: MemoryWebConfig) -> None:
