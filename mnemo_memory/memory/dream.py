@@ -17,26 +17,17 @@ class MemoryDreamMixin:
         collected_at = time.time()
         bounded_limit = max(1, int(limit))
         inventory_limit = max(50, bounded_limit * 5)
-        notes = [
-            _compact_working_note(note)
-            for note in _since_filter(
-                self.store.list_working_notes(status="open", limit=inventory_limit),
-                since=since,
-                field="created_at",
-            )
-        ][:bounded_limit]
+        open_notes = self.store.list_working_notes(status="open", limit=inventory_limit)
+        notes = [_compact_working_note(note) for note in open_notes][:bounded_limit]
+        unresolved_candidates = [
+            candidate
+            for candidate in self.store.list_memory_candidates(status=None, limit=inventory_limit)
+            if candidate.get("status") == "draft"
+            or str(candidate.get("status") or "").startswith("needs_review")
+        ]
         candidates = [
             _compact_candidate(candidate)
-            for candidate in _since_filter(
-                [
-                    candidate
-                    for candidate in self.store.list_memory_candidates(status=None, limit=inventory_limit)
-                    if candidate.get("status") == "draft"
-                    or str(candidate.get("status") or "").startswith("needs_review")
-                ],
-                since=since,
-                field="created_at",
-            )
+            for candidate in unresolved_candidates
         ][:bounded_limit]
         pages = [
             _compact_page(page)

@@ -308,6 +308,33 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(applied[0]["reason"], "below_confidence_threshold")
             self.assertEqual(client.list(kind="page", status="active", limit=10)["items"], [])
 
+    def test_dream_backlog_keeps_unresolved_candidates_after_latest_report(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.update(
+                facts=[
+                    {
+                        "claim": "User prefers Dream maintenance to keep unresolved memory candidates visible across repeated runs.",
+                        "dimension": "preferences",
+                        "confidence": 0.9,
+                    }
+                ],
+                source="unit-test",
+            )
+
+            first = client.dream_run()
+            self.assertEqual(first["execution"]["result"]["actions"]["counts"]["requested"], 0)
+
+            status = client.dream_status()
+            self.assertEqual(status["backlog"]["memory_candidates"], 1)
+            self.assertEqual(status["backlog"]["draft_candidates"], 1)
+
+            second = client.dream_run()
+            self.assertEqual(second["delta"]["counts"]["memory_candidates"], 1)
+            self.assertEqual(second["delta"]["counts"]["draft_candidates"], 1)
+
     def test_webui_can_enable_provider_backed_dream_run(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
         app = source.read_text(encoding="utf-8")
