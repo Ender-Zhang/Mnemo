@@ -112,8 +112,26 @@ type MemoryHealthResult = {
 
 type DreamStatusResult = {
   kind?: string;
+  latest?: DreamReportSummary | null;
   latest_report?: Record<string, unknown> | null;
   backlog?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+type DreamRejectReason = {
+  action_id?: string;
+  candidate_id?: string;
+  tool?: string;
+  status?: string;
+  decision?: string;
+  reason?: string;
+};
+
+type DreamReportSummary = {
+  execution?: {
+    reject_reasons?: DreamRejectReason[];
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 };
 
@@ -131,6 +149,8 @@ type DreamRunReport = {
           applied?: number;
           skipped?: number;
         };
+        applied?: DreamRejectReason[];
+        skipped?: DreamRejectReason[];
       };
     };
   };
@@ -1162,6 +1182,7 @@ function MaintenancePanel(props: {
           </button>
         </div>
       </div>
+      <DreamRejectReasons items={dreamStatusRejectReasons(props.dreamStatus)} />
       <div className="maintenance-grid">
         <JsonBlock title="Health" value={props.health || {}} />
         <JsonBlock title="Dream Status" value={props.dreamStatus || {}} />
@@ -1169,6 +1190,26 @@ function MaintenancePanel(props: {
         <JsonBlock title="Tombstones" value={props.tombstones} />
       </div>
     </section>
+  );
+}
+
+function DreamRejectReasons({ items }: { items: DreamRejectReason[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="dream-rejects">
+      <div className="dream-rejects-header">
+        <h3>Reject 原因</h3>
+        <StatusBadge text={`${items.length} rejected`} />
+      </div>
+      <div className="dream-reject-list">
+        {items.map((item, index) => (
+          <div className="dream-reject-row" key={`${item.action_id || item.candidate_id || "reject"}:${index}`}>
+            <code>{item.candidate_id || item.action_id || "unknown candidate"}</code>
+            <p>{item.reason || "unspecified"}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1489,6 +1530,38 @@ function compactId(value?: string) {
   return value.length > 24 ? `${value.slice(0, 21)}...` : value;
 }
 
+function dreamStatusRejectReasons(status: DreamStatusResult | null) {
+  return normalizeDreamRejectReasons(status?.latest?.execution?.reject_reasons);
+}
+
+function dreamRunRejectReasons(report: DreamRunReport) {
+  return normalizeDreamRejectReasons(report.execution?.result?.actions?.applied);
+}
+
+function normalizeDreamRejectReasons(items: unknown) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item): item is DreamRejectReason => {
+      if (!item || typeof item !== "object") return false;
+      const action = item as DreamRejectReason;
+      const tool = String(action.tool || "");
+      const decision = String(action.decision || "");
+      const status = String(action.status || "");
+      return Boolean(action.reason) && (tool === "memory_reject_candidate" || decision === "rejected" || status.startsWith("rejected"));
+    })
+    .slice(0, 10);
+}
+
+function dreamRejectReasonText(items: DreamRejectReason[]) {
+  if (items.length === 0) return "";
+  const details = items
+    .slice(0, 3)
+    .map((item) => `${compactId(item.candidate_id || item.action_id)}: ${item.reason || "unspecified"}`)
+    .join("；");
+  const more = items.length > 3 ? `；另有 ${items.length - 3} 条` : "";
+  return ` Reject 原因：${details}${more}`;
+}
+
 function dreamRunMessage(report: DreamRunReport, useProvider: boolean) {
   const counts = report.execution?.result?.actions?.counts || {};
   const deltaCounts = report.delta?.counts || {};
@@ -1496,10 +1569,11 @@ function dreamRunMessage(report: DreamRunReport, useProvider: boolean) {
   const applied = Number(counts.applied || 0);
   const skipped = Number(counts.skipped || 0);
   const draftCandidates = Number(deltaCounts.draft_candidates || deltaCounts.memory_candidates || 0);
+  const rejectReasonText = dreamRejectReasonText(dreamRunRejectReasons(report));
   if (!useProvider && requested === 0) {
     return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。`;
   }
-  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。`;
+  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${rejectReasonText}`;
 }
 
 createRoot(document.getElementById("root")!).render(

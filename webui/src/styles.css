@@ -415,6 +415,55 @@ button {
   padding: 14px;
 }
 
+.dream-rejects {
+  margin: 12px 14px 0;
+  border: 1px solid #f0b7b7;
+  border-radius: 6px;
+  background: #fff7f7;
+}
+
+.dream-rejects-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid #f4cccc;
+}
+
+.dream-rejects-header h3 {
+  margin: 0;
+  color: #8f1d1d;
+  font-size: 13px;
+}
+
+.dream-reject-list {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.dream-reject-row {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dream-reject-row code {
+  color: #7a2c2c;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.dream-reject-row p {
+  margin: 0;
+  color: #3b2b2b;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .search-panel {
   padding: 12px;
 }

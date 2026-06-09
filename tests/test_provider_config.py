@@ -172,6 +172,71 @@ class ProviderConfigTests(unittest.TestCase):
         self.assertEqual(disabled.propose_actions(delta={}, plan={}), [])
         self.assertNotIn("thinking", disabled.last_payload)
 
+    def test_openai_provider_parses_actions_from_reasoning_fallback(self) -> None:
+        from mnemo_memory.core.config import MemoryConfig
+        from mnemo_memory.providers.openai import OpenAICompatibleMemoryMaintainer
+
+        class ReasoningMaintainer(OpenAICompatibleMemoryMaintainer):
+            def _post_json(self, path, payload):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "reasoning": (
+                                    "model thinking omitted. "
+                                    '{"actions": [{"tool": "memory_reject_candidate", "candidate_id": "memcand_1", "reason": "low_value"}]}'
+                                ),
+                            }
+                        }
+                    ]
+                }
+
+        maintainer = ReasoningMaintainer(
+            MemoryConfig(
+                base_url="http://provider.example/v1",
+                model="memory-maintainer",
+                thinking_enabled=True,
+            )
+        )
+
+        actions = maintainer.propose_actions(delta={}, plan={})
+
+        self.assertEqual(actions[0]["tool"], "memory_reject_candidate")
+        self.assertEqual(actions[0]["reason"], "low_value")
+
+    def test_openai_provider_parses_event_memory_from_reasoning_content_fallback(self) -> None:
+        from mnemo_memory.core.config import MemoryConfig
+        from mnemo_memory.providers.openai import OpenAICompatibleMemoryMaintainer
+
+        class ReasoningContentMaintainer(OpenAICompatibleMemoryMaintainer):
+            def _post_json(self, path, payload):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "reasoning_content": (
+                                    "```json\n"
+                                    '{"facts": [{"claim": "User prefers concise updates.", "dimension": "preferences"}], "observations": []}'
+                                    "\n```"
+                                )
+                            }
+                        }
+                    ]
+                }
+
+        maintainer = ReasoningContentMaintainer(
+            MemoryConfig(
+                base_url="http://provider.example/v1",
+                model="memory-maintainer",
+                thinking_enabled=True,
+            )
+        )
+
+        result = maintainer.extract_event_memory(event={"text": "x"}, context=[])
+
+        self.assertEqual(result["facts"][0]["claim"], "User prefers concise updates.")
+
     def test_public_schema_exposes_provider_config_methods(self) -> None:
         from mnemo_memory.sdk import memory_api_schema
 

@@ -271,7 +271,7 @@ mnemo-memory dream run \
 
 模型只会返回维护动作建议；服务端执行 `memory_promote_candidate` 时仍会走安全、质量、置信度、重复和冲突检查。
 
-Thinking 默认关闭。关闭时 provider 请求不会携带 `thinking` 字段；开启后 OpenAI-compatible 请求会额外发送 `thinking: {"type": "enabled"}`。如果当前 provider 不支持这个参数，保持关闭即可。配置来源可以是 `MNEMO_MEMORY_THINKING_ENABLED=true`、state dir 下 `config.json` 的 `thinking_enabled: true`，或 CLI 的 `--thinking` / `--no-thinking`。
+Thinking 默认关闭。关闭时 provider 请求不会携带 `thinking` 字段；开启后 OpenAI-compatible 请求会额外发送 `thinking: {"type": "enabled"}`。如果当前 provider 不支持这个参数，保持关闭即可。配置来源可以是 `MNEMO_MEMORY_THINKING_ENABLED=true`、state dir 下 `config.json` 的 `thinking_enabled: true`，或 CLI 的 `--thinking` / `--no-thinking`。开启 Thinking 后，如果兼容 provider 把 JSON 结果放在 `reasoning` 或 `reasoning_content` 而不是 `content`，Mnemo 会从这些字段兜底解析 JSON，但不会把 reasoning 文本写入报告或 WebUI。
 
 WebUI 也可以走同一条模型审核通道：先在“设置”里保存 provider，按需打开“开启 Thinking”，并打开“使用模型审核”，再到“维护”里点击 `Run Dream`。开启模型审核后 WebUI 会向 `/api/memory/dream-run` 发送 `use_provider: true`；具体使用哪个模型和 thinking 开关由显式 CLI 参数、state dir 下的 `config.json` 或 `.env` 决定。
 

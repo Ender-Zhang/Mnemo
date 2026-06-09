@@ -37,8 +37,7 @@ class OpenAICompatibleMemoryMaintainer:
             ],
         )
         response = self._post_json("/chat/completions", payload)
-        content = _message_content(response)
-        parsed = _parse_json_object(content)
+        parsed = _parse_message_json_object(response)
         actions = parsed.get("actions") if isinstance(parsed, dict) else None
         if not isinstance(actions, list):
             return []
@@ -83,7 +82,7 @@ class OpenAICompatibleMemoryMaintainer:
             ],
         )
         response = self._post_json("/chat/completions", payload)
-        parsed = _parse_json_object(_message_content(response))
+        parsed = _parse_message_json_object(response)
         return parsed if isinstance(parsed, dict) else {}
 
     def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -122,26 +121,105 @@ def _chat_payload(config: MemoryConfig, messages: list[dict[str, Any]]) -> dict[
     return payload
 
 
-def _message_content(response: dict[str, Any]) -> str:
+def _parse_message_json_object(response: dict[str, Any]) -> dict[str, Any]:
+    errors: list[Exception] = []
+    for content in _message_text_candidates(response):
+        try:
+            return _parse_json_object(content)
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            errors.append(exc)
+    if errors:
+        raise ValueError("maintenance provider returned no parseable JSON object") from errors[0]
+    return {}
+
+
+def _message_text_candidates(response: dict[str, Any]) -> list[str]:
     choices = response.get("choices")
     if not isinstance(choices, list) or not choices:
-        return ""
+        return []
     first = choices[0]
     if not isinstance(first, dict):
-        return ""
+        return []
     message = first.get("message")
     if not isinstance(message, dict):
-        return ""
-    return str(message.get("content") or "")
+        return []
+    candidates: list[str] = []
+    for key in ("content", "reasoning", "reasoning_content", "thinking"):
+        candidates.extend(_text_values(message.get(key)))
+    return _dedupe_texts(candidates)
+
+
+def _text_values(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        result: list[str] = []
+        for item in value:
+            result.extend(_text_values(item))
+        return result
+    if isinstance(value, dict):
+        result: list[str] = []
+        for key in ("text", "content", "reasoning", "reasoning_content", "thinking"):
+            result.extend(_text_values(value.get(key)))
+        return result
+    return []
+
+
+def _dedupe_texts(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = value.strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
 
 
 def _parse_json_object(content: str) -> dict[str, Any]:
-    text = content.strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.startswith("json"):
-            text = text[4:].strip()
-    parsed = json.loads(text or "{}")
-    if not isinstance(parsed, dict):
+    text = _strip_json_fence(str(content or "").strip())
+    if not text:
         return {}
+    parsed = _load_json_object(text)
+    if parsed is None:
+        parsed = _load_json_object(_extract_first_json_object(text))
+    if parsed is None:
+        raise ValueError("maintenance provider returned no parseable JSON object")
     return parsed
+
+
+def _strip_json_fence(text: str) -> str:
+    if not text.startswith("```"):
+        return text
+    stripped = text.strip("`").strip()
+    if stripped.startswith("json"):
+        return stripped[4:].strip()
+    return stripped
+
+
+def _load_json_object(text: str | None) -> dict[str, Any] | None:
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def _extract_first_json_object(text: str) -> str | None:
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            _parsed, end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        return text[index : index + end]
+    return None

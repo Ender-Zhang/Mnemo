@@ -369,6 +369,7 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
     actions = result.get("actions") if isinstance(result.get("actions"), dict) else {}
     action_counts = actions.get("counts") if isinstance(actions.get("counts"), dict) else {}
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    reject_reasons = _dream_reject_reasons(actions.get("applied"))
     return {
         "id": report.get("id"),
         "started_at": report.get("started_at"),
@@ -380,14 +381,40 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
             "mode": execution.get("mode"),
             "w0_created": len((result.get("w0") or {}).get("created", [])),
             "promoted": len(result.get("promoted", [])),
-            "rejected": len(result.get("rejected", [])),
+            "rejected": len(result.get("rejected", [])) or len(reject_reasons),
             "skipped": len(result.get("skipped", [])),
             "conflicts": len(result.get("conflicts", [])),
             "actions_applied": action_counts.get("applied", 0),
             "actions_skipped": action_counts.get("skipped", 0),
             "tool_calls": counts.get("tool_calls", 0),
+            "reject_reasons": reject_reasons,
         },
     }
+
+def _dream_reject_reasons(actions: Any) -> list[dict[str, Any]]:
+    if not isinstance(actions, list):
+        return []
+    rejected: list[dict[str, Any]] = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        tool = str(action.get("tool") or "")
+        decision = str(action.get("decision") or "")
+        status = str(action.get("status") or "")
+        if tool != "memory_reject_candidate" and decision != "rejected" and not status.startswith("rejected"):
+            continue
+        reason = _normalize_space(str(action.get("reason") or ""))
+        if not reason:
+            continue
+        item = {
+            "reason": _truncate(reason, limit=160),
+        }
+        for key in ("candidate_id", "action_id", "tool", "status", "decision"):
+            value = action.get(key)
+            if value:
+                item[key] = value
+        rejected.append(item)
+    return rejected[:10]
 
 def _dream_actions_from_inputs(
     *,

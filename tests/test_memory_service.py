@@ -461,6 +461,40 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(second["delta"]["counts"]["memory_candidates"], 1)
             self.assertEqual(second["delta"]["counts"]["draft_candidates"], 1)
 
+    def test_dream_status_exposes_reject_reasons(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            update = client.update(
+                facts=[
+                    {
+                        "claim": "User prefers stale Dream reject reasons to remain visible after refresh.",
+                        "dimension": "preferences",
+                        "confidence": 0.8,
+                    }
+                ],
+                source="unit-test",
+            )
+            candidate_id = update["memory_candidates"][0]["candidate_id"]
+
+            report = client.dream_run(
+                actions=[
+                    {
+                        "tool": "memory_reject_candidate",
+                        "candidate_id": candidate_id,
+                        "reason": "not_enough_evidence",
+                    }
+                ],
+            )
+            applied = report["execution"]["result"]["actions"]["applied"]
+            self.assertEqual(applied[0]["reason"], "not_enough_evidence")
+
+            status = client.dream_status()
+            reasons = status["latest"]["execution"]["reject_reasons"]
+            self.assertEqual(reasons[0]["candidate_id"], candidate_id)
+            self.assertEqual(reasons[0]["reason"], "not_enough_evidence")
+
     def test_webui_can_enable_provider_backed_dream_run(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
         app = source.read_text(encoding="utf-8")
@@ -476,6 +510,15 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("await refresh({ clearNotice: false })", app)
         self.assertIn("setOk(dreamRunMessage(report, useProvider))", app)
         self.assertIn("Dream 已运行：已生成报告和快照", app)
+
+    def test_webui_displays_dream_reject_reasons(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn("DreamRejectReasons", app)
+        self.assertIn("Reject 原因", app)
+        self.assertIn("dreamStatusRejectReasons", app)
+        self.assertIn("dreamRunRejectReasons", app)
 
     def test_webui_displays_memory_provenance_timeline(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
