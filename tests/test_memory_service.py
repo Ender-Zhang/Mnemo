@@ -502,6 +502,11 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn('useState<TabKey>("memories")', app)
         self.assertIn("uidFilter", app)
         self.assertIn("uid: cleanUid", app)
+        self.assertIn("uid: scopedUid", app)
+        self.assertIn("全部 scope", app)
+        self.assertIn("function scopeFromUidFilter", app)
+        self.assertIn("memoryFactPayload(factText.trim(), writeScope)", app)
+        self.assertIn('retention: "memory_candidate"', app)
         self.assertIn("UID 检索完成", app)
         self.assertIn("user_123 或 user:user_123", app)
 

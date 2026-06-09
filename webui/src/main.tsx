@@ -256,10 +256,11 @@ function App() {
   const refresh = useCallback(async (options: { clearNotice?: boolean } = {}) => {
     setLoading(true);
     try {
+      const scopedUid = uidFilter.trim() || undefined;
       const [healthResult, inventoryResult, candidateResult, dreamResult, snapshotResult, tombstoneResult, providerResult] = await Promise.all([
         requestJson<Record<string, unknown>>("/api/health"),
-        callMemory<MemoryListResult>("list", { kind: "all", status: statusFilter || null, limit: 50 }),
-        callMemory<MemoryListResult>("list", { kind: "candidate", status: null, limit: 50 }),
+        callMemory<MemoryListResult>("list", { kind: "all", status: statusFilter || null, uid: scopedUid, limit: 50 }),
+        callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }),
         callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
         callMemory<SnapshotResult>("snapshot", { limit: 50 }),
         callMemory<TombstonesResult>("tombstones", { limit: 20 }),
@@ -287,7 +288,13 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [callMemory, requestJson, statusFilter]);
+  }, [callMemory, requestJson, statusFilter, uidFilter]);
+
+  const refreshInventory = useCallback(async (options: { clearNotice?: boolean } = {}) => {
+    setSearchItems([]);
+    setSearchMode(false);
+    await refresh(options);
+  }, [refresh]);
 
   useEffect(() => {
     localStorage.setItem("mnemo.apiBase", apiBase);
@@ -310,7 +317,14 @@ function App() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!selected && activeItems.length > 0) {
+    if (activeItems.length === 0) {
+      if (selected) {
+        setSelected(null);
+      }
+      return;
+    }
+    const selectedStillVisible = selected ? activeItems.some((item) => item.id === selected.id && item.type === selected.type) : false;
+    if (!selectedStillVisible) {
       setSelected(activeItems[0]);
     }
   }, [activeItems, selected]);
@@ -319,9 +333,12 @@ function App() {
     const cleanQuery = query.trim();
     const cleanUid = uidFilter.trim();
     if (!cleanQuery && !cleanUid) {
-      setSearchItems([]);
-      setSearchMode(false);
-      await refresh();
+      await refreshInventory();
+      return;
+    }
+    if (cleanUid && !cleanQuery) {
+      await refreshInventory({ clearNotice: false });
+      setOk(`UID 过滤已应用：${cleanUid}`);
       return;
     }
     setLoading(true);
@@ -379,8 +396,9 @@ function App() {
   };
 
   const submitMemory = async () => {
-    const facts = factText.trim() ? [factText.trim()] : [];
-    const observations = observationText.trim() ? [observationText.trim()] : [];
+    const writeScope = scopeFromUidFilter(uidFilter);
+    const facts = factText.trim() ? [memoryFactPayload(factText.trim(), writeScope)] : [];
+    const observations = observationText.trim() ? [memoryObservationPayload(observationText.trim(), writeScope)] : [];
     if (facts.length === 0 && observations.length === 0) {
       setNotice({ tone: "warn", text: "请输入 fact 或 observation" });
       return;
@@ -598,7 +616,7 @@ function App() {
             <Lock size={14} />
             {authed ? "Token 已设置" : "未设置 Token"}
           </div>
-          <button className="ghost-button" onClick={() => refresh()} disabled={loading}>
+          <button className="ghost-button" onClick={() => refreshInventory()} disabled={loading}>
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             Refresh
           </button>
@@ -635,11 +653,11 @@ function App() {
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
                 onSearch={searchMemory}
-                onRefresh={refresh}
+                onRefresh={refreshInventory}
               />
             ) : null}
             {activeTab === "memories" || activeTab === "overview" ? (
-              <MemoryTable items={activeItems} selectedId={selected?.id} onSelect={readMemory} />
+              <MemoryTable items={activeItems} selectedId={selected?.id} uidFilter={uidFilter} onSelect={readMemory} />
             ) : null}
             {activeTab === "candidates" ? (
               <CandidateReview
@@ -708,6 +726,7 @@ function App() {
               setObservationText={setObservationText}
               source={source}
               setSource={setSource}
+              uidFilter={uidFilter}
               onSubmit={submitMemory}
             />
           </aside>
@@ -824,12 +843,23 @@ function SearchPanel(props: {
   );
 }
 
-function MemoryTable({ items, selectedId, onSelect }: { items: MemoryItem[]; selectedId?: string; onSelect: (item: MemoryItem) => void }) {
+function MemoryTable({
+  items,
+  selectedId,
+  uidFilter,
+  onSelect
+}: {
+  items: MemoryItem[];
+  selectedId?: string;
+  uidFilter: string;
+  onSelect: (item: MemoryItem) => void;
+}) {
+  const uidLabel = uidFilter.trim() ? `UID: ${uidFilter.trim()}` : "全部 scope";
   return (
     <section className="panel table-panel">
       <div className="panel-header compact">
         <h2>记忆库存</h2>
-        <span>{items.length} items</span>
+        <span>{items.length} items · {uidLabel}</span>
       </div>
       <div className="memory-table">
         <div className="table-head">
@@ -968,13 +998,15 @@ function Composer(props: {
   setObservationText: (value: string) => void;
   source: string;
   setSource: (value: string) => void;
+  uidFilter: string;
   onSubmit: () => void;
 }) {
+  const writeScope = scopeFromUidFilter(props.uidFilter) || "global";
   return (
     <section className="panel composer">
       <div className="panel-header compact">
         <h2>写入记忆</h2>
-        <Plus size={18} />
+        <StatusBadge text={writeScope} />
       </div>
       <label>
         Fact
@@ -1378,6 +1410,20 @@ function itemMatchesQuery(item: MemoryItem, query: string) {
     .join(" ")
     .toLowerCase();
   return terms.every((term) => haystack.includes(term));
+}
+
+function scopeFromUidFilter(uid: string) {
+  const cleanUid = uid.trim();
+  if (!cleanUid) return "";
+  return cleanUid.toLowerCase().startsWith("user:") ? cleanUid : `user:${cleanUid}`;
+}
+
+function memoryFactPayload(claim: string, scope: string) {
+  return scope ? { claim, scope } : claim;
+}
+
+function memoryObservationPayload(content: string, scope: string) {
+  return scope ? { content, retention: "memory_candidate", scope } : content;
 }
 
 function tombstoneTargetItem(tombstone: MemoryTombstone): MemoryItem {
