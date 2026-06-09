@@ -498,6 +498,8 @@ class MemoryServiceTests(unittest.TestCase):
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
         app = source.read_text(encoding="utf-8")
 
+        self.assertNotIn('{ key: "search"', app)
+        self.assertIn('useState<TabKey>("memories")', app)
         self.assertIn("uidFilter", app)
         self.assertIn("uid: cleanUid", app)
         self.assertIn("UID 检索完成", app)

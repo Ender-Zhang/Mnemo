@@ -159,7 +159,7 @@ type TombstonesResult = {
   tombstones?: MemoryTombstone[];
 };
 
-type TabKey = "overview" | "search" | "memories" | "candidates" | "tombstones" | "maintenance" | "settings";
+type TabKey = "overview" | "memories" | "candidates" | "tombstones" | "maintenance" | "settings";
 
 type Notice = {
   tone: "ok" | "warn" | "error";
@@ -168,7 +168,6 @@ type Notice = {
 
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "overview", label: "总览", icon: Home },
-  { key: "search", label: "搜索", icon: Search },
   { key: "memories", label: "记忆", icon: Database },
   { key: "candidates", label: "候选", icon: ClipboardList },
   { key: "tombstones", label: "墓碑", icon: Archive },
@@ -179,7 +178,7 @@ const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
 const defaultApiBase = window.location.origin;
 
 function App() {
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [activeTab, setActiveTab] = useState<TabKey>("memories");
   const [apiBase, setApiBase] = useState(() => localStorage.getItem("mnemo.apiBase") || defaultApiBase);
   const [authToken, setAuthToken] = useState(() => localStorage.getItem("mnemo.authToken") || "");
   const [serviceOk, setServiceOk] = useState(false);
@@ -625,7 +624,7 @@ function App() {
         <section className="dashboard-grid">
           <div className="main-column">
             {activeTab === "overview" ? <Overview stats={summaryStats} health={health} dreamStatus={dreamStatus} snapshot={snapshot} /> : null}
-            {activeTab === "search" || activeTab === "overview" || activeTab === "memories" ? (
+            {activeTab === "memories" || activeTab === "overview" ? (
               <SearchPanel
                 query={query}
                 setQuery={setQuery}
@@ -639,7 +638,7 @@ function App() {
                 onRefresh={refresh}
               />
             ) : null}
-            {activeTab === "memories" || activeTab === "search" || activeTab === "overview" ? (
+            {activeTab === "memories" || activeTab === "overview" ? (
               <MemoryTable items={activeItems} selectedId={selected?.id} onSelect={readMemory} />
             ) : null}
             {activeTab === "candidates" ? (

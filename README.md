@@ -482,7 +482,7 @@ mnemo-memory serve --state-dir .mnemo-memory
 打开 `http://127.0.0.1:8765/`，然后可以在后台里完成：
 
 - 搜索和查看稳定记忆页或候选记忆
-- 在“记忆/搜索”里按 UID 检索某个用户 scope 下的记忆库存
+- 在“记忆”里按关键词、UID、类型和状态检索某个用户 scope 下的记忆库存
 - 添加 facts 和 observations
 - 通过审核门 promote 候选记忆，或 reject 候选记忆
 - tombstone 或 forget 选中的记忆项
