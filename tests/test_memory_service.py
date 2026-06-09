@@ -342,6 +342,15 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("mnemo.useProvider", app)
         self.assertIn("use_provider: useProvider", app)
 
+    def test_webui_keeps_dream_run_feedback_after_refresh(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn('const report = await callMemory<DreamRunReport>("dream-run"', app)
+        self.assertIn("await refresh({ clearNotice: false })", app)
+        self.assertIn("setOk(dreamRunMessage(report, useProvider))", app)
+        self.assertIn("Dream 已运行：已生成报告和快照", app)
+
     def test_webui_displays_memory_provenance_timeline(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
         app = source.read_text(encoding="utf-8")

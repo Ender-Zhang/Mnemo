@@ -214,6 +214,7 @@ class MemoryLearningMixin:
 
         route = self._promotion_page_route(candidate)
         target_page = route.get("page")
+        page_action = "merged" if target_page else "created"
         page_title = str(route["title"])
         page_scope = str(target_page.get("scope") if target_page else candidate.get("scope") or "global")
         page_content = _merged_page_content(target_page.get("content", "") if target_page else "", claim)
@@ -258,6 +259,7 @@ class MemoryLearningMixin:
         return {
             "candidate_id": candidate_id,
             "page_id": page_id,
+            "page_action": page_action,
             "status": "promoted",
             "page": page,
             "wiki": wiki,
@@ -509,6 +511,7 @@ class MemoryLearningMixin:
             "status": "promoted",
             "decision": "promoted",
             "page_id": promoted.get("page_id"),
+            "page_action": promoted.get("page_action"),
             "page": {
                 "id": page.get("id"),
                 "title": page.get("title"),

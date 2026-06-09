@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-from ..core.config import ConfigOverrides, DEFAULT_STATE_DIR, resolve_memory_config
+from ..core.config import ConfigOverrides, DEFAULT_STATE_DIR, default_config_path, resolve_memory_config
 from ..core.ids import new_id
 from ..memory import MemoryEngine
 from ..storage import StateStore
 from .schema import memory_api_schema
+
+_MISSING = object()
 
 
 class MemoryClient:
@@ -393,6 +396,54 @@ class MemoryClient:
     def health(self, *, limit: int = 20) -> dict[str, Any]:
         return self._engine().health_report(limit=limit)
 
+    def provider_config(self) -> dict[str, Any]:
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        save_path = default_config_path(self.state_dir)
+        return {
+            "kind": "memory_provider_config",
+            "version": "mnemo_memory.provider_config.v1",
+            "configured": bool(config.base_url and config.model),
+            "api_key_configured": bool(config.api_key),
+            "save_path": str(save_path),
+            "config": config.redacted(),
+        }
+
+    def save_provider_config(
+        self,
+        *,
+        provider: str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: Any = _MISSING,
+        api_key_env: str | None = None,
+        timeout_s: float | int | str | None = None,
+        clear_api_key: bool = False,
+    ) -> dict[str, Any]:
+        path = default_config_path(self.state_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        config = _read_client_config(path)
+
+        _set_optional_config_str(config, "provider", provider)
+        _set_optional_config_str(config, "base_url", base_url)
+        _set_optional_config_str(config, "model", model)
+        _set_optional_config_str(config, "api_key_env", api_key_env)
+
+        if clear_api_key:
+            config.pop("api_key", None)
+        elif api_key is not _MISSING:
+            clean_key = str(api_key or "").strip()
+            if clean_key and clean_key != "***":
+                config["api_key"] = clean_key
+
+        if timeout_s is not None and timeout_s != "":
+            try:
+                config["timeout_s"] = max(0.1, float(timeout_s))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("timeout_s must be a number") from exc
+
+        path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return self.provider_config()
+
     def tombstones(
         self,
         *,
@@ -507,6 +558,26 @@ def _optional_text(value: Any) -> str | None:
 def _is_tombstoned_status(status: Any) -> bool:
     normalized = str(status or "").casefold()
     return "tombstone" in normalized or "private_delete" in normalized or "deleted" in normalized
+
+
+def _read_client_config(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _set_optional_config_str(config: dict[str, Any], key: str, value: str | None) -> None:
+    if value is None:
+        return
+    clean = str(value).strip()
+    if clean:
+        config[key] = clean
+    else:
+        config.pop(key, None)
 
 
 def _normalize_event_text(text: Any) -> str:

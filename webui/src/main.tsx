@@ -25,7 +25,12 @@ import {
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { filterReviewableCandidates } from "./candidateFilters";
+import { emptyProviderForm, providerFormFromConfig, providerSavePayload, providerStatusText } from "./providerSettings";
+import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
+import type { ProviderConfigResult, ProviderFormState } from "./providerSettings";
+import type { PromotionReviewResult } from "./promotionMessages";
 
 type ApiEnvelope<T> = {
   method?: string;
@@ -111,6 +116,25 @@ type DreamStatusResult = {
   [key: string]: unknown;
 };
 
+type DreamRunReport = {
+  id?: string;
+  delta?: {
+    counts?: Record<string, number>;
+  };
+  execution?: {
+    mode?: string;
+    result?: {
+      actions?: {
+        counts?: {
+          requested?: number;
+          applied?: number;
+          skipped?: number;
+        };
+      };
+    };
+  };
+};
+
 type SnapshotResult = {
   kind?: string;
   exists?: boolean;
@@ -119,13 +143,6 @@ type SnapshotResult = {
 
 type TombstonesResult = {
   tombstones?: Array<Record<string, unknown>>;
-};
-
-type PromotionReviewResult = {
-  decision?: string;
-  status?: string;
-  reason?: string;
-  page_id?: string;
 };
 
 type TabKey = "overview" | "search" | "memories" | "candidates" | "maintenance" | "settings";
@@ -170,12 +187,14 @@ function App() {
   const [observationText, setObservationText] = useState("");
   const [source, setSource] = useState("webui");
   const [useProvider, setUseProvider] = useState(() => localStorage.getItem("mnemo.useProvider") === "true");
+  const [providerConfig, setProviderConfig] = useState<ProviderConfigResult | null>(null);
+  const [providerForm, setProviderForm] = useState<ProviderFormState>(() => emptyProviderForm());
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [tombstoneReason, setTombstoneReason] = useState("manual_curation");
 
   const authed = authToken.trim().length > 0;
   const activeItems = searchItems.length > 0 ? searchItems : inventory;
-  const pendingCandidates = candidates.filter((item) => item.status === "draft" || item.status?.startsWith("needs_review"));
+  const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
 
   const requestJson = useCallback(
@@ -218,16 +237,17 @@ function App() {
     setNotice({ tone: "error", text });
   };
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options: { clearNotice?: boolean } = {}) => {
     setLoading(true);
     try {
-      const [healthResult, inventoryResult, candidateResult, dreamResult, snapshotResult, tombstoneResult] = await Promise.all([
+      const [healthResult, inventoryResult, candidateResult, dreamResult, snapshotResult, tombstoneResult, providerResult] = await Promise.all([
         requestJson<Record<string, unknown>>("/api/health"),
         callMemory<MemoryListResult>("list", { kind: "all", status: statusFilter || null, limit: 50 }),
         callMemory<MemoryListResult>("list", { kind: "candidate", status: null, limit: 50 }),
         callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
         callMemory<SnapshotResult>("snapshot", { limit: 50 }),
-        callMemory<TombstonesResult>("tombstones", { limit: 20 })
+        callMemory<TombstonesResult>("tombstones", { limit: 20 }),
+        callMemory<ProviderConfigResult>("provider-config", {})
       ]);
       setServiceOk(Boolean(healthResult.ok));
       setInventory(inventoryResult.items || []);
@@ -235,12 +255,16 @@ function App() {
       setDreamStatus(dreamResult);
       setSnapshot(snapshotResult);
       setTombstones(tombstoneResult.tombstones || []);
+      setProviderConfig(providerResult);
+      setProviderForm(providerFormFromConfig(providerResult));
       try {
         setHealth(await callMemory<MemoryHealthResult>("health", { limit: 20 }));
       } catch {
         setHealth(null);
       }
-      setNotice(null);
+      if (options.clearNotice !== false) {
+        setNotice(null);
+      }
     } catch (error) {
       setServiceOk(false);
       setError(error);
@@ -332,7 +356,7 @@ function App() {
       setFactText("");
       setObservationText("");
       setOk("已写入候选记忆");
-      await refresh();
+      await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -350,7 +374,7 @@ function App() {
       } else {
         setWarn(message);
       }
-      await refresh();
+      await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -363,7 +387,7 @@ function App() {
     try {
       await callMemory("reject-candidate", { candidate_id: candidateId, reason: rejectReason.trim() || "not_useful" });
       setOk("候选已拒绝");
-      await refresh();
+      await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -387,7 +411,7 @@ function App() {
         setOk("记忆已标记 tombstone");
       }
       setSelected(null);
-      await refresh();
+      await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -398,9 +422,9 @@ function App() {
   const runDream = async () => {
     setLoading(true);
     try {
-      await callMemory("dream-run", { limit: 20, min_confidence: 0.7, use_provider: useProvider });
-      setOk(useProvider ? "模型维护任务已执行" : "维护任务已执行");
-      await refresh();
+      const report = await callMemory<DreamRunReport>("dream-run", { limit: 20, min_confidence: 0.7, use_provider: useProvider });
+      await refresh({ clearNotice: false });
+      setOk(dreamRunMessage(report, useProvider));
     } catch (error) {
       setError(error);
     } finally {
@@ -421,17 +445,31 @@ function App() {
     }
   };
 
+  const saveProviderConfig = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<ProviderConfigResult>("save-provider-config", providerSavePayload(providerForm));
+      setProviderConfig(result);
+      setProviderForm(providerFormFromConfig(result));
+      setOk("Provider 配置已保存；Run Dream 将使用服务端配置。");
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const summaryStats = useMemo(() => {
     const pages = inventory.filter((item) => item.type === "page").length;
-    const draft = candidates.filter((item) => item.status === "draft").length;
+    const draft = pendingCandidates.length;
     const active = inventory.filter((item) => item.status === "active").length;
     return [
-      { label: "稳定记忆", value: pages || active, icon: Database, tone: "blue" },
+      { label: "稳定记忆页", value: pages || active, icon: Database, tone: "blue" },
       { label: "待审候选", value: draft, icon: ClipboardList, tone: "green" },
       { label: "健康卡片", value: healthCards.length, icon: Gauge, tone: "amber" },
       { label: "Tombstones", value: tombstones.length, icon: Archive, tone: "red" }
     ];
-  }, [candidates, healthCards.length, inventory, tombstones.length]);
+  }, [healthCards.length, inventory, pendingCandidates.length, tombstones.length]);
 
   const navItemClass = (key: TabKey, extra = "") => {
     const classes = ["nav-item"];
@@ -486,7 +524,7 @@ function App() {
             <Lock size={14} />
             {authed ? "Token 已设置" : "未设置 Token"}
           </div>
-          <button className="ghost-button" onClick={refresh} disabled={loading}>
+          <button className="ghost-button" onClick={() => refresh()} disabled={loading}>
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             Refresh
           </button>
@@ -529,7 +567,7 @@ function App() {
             ) : null}
             {activeTab === "candidates" ? (
               <CandidateReview
-                candidates={candidates}
+                candidates={pendingCandidates}
                 rejectReason={rejectReason}
                 setRejectReason={setRejectReason}
                 onPromote={promoteCandidate}
@@ -544,6 +582,7 @@ function App() {
                 snapshot={snapshot}
                 tombstones={tombstones}
                 useProvider={useProvider}
+                loading={loading}
                 onRunDream={runDream}
                 onCompileSnapshot={compileSnapshot}
               />
@@ -558,6 +597,11 @@ function App() {
                 setSource={setSource}
                 useProvider={useProvider}
                 setUseProvider={setUseProvider}
+                providerConfig={providerConfig}
+                providerForm={providerForm}
+                setProviderForm={setProviderForm}
+                onSaveProviderConfig={saveProviderConfig}
+                loading={loading}
               />
             ) : null}
           </div>
@@ -589,6 +633,7 @@ function App() {
               dreamStatus={dreamStatus}
               snapshot={snapshot}
               useProvider={useProvider}
+              loading={loading}
               onPromote={promoteCandidate}
               onReject={rejectCandidate}
               onRunDream={runDream}
@@ -874,9 +919,9 @@ function CandidateReview(props: {
   return (
     <section className="panel">
         <div className="panel-header">
-          <div>
-            <h2>候选审核</h2>
-            <p>Promote 会先通过审核门，Reject 会记录拒绝状态。</p>
+            <div>
+              <h2>候选审核</h2>
+              <p>Promote 会先通过审核门，可能新建稳定页，也可能合并到同主题稳定页。</p>
           </div>
         <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} placeholder="reject reason" />
       </div>
@@ -911,6 +956,7 @@ function MaintenancePanel(props: {
   snapshot: SnapshotResult | null;
   tombstones: Array<Record<string, unknown>>;
   useProvider: boolean;
+  loading: boolean;
   onRunDream: () => void;
   onCompileSnapshot: () => void;
 }) {
@@ -922,11 +968,11 @@ function MaintenancePanel(props: {
           <p>运行 Dream maintenance、刷新快照并检查 tombstone。</p>
         </div>
         <div className="action-row">
-          <button className="primary-button" onClick={props.onRunDream}>
-            <Play size={16} />
-            {props.useProvider ? "Run Model Dream" : "Run Dream"}
+          <button className="primary-button" onClick={props.onRunDream} disabled={props.loading}>
+            {props.loading ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+            {props.loading ? "Running" : props.useProvider ? "Run Model Dream" : "Run Dream"}
           </button>
-          <button className="ghost-button" onClick={props.onCompileSnapshot}>
+          <button className="ghost-button" onClick={props.onCompileSnapshot} disabled={props.loading}>
             <RefreshCcw size={16} />
             Compile Snapshot
           </button>
@@ -951,13 +997,22 @@ function SettingsPanel(props: {
   setSource: (value: string) => void;
   useProvider: boolean;
   setUseProvider: (value: boolean) => void;
+  providerConfig: ProviderConfigResult | null;
+  providerForm: ProviderFormState;
+  setProviderForm: (value: ProviderFormState) => void;
+  onSaveProviderConfig: () => void;
+  loading: boolean;
 }) {
+  const setProviderField = (field: keyof ProviderFormState, value: string) => {
+    props.setProviderForm({ ...props.providerForm, [field]: value });
+  };
+
   return (
     <section className="panel settings-panel">
       <div className="panel-header">
         <div>
           <h2>设置</h2>
-          <p>本地 API 和 Bearer token 存在当前浏览器。</p>
+          <p>本地 API、Bearer token 和维护模型配置。</p>
         </div>
         <ShieldCheck size={22} />
       </div>
@@ -973,6 +1028,62 @@ function SettingsPanel(props: {
         默认 Source
         <input value={props.source} onChange={(event) => props.setSource(event.target.value)} />
       </label>
+      <div className="provider-status-row">
+        <StatusBadge text={providerStatusText(props.providerConfig)} />
+        <code>{props.providerConfig?.save_path || "config.json"}</code>
+      </div>
+      <div className="provider-grid">
+        <label>
+          Provider
+          <select value={props.providerForm.provider} onChange={(event) => setProviderField("provider", event.target.value)}>
+            <option value="openai-compatible">openai-compatible</option>
+          </select>
+        </label>
+        <label>
+          Base URL
+          <input
+            value={props.providerForm.baseUrl}
+            onChange={(event) => setProviderField("baseUrl", event.target.value)}
+            placeholder="https://api.openai.com/v1"
+          />
+        </label>
+        <label>
+          Model
+          <input
+            value={props.providerForm.model}
+            onChange={(event) => setProviderField("model", event.target.value)}
+            placeholder="gpt-4.1-mini"
+          />
+        </label>
+        <label>
+          API Key
+          <input
+            type="password"
+            autoComplete="off"
+            value={props.providerForm.apiKey}
+            onChange={(event) => setProviderField("apiKey", event.target.value)}
+            placeholder={props.providerConfig?.api_key_configured ? "已保存；留空保持不变" : "sk-..."}
+          />
+        </label>
+        <label>
+          API Key Env
+          <input
+            value={props.providerForm.apiKeyEnv}
+            onChange={(event) => setProviderField("apiKeyEnv", event.target.value)}
+            placeholder="OPENAI_API_KEY"
+          />
+        </label>
+        <label>
+          Timeout
+          <input
+            type="number"
+            min="0.1"
+            step="0.1"
+            value={props.providerForm.timeoutS}
+            onChange={(event) => setProviderField("timeoutS", event.target.value)}
+          />
+        </label>
+      </div>
       <label className="checkbox-row">
         <input
           type="checkbox"
@@ -981,12 +1092,19 @@ function SettingsPanel(props: {
         />
         <span>
           <strong>使用模型审核</strong>
-          <small>Run Dream 时调用服务端已配置的 provider。</small>
+          <small>Run Dream 时调用服务端 provider；这里保存的配置会写入 state config。</small>
         </span>
       </label>
-      <button className="ghost-button" onClick={() => props.setAuthToken("")}>
-        清除 Token
-      </button>
+      <div className="settings-actions">
+        <button className="primary-button" onClick={props.onSaveProviderConfig} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />}
+          保存 Provider
+        </button>
+        <button className="ghost-button" onClick={() => props.setAuthToken("")}>
+          <X size={15} />
+          清除 Token
+        </button>
+      </div>
     </section>
   );
 }
@@ -996,6 +1114,7 @@ function OperationsQueue(props: {
   dreamStatus: DreamStatusResult | null;
   snapshot: SnapshotResult | null;
   useProvider: boolean;
+  loading: boolean;
   onPromote: (id: string) => void;
   onReject: (id: string) => void;
   onRunDream: () => void;
@@ -1016,8 +1135,8 @@ function OperationsQueue(props: {
               <small>{candidate.scope || candidate.dimension || "global"}</small>
             </div>
             <div>
-              <button className="success-button" onClick={() => props.onPromote(candidate.id)}>Promote</button>
-              <button className="danger-button" onClick={() => props.onReject(candidate.id)}>Reject</button>
+              <button className="success-button" onClick={() => props.onPromote(candidate.id)} disabled={props.loading}>Promote</button>
+              <button className="danger-button" onClick={() => props.onReject(candidate.id)} disabled={props.loading}>Reject</button>
             </div>
           </article>
         ))}
@@ -1028,9 +1147,9 @@ function OperationsQueue(props: {
           <Sparkles size={18} />
         </div>
         <JsonBlock title="Status" value={props.dreamStatus || {}} />
-        <button className="primary-button full" onClick={props.onRunDream}>
-          <Play size={16} />
-          {props.useProvider ? "Run Model" : "Run Now"}
+        <button className="primary-button full" onClick={props.onRunDream} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+          {props.loading ? "Running" : props.useProvider ? "Run Model" : "Run Now"}
         </button>
       </section>
       <section className="panel ops-panel">
@@ -1120,22 +1239,17 @@ function compactId(value?: string) {
   return value.length > 24 ? `${value.slice(0, 21)}...` : value;
 }
 
-function promotionReviewMessage(result: PromotionReviewResult) {
-  const decision = result.decision || "";
-  const reason = result.reason ? `：${result.reason}` : "";
-  if (decision === "promoted" || result.status === "promoted") {
-    return "审核通过：候选已提升为稳定记忆";
+function dreamRunMessage(report: DreamRunReport, useProvider: boolean) {
+  const counts = report.execution?.result?.actions?.counts || {};
+  const deltaCounts = report.delta?.counts || {};
+  const requested = Number(counts.requested || 0);
+  const applied = Number(counts.applied || 0);
+  const skipped = Number(counts.skipped || 0);
+  const draftCandidates = Number(deltaCounts.draft_candidates || deltaCounts.memory_candidates || 0);
+  if (!useProvider && requested === 0) {
+    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。`;
   }
-  if (decision === "rejected" || result.status?.startsWith("rejected")) {
-    return `审核拒绝：候选未进入稳定记忆${reason}`;
-  }
-  if (decision === "conflict" || result.status?.includes("conflict")) {
-    return `审核发现冲突：请人工确认${reason}`;
-  }
-  if (decision === "skipped") {
-    return `审核暂不提升${reason}`;
-  }
-  return `审核完成：${result.status || "未提升"}`;
+  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。`;
 }
 
 createRoot(document.getElementById("root")!).render(

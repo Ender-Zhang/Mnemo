@@ -573,6 +573,7 @@ mnemo-memory dream run --state-dir .mnemo-memory --use-provider --json
 ```
 
 WebUI 里打开“设置 -> 使用模型审核”，再点击“维护 -> Run Dream”，前端会向 `/api/memory/dream-run` 发送 `use_provider: true`。
+也可以在 WebUI 设置页直接保存 provider；配置会写入 state dir 下的 `config.json`，并覆盖 `.env` 中的 provider 字段。
 
 ## 质量、安全、重复和冲突如何影响 promote
 

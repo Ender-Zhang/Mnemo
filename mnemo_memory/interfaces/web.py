@@ -115,6 +115,18 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
         return client.snapshot(compile=bool(body.get("compile", False)), limit=int(body.get("limit") or 50))
     if method == "health":
         return client.health(limit=int(body.get("limit") or 20))
+    if method in {"provider-config", "provider_config"}:
+        return client.provider_config()
+    if method in {"save-provider-config", "save_provider_config"}:
+        return client.save_provider_config(
+            provider=_config_field(body, "provider"),
+            base_url=_config_field(body, "base_url"),
+            model=_config_field(body, "model"),
+            api_key=body.get("api_key", ""),
+            api_key_env=_config_field(body, "api_key_env"),
+            timeout_s=body.get("timeout_s"),
+            clear_api_key=bool(body.get("clear_api_key", False)),
+        )
     if method == "tombstones":
         return client.tombstones(
             target_id=_optional(body.get("target_id")),
@@ -250,6 +262,12 @@ def _required(body: dict[str, Any], key: str) -> str:
 def _optional(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _config_field(body: dict[str, Any], key: str) -> str | None:
+    if key not in body:
+        return None
+    return str(body.get(key) or "")
 
 
 def _resolve_static_path(raw_path: str) -> Path | None:

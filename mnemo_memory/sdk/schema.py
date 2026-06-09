@@ -19,6 +19,8 @@ _SCHEMA: dict[str, Any] = {
         "provenance": {"side_effects": "read_only"},
         "snapshot": {"side_effects": "read_only"},
         "health": {"side_effects": "read_only"},
+        "provider_config": {"side_effects": "read_only"},
+        "save_provider_config": {"side_effects": "writes_provider_config"},
         "tombstones": {"side_effects": "read_only"},
         "update": {"side_effects": "writes_memory_candidates_and_working_notes"},
         "ingest_event": {"side_effects": "writes_source_event_candidates_and_working_notes"},

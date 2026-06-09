@@ -593,8 +593,33 @@ label {
 .composer label,
 .composer-row,
 .settings-panel label,
-.settings-panel > .ghost-button {
+.settings-panel > .ghost-button,
+.settings-actions {
   margin: 12px 14px 0;
+}
+
+.provider-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 12px 14px 0;
+}
+
+.provider-status-row code {
+  min-width: 0;
+  color: #607083;
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 12px 14px 0;
+}
+
+.provider-grid label {
+  margin: 0;
 }
 
 .settings-panel .checkbox-row {
@@ -629,6 +654,12 @@ label {
   margin-top: 2px;
   color: #6b7280;
   font-weight: 500;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .detail-id {
@@ -966,7 +997,8 @@ pre {
   .ops-stack,
   .overview-split,
   .maintenance-grid,
-  .stat-grid {
+  .stat-grid,
+  .provider-grid {
     grid-template-columns: 1fr;
   }
 

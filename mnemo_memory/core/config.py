@@ -11,6 +11,7 @@ DEFAULT_STATE_DIR = "~/.mnemo-memory"
 DEFAULT_PROVIDER = "openai-compatible"
 DEFAULT_TIMEOUT_S = 30.0
 DEFAULT_MODEL = "memory-maintainer"
+ENV_FILE_KEY = "MNEMO_MEMORY_ENV_FILE"
 
 
 @dataclass(frozen=True)
@@ -55,44 +56,44 @@ def resolve_memory_config(
     env: Mapping[str, str] | None = None,
 ) -> MemoryConfig:
     overrides = overrides or ConfigOverrides()
-    env = env or os.environ
+    env = _env_with_dotenv(env, load_default=env is None)
     config_path = _config_path(overrides, env)
     file_config = _read_config_file(config_path)
 
     state_dir = _first_str(
         overrides.state_dir,
-        env.get("MNEMO_MEMORY_STATE_DIR"),
         file_config.get("state_dir"),
+        env.get("MNEMO_MEMORY_STATE_DIR"),
         DEFAULT_STATE_DIR,
     )
     provider = _first_str(
         overrides.provider,
-        env.get("MNEMO_MEMORY_PROVIDER"),
         file_config.get("provider"),
+        env.get("MNEMO_MEMORY_PROVIDER"),
         DEFAULT_PROVIDER,
     )
-    base_url = _first_optional_str(overrides.base_url, env.get("MNEMO_MEMORY_BASE_URL"), file_config.get("base_url"))
-    model = _first_optional_str(overrides.model, env.get("MNEMO_MEMORY_MODEL"), file_config.get("model"), DEFAULT_MODEL)
+    base_url = _first_optional_str(overrides.base_url, file_config.get("base_url"), env.get("MNEMO_MEMORY_BASE_URL"))
+    model = _first_optional_str(overrides.model, file_config.get("model"), env.get("MNEMO_MEMORY_MODEL"), DEFAULT_MODEL)
     api_key_env = _first_optional_str(
         overrides.api_key_env,
-        env.get("MNEMO_MEMORY_API_KEY_ENV"),
         file_config.get("api_key_env"),
+        env.get("MNEMO_MEMORY_API_KEY_ENV"),
     )
     api_key = _first_optional_str(
         overrides.api_key,
+        file_config.get("api_key"),
         env.get(api_key_env) if api_key_env else None,
         env.get("MNEMO_MEMORY_API_KEY"),
-        file_config.get("api_key"),
     )
     auth_token = _first_optional_str(
         overrides.auth_token,
-        env.get("MNEMO_MEMORY_AUTH_TOKEN"),
         file_config.get("auth_token"),
+        env.get("MNEMO_MEMORY_AUTH_TOKEN"),
     )
     timeout_s = _first_float(
         overrides.timeout_s,
-        env.get("MNEMO_MEMORY_TIMEOUT_S"),
         file_config.get("timeout_s"),
+        env.get("MNEMO_MEMORY_TIMEOUT_S"),
         DEFAULT_TIMEOUT_S,
     )
     return MemoryConfig(
@@ -114,6 +115,53 @@ def _config_path(overrides: ConfigOverrides, env: Mapping[str, str]) -> Path | N
         return Path(raw_path).expanduser()
     path = default_config_path(overrides.state_dir or env.get("MNEMO_MEMORY_STATE_DIR") or DEFAULT_STATE_DIR)
     return path if path.exists() else None
+
+
+def _env_with_dotenv(env: Mapping[str, str] | None, *, load_default: bool) -> dict[str, str]:
+    raw_env = os.environ if env is None else env
+    env_values = {str(key): str(value) for key, value in raw_env.items()}
+    env_file = _dotenv_path(env_values, load_default=load_default)
+    file_values = _read_env_file(env_file)
+    return {**file_values, **env_values}
+
+
+def _dotenv_path(env: Mapping[str, str], *, load_default: bool) -> Path | None:
+    raw_path = env.get(ENV_FILE_KEY)
+    if raw_path:
+        return Path(raw_path).expanduser()
+    if load_default:
+        return Path.cwd() / ".env"
+    return None
+
+
+def _read_env_file(path: Path | None) -> dict[str, str]:
+    if path is None or not path.exists():
+        return {}
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped.removeprefix("export ").strip()
+        if "=" not in stripped:
+            continue
+        key, raw_value = stripped.split("=", 1)
+        key = key.strip()
+        if not key or any(char.isspace() for char in key):
+            continue
+        values[key] = _strip_env_value(raw_value.strip())
+    return values
+
+
+def _strip_env_value(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
 
 
 def _read_config_file(path: Path | None) -> dict[str, Any]:

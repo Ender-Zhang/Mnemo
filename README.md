@@ -53,6 +53,8 @@ MNEMO_MEMORY_MODEL=gpt-4.1-mini
 MNEMO_MEMORY_API_KEY=replace-me
 ```
 
+也可以不写 `.env`，直接在 WebUI 的“设置”里保存 provider。WebUI 会把配置写到当前 state dir 的 `config.json`；显式 CLI 参数优先级最高，`config.json` 会覆盖 `.env` 中的 provider 字段。
+
 ```bash
 bash scripts/start_memory_service.sh
 ```
@@ -69,6 +71,7 @@ bash scripts/start_memory_service.sh --state-dir .mnemo-memory --host 127.0.0.1 
 
 - `API Base`: `http://127.0.0.1:8765`
 - `默认 Source`: 例如 `webui`
+- `Provider / Base URL / Model / API Key`: 可选；用于开启模型审核和 Dream maintenance
 
 配置后点击 `Refresh`，顶部状态显示 `Running` 就表示 WebUI 已经连上服务。
 
@@ -265,7 +268,7 @@ mnemo-memory dream run \
 
 模型只会返回维护动作建议；服务端执行 `memory_promote_candidate` 时仍会走安全、质量、置信度、重复和冲突检查。
 
-WebUI 也可以走同一条模型审核通道：先在“设置”里打开“使用模型审核”，再到“维护”里点击 `Run Dream`。开启后 WebUI 会向 `/api/memory/dream-run` 发送 `use_provider: true`；具体使用哪个模型，仍由服务进程里的 `MNEMO_MEMORY_BASE_URL`、`MNEMO_MEMORY_MODEL`、`MNEMO_MEMORY_API_KEY` 或 `config.json` 决定。
+WebUI 也可以走同一条模型审核通道：先在“设置”里保存 provider 并打开“使用模型审核”，再到“维护”里点击 `Run Dream`。开启后 WebUI 会向 `/api/memory/dream-run` 发送 `use_provider: true`；具体使用哪个模型由显式 CLI 参数、state dir 下的 `config.json` 或 `.env` 决定。
 
 ## 存储和搜索用户记忆
 
@@ -397,7 +400,8 @@ mnemo-memory serve --state-dir .mnemo-memory
 - 通过审核门 promote 候选记忆，或 reject 候选记忆
 - tombstone 或 forget 选中的记忆项
 - 在记忆详情里查看“来源时间线”，确认这条记忆来自哪个事件、候选和审核链路
-- 运行 Dream maintenance 并编译 snapshot；在“设置”里打开“使用模型审核”后，Run Dream 会调用服务端配置的模型 provider
+- 在“设置”里保存 provider 配置，也可以继续读取 `.env`
+- 运行 Dream maintenance 并编译 snapshot；打开“使用模型审核”后，Run Dream 会调用服务端配置的模型 provider
 
 前端源码位于 `webui/`。构建方式：
 
