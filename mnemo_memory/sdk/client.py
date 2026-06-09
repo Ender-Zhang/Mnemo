@@ -420,6 +420,7 @@ class MemoryClient:
         api_key: Any = _MISSING,
         api_key_env: str | None = None,
         timeout_s: float | int | str | None = None,
+        thinking_enabled: bool | int | str | None = None,
         clear_api_key: bool = False,
     ) -> dict[str, Any]:
         path = default_config_path(self.state_dir)
@@ -443,6 +444,7 @@ class MemoryClient:
                 config["timeout_s"] = max(0.1, float(timeout_s))
             except (TypeError, ValueError) as exc:
                 raise ValueError("timeout_s must be a number") from exc
+        _set_optional_config_bool(config, "thinking_enabled", thinking_enabled)
 
         path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.provider_config()
@@ -596,6 +598,28 @@ def _set_optional_config_str(config: dict[str, Any], key: str, value: str | None
         config[key] = clean
     else:
         config.pop(key, None)
+
+
+def _set_optional_config_bool(config: dict[str, Any], key: str, value: bool | int | str | None) -> None:
+    if value is None or value == "":
+        return
+    parsed = _config_bool(value)
+    if parsed is None:
+        raise ValueError(f"{key} must be a boolean")
+    config[key] = parsed
+
+
+def _config_bool(value: bool | int | str) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return bool(value)
+    normalized = str(value).strip().casefold()
+    if normalized in {"1", "true", "yes", "y", "on", "enabled", "enable"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off", "disabled", "disable"}:
+        return False
+    return None
 
 
 def _normalize_event_text(text: Any) -> str:

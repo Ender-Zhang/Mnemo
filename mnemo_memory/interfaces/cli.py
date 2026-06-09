@@ -110,6 +110,13 @@ def build_parser() -> argparse.ArgumentParser:
     ingest_event.add_argument("--api-key")
     ingest_event.add_argument("--api-key-env")
     ingest_event.add_argument("--timeout-s", type=float)
+    ingest_event.add_argument(
+        "--thinking",
+        dest="thinking_enabled",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Send provider payloads with thinking enabled; use --no-thinking to force it off.",
+    )
     ingest_event.add_argument("--json", action="store_true")
 
     promote = subparsers.add_parser("promote", help="Review and promote a memory candidate")
@@ -147,6 +154,13 @@ def build_parser() -> argparse.ArgumentParser:
     dream.add_argument("--api-key")
     dream.add_argument("--api-key-env")
     dream.add_argument("--timeout-s", type=float)
+    dream.add_argument(
+        "--thinking",
+        dest="thinking_enabled",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Send provider payloads with thinking enabled; use --no-thinking to force it off.",
+    )
     dream.add_argument("--json", action="store_true")
 
     mcp = subparsers.add_parser("mcp", help="Expose MCP tools")
@@ -186,6 +200,7 @@ def _cmd_ingest_event(args: argparse.Namespace) -> int:
         api_key=args.api_key,
         api_key_env=args.api_key_env,
         timeout_s=args.timeout_s,
+        thinking_enabled=args.thinking_enabled,
     )
     _print(
         MemoryClient(state_dir=args.state_dir).ingest_event(
@@ -222,6 +237,7 @@ def _cmd_dream(args: argparse.Namespace) -> int:
             api_key=args.api_key,
             api_key_env=args.api_key_env,
             timeout_s=args.timeout_s,
+            thinking_enabled=args.thinking_enabled,
         )
         _print(
             client.dream_run(

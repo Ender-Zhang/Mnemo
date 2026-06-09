@@ -19,9 +19,9 @@ class OpenAICompatibleMemoryMaintainer:
         self.config = config
 
     def propose_actions(self, *, delta: dict[str, Any], plan: dict[str, Any]) -> list[dict[str, Any]]:
-        payload = {
-            "model": self.config.model,
-            "messages": [
+        payload = _chat_payload(
+            self.config,
+            [
                 {
                     "role": "system",
                     "content": (
@@ -35,8 +35,7 @@ class OpenAICompatibleMemoryMaintainer:
                     "content": dumps({"delta": delta, "plan": plan}),
                 },
             ],
-            "temperature": 0,
-        }
+        )
         response = self._post_json("/chat/completions", payload)
         content = _message_content(response)
         parsed = _parse_json_object(content)
@@ -46,9 +45,9 @@ class OpenAICompatibleMemoryMaintainer:
         return [action for action in actions if isinstance(action, dict)]
 
     def extract_event_memory(self, *, event: dict[str, Any], context: list[dict[str, Any]]) -> dict[str, Any]:
-        payload = {
-            "model": self.config.model,
-            "messages": [
+        payload = _chat_payload(
+            self.config,
+            [
                 {
                     "role": "system",
                     "content": (
@@ -82,8 +81,7 @@ class OpenAICompatibleMemoryMaintainer:
                     ),
                 },
             ],
-            "temperature": 0,
-        }
+        )
         response = self._post_json("/chat/completions", payload)
         parsed = _parse_json_object(_message_content(response))
         return parsed if isinstance(parsed, dict) else {}
@@ -111,6 +109,17 @@ class OpenAICompatibleMemoryMaintainer:
         if not isinstance(parsed, dict):
             raise ValueError("maintenance provider returned non-object JSON")
         return parsed
+
+
+def _chat_payload(config: MemoryConfig, messages: list[dict[str, Any]]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": config.model,
+        "messages": messages,
+        "temperature": 0,
+    }
+    if config.thinking_enabled:
+        payload["thinking"] = {"type": "enabled"}
+    return payload
 
 
 def _message_content(response: dict[str, Any]) -> str:

@@ -126,6 +126,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             api_key=body.get("api_key", ""),
             api_key_env=_config_field(body, "api_key_env"),
             timeout_s=body.get("timeout_s"),
+            thinking_enabled=body.get("thinking_enabled"),
             clear_api_key=bool(body.get("clear_api_key", False)),
         )
     if method == "tombstones":

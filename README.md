@@ -259,16 +259,21 @@ mnemo-memory dream run --state-dir .mnemo-memory --json
 export MNEMO_MEMORY_BASE_URL=http://127.0.0.1:8000/v1
 export MNEMO_MEMORY_MODEL=memory-maintainer
 export MNEMO_MEMORY_API_KEY=replace-me
+# 可选：支持 thinking 参数的兼容 provider 可以打开
+# export MNEMO_MEMORY_THINKING_ENABLED=true
 
 mnemo-memory dream run \
   --state-dir .mnemo-memory \
   --use-provider \
+  --thinking \
   --json
 ```
 
 模型只会返回维护动作建议；服务端执行 `memory_promote_candidate` 时仍会走安全、质量、置信度、重复和冲突检查。
 
-WebUI 也可以走同一条模型审核通道：先在“设置”里保存 provider 并打开“使用模型审核”，再到“维护”里点击 `Run Dream`。开启后 WebUI 会向 `/api/memory/dream-run` 发送 `use_provider: true`；具体使用哪个模型由显式 CLI 参数、state dir 下的 `config.json` 或 `.env` 决定。
+Thinking 默认关闭。关闭时 provider 请求不会携带 `thinking` 字段；开启后 OpenAI-compatible 请求会额外发送 `thinking: {"type": "enabled"}`。如果当前 provider 不支持这个参数，保持关闭即可。配置来源可以是 `MNEMO_MEMORY_THINKING_ENABLED=true`、state dir 下 `config.json` 的 `thinking_enabled: true`，或 CLI 的 `--thinking` / `--no-thinking`。
+
+WebUI 也可以走同一条模型审核通道：先在“设置”里保存 provider，按需打开“开启 Thinking”，并打开“使用模型审核”，再到“维护”里点击 `Run Dream`。开启模型审核后 WebUI 会向 `/api/memory/dream-run` 发送 `use_provider: true`；具体使用哪个模型和 thinking 开关由显式 CLI 参数、state dir 下的 `config.json` 或 `.env` 决定。
 
 ## 对一条记忆做增删改查
 

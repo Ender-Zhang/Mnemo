@@ -1187,7 +1187,7 @@ function SettingsPanel(props: {
   onSaveProviderConfig: () => void;
   loading: boolean;
 }) {
-  const setProviderField = (field: keyof ProviderFormState, value: string) => {
+  const setProviderField = <K extends keyof ProviderFormState>(field: K, value: ProviderFormState[K]) => {
     props.setProviderForm({ ...props.providerForm, [field]: value });
   };
 
@@ -1277,6 +1277,17 @@ function SettingsPanel(props: {
         <span>
           <strong>使用模型审核</strong>
           <small>Run Dream 时调用服务端 provider；这里保存的配置会写入 state config。</small>
+        </span>
+      </label>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={props.providerForm.thinkingEnabled}
+          onChange={(event) => setProviderField("thinkingEnabled", event.target.checked)}
+        />
+        <span>
+          <strong>开启 Thinking</strong>
+          <small>保存后 provider 请求会携带 thinking 参数；关闭时不发送该字段。</small>
         </span>
       </label>
       <div className="settings-actions">

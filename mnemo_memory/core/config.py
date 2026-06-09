@@ -23,6 +23,7 @@ class MemoryConfig:
     api_key: str | None = None
     api_key_env: str | None = None
     timeout_s: float = DEFAULT_TIMEOUT_S
+    thinking_enabled: bool = False
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -42,6 +43,7 @@ class ConfigOverrides:
     api_key: str | None = None
     api_key_env: str | None = None
     timeout_s: float | None = None
+    thinking_enabled: bool | None = None
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -96,6 +98,12 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_TIMEOUT_S"),
         DEFAULT_TIMEOUT_S,
     )
+    thinking_enabled = _first_bool(
+        overrides.thinking_enabled,
+        file_config.get("thinking_enabled"),
+        env.get("MNEMO_MEMORY_THINKING_ENABLED"),
+        False,
+    )
     return MemoryConfig(
         state_dir=state_dir,
         provider=provider,
@@ -104,6 +112,7 @@ def resolve_memory_config(
         api_key=api_key,
         api_key_env=api_key_env,
         timeout_s=max(0.1, timeout_s),
+        thinking_enabled=thinking_enabled,
         auth_token=auth_token,
         config_path=str(config_path) if config_path else None,
     )
@@ -195,3 +204,29 @@ def _first_float(*values: Any) -> float:
         except (TypeError, ValueError):
             continue
     return DEFAULT_TIMEOUT_S
+
+
+def _first_bool(*values: Any) -> bool:
+    for value in values:
+        parsed = _parse_bool(value)
+        if parsed is not None:
+            return parsed
+    return False
+
+
+def _parse_bool(value: Any) -> bool | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if not normalized:
+            return None
+        if normalized in {"1", "true", "yes", "y", "on", "enabled", "enable"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off", "disabled", "disable"}:
+            return False
+    return None

@@ -20,6 +20,7 @@ class ProviderConfigTests(unittest.TestCase):
                         "MNEMO_MEMORY_BASE_URL=http://env-file.example/v1",
                         "MNEMO_MEMORY_MODEL=env-file-model",
                         "MNEMO_MEMORY_API_KEY=env-file-key",
+                        "MNEMO_MEMORY_THINKING_ENABLED=true",
                     ]
                 ),
                 encoding="utf-8",
@@ -33,6 +34,7 @@ class ProviderConfigTests(unittest.TestCase):
             self.assertEqual(config.base_url, "http://env-file.example/v1")
             self.assertEqual(config.model, "process-env-model")
             self.assertEqual(config.api_key, "env-file-key")
+            self.assertTrue(config.thinking_enabled)
 
     def test_resolve_memory_config_reads_default_dotenv_from_current_directory(self) -> None:
         from mnemo_memory.core.config import ConfigOverrides, resolve_memory_config
@@ -89,6 +91,7 @@ class ProviderConfigTests(unittest.TestCase):
                 api_key="secret-key",
                 api_key_env="",
                 timeout_s=12,
+                thinking_enabled=True,
             )
 
             self.assertEqual(saved["kind"], "memory_provider_config")
@@ -96,19 +99,24 @@ class ProviderConfigTests(unittest.TestCase):
             self.assertTrue(saved["api_key_configured"])
             self.assertEqual(saved["config"]["base_url"], "http://localhost:8000/v1")
             self.assertEqual(saved["config"]["api_key"], "***")
+            self.assertTrue(saved["config"]["thinking_enabled"])
 
             raw = json.loads((Path(tmp) / "config.json").read_text(encoding="utf-8"))
             self.assertEqual(raw["api_key"], "secret-key")
+            self.assertTrue(raw["thinking_enabled"])
 
             updated = client.save_provider_config(
                 base_url="http://localhost:9000/v1",
                 model="memory-maintainer-v2",
                 api_key="",
+                thinking_enabled=False,
             )
             raw_after_blank_key = json.loads((Path(tmp) / "config.json").read_text(encoding="utf-8"))
             self.assertEqual(raw_after_blank_key["api_key"], "secret-key")
+            self.assertFalse(raw_after_blank_key["thinking_enabled"])
             self.assertEqual(updated["config"]["base_url"], "http://localhost:9000/v1")
             self.assertEqual(updated["config"]["api_key"], "***")
+            self.assertFalse(updated["config"]["thinking_enabled"])
 
     def test_http_dispatch_reads_and_saves_provider_config(self) -> None:
         from mnemo_memory import MemoryClient
@@ -124,13 +132,45 @@ class ProviderConfigTests(unittest.TestCase):
                     "base_url": "http://localhost:8000/v1",
                     "model": "memory-maintainer",
                     "api_key": "secret-key",
+                    "thinking_enabled": True,
                 },
             )
             loaded = dispatch_memory_api(client, "provider-config", {})
 
             self.assertEqual(saved["config"]["api_key"], "***")
+            self.assertTrue(saved["config"]["thinking_enabled"])
             self.assertEqual(loaded["config"]["base_url"], "http://localhost:8000/v1")
             self.assertEqual(loaded["config"]["api_key"], "***")
+            self.assertTrue(loaded["config"]["thinking_enabled"])
+
+    def test_openai_provider_adds_thinking_payload_when_enabled(self) -> None:
+        from mnemo_memory.core.config import MemoryConfig
+        from mnemo_memory.providers.openai import OpenAICompatibleMemoryMaintainer
+
+        class CapturingMaintainer(OpenAICompatibleMemoryMaintainer):
+            def _post_json(self, path, payload):
+                self.last_payload = payload
+                return {"choices": [{"message": {"content": '{"actions": []}'}}]}
+
+        enabled = CapturingMaintainer(
+            MemoryConfig(
+                base_url="http://provider.example/v1",
+                model="memory-maintainer",
+                thinking_enabled=True,
+            )
+        )
+        self.assertEqual(enabled.propose_actions(delta={}, plan={}), [])
+        self.assertEqual(enabled.last_payload["thinking"], {"type": "enabled"})
+
+        disabled = CapturingMaintainer(
+            MemoryConfig(
+                base_url="http://provider.example/v1",
+                model="memory-maintainer",
+                thinking_enabled=False,
+            )
+        )
+        self.assertEqual(disabled.propose_actions(delta={}, plan={}), [])
+        self.assertNotIn("thinking", disabled.last_payload)
 
     def test_public_schema_exposes_provider_config_methods(self) -> None:
         from mnemo_memory.sdk import memory_api_schema

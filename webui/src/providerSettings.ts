@@ -10,6 +10,7 @@ export type ProviderConfigResult = {
     api_key?: string | null;
     api_key_env?: string | null;
     timeout_s?: number | string | null;
+    thinking_enabled?: boolean | number | string | null;
     config_path?: string | null;
   };
 };
@@ -21,6 +22,7 @@ export type ProviderFormState = {
   apiKey: string;
   apiKeyEnv: string;
   timeoutS: string;
+  thinkingEnabled: boolean;
 };
 
 export function emptyProviderForm(): ProviderFormState {
@@ -30,7 +32,8 @@ export function emptyProviderForm(): ProviderFormState {
     model: "memory-maintainer",
     apiKey: "",
     apiKeyEnv: "",
-    timeoutS: "30"
+    timeoutS: "30",
+    thinkingEnabled: false
   };
 }
 
@@ -42,7 +45,8 @@ export function providerFormFromConfig(result: ProviderConfigResult | null): Pro
     model: String(config.model || "memory-maintainer"),
     apiKey: "",
     apiKeyEnv: String(config.api_key_env || ""),
-    timeoutS: String(config.timeout_s || "30")
+    timeoutS: String(config.timeout_s || "30"),
+    thinkingEnabled: providerBool(config.thinking_enabled)
   };
 }
 
@@ -51,7 +55,8 @@ export function providerSavePayload(form: ProviderFormState) {
     provider: form.provider.trim() || "openai-compatible",
     base_url: form.baseUrl.trim(),
     model: form.model.trim(),
-    api_key_env: form.apiKeyEnv.trim()
+    api_key_env: form.apiKeyEnv.trim(),
+    thinking_enabled: form.thinkingEnabled
   };
   const cleanKey = form.apiKey.trim();
   if (cleanKey && cleanKey !== "***") {
@@ -68,4 +73,13 @@ export function providerStatusText(result: ProviderConfigResult | null) {
   if (!result) return "未加载";
   if (!result.configured) return "未配置";
   return result.api_key_configured ? "已配置 Key" : "已配置";
+}
+
+function providerBool(value: unknown) {
+  if (value === true) return true;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    return ["1", "true", "yes", "y", "on", "enabled", "enable"].includes(value.trim().toLowerCase());
+  }
+  return false;
 }
