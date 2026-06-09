@@ -422,6 +422,36 @@ button {
   background: #fff7f7;
 }
 
+.dream-timing {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: calc(100% - 28px);
+  margin: 12px 14px 0;
+  padding: 7px 10px;
+  border: 1px solid #d4deec;
+  border-radius: 6px;
+  color: #314055;
+  background: #f8fafc;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dream-timing.active {
+  border-color: #9fc0f5;
+  color: #1457d9;
+  background: #eef4ff;
+}
+
+.dream-timing span {
+  color: inherit;
+}
+
+.dream-timing strong {
+  font-variant-numeric: tabular-nums;
+}
+
 .dream-rejects-header {
   display: flex;
   align-items: center;

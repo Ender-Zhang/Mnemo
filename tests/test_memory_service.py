@@ -510,6 +510,17 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("await refresh({ clearNotice: false })", app)
         self.assertIn("setOk(dreamRunMessage(report, useProvider))", app)
         self.assertIn("Dream 已运行：已生成报告和快照", app)
+        self.assertIn("duration_s", app)
+        self.assertIn("用时", app)
+
+    def test_webui_shows_dream_elapsed_time_while_running(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn("dreamStartedAtMs", app)
+        self.assertIn("dreamElapsedS", app)
+        self.assertIn("DreamTiming", app)
+        self.assertIn("Running ${formatDuration(props.dreamElapsedS)}", app)
 
     def test_webui_displays_dream_reject_reasons(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"

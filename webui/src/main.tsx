@@ -128,6 +128,7 @@ type DreamRejectReason = {
 };
 
 type DreamReportSummary = {
+  duration_s?: number;
   execution?: {
     reject_reasons?: DreamRejectReason[];
     [key: string]: unknown;
@@ -137,6 +138,7 @@ type DreamReportSummary = {
 
 type DreamRunReport = {
   id?: string;
+  duration_s?: number;
   delta?: {
     counts?: Record<string, number>;
   };
@@ -227,11 +229,14 @@ function App() {
   const [providerForm, setProviderForm] = useState<ProviderFormState>(() => emptyProviderForm());
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [tombstoneReason, setTombstoneReason] = useState("manual_curation");
+  const [dreamStartedAtMs, setDreamStartedAtMs] = useState<number | null>(null);
+  const [clockNowMs, setClockNowMs] = useState(() => Date.now());
 
   const authed = authToken.trim().length > 0;
   const activeItems = searchMode ? searchItems : inventory;
   const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
+  const dreamElapsedS = dreamStartedAtMs === null ? null : Math.max(0, (clockNowMs - dreamStartedAtMs) / 1000);
 
   const requestJson = useCallback(
     async <T,>(path: string, options: RequestInit = {}) => {
@@ -335,6 +340,13 @@ function App() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (dreamStartedAtMs === null) return undefined;
+    setClockNowMs(Date.now());
+    const timerId = window.setInterval(() => setClockNowMs(Date.now()), 500);
+    return () => window.clearInterval(timerId);
+  }, [dreamStartedAtMs]);
 
   useEffect(() => {
     if (activeItems.length === 0) {
@@ -532,6 +544,7 @@ function App() {
 
   const runDream = async () => {
     setLoading(true);
+    setDreamStartedAtMs(Date.now());
     try {
       const report = await callMemory<DreamRunReport>("dream-run", { limit: 20, min_confidence: 0.7, use_provider: useProvider });
       await refresh({ clearNotice: false });
@@ -539,6 +552,7 @@ function App() {
     } catch (error) {
       setError(error);
     } finally {
+      setDreamStartedAtMs(null);
       setLoading(false);
     }
   };
@@ -706,6 +720,7 @@ function App() {
                 tombstones={tombstones}
                 useProvider={useProvider}
                 loading={loading}
+                dreamElapsedS={dreamElapsedS}
                 onRunDream={runDream}
                 onCompileSnapshot={compileSnapshot}
               />
@@ -758,6 +773,7 @@ function App() {
               snapshot={snapshot}
               useProvider={useProvider}
               loading={loading}
+              dreamElapsedS={dreamElapsedS}
               onPromote={promoteCandidate}
               onReject={rejectCandidate}
               onRunDream={runDream}
@@ -1161,9 +1177,11 @@ function MaintenancePanel(props: {
   tombstones: MemoryTombstone[];
   useProvider: boolean;
   loading: boolean;
+  dreamElapsedS: number | null;
   onRunDream: () => void;
   onCompileSnapshot: () => void;
 }) {
+  const latestDurationS = latestDreamDurationS(props.dreamStatus);
   return (
     <section className="panel maintenance">
       <div className="panel-header">
@@ -1173,8 +1191,10 @@ function MaintenancePanel(props: {
         </div>
         <div className="action-row">
           <button className="primary-button" onClick={props.onRunDream} disabled={props.loading}>
-            {props.loading ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-            {props.loading ? "Running" : props.useProvider ? "Run Model Dream" : "Run Dream"}
+            {props.dreamElapsedS !== null ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+            {props.dreamElapsedS !== null
+              ? `Running ${formatDuration(props.dreamElapsedS)}`
+              : props.useProvider ? "Run Model Dream" : "Run Dream"}
           </button>
           <button className="ghost-button" onClick={props.onCompileSnapshot} disabled={props.loading}>
             <RefreshCcw size={16} />
@@ -1182,6 +1202,7 @@ function MaintenancePanel(props: {
           </button>
         </div>
       </div>
+      <DreamTiming elapsedS={props.dreamElapsedS} latestDurationS={latestDurationS} />
       <DreamRejectReasons items={dreamStatusRejectReasons(props.dreamStatus)} />
       <div className="maintenance-grid">
         <JsonBlock title="Health" value={props.health || {}} />
@@ -1190,6 +1211,17 @@ function MaintenancePanel(props: {
         <JsonBlock title="Tombstones" value={props.tombstones} />
       </div>
     </section>
+  );
+}
+
+function DreamTiming({ elapsedS, latestDurationS }: { elapsedS: number | null; latestDurationS: number | null }) {
+  if (elapsedS === null && latestDurationS === null) return null;
+  return (
+    <div className={elapsedS === null ? "dream-timing" : "dream-timing active"}>
+      {elapsedS === null ? <FileClock size={16} /> : <Loader2 className="spin" size={16} />}
+      <span>{elapsedS === null ? "上次用时" : "Dreaming 用时"}</span>
+      <strong>{formatDuration(elapsedS ?? latestDurationS ?? 0)}</strong>
+    </div>
   );
 }
 
@@ -1351,6 +1383,7 @@ function OperationsQueue(props: {
   snapshot: SnapshotResult | null;
   useProvider: boolean;
   loading: boolean;
+  dreamElapsedS: number | null;
   onPromote: (id: string) => void;
   onReject: (id: string) => void;
   onRunDream: () => void;
@@ -1384,8 +1417,8 @@ function OperationsQueue(props: {
         </div>
         <JsonBlock title="Status" value={props.dreamStatus || {}} />
         <button className="primary-button full" onClick={props.onRunDream} disabled={props.loading}>
-          {props.loading ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-          {props.loading ? "Running" : props.useProvider ? "Run Model" : "Run Now"}
+          {props.dreamElapsedS !== null ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
+          {props.dreamElapsedS !== null ? `Running ${formatDuration(props.dreamElapsedS)}` : props.useProvider ? "Run Model" : "Run Now"}
         </button>
       </section>
       <section className="panel ops-panel">
@@ -1530,6 +1563,20 @@ function compactId(value?: string) {
   return value.length > 24 ? `${value.slice(0, 21)}...` : value;
 }
 
+function latestDreamDurationS(status: DreamStatusResult | null) {
+  const value = status?.latest?.duration_s;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatDuration(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "0.0s";
+  if (value < 10) return `${value.toFixed(1)}s`;
+  if (value < 60) return `${Math.round(value)}s`;
+  const minutes = Math.floor(value / 60);
+  const seconds = Math.round(value % 60);
+  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
 function dreamStatusRejectReasons(status: DreamStatusResult | null) {
   return normalizeDreamRejectReasons(status?.latest?.execution?.reject_reasons);
 }
@@ -1562,6 +1609,10 @@ function dreamRejectReasonText(items: DreamRejectReason[]) {
   return ` Reject 原因：${details}${more}`;
 }
 
+function dreamDurationText(report: DreamRunReport) {
+  return typeof report.duration_s === "number" && Number.isFinite(report.duration_s) ? `用时 ${formatDuration(report.duration_s)}。` : "";
+}
+
 function dreamRunMessage(report: DreamRunReport, useProvider: boolean) {
   const counts = report.execution?.result?.actions?.counts || {};
   const deltaCounts = report.delta?.counts || {};
@@ -1570,10 +1621,11 @@ function dreamRunMessage(report: DreamRunReport, useProvider: boolean) {
   const skipped = Number(counts.skipped || 0);
   const draftCandidates = Number(deltaCounts.draft_candidates || deltaCounts.memory_candidates || 0);
   const rejectReasonText = dreamRejectReasonText(dreamRunRejectReasons(report));
+  const durationText = dreamDurationText(report);
   if (!useProvider && requested === 0) {
-    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。`;
+    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。${durationText}`;
   }
-  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${rejectReasonText}`;
+  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${durationText}${rejectReasonText}`;
 }
 
 createRoot(document.getElementById("root")!).render(
