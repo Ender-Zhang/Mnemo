@@ -915,6 +915,8 @@ function MemoryDetail(props: {
           <div className="detail-grid">
             <label>类型</label>
             <strong>{item.type}</strong>
+            <label>状态</label>
+            <strong>{item.status || "-"}</strong>
             <label>范围</label>
             <strong>{item.scope || "-"}</strong>
             <label>置信度</label>
@@ -1368,7 +1370,16 @@ function StatusBadge({ text }: { text: string }) {
       : normalized.includes("reject") || normalized.includes("tomb") || normalized.includes("delete")
         ? "bad"
         : "neutral";
-  return <span className={`badge ${tone}`}>{text}</span>;
+  return <span className={`badge ${tone}`} title={text}>{compactStatusText(text)}</span>;
+}
+
+function compactStatusText(text: string) {
+  const cleanText = text.trim();
+  const separator = cleanText.indexOf(":");
+  if (separator > 0) {
+    return cleanText.slice(0, separator);
+  }
+  return cleanText;
 }
 
 function StatusDot({ ok }: { ok: boolean }) {

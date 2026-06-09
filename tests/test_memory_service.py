@@ -510,6 +510,17 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("UID 检索完成", app)
         self.assertIn("user_123 或 user:user_123", app)
 
+    def test_webui_compacts_long_status_badges(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app = root.joinpath("webui", "src", "main.tsx").read_text(encoding="utf-8")
+        css = root.joinpath("webui", "src", "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn("function compactStatusText", app)
+        self.assertIn("title={text}", app)
+        self.assertIn("<label>状态</label>", app)
+        self.assertIn("text-overflow: ellipsis", css)
+        self.assertIn("overflow: hidden", css)
+
     def test_mcp_exposes_only_memory_tools_with_new_prefix(self) -> None:
         from mnemo_memory.mcp import MemoryMcpServer
 
