@@ -59,6 +59,7 @@ type MemoryItem = {
 type MemoryListResult = {
   kind: "memory_list";
   count: number;
+  uid?: string | null;
   items: MemoryItem[];
 };
 
@@ -185,8 +186,10 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [query, setQuery] = useState("");
+  const [uidFilter, setUidFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "candidate" | "page">("all");
+  const [searchMode, setSearchMode] = useState(false);
   const [inventory, setInventory] = useState<MemoryItem[]>([]);
   const [searchItems, setSearchItems] = useState<MemoryItem[]>([]);
   const [candidates, setCandidates] = useState<MemoryItem[]>([]);
@@ -207,7 +210,7 @@ function App() {
   const [tombstoneReason, setTombstoneReason] = useState("manual_curation");
 
   const authed = authToken.trim().length > 0;
-  const activeItems = searchItems.length > 0 ? searchItems : inventory;
+  const activeItems = searchMode ? searchItems : inventory;
   const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
 
@@ -314,21 +317,40 @@ function App() {
   }, [activeItems, selected]);
 
   const searchMemory = async () => {
-    if (!query.trim()) {
+    const cleanQuery = query.trim();
+    const cleanUid = uidFilter.trim();
+    if (!cleanQuery && !cleanUid) {
       setSearchItems([]);
+      setSearchMode(false);
       await refresh();
       return;
     }
     setLoading(true);
     try {
+      if (cleanUid) {
+        const result = await callMemory<MemoryListResult>("list", {
+          kind: kindFilter,
+          status: statusFilter || null,
+          uid: cleanUid,
+          limit: 50
+        });
+        const mapped = (result.items || []).filter((item) => itemMatchesQuery(item, cleanQuery));
+        setSearchMode(true);
+        setSearchItems(mapped);
+        setSelected(mapped[0] || null);
+        setOk(`UID 检索完成：${mapped.length} 条结果`);
+        return;
+      }
       const result = await callMemory<MemorySearchResult>("search", {
-        query: query.trim(),
+        query: cleanQuery,
         scope: "memory",
         limit: 30
       });
       const mapped = (result.matches || [])
         .map(searchMatchToItem)
-        .filter((item) => kindFilter === "all" || item.type === kindFilter);
+        .filter((item) => kindFilter === "all" || item.type === kindFilter)
+        .filter((item) => !statusFilter || item.status === statusFilter);
+      setSearchMode(true);
       setSearchItems(mapped);
       setSelected(mapped[0] || null);
       setOk(`搜索完成：${mapped.length} 条结果`);
@@ -603,10 +625,12 @@ function App() {
         <section className="dashboard-grid">
           <div className="main-column">
             {activeTab === "overview" ? <Overview stats={summaryStats} health={health} dreamStatus={dreamStatus} snapshot={snapshot} /> : null}
-            {activeTab === "search" || activeTab === "overview" ? (
+            {activeTab === "search" || activeTab === "overview" || activeTab === "memories" ? (
               <SearchPanel
                 query={query}
                 setQuery={setQuery}
+                uidFilter={uidFilter}
+                setUidFilter={setUidFilter}
                 kindFilter={kindFilter}
                 setKindFilter={setKindFilter}
                 statusFilter={statusFilter}
@@ -748,6 +772,8 @@ function Overview({
 function SearchPanel(props: {
   query: string;
   setQuery: (value: string) => void;
+  uidFilter: string;
+  setUidFilter: (value: string) => void;
   kindFilter: "all" | "candidate" | "page";
   setKindFilter: (value: "all" | "candidate" | "page") => void;
   statusFilter: string;
@@ -789,6 +815,10 @@ function SearchPanel(props: {
             <option value="promoted">promoted</option>
             <option value="rejected">rejected</option>
           </select>
+        </label>
+        <label>
+          UID
+          <input value={props.uidFilter} onChange={(event) => props.setUidFilter(event.target.value)} placeholder="user_123 或 user:user_123" />
         </label>
       </div>
     </section>
@@ -1328,6 +1358,27 @@ function searchMatchToItem(match: Record<string, unknown>): MemoryItem {
     title: String(match.title || match.claim || ""),
     content: String(match.content || match.claim || match.summary || "")
   };
+}
+
+function itemMatchesQuery(item: MemoryItem, query: string) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = [
+    item.id,
+    item.type,
+    item.status,
+    item.claim,
+    item.title,
+    item.content,
+    item.scope,
+    item.dimension,
+    item.run_id,
+    item.source_candidate_id
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }
 
 function tombstoneTargetItem(tombstone: MemoryTombstone): MemoryItem {

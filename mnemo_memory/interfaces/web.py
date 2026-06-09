@@ -77,6 +77,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             status=_optional(body.get("status")),
             limit=int(body.get("limit") or 50),
             include_tombstoned=bool(body.get("include_tombstoned", False)),
+            uid=_optional(body.get("uid")),
         )
     if method == "update":
         return client.update(

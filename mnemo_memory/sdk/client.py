@@ -73,6 +73,7 @@ class MemoryClient:
         status: str | None = None,
         limit: int = 50,
         include_tombstoned: bool = False,
+        uid: str | None = None,
     ) -> dict[str, Any]:
         normalized_kind = str(kind or "all").strip().casefold()
         if normalized_kind not in {"all", "candidate", "page"}:
@@ -81,12 +82,13 @@ class MemoryClient:
         store = self._store()
         items: list[dict[str, Any]] = []
         bounded_limit = _limit(limit)
+        normalized_uid = _optional_text(uid)
 
         if normalized_kind in {"all", "candidate"}:
-            candidates = store.list_memory_candidates(status=normalized_status, limit=bounded_limit)
+            candidates = store.list_memory_candidates(status=normalized_status, limit=bounded_limit, uid=normalized_uid)
             items.extend(_typed_item("candidate", item) for item in candidates)
         if normalized_kind in {"all", "page"}:
-            pages = store.list_memory_pages(status=normalized_status, limit=bounded_limit)
+            pages = store.list_memory_pages(status=normalized_status, limit=bounded_limit, uid=normalized_uid)
             items.extend(_typed_item("page", item) for item in pages)
 
         if not include_tombstoned:
@@ -98,6 +100,7 @@ class MemoryClient:
             "version": "mnemo_memory.list.v1",
             "item_kind": normalized_kind,
             "status": normalized_status,
+            "uid": normalized_uid,
             "include_tombstoned": include_tombstoned,
             "count": len(items),
             "items": items,

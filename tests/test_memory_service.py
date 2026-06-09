@@ -70,6 +70,48 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual({item["type"] for item in combined["items"]}, {"candidate", "page"})
             self.assertEqual(combined["count"], 2)
 
+    def test_client_lists_memory_by_uid_scope(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            alpha_update = client.update(
+                facts=[
+                    {
+                        "claim": "UID user_123 prefers concise implementation updates that include test results.",
+                        "dimension": "preferences",
+                        "scope": "user:user_123",
+                        "confidence": 0.9,
+                    }
+                ],
+                source="unit-test",
+            )
+            beta_update = client.update(
+                facts=[
+                    {
+                        "claim": "UID userX123 wants quarterly roadmap goals summarized before tactical tasks.",
+                        "dimension": "goals",
+                        "scope": "user:userX123",
+                        "confidence": 0.9,
+                    }
+                ],
+                source="unit-test",
+            )
+            alpha_candidate_id = alpha_update["memory_candidates"][0]["candidate_id"]
+            beta_candidate_id = beta_update["memory_candidates"][0]["candidate_id"]
+            alpha_page_id = client.promote_candidate(alpha_candidate_id)["page_id"]
+            beta_page_id = client.promote_candidate(beta_candidate_id)["page_id"]
+
+            result = client.list(kind="all", status=None, uid="user_123", limit=20)
+            ids = {item["id"] for item in result["items"]}
+
+            self.assertEqual(result["uid"], "user_123")
+            self.assertIn(alpha_candidate_id, ids)
+            self.assertIn(alpha_page_id, ids)
+            self.assertNotIn(beta_candidate_id, ids)
+            self.assertNotIn(beta_page_id, ids)
+
     def test_client_traces_promoted_memory_to_source_event(self) -> None:
         from mnemo_memory import MemoryClient
 
@@ -253,12 +295,31 @@ class MemoryServiceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             client = MemoryClient(state_dir=tmp)
-            update = client.update(facts=["HTTP clients can list memory inventory."], source="unit-test")
+            update = client.update(
+                facts=[
+                    {
+                        "claim": "HTTP clients can list memory inventory for alpha users.",
+                        "scope": "user:alpha",
+                    }
+                ],
+                source="unit-test",
+            )
+            client.update(
+                facts=[
+                    {
+                        "claim": "HTTP clients can list memory inventory for beta users.",
+                        "scope": "user:beta",
+                    }
+                ],
+                source="unit-test",
+            )
             candidate_id = update["memory_candidates"][0]["candidate_id"]
 
-            listed = dispatch_memory_api(client, "list", {"kind": "candidate", "status": "draft"})
+            listed = dispatch_memory_api(client, "list", {"kind": "candidate", "status": "draft", "uid": "alpha"})
 
             self.assertEqual(listed["kind"], "memory_list")
+            self.assertEqual(listed["uid"], "alpha")
+            self.assertEqual(len(listed["items"]), 1)
             self.assertEqual(listed["items"][0]["id"], candidate_id)
 
     def test_http_dispatch_returns_memory_provenance(self) -> None:
@@ -432,6 +493,15 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn('callMemory("forget"', app)
         self.assertIn('callMemory("hard-delete"', app)
         self.assertIn("彻底删除", app)
+
+    def test_webui_can_filter_memories_by_uid(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn("uidFilter", app)
+        self.assertIn("uid: cleanUid", app)
+        self.assertIn("UID 检索完成", app)
+        self.assertIn("user_123 或 user:user_123", app)
 
     def test_mcp_exposes_only_memory_tools_with_new_prefix(self) -> None:
         from mnemo_memory.mcp import MemoryMcpServer

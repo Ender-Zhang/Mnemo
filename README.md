@@ -360,6 +360,10 @@ curl -X POST http://127.0.0.1:8765/api/memory/list \
   -H 'Content-Type: application/json' \
   -d '{"kind": "page", "status": "active", "limit": 20}'
 
+curl -X POST http://127.0.0.1:8765/api/memory/list \
+  -H 'Content-Type: application/json' \
+  -d '{"kind": "all", "uid": "user_123", "limit": 20}'
+
 # 改：写入更正后的新 fact，再 promote 新 candidate；同主题稳定页会被合并更新。
 curl -X POST http://127.0.0.1:8765/api/memory/update \
   -H 'Content-Type: application/json' \
@@ -452,7 +456,7 @@ provenance = client.provenance(results["matches"][0]["id"])
 
 每条 fact 会生成一个轻量 `memory_event`。`event_at` 表示原始事件发生时间，`observed_at` 表示 Mnemo 记录到这件事的时间；如果调用方不传 `event_at`，系统会用记录时间兜底。搜索或选中记忆后，可以通过 `provenance` 看到 `事件 -> 候选记忆 -> 稳定记忆` 的来源链。WebUI 的“记忆详情”里也会显示“来源时间线”。
 
-多用户场景下，如果你需要更强隔离，建议每个用户使用独立的 `--state-dir`。如果多个用户共用同一个状态目录，请像上面示例一样，把用户标识同时写进 `scope` 和可搜索文本。当前 `search` API 是文本召回能力，不是权限隔离边界。
+多用户场景下，如果你需要更强隔离，建议每个用户使用独立的 `--state-dir`。如果多个用户共用同一个状态目录，请像上面示例一样，把用户标识写进 `scope`，然后用 `list(uid="user_123")` 或 WebUI 的 UID 输入框按用户库存检索；也可以把用户标识写进可搜索文本，供 `search` 文本召回使用。当前 `search` / `list(uid=...)` 都是本地检索能力，不是权限隔离边界。
 
 ## HTTP API
 
@@ -478,6 +482,7 @@ mnemo-memory serve --state-dir .mnemo-memory
 打开 `http://127.0.0.1:8765/`，然后可以在后台里完成：
 
 - 搜索和查看稳定记忆页或候选记忆
+- 在“记忆/搜索”里按 UID 检索某个用户 scope 下的记忆库存
 - 添加 facts 和 observations
 - 通过审核门 promote 候选记忆，或 reject 候选记忆
 - tombstone 或 forget 选中的记忆项

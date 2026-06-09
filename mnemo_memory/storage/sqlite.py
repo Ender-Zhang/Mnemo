@@ -309,15 +309,28 @@ class StateStore:
             ).fetchall()
         return [_memory_candidate_from_row(row) for row in rows]
 
-    def list_memory_candidates(self, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_memory_candidates(
+        self,
+        status: str | None = None,
+        limit: int = 50,
+        *,
+        uid: str | None = None,
+    ) -> list[dict[str, Any]]:
         sql = """
             SELECT id, run_id, claim, dimension, scope, confidence, status, evidence_json, created_at
             FROM memory_candidates
         """
         params: list[Any] = []
+        clauses: list[str] = []
         if status:
-            sql += " WHERE status = ?"
+            clauses.append("status = ?")
             params.append(status)
+        scope_clause, scope_params = _uid_scope_clause(uid)
+        if scope_clause:
+            clauses.append(scope_clause)
+            params.extend(scope_params)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY created_at DESC LIMIT ?"
         params.append(max(0, int(limit)))
         with self.connect() as conn:
@@ -522,15 +535,28 @@ class StateStore:
             ).fetchall()
         return [_memory_page_from_row(row) for row in rows]
 
-    def list_memory_pages(self, status: str | None = "active", limit: int = 50) -> list[dict[str, Any]]:
+    def list_memory_pages(
+        self,
+        status: str | None = "active",
+        limit: int = 50,
+        *,
+        uid: str | None = None,
+    ) -> list[dict[str, Any]]:
         sql = """
             SELECT id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
             FROM memory_pages
         """
         params: list[Any] = []
+        clauses: list[str] = []
         if status:
-            sql += " WHERE status = ?"
+            clauses.append("status = ?")
             params.append(status)
+        scope_clause, scope_params = _uid_scope_clause(uid)
+        if scope_clause:
+            clauses.append(scope_clause)
+            params.extend(scope_params)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY updated_at DESC LIMIT ?"
         params.append(max(0, int(limit)))
         with self.connect() as conn:
@@ -723,6 +749,31 @@ def _target_hash(explicit_hash: str | None, fallback: str) -> str:
     if clean_hash:
         return clean_hash
     return hashlib.sha256(str(fallback or "").encode("utf-8")).hexdigest()
+
+
+def _uid_scope_clause(uid: str | None) -> tuple[str, list[Any]]:
+    clean_uid = str(uid or "").strip()
+    if not clean_uid:
+        return "", []
+    candidates = {clean_uid}
+    if clean_uid.casefold().startswith("user:"):
+        suffix = clean_uid.split(":", 1)[1].strip()
+        if suffix:
+            candidates.add(suffix)
+    else:
+        candidates.add(f"user:{clean_uid}")
+    exact_values = sorted(value for value in candidates if value)
+    placeholders = ", ".join("?" for _ in exact_values)
+    clauses = [f"scope IN ({placeholders})"] if placeholders else []
+    params: list[Any] = [*exact_values]
+    clauses.append("scope LIKE ? ESCAPE '!'")
+    params.append(_scope_like_pattern(clean_uid))
+    return "(" + " OR ".join(clauses) + ")", params
+
+
+def _scope_like_pattern(value: str) -> str:
+    escaped = value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    return f"%{escaped}%"
 
 
 def _event_hash(explicit_hash: str | None, fallback: Any) -> str:
