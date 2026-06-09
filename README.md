@@ -270,36 +270,66 @@ mnemo-memory dream run \
 
 WebUI 也可以走同一条模型审核通道：先在“设置”里保存 provider 并打开“使用模型审核”，再到“维护”里点击 `Run Dream`。开启后 WebUI 会向 `/api/memory/dream-run` 发送 `use_provider: true`；具体使用哪个模型由显式 CLI 参数、state dir 下的 `config.json` 或 `.env` 决定。
 
-## 存储和搜索用户记忆
+## 对一条记忆做增删改查
 
-Mnemo 使用“候选优先”的写入流程。你先把用户记忆作为 fact 写入，检查返回的 candidate，如果确认这条记忆应该长期保留，再把它 promote 成稳定记忆。
+Mnemo 使用“候选优先”的写入流程。新增记忆时，用户事实会先写成 `memory_candidate`；确认它应该长期保留后，再通过 `promote` 审核门生成或合并到稳定记忆页。当前公开接口没有“原地 PATCH 某条稳定记忆”的语义；要修改一条记忆，写入更正后的新 fact 并 promote，系统会尽量合并到同主题稳定页。旧内容不应继续使用时，再按需要选择 `tombstone`、`forget` 或 `hard-delete`。
+
+| 动作 | 用途 | 是否保留原内容 | 是否保留删除痕迹 |
+| --- | --- | --- | --- |
+| `tombstone` | 标记过期、错误、重复或被替代的记忆不可再用 | 是，通常保留截断摘要和原记录 | 是 |
+| `forget` | 用户要求私密删除或内容不应继续保存 | 否，目标 page/candidate 会被擦成 `[private memory deleted]` | 是，保留不可复活规则和 hash |
+| `hard-delete` | 管理员物理清除 tombstone 指向的记忆记录 | 否 | 否，会删除目标、相关 links/tombstones 和 page wiki 文件 |
 
 ### CLI
 
+普通 CLI 可以完成候选写入、promote/reject 和搜索。按 ID 精确读取、tombstone、forget、hard-delete 目前走 HTTP 或 SDK；其中 tombstone/forget 也可用 MCP 工具。
+
 ```bash
-# 存储一条用户记忆候选。
+# 增：写入一条用户记忆候选，保存返回的 memory_candidates[0].candidate_id。
 mnemo-memory update \
   --state-dir .mnemo-memory \
   --source agent:user_123 \
+  --facts-json '[{"claim":"user_123 偏好简洁的实现进度更新","dimension":"preferences","scope":"user:user_123","confidence":0.9}]' \
+  --json
+
+# 审核为稳定记忆，保存返回的 page_id。
+mnemo-memory promote mem_xxxxxxxxxxxxxxxx \
+  --state-dir .mnemo-memory \
   --json \
-  "user_123 偏好简洁的实现进度更新"
+  --min-confidence 0.7
 
-# 如果这条记忆应该长期保留，把返回的 candidate_id 交给审核门。
-mnemo-memory promote mem_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
-
-# 仅管理员覆盖使用：跳过审核门，直接写入稳定记忆。
-mnemo-memory force-promote mem_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
-
-# 搜索这个用户的记忆。
+# 查：按文本搜索候选和稳定记忆。
 mnemo-memory search "user_123 简洁 实现进度更新" \
   --state-dir .mnemo-memory \
   --limit 10 \
   --json
+
+# 改：写入更正后的新候选，再 promote；如果属于同主题，结果里 page_action 通常是 merged。
+mnemo-memory update \
+  --state-dir .mnemo-memory \
+  --source agent:user_123 \
+  --facts-json '[{"claim":"user_123 偏好简洁、且包含测试结果的实现进度更新","dimension":"preferences","scope":"user:user_123","confidence":0.9}]' \
+  --json
+
+mnemo-memory promote mem_yyyyyyyyyyyyyyyy \
+  --state-dir .mnemo-memory \
+  --json
+
+# 删候选：未 promote 的候选可以 reject。
+mnemo-memory reject mem_yyyyyyyyyyyyyyyy duplicate \
+  --state-dir .mnemo-memory \
+  --json
+
+# 仅管理员覆盖使用：跳过审核门，直接写入稳定记忆。
+mnemo-memory force-promote mem_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
 ```
 
 ### HTTP
 
+HTTP 的每个 `/api/memory/*` POST 响应都会包一层 `{ "method": "...", "result": ... }`。下面的 `candidate_id` 来自 `result.memory_candidates[0].candidate_id`，稳定记忆页 ID 来自 promote 返回的 `result.page_id`。
+
 ```bash
+# 增：写入候选记忆。
 curl -X POST http://127.0.0.1:8765/api/memory/update \
   -H 'Content-Type: application/json' \
   -d '{
@@ -314,21 +344,69 @@ curl -X POST http://127.0.0.1:8765/api/memory/update \
     ]
   }'
 
+# promote：把候选交给审核门，审核通过后生成或合并稳定记忆页。
 curl -X POST http://127.0.0.1:8765/api/memory/promote-candidate \
   -H 'Content-Type: application/json' \
   -d '{"candidate_id": "mem_xxxxxxxxxxxxxxxx", "min_confidence": 0.7}'
 
-curl -X POST http://127.0.0.1:8765/api/memory/force-promote-candidate \
-  -H 'Content-Type: application/json' \
-  -d '{"candidate_id": "mem_xxxxxxxxxxxxxxxx"}'
-
+# 查：按文本搜索，或按 ID 精确读取一个 candidate/page。
 curl -X POST http://127.0.0.1:8765/api/memory/search \
   -H 'Content-Type: application/json' \
   -d '{"query": "user_123 简洁 实现进度更新", "limit": 10}'
 
+curl 'http://127.0.0.1:8765/api/memory/read?memory_id=mempg_xxxxxxxxxxxxxxxx'
+
+curl -X POST http://127.0.0.1:8765/api/memory/list \
+  -H 'Content-Type: application/json' \
+  -d '{"kind": "page", "status": "active", "limit": 20}'
+
+# 改：写入更正后的新 fact，再 promote 新 candidate；同主题稳定页会被合并更新。
+curl -X POST http://127.0.0.1:8765/api/memory/update \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source": "agent:user_123",
+    "facts": [
+      {
+        "claim": "user_123 偏好简洁、且包含测试结果的实现进度更新",
+        "dimension": "preferences",
+        "scope": "user:user_123",
+        "confidence": 0.9
+      }
+    ]
+  }'
+
+curl -X POST http://127.0.0.1:8765/api/memory/promote-candidate \
+  -H 'Content-Type: application/json' \
+  -d '{"candidate_id": "mem_yyyyyyyyyyyyyyyy", "min_confidence": 0.7}'
+
+# 删：tombstone 表示这条记忆不可再使用，但保留记录和删除痕迹。
+curl -X POST http://127.0.0.1:8765/api/memory/tombstone \
+  -H 'Content-Type: application/json' \
+  -d '{"memory_id": "mempg_xxxxxxxxxxxxxxxx", "target_type": "page", "reason": "outdated"}'
+
+# forget 会擦除目标内容，但保留 private_delete tombstone，防止历史上下文重新复活它。
+curl -X POST http://127.0.0.1:8765/api/memory/forget \
+  -H 'Content-Type: application/json' \
+  -d '{"memory_id": "mempg_xxxxxxxxxxxxxxxx", "target_type": "page", "reason": "user_requested_delete"}'
+
+# hard-delete 是彻底删除：按 tombstone_id 删除目标记忆、相关 links/tombstones 和 page wiki 文件。
+curl -X POST http://127.0.0.1:8765/api/memory/hard-delete \
+  -H 'Content-Type: application/json' \
+  -d '{"tombstone_id": "tomb_xxxxxxxxxxxxxxxx", "delete_related": true}'
+
+# 未 promote 的候选可以直接 reject。
+curl -X POST http://127.0.0.1:8765/api/memory/reject-candidate \
+  -H 'Content-Type: application/json' \
+  -d '{"candidate_id": "mem_yyyyyyyyyyyyyyyy", "reason": "duplicate"}'
+
 curl -X POST http://127.0.0.1:8765/api/memory/provenance \
   -H 'Content-Type: application/json' \
   -d '{"memory_id": "mempg_xxxxxxxxxxxxxxxx"}'
+
+# 仅管理员覆盖使用：跳过审核门，直接写入稳定记忆。
+curl -X POST http://127.0.0.1:8765/api/memory/force-promote-candidate \
+  -H 'Content-Type: application/json' \
+  -d '{"candidate_id": "mem_xxxxxxxxxxxxxxxx"}'
 ```
 
 ### Python
@@ -366,6 +444,10 @@ if review["decision"] != "promoted":
 
 results = client.search("user_123 简洁 实现进度更新", limit=10)
 provenance = client.provenance(results["matches"][0]["id"])
+
+# forget 是私密擦除并保留删除痕迹；hard_delete 是物理删除。
+# client.forget("mempg_xxxxxxxxxxxxxxxx", target_type="page", reason="user_requested_delete")
+# client.hard_delete(tombstone_id="tomb_xxxxxxxxxxxxxxxx")
 ```
 
 每条 fact 会生成一个轻量 `memory_event`。`event_at` 表示原始事件发生时间，`observed_at` 表示 Mnemo 记录到这件事的时间；如果调用方不传 `event_at`，系统会用记录时间兜底。搜索或选中记忆后，可以通过 `provenance` 看到 `事件 -> 候选记忆 -> 稳定记忆` 的来源链。WebUI 的“记忆详情”里也会显示“来源时间线”。

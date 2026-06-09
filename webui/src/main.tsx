@@ -141,11 +141,24 @@ type SnapshotResult = {
   snapshot?: Record<string, unknown> | null;
 };
 
-type TombstonesResult = {
-  tombstones?: Array<Record<string, unknown>>;
+type MemoryTombstone = {
+  id: string;
+  target_id: string;
+  target_type: "candidate" | "page";
+  target_hash?: string;
+  reason?: string;
+  summary?: string;
+  evidence_run_id?: string;
+  rule?: string;
+  metadata?: Record<string, unknown>;
+  created_at?: number;
 };
 
-type TabKey = "overview" | "search" | "memories" | "candidates" | "maintenance" | "settings";
+type TombstonesResult = {
+  tombstones?: MemoryTombstone[];
+};
+
+type TabKey = "overview" | "search" | "memories" | "candidates" | "tombstones" | "maintenance" | "settings";
 
 type Notice = {
   tone: "ok" | "warn" | "error";
@@ -157,6 +170,7 @@ const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "search", label: "搜索", icon: Search },
   { key: "memories", label: "记忆", icon: Database },
   { key: "candidates", label: "候选", icon: ClipboardList },
+  { key: "tombstones", label: "墓碑", icon: Archive },
   { key: "maintenance", label: "维护", icon: Activity },
   { key: "settings", label: "设置", icon: Settings }
 ];
@@ -182,7 +196,7 @@ function App() {
   const [health, setHealth] = useState<MemoryHealthResult | null>(null);
   const [dreamStatus, setDreamStatus] = useState<DreamStatusResult | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotResult | null>(null);
-  const [tombstones, setTombstones] = useState<Array<Record<string, unknown>>>([]);
+  const [tombstones, setTombstones] = useState<MemoryTombstone[]>([]);
   const [factText, setFactText] = useState("");
   const [observationText, setObservationText] = useState("");
   const [source, setSource] = useState("webui");
@@ -419,6 +433,44 @@ function App() {
     }
   };
 
+  const forgetTombstoneTarget = async (tombstone: MemoryTombstone) => {
+    setLoading(true);
+    try {
+      await callMemory("forget", {
+        memory_id: tombstone.target_id,
+        target_type: tombstone.target_type,
+        reason: "private_delete"
+      });
+      setOk("目标记忆已 Forget 擦除，删除痕迹仍会保留");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hardDeleteTombstoneTarget = async (tombstone: MemoryTombstone) => {
+    const confirmed = window.confirm(`彻底删除 ${tombstone.target_type}:${tombstone.target_id} 及相关 tombstone/link/wiki 记录？`);
+    if (!confirmed) return;
+    setLoading(true);
+    try {
+      await callMemory("hard-delete", {
+        tombstone_id: tombstone.id,
+        memory_id: tombstone.target_id,
+        target_type: tombstone.target_type,
+        delete_related: true
+      });
+      setSelected(null);
+      setOk("目标记忆和相关 tombstone 记录已彻底删除");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const runDream = async () => {
     setLoading(true);
     try {
@@ -494,6 +546,7 @@ function App() {
               <item.icon size={18} />
               <span>{item.label}</span>
               {item.key === "candidates" && pendingCandidates.length > 0 ? <b>{pendingCandidates.length}</b> : null}
+              {item.key === "tombstones" && tombstones.length > 0 ? <b>{tombstones.length}</b> : null}
             </button>
           ))}
         </nav>
@@ -573,6 +626,15 @@ function App() {
                 onPromote={promoteCandidate}
                 onReject={rejectCandidate}
                 onSelect={readMemory}
+              />
+            ) : null}
+            {activeTab === "tombstones" ? (
+              <TombstonePanel
+                tombstones={tombstones}
+                loading={loading}
+                onSelectTarget={(item) => readMemory(item)}
+                onForget={forgetTombstoneTarget}
+                onHardDelete={hardDeleteTombstoneTarget}
               />
             ) : null}
             {activeTab === "maintenance" ? (
@@ -813,7 +875,7 @@ function MemoryDetail(props: {
             </button>
             <button className="danger-button" onClick={props.onForget}>
               <Trash2 size={15} />
-              Forget
+              Forget 擦除
             </button>
           </div>
         </>
@@ -950,11 +1012,70 @@ function CandidateReview(props: {
   );
 }
 
+function TombstonePanel(props: {
+  tombstones: MemoryTombstone[];
+  loading: boolean;
+  onSelectTarget: (item: MemoryItem) => void;
+  onForget: (tombstone: MemoryTombstone) => void;
+  onHardDelete: (tombstone: MemoryTombstone) => void;
+}) {
+  return (
+    <section className="panel tombstone-panel">
+      <div className="panel-header">
+        <div>
+          <h2>Tombstones</h2>
+          <p>Forget 会擦除目标内容并保留删除痕迹；彻底删除会移除目标和相关墓碑记录。</p>
+        </div>
+        <StatusBadge text={`${props.tombstones.length} tombstones`} />
+      </div>
+      <div className="tombstone-list">
+        {props.tombstones.length === 0 ? <EmptyState text="暂无 tombstone。" /> : null}
+        {props.tombstones.map((tombstone) => (
+          <article className="tombstone-card" key={tombstone.id}>
+            <div className="tombstone-main">
+              <div className="tombstone-title">
+                <StatusBadge text={tombstone.target_type} />
+                <strong>{tombstone.reason || "unspecified"}</strong>
+                <span>{formatDate(tombstone.created_at)}</span>
+              </div>
+              <div className="tombstone-target">
+                <span>Target</span>
+                <code>{tombstone.target_id}</code>
+              </div>
+              <p>{tombstone.summary || tombstone.rule || tombstone.target_hash || "No tombstone summary."}</p>
+              <div className="tombstone-meta">
+                <code>{tombstone.id}</code>
+                {tombstone.evidence_run_id ? <code>{tombstone.evidence_run_id}</code> : null}
+                {tombstone.rule ? <span>{tombstone.rule}</span> : null}
+              </div>
+              <JsonBlock title="Metadata" value={tombstone.metadata || {}} />
+            </div>
+            <div className="tombstone-actions">
+              <button className="ghost-button" onClick={() => props.onSelectTarget(tombstoneTargetItem(tombstone))} disabled={props.loading}>
+                <ChevronRight size={15} />
+                查看目标
+              </button>
+              <button className="danger-button" onClick={() => props.onForget(tombstone)} disabled={props.loading}>
+                <Trash2 size={15} />
+                Forget 擦除
+              </button>
+              <button className="danger-button strong-danger" onClick={() => props.onHardDelete(tombstone)} disabled={props.loading}>
+                <X size={15} />
+                彻底删除
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MaintenancePanel(props: {
   health: MemoryHealthResult | null;
   dreamStatus: DreamStatusResult | null;
   snapshot: SnapshotResult | null;
-  tombstones: Array<Record<string, unknown>>;
+  tombstones: MemoryTombstone[];
   useProvider: boolean;
   loading: boolean;
   onRunDream: () => void;
@@ -1206,6 +1327,17 @@ function searchMatchToItem(match: Record<string, unknown>): MemoryItem {
     id: String(match.id || match.memory_id || ""),
     title: String(match.title || match.claim || ""),
     content: String(match.content || match.claim || match.summary || "")
+  };
+}
+
+function tombstoneTargetItem(tombstone: MemoryTombstone): MemoryItem {
+  return {
+    id: tombstone.target_id,
+    type: tombstone.target_type,
+    status: `tombstoned:${tombstone.reason || "unknown"}`,
+    title: tombstone.summary || tombstone.reason || tombstone.target_id,
+    content: tombstone.summary || "",
+    updated_at: tombstone.created_at
   };
 }
 

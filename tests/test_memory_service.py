@@ -193,6 +193,44 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(promoted["status"], "promoted")
             self.assertEqual(client.list(kind="page", status="active", limit=10)["count"], 1)
 
+    def test_hard_delete_removes_tombstoned_memory_records(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            update = client.update(
+                facts=[
+                    {
+                        "claim": "User wants obsolete memory records to be physically removable from tombstone review.",
+                        "dimension": "preferences",
+                        "confidence": 0.92,
+                    }
+                ],
+                source="unit-test",
+            )
+            candidate_id = update["memory_candidates"][0]["candidate_id"]
+            promoted = client.promote_candidate(candidate_id)
+            page_id = promoted["page_id"]
+            self.assertTrue(Path(tmp).joinpath(promoted["wiki"]["path"]).exists())
+
+            tombstone = client.tombstone(page_id, "outdated", target_type="page")
+            tombstone_id = tombstone["tombstone_id"]
+
+            deleted = client.hard_delete(tombstone_id=tombstone_id)
+
+            self.assertEqual(deleted["kind"], "memory_hard_delete")
+            self.assertTrue(deleted["deleted"])
+            self.assertIn(page_id, deleted["deleted_pages"])
+            self.assertIn(candidate_id, deleted["deleted_candidates"])
+            self.assertGreaterEqual(deleted["counts"]["pages"], 1)
+            self.assertGreaterEqual(deleted["counts"]["candidates"], 1)
+            self.assertEqual(client.tombstones(limit=10)["tombstones"], [])
+            with self.assertRaises(ValueError):
+                client.read(page_id)
+            with self.assertRaises(ValueError):
+                client.read(candidate_id)
+            self.assertFalse(any(Path(tmp).joinpath(path).exists() for path in deleted["removed_wiki"]))
+
     def test_public_schema_is_memory_only(self) -> None:
         from mnemo_memory.sdk import memory_api_schema
 
@@ -207,6 +245,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("provenance", schema["methods"])
         self.assertIn("dream_run", schema["methods"])
         self.assertIn("force_promote_candidate", schema["methods"])
+        self.assertIn("hard_delete", schema["methods"])
 
     def test_http_dispatch_lists_memory_items(self) -> None:
         from mnemo_memory import MemoryClient
@@ -280,6 +319,32 @@ class MemoryServiceTests(unittest.TestCase):
 
             self.assertEqual(promoted["kind"], "memory_force_promote")
             self.assertEqual(promoted["status"], "promoted")
+
+    def test_http_dispatch_hard_deletes_tombstone_target(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.web import dispatch_memory_api
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            update = client.update(
+                facts=[
+                    {
+                        "claim": "HTTP clients can physically delete a tombstoned memory from the review page.",
+                        "dimension": "preferences",
+                        "confidence": 0.9,
+                    }
+                ],
+                source="unit-test",
+            )
+            candidate_id = update["memory_candidates"][0]["candidate_id"]
+            page_id = client.promote_candidate(candidate_id)["page_id"]
+            tombstone_id = client.tombstone(page_id, "outdated", target_type="page")["tombstone_id"]
+
+            deleted = dispatch_memory_api(client, "hard-delete", {"tombstone_id": tombstone_id})
+
+            self.assertEqual(deleted["kind"], "memory_hard_delete")
+            self.assertIn(page_id, deleted["deleted_pages"])
+            self.assertEqual(client.tombstones(limit=10)["tombstones"], [])
 
     def test_dream_run_min_confidence_applies_to_promote_actions(self) -> None:
         from mnemo_memory import MemoryClient
@@ -357,6 +422,16 @@ class MemoryServiceTests(unittest.TestCase):
 
         self.assertIn('callMemory<MemoryProvenanceResult>("provenance"', app)
         self.assertIn("来源时间线", app)
+
+    def test_webui_has_tombstone_review_actions(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn('key: "tombstones"', app)
+        self.assertIn("function TombstonePanel", app)
+        self.assertIn('callMemory("forget"', app)
+        self.assertIn('callMemory("hard-delete"', app)
+        self.assertIn("彻底删除", app)
 
     def test_mcp_exposes_only_memory_tools_with_new_prefix(self) -> None:
         from mnemo_memory.mcp import MemoryMcpServer

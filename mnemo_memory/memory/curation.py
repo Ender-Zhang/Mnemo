@@ -15,7 +15,7 @@ from .utils import (
     _status_reason,
     _truncate,
 )
-from .wiki import materialize_memory_page
+from .wiki import materialize_memory_page, remove_memory_page_wiki_files
 
 
 class MemoryCurationMixin:
@@ -155,6 +155,90 @@ class MemoryCurationMixin:
                 return self._private_delete_candidate(candidate, reason_text, redact_promoted_pages=True)
 
         raise ValueError(f"Memory item not found for private delete: {memory_id}")
+
+    def hard_delete_memory(
+        self,
+        memory_id: str | None = None,
+        *,
+        target_type: str = "auto",
+        tombstone_id: str | None = None,
+        delete_related: bool = True,
+    ) -> dict[str, Any]:
+        tombstone = self.store.get_memory_tombstone(tombstone_id) if tombstone_id else None
+        if tombstone_id and not tombstone:
+            raise ValueError(f"Memory tombstone not found for hard delete: {tombstone_id}")
+
+        target_id = _normalize_space(str(memory_id or ""))
+        if not target_id and tombstone:
+            target_id = _normalize_space(str(tombstone.get("target_id") or ""))
+        if not target_id:
+            raise ValueError("memory_id or tombstone_id is required for hard delete")
+
+        requested_type = target_type
+        if target_type == "auto" and tombstone:
+            requested_type = str(tombstone.get("target_type") or "auto")
+        normalized_target_type = _normalize_tombstone_target_type(requested_type)
+
+        pages: dict[str, dict[str, Any]] = {}
+        candidates: dict[str, dict[str, Any]] = {}
+        if normalized_target_type in {"auto", "page"}:
+            page = self._get_page(target_id)
+            if page:
+                pages[target_id] = page
+        if normalized_target_type in {"auto", "candidate"}:
+            candidate = self._get_candidate(target_id)
+            if candidate:
+                candidates[target_id] = candidate
+
+        if not pages and not candidates and not tombstone:
+            raise ValueError(f"Memory item not found for hard delete: {target_id}")
+
+        if delete_related:
+            for page in list(pages.values()):
+                source_candidate_id = _normalize_space(str(page.get("source_candidate_id") or ""))
+                if source_candidate_id and source_candidate_id not in candidates:
+                    source_candidate = self._get_candidate(source_candidate_id)
+                    if source_candidate:
+                        candidates[source_candidate_id] = source_candidate
+                list_backlinks = getattr(self.store, "list_memory_backlinks", None)
+                if list_backlinks:
+                    for link in list_backlinks(str(page.get("id") or "")):
+                        if link.get("relation") != "promoted_to":
+                            continue
+                        linked_candidate_id = _normalize_space(str(link.get("source_id") or ""))
+                        if linked_candidate_id and linked_candidate_id not in candidates:
+                            linked_candidate = self._get_candidate(linked_candidate_id)
+                            if linked_candidate:
+                                candidates[linked_candidate_id] = linked_candidate
+            for candidate_id in list(candidates):
+                for page_id in self._promoted_page_ids(candidate_id):
+                    if page_id not in pages:
+                        page = self._get_page(page_id)
+                        if page:
+                            pages[page_id] = page
+
+        counts = {"candidates": 0, "pages": 0, "links": 0, "tombstones": 0}
+        removed_wiki: list[str] = []
+        for page_id in sorted(pages):
+            removed_wiki.extend(remove_memory_page_wiki_files(self.store.state_dir, page_id))
+            _add_counts(counts, self.store.delete_memory_page(page_id))
+        for candidate_id in sorted(candidates):
+            _add_counts(counts, self.store.delete_memory_candidate(candidate_id))
+        if tombstone_id:
+            counts["tombstones"] += self.store.delete_memory_tombstone(tombstone_id)
+
+        return {
+            "kind": "memory_hard_delete",
+            "memory_id": target_id,
+            "target_type": normalized_target_type if normalized_target_type != "auto" else _resolved_target_type(pages, candidates),
+            "tombstone_id": tombstone_id,
+            "delete_related": delete_related,
+            "deleted": any(counts.values()) or bool(removed_wiki),
+            "counts": counts,
+            "deleted_pages": sorted(pages),
+            "deleted_candidates": sorted(candidates),
+            "removed_wiki": removed_wiki,
+        }
 
     def _resolve_replacement(self, replacement_id: str | None) -> dict[str, Any] | None:
         replacement_value = _normalize_space(str(replacement_id or ""))
@@ -392,6 +476,22 @@ def _memory_hash(kind: str, *parts: Any) -> str:
         }
     )
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _add_counts(target: dict[str, int], source: dict[str, int]) -> None:
+    for key, value in source.items():
+        target[key] = int(target.get(key, 0)) + int(value)
+
+
+def _resolved_target_type(pages: dict[str, dict[str, Any]], candidates: dict[str, dict[str, Any]]) -> str:
+    if pages and not candidates:
+        return "page"
+    if candidates and not pages:
+        return "candidate"
+    if pages and candidates:
+        return "mixed"
+    return "missing"
+
 
 def _private_delete_metadata(reason: str, **values: Any) -> dict[str, Any]:
     metadata = {

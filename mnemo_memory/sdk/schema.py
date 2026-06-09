@@ -29,6 +29,7 @@ _SCHEMA: dict[str, Any] = {
         "reject_candidate": {"side_effects": "writes_candidate_status_and_tombstone"},
         "tombstone": {"side_effects": "curates_memory"},
         "forget": {"side_effects": "redacts_memory"},
+        "hard_delete": {"side_effects": "physically_deletes_memory_records"},
         "dream_run": {"side_effects": "memory_maintenance_only"},
         "dream_status": {"side_effects": "read_only"},
         "dream_report": {"side_effects": "read_only"},

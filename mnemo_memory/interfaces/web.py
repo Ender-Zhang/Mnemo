@@ -155,6 +155,17 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             reason=str(body.get("reason") or "private_delete"),
             target_type=str(body.get("target_type") or "auto"),
         )
+    if method in {"hard-delete", "hard_delete"}:
+        memory_id = _optional(body.get("memory_id"))
+        tombstone_id = _optional(body.get("tombstone_id"))
+        if not memory_id and not tombstone_id:
+            raise ValueError("memory_id or tombstone_id is required")
+        return client.hard_delete(
+            memory_id,
+            target_type=str(body.get("target_type") or "auto"),
+            tombstone_id=tombstone_id,
+            delete_related=bool(body.get("delete_related", True)),
+        )
     if method == "dream-run":
         return client.dream_run(
             limit=int(body.get("limit") or 20),

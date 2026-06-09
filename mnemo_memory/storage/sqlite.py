@@ -347,6 +347,27 @@ class StateStore:
                 (claim, confidence, dumps(list(evidence or [])), status, candidate_id),
             )
 
+    def delete_memory_candidate(self, candidate_id: str) -> dict[str, int]:
+        clean_id = str(candidate_id or "").strip()
+        if not clean_id:
+            raise ValueError("memory candidate id is required")
+        with self.connect() as conn:
+            candidate_rows = conn.execute("DELETE FROM memory_candidates WHERE id = ?", (clean_id,)).rowcount
+            link_rows = conn.execute(
+                "DELETE FROM memory_links WHERE source_id = ? OR target_id = ?",
+                (clean_id, clean_id),
+            ).rowcount
+            tombstone_rows = conn.execute(
+                "DELETE FROM memory_tombstones WHERE target_id = ? AND target_type = 'candidate'",
+                (clean_id,),
+            ).rowcount
+        return {
+            "candidates": int(candidate_rows),
+            "pages": 0,
+            "links": int(link_rows),
+            "tombstones": int(tombstone_rows),
+        }
+
     def get_memory_candidate(self, candidate_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
@@ -464,6 +485,27 @@ class StateStore:
                 """,
                 (title, content, confidence, status, dumps(metadata or {}), time.time(), page_id),
             )
+
+    def delete_memory_page(self, page_id: str) -> dict[str, int]:
+        clean_id = str(page_id or "").strip()
+        if not clean_id:
+            raise ValueError("memory page id is required")
+        with self.connect() as conn:
+            page_rows = conn.execute("DELETE FROM memory_pages WHERE id = ?", (clean_id,)).rowcount
+            link_rows = conn.execute(
+                "DELETE FROM memory_links WHERE source_id = ? OR target_id = ?",
+                (clean_id, clean_id),
+            ).rowcount
+            tombstone_rows = conn.execute(
+                "DELETE FROM memory_tombstones WHERE target_id = ? AND target_type = 'page'",
+                (clean_id,),
+            ).rowcount
+        return {
+            "candidates": 0,
+            "pages": int(page_rows),
+            "links": int(link_rows),
+            "tombstones": int(tombstone_rows),
+        }
 
     def search_memory_pages(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         pattern = f"%{query}%"
@@ -635,6 +677,14 @@ class StateStore:
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [_memory_tombstone_from_row(row) for row in rows]
+
+    def delete_memory_tombstone(self, tombstone_id: str) -> int:
+        clean_id = str(tombstone_id or "").strip()
+        if not clean_id:
+            raise ValueError("memory tombstone id is required")
+        with self.connect() as conn:
+            rows = conn.execute("DELETE FROM memory_tombstones WHERE id = ?", (clean_id,)).rowcount
+        return int(rows)
 
 
 def _working_note_from_row(row: sqlite3.Row) -> dict[str, Any]:

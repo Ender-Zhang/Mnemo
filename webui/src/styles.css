@@ -241,6 +241,12 @@ button {
   background: #fff7f7;
 }
 
+.danger-button.strong-danger {
+  border-color: #c52828;
+  color: #ffffff;
+  background: #c52828;
+}
+
 .full {
   width: 100%;
 }
@@ -582,7 +588,8 @@ label {
 .detail-panel,
 .composer,
 .settings-panel,
-.maintenance {
+.maintenance,
+.tombstone-panel {
   padding-bottom: 14px;
 }
 
@@ -835,6 +842,70 @@ code {
   gap: 8px;
 }
 
+.tombstone-list {
+  display: grid;
+}
+
+.tombstone-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 156px;
+  gap: 14px;
+  padding: 14px;
+  border-bottom: 1px solid #e8edf4;
+}
+
+.tombstone-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tombstone-title,
+.tombstone-target,
+.tombstone-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tombstone-title strong {
+  color: #172033;
+  font-size: 14px;
+}
+
+.tombstone-title span,
+.tombstone-target span,
+.tombstone-meta span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.tombstone-target code,
+.tombstone-meta code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: #f2f5f9;
+}
+
+.tombstone-main p {
+  margin: 0;
+  color: #253044;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.tombstone-card .json-block {
+  margin: 0;
+}
+
+.tombstone-actions {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
 .queue-item {
   grid-template-columns: 1fr;
 }
@@ -1011,7 +1082,8 @@ pre {
   .table-head,
   .table-row,
   .danger-actions,
-  .composer-row {
+  .composer-row,
+  .tombstone-card {
     grid-template-columns: 1fr;
   }
 

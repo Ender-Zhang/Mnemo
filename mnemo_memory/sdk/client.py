@@ -487,6 +487,21 @@ class MemoryClient:
     def forget(self, memory_id: str, *, reason: str = "private_delete", target_type: str = "auto") -> dict[str, Any]:
         return self._engine().private_delete_memory(memory_id, reason, target_type=target_type)
 
+    def hard_delete(
+        self,
+        memory_id: str | None = None,
+        *,
+        target_type: str = "auto",
+        tombstone_id: str | None = None,
+        delete_related: bool = True,
+    ) -> dict[str, Any]:
+        return self._engine().hard_delete_memory(
+            memory_id,
+            target_type=target_type,
+            tombstone_id=tombstone_id,
+            delete_related=delete_related,
+        )
+
     def dream_run(
         self,
         *,
