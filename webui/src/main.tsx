@@ -121,15 +121,20 @@ type DreamStatusResult = {
 type DreamRejectReason = {
   action_id?: string;
   candidate_id?: string;
+  page_id?: string;
+  page_title?: string;
   tool?: string;
   status?: string;
   decision?: string;
   reason?: string;
 };
 
+type DreamReviewResult = DreamRejectReason;
+
 type DreamReportSummary = {
   duration_s?: number;
   execution?: {
+    review_results?: DreamReviewResult[];
     reject_reasons?: DreamRejectReason[];
     [key: string]: unknown;
   };
@@ -691,7 +696,7 @@ function App() {
               />
             ) : null}
             {activeTab === "memories" || activeTab === "overview" ? (
-              <MemoryTable items={activeItems} selectedId={selected?.id} uidFilter={uidFilter} onSelect={readMemory} />
+              <MemoryTable items={activeItems} selectedId={selected?.id} uidFilter={uidFilter} dreamStatus={dreamStatus} onSelect={readMemory} />
             ) : null}
             {activeTab === "candidates" ? (
               <CandidateReview
@@ -883,13 +888,16 @@ function MemoryTable({
   items,
   selectedId,
   uidFilter,
+  dreamStatus,
   onSelect
 }: {
   items: MemoryItem[];
   selectedId?: string;
   uidFilter: string;
+  dreamStatus: DreamStatusResult | null;
   onSelect: (item: MemoryItem) => void;
 }) {
+  const reviewResults = dreamReviewResultMap(dreamStatus);
   const uidLabel = uidFilter.trim() ? `UID: ${uidFilter.trim()}` : "全部 scope";
   return (
     <section className="panel table-panel">
@@ -902,6 +910,7 @@ function MemoryTable({
           <span>Score</span>
           <span>Memory</span>
           <span>Type</span>
+          <span>审核结果</span>
           <span>Status</span>
           <span>Time</span>
         </div>
@@ -914,6 +923,7 @@ function MemoryTable({
               <small>{item.scope || item.dimension || item.id}</small>
             </span>
             <StatusBadge text={item.type} />
+            <AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} />
             <StatusBadge text={item.status || "unknown"} />
             <span className="time">{formatTime(item.updated_at || item.created_at)}</span>
             <ChevronRight size={16} />
@@ -921,6 +931,16 @@ function MemoryTable({
         ))}
       </div>
     </section>
+  );
+}
+
+function AuditResultBadge({ item, review }: { item: MemoryItem; review?: DreamReviewResult }) {
+  const result = auditResultForItem(item, review);
+  return (
+    <span className={`audit-result ${result.tone}`} title={result.title}>
+      <strong>{result.label}</strong>
+      {result.detail ? <small>{result.detail}</small> : null}
+    </span>
   );
 }
 
@@ -1561,6 +1581,97 @@ function formatDate(value?: number) {
 function compactId(value?: string) {
   if (!value) return "";
   return value.length > 24 ? `${value.slice(0, 21)}...` : value;
+}
+
+function dreamReviewResultMap(status: DreamStatusResult | null) {
+  const map = new Map<string, DreamReviewResult>();
+  for (const result of normalizeDreamReviewResults(status?.latest?.execution?.review_results)) {
+    for (const key of [result.candidate_id, result.page_id]) {
+      if (key && !map.has(key)) {
+        map.set(key, result);
+      }
+    }
+  }
+  return map;
+}
+
+function normalizeDreamReviewResults(items: unknown) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((item): item is DreamReviewResult => {
+      if (!item || typeof item !== "object") return false;
+      const result = item as DreamReviewResult;
+      return Boolean(result.candidate_id || result.page_id) && Boolean(result.decision || result.status || result.reason);
+    })
+    .slice(0, 20);
+}
+
+function reviewForItem(item: MemoryItem, results: Map<string, DreamReviewResult>) {
+  return results.get(item.id) || (item.source_candidate_id ? results.get(item.source_candidate_id) : undefined);
+}
+
+function auditResultForItem(item: MemoryItem, review?: DreamReviewResult) {
+  if (review) {
+    return auditResultFromDreamReview(review);
+  }
+  const status = String(item.status || "").trim();
+  const normalized = status.toLowerCase();
+  if (normalized === "promoted") {
+    return auditResult("审核通过", "候选已进入稳定记忆", "good");
+  }
+  if (normalized === "draft") {
+    return auditResult("待审核", "等待模型或人工审核", "blue");
+  }
+  if (normalized.startsWith("rejected")) {
+    return auditResult("审核拒绝", statusReason(status), "bad");
+  }
+  if (normalized.startsWith("needs_review")) {
+    return auditResult("待复核", statusReason(status), "warn");
+  }
+  if (normalized.startsWith("skipped")) {
+    return auditResult("已跳过", statusReason(status), "neutral");
+  }
+  if (item.type === "page" && normalized === "active") {
+    return auditResult("稳定记忆", item.source_candidate_id ? `来自 ${compactId(item.source_candidate_id)}` : "", "good");
+  }
+  if (normalized.includes("tombstone") || normalized.includes("delete")) {
+    return auditResult("已删除", statusReason(status), "bad");
+  }
+  return auditResult("未审核", status || "unknown", "neutral");
+}
+
+function auditResultFromDreamReview(review: DreamReviewResult) {
+  const decision = String(review.decision || "").toLowerCase();
+  const status = String(review.status || "");
+  const normalizedStatus = status.toLowerCase();
+  if (decision === "promoted" || normalizedStatus === "promoted") {
+    return auditResult("模型通过", review.page_title || (review.page_id ? `写入 ${compactId(review.page_id)}` : ""), "good");
+  }
+  if (decision === "rejected" || normalizedStatus.startsWith("rejected")) {
+    return auditResult("模型拒绝", review.reason || statusReason(status), "bad");
+  }
+  if (decision === "skipped") {
+    return auditResult("模型跳过", review.reason || statusReason(status), "neutral");
+  }
+  if (decision === "conflict" || normalizedStatus.includes("conflict")) {
+    return auditResult("需复核", review.reason || "conflict", "warn");
+  }
+  return auditResult("模型已审", review.reason || status || decision, "blue");
+}
+
+function auditResult(label: string, detail: string, tone: "good" | "bad" | "warn" | "blue" | "neutral") {
+  return {
+    label,
+    detail,
+    tone,
+    title: detail ? `${label}: ${detail}` : label
+  };
+}
+
+function statusReason(status: string) {
+  const separator = status.indexOf(":");
+  if (separator < 0) return "";
+  return status.slice(separator + 1).replace(/[_-]+/g, " ");
 }
 
 function latestDreamDurationS(status: DreamStatusResult | null) {

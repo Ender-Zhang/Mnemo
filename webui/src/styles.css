@@ -572,7 +572,7 @@ label {
 .table-head,
 .table-row {
   display: grid;
-  grid-template-columns: 64px minmax(180px, 1fr) 84px 96px 76px 22px;
+  grid-template-columns: 58px minmax(160px, 1fr) 74px minmax(118px, 0.55fr) 92px 68px 20px;
   align-items: center;
   gap: 10px;
   min-height: 48px;
@@ -613,6 +613,47 @@ label {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.audit-result {
+  display: block;
+  min-width: 0;
+}
+
+.audit-result strong,
+.audit-result small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-result strong {
+  color: #4a5568;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.audit-result small {
+  margin-top: 2px;
+  color: #7b8494;
+  font-size: 11px;
+}
+
+.audit-result.good strong {
+  color: #138037;
+}
+
+.audit-result.bad strong {
+  color: #c52828;
+}
+
+.audit-result.warn strong {
+  color: #9a5b05;
+}
+
+.audit-result.blue strong {
+  color: #1457d9;
 }
 
 .score {

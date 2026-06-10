@@ -491,6 +491,10 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(applied[0]["reason"], "not_enough_evidence")
 
             status = client.dream_status()
+            review_results = status["latest"]["execution"]["review_results"]
+            self.assertEqual(review_results[0]["candidate_id"], candidate_id)
+            self.assertEqual(review_results[0]["decision"], "rejected")
+            self.assertEqual(review_results[0]["reason"], "not_enough_evidence")
             reasons = status["latest"]["execution"]["reject_reasons"]
             self.assertEqual(reasons[0]["candidate_id"], candidate_id)
             self.assertEqual(reasons[0]["reason"], "not_enough_evidence")
@@ -530,6 +534,15 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("Reject 原因", app)
         self.assertIn("dreamStatusRejectReasons", app)
         self.assertIn("dreamRunRejectReasons", app)
+
+    def test_webui_displays_memory_audit_result_column(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn("审核结果", app)
+        self.assertIn("AuditResultBadge", app)
+        self.assertIn("dreamReviewResultMap", app)
+        self.assertIn("review_results", app)
 
     def test_webui_displays_memory_provenance_timeline(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"

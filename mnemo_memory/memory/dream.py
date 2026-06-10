@@ -369,6 +369,7 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
     actions = result.get("actions") if isinstance(result.get("actions"), dict) else {}
     action_counts = actions.get("counts") if isinstance(actions.get("counts"), dict) else {}
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    review_results = _dream_review_results(actions.get("applied"))
     reject_reasons = _dream_reject_reasons(actions.get("applied"))
     return {
         "id": report.get("id"),
@@ -387,9 +388,48 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
             "actions_applied": action_counts.get("applied", 0),
             "actions_skipped": action_counts.get("skipped", 0),
             "tool_calls": counts.get("tool_calls", 0),
+            "review_results": review_results,
             "reject_reasons": reject_reasons,
         },
     }
+
+def _dream_review_results(actions: Any) -> list[dict[str, Any]]:
+    if not isinstance(actions, list):
+        return []
+    results: list[dict[str, Any]] = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        tool = str(action.get("tool") or "")
+        if tool not in {"memory_promote_candidate", "memory_reject_candidate"}:
+            continue
+        item: dict[str, Any] = {
+            "tool": tool,
+            "status": action.get("status"),
+            "decision": _dream_review_decision(action),
+        }
+        for key in ("candidate_id", "page_id", "action_id", "reason"):
+            value = action.get(key)
+            if value:
+                item[key] = _truncate(str(value), limit=160) if key == "reason" else value
+        if action.get("page_title"):
+            item["page_title"] = _truncate(str(action.get("page_title")), limit=120)
+        results.append(item)
+    return results[:20]
+
+
+def _dream_review_decision(action: dict[str, Any]) -> str:
+    decision = str(action.get("decision") or "").strip()
+    if decision:
+        return decision
+    tool = str(action.get("tool") or "")
+    status = str(action.get("status") or "")
+    if tool == "memory_reject_candidate" or status.startswith("rejected"):
+        return "rejected"
+    if status == "promoted":
+        return "promoted"
+    return status or "applied"
+
 
 def _dream_reject_reasons(actions: Any) -> list[dict[str, Any]]:
     if not isinstance(actions, list):
