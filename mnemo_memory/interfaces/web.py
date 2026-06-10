@@ -13,6 +13,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 from ..core.config import DEFAULT_STATE_DIR
 from ..core.jsonutil import dumps
 from ..sdk import MemoryClient, memory_api_schema
+from .auto_dream import (
+    AutoDreamScheduler,
+    auto_dream_status,
+    record_auto_dream_config_change,
+    record_manual_dream_run,
+    run_dream_with_lock,
+)
 
 
 _WEB_ASSETS_DIR = Path(__file__).with_name("web_assets")
@@ -42,11 +49,14 @@ def build_http_server(config: MemoryWebConfig) -> ThreadingHTTPServer:
 
 def serve_http(config: MemoryWebConfig) -> None:
     server = build_http_server(config)
+    scheduler = AutoDreamScheduler(config.state_dir)
+    scheduler.start()
     host, port = server.server_address
     print(f"mnemo-memory API listening on http://{host}:{port}")
     try:
         server.serve_forever()
     finally:
+        scheduler.stop()
         server.server_close()
 
 
@@ -165,6 +175,16 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             thinking_enabled=body.get("thinking_enabled"),
             clear_api_key=bool(body.get("clear_api_key", False)),
         )
+    if method in {"auto-dream-status", "auto_dream_status"}:
+        return auto_dream_status(client)
+    if method in {"save-auto-dream-config", "save_auto_dream_config"}:
+        client.save_auto_dream_config(
+            enabled=body.get("enabled"),
+            interval_minutes=body.get("interval_minutes"),
+            limit=body.get("limit"),
+            min_confidence=body.get("min_confidence"),
+        )
+        return record_auto_dream_config_change(client)
     if method == "tombstones":
         return client.tombstones(
             target_id=_optional(body.get("target_id")),
@@ -205,12 +225,15 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             delete_related=bool(body.get("delete_related", True)),
         )
     if method == "dream-run":
-        return client.dream_run(
+        report = run_dream_with_lock(
+            client,
             limit=int(body.get("limit") or 20),
             min_confidence=float(body.get("min_confidence") or 0.7),
             actions=body.get("actions") if isinstance(body.get("actions"), list) else None,
             use_provider=bool(body.get("use_provider", False)),
         )
+        record_manual_dream_run(client, report)
+        return report
     if method == "dream-status":
         return client.dream_status(limit=int(body.get("limit") or 20))
     if method == "dream-report":

@@ -11,6 +11,10 @@ DEFAULT_STATE_DIR = "~/.mnemo-memory"
 DEFAULT_PROVIDER = "openai-compatible"
 DEFAULT_TIMEOUT_S = 30.0
 DEFAULT_MODEL = "memory-maintainer"
+DEFAULT_AUTO_DREAM_ENABLED = True
+DEFAULT_AUTO_DREAM_INTERVAL_MINUTES = 180
+DEFAULT_AUTO_DREAM_LIMIT = 20
+DEFAULT_AUTO_DREAM_MIN_CONFIDENCE = 0.7
 ENV_FILE_KEY = "MNEMO_MEMORY_ENV_FILE"
 
 
@@ -24,6 +28,10 @@ class MemoryConfig:
     api_key_env: str | None = None
     timeout_s: float = DEFAULT_TIMEOUT_S
     thinking_enabled: bool = False
+    auto_dream_enabled: bool = DEFAULT_AUTO_DREAM_ENABLED
+    auto_dream_interval_minutes: int = DEFAULT_AUTO_DREAM_INTERVAL_MINUTES
+    auto_dream_limit: int = DEFAULT_AUTO_DREAM_LIMIT
+    auto_dream_min_confidence: float = DEFAULT_AUTO_DREAM_MIN_CONFIDENCE
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -44,6 +52,10 @@ class ConfigOverrides:
     api_key_env: str | None = None
     timeout_s: float | None = None
     thinking_enabled: bool | None = None
+    auto_dream_enabled: bool | None = None
+    auto_dream_interval_minutes: int | None = None
+    auto_dream_limit: int | None = None
+    auto_dream_min_confidence: float | None = None
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -104,6 +116,30 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_THINKING_ENABLED"),
         False,
     )
+    auto_dream_enabled = _first_bool(
+        overrides.auto_dream_enabled,
+        file_config.get("auto_dream_enabled"),
+        env.get("MNEMO_MEMORY_AUTO_DREAM_ENABLED"),
+        DEFAULT_AUTO_DREAM_ENABLED,
+    )
+    auto_dream_interval_minutes = _first_int(
+        overrides.auto_dream_interval_minutes,
+        file_config.get("auto_dream_interval_minutes"),
+        env.get("MNEMO_MEMORY_AUTO_DREAM_INTERVAL_MINUTES"),
+        DEFAULT_AUTO_DREAM_INTERVAL_MINUTES,
+    )
+    auto_dream_limit = _first_int(
+        overrides.auto_dream_limit,
+        file_config.get("auto_dream_limit"),
+        env.get("MNEMO_MEMORY_AUTO_DREAM_LIMIT"),
+        DEFAULT_AUTO_DREAM_LIMIT,
+    )
+    auto_dream_min_confidence = _first_float(
+        overrides.auto_dream_min_confidence,
+        file_config.get("auto_dream_min_confidence"),
+        env.get("MNEMO_MEMORY_AUTO_DREAM_MIN_CONFIDENCE"),
+        DEFAULT_AUTO_DREAM_MIN_CONFIDENCE,
+    )
     return MemoryConfig(
         state_dir=state_dir,
         provider=provider,
@@ -113,6 +149,10 @@ def resolve_memory_config(
         api_key_env=api_key_env,
         timeout_s=max(0.1, timeout_s),
         thinking_enabled=thinking_enabled,
+        auto_dream_enabled=auto_dream_enabled,
+        auto_dream_interval_minutes=max(5, auto_dream_interval_minutes),
+        auto_dream_limit=max(1, min(50, auto_dream_limit)),
+        auto_dream_min_confidence=max(0.0, min(1.0, auto_dream_min_confidence)),
         auth_token=auth_token,
         config_path=str(config_path) if config_path else None,
     )
@@ -196,6 +236,7 @@ def _first_optional_str(*values: Any) -> str | None:
 
 
 def _first_float(*values: Any) -> float:
+    default = values[-1] if values else DEFAULT_TIMEOUT_S
     for value in values:
         if value is None or value == "":
             continue
@@ -203,7 +244,25 @@ def _first_float(*values: Any) -> float:
             return float(value)
         except (TypeError, ValueError):
             continue
-    return DEFAULT_TIMEOUT_S
+    try:
+        return float(default)
+    except (TypeError, ValueError):
+        return DEFAULT_TIMEOUT_S
+
+
+def _first_int(*values: Any) -> int:
+    default = values[-1] if values else 0
+    for value in values:
+        if value is None or value == "":
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            continue
+    try:
+        return int(default)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _first_bool(*values: Any) -> bool:

@@ -30,10 +30,13 @@
 - `MemoryEngine.load_latest_dream_report() -> dict[str, Any] | None`
 - `MemoryEngine.load_dream_report(report_id: str | None = None, *, latest: bool = False) -> dict[str, Any] | None`
 - `MemoryEngine.dream_consolidate(limit: int = 20, min_confidence: float = 0.7, *, candidate_ids: list[str] | set[str] | None = None, note_ids: list[str] | set[str] | None = None) -> dict[str, Any]`
-- `run_dream_with_provider(*, state_dir: str | Path, provider: ProviderAdapter, workspace_root: str | Path | None = None, limit: int = 20, since: float | None = None, max_tool_rounds: int = 3, persist: bool = True) -> dict[str, Any]`
-- `ScheduleService.tick(*, now: float | str | None = None, limit: int = 50, kind: str | None = None, dream_runner: Callable[[dict[str, Any]], dict[str, Any]] | None = None) -> dict[str, Any]`
-- `ensure_default_dream_schedule(state_dir: str | Path, *, now: float | str | None = None, schedule: str = "daily", limit: int = 20, min_confidence: float = 0.7) -> dict[str, Any]`
-- `mnemo.interfaces.web._AutoDreamScheduler.tick_once(*, now: float | str | None = None) -> dict[str, Any]`
+- `MemoryClient.auto_dream_config() -> dict[str, Any]`
+- `MemoryClient.save_auto_dream_config(*, enabled: bool | int | str | None = None, interval_minutes: int | str | None = None, limit: int | str | None = None, min_confidence: float | int | str | None = None) -> dict[str, Any]`
+- `mnemo_memory.interfaces.auto_dream.auto_dream_status(client: MemoryClient, *, running: bool | None = None) -> dict[str, Any]`
+- `mnemo_memory.interfaces.auto_dream.record_auto_dream_config_change(client: MemoryClient, *, now: float | None = None) -> dict[str, Any]`
+- `mnemo_memory.interfaces.auto_dream.record_manual_dream_run(client: MemoryClient, report: dict[str, Any], *, now: float | None = None) -> dict[str, Any]`
+- `mnemo_memory.interfaces.auto_dream.run_dream_with_lock(client: MemoryClient, *, limit: int = 20, min_confidence: float = 0.7, actions: list[dict[str, Any]] | None = None, use_provider: bool = False, blocking: bool = True) -> dict[str, Any]`
+- `mnemo_memory.interfaces.auto_dream.AutoDreamScheduler.tick_once(*, now: float | None = None, force: bool = False) -> dict[str, Any]`
 - `MemoryEngine.compile_l1_snapshot(limit: int = 50) -> dict[str, Any]`
 - `MemoryEngine.load_or_compile_l1_snapshot(limit: int = 50) -> dict[str, Any] | None`
 - `MemoryEngine.load_l1_snapshot() -> dict[str, Any] | None`
@@ -73,9 +76,8 @@
 - CLI: `mnemo dream --now [--limit N] [--min-confidence FLOAT] [--actions-json JSON_ARRAY] [--provider PROVIDER] [--base-url URL] [--model MODEL] [--api-key-env ENV] [--max-tool-rounds N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream status [--limit N] [--state-dir DIR] [--json]`
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
-- CLI: `mnemo schedule add --kind dream [--schedule SCHEDULE] [--next-run-at TIME] [--dream-limit N] [--dream-min-confidence FLOAT] [--state-dir DIR] [--json]`; omitted `--schedule` defaults to `daily`.
-- SDK/HTTP: `schedule_dream(schedule="daily", next_run_at=None, limit=20, min_confidence=0.7)` registers a Dream scheduled item without executing maintenance.
-- MCP tool: `mnemo_dream_schedule(schedule="daily", next_run_at=None, limit=20, min_confidence=0.7, source="mcp")`
+- HTTP: `POST /api/memory/auto-dream-status` returns auto Dream config plus persisted scheduler status.
+- HTTP: `POST /api/memory/save-auto-dream-config` accepts `enabled`, `interval_minutes`, optional `limit`, and optional `min_confidence`, then persists config and reschedules the next run.
 
 ### 3. Contracts
 - `mnemo/memory/engine.py` is a compatibility facade only; domain behavior lives in focused modules under `mnemo/memory/`.
@@ -142,14 +144,15 @@
 - Dream `memory_tombstone` actions support low-usefulness archival, harmful tombstone eval routing, and replacement links through `tombstone_memory()`.
 - Dream action result payloads must contain ids, statuses, counts, and compact eval/replacement metadata only; they must not copy full memory bodies or raw transcripts.
 - Dream reports are compact JSON documents persisted under `runs/dream-reports/` with `delta`, `plan`, `execution`, and `health_after`.
-- Due Dream scheduled items run model-led Dream maintenance when a provider-backed runner is supplied; otherwise they call `MemoryEngine.dream_maintenance()` only to persist a `model_required` no-op report. They persist the latest report card on the scheduled item.
-- `ensure_default_dream_schedule()` creates one active service-owned Dream scheduled item only when no active Dream item already exists; an existing paused/disabled service-owned auto item is respected and must not be duplicated.
-- `serve_web()` starts a low-priority auto Dream scheduler thread that ensures the default Dream schedule, then periodically calls `ScheduleService.tick(kind="dream", dream_runner=...)` so web service uptime is enough to run Dream without user commands.
-- Web auto Dream must not consume a due item with local deterministic fallback. If no provider-backed runner is available, it leaves the default Dream item due and reports `provider_required`; with a misconfigured provider, the scheduled tick records the compact failure for retry.
-- Auto Dream scheduling is only a trigger and budget surface; the model still chooses every memory maintenance tool call through `run_dream_with_provider()`.
-- MCP Dream registration is a thin facade over `ScheduleService.add_dream()` and must not bypass the scheduled maintenance path.
-- SDK/HTTP Dream registration is the same kind of thin facade; due execution remains `ScheduleService.tick()`.
-- Dream scheduled ticks refresh the L1 snapshot through the normal Dream execution result, and tick/report payloads expose only snapshot counts and report ids.
+- `serve_http()` starts `AutoDreamScheduler` with the same state dir as the HTTP service; `build_http_server()` alone must not start background work so tests can construct servers without scheduler side effects.
+- Auto Dream config is stored in the state dir `config.json` under `auto_dream_enabled`, `auto_dream_interval_minutes`, `auto_dream_limit`, and `auto_dream_min_confidence`. Defaults are enabled, 180 minutes, limit 20, and min confidence 0.7.
+- Auto Dream status is a compact JSON file at `runs/auto-dream-status.json` with `last_outcome`, `last_checked_at`, `last_run_at`, `last_finished_at`, `last_duration_s`, `next_run_at`, `last_error`, `last_backlog`, and compact `last_result`.
+- The first scheduler tick after service start only schedules a short startup delay when no `next_run_at` exists; it must not immediately call the provider on service boot.
+- A due auto tick first checks current Dream backlog through `MemoryClient.dream_status()`. It records `no_backlog` and reschedules when there are no W0 notes, unresolved candidates, changed pages, tombstones, or review cards.
+- A due auto tick must call provider-backed Dream only when provider config is present. If provider is missing it records `provider_required`, reschedules, and must not run deterministic/local promotion fallback.
+- Auto Dream and HTTP manual `dream-run` share `run_dream_with_lock()` so only one Dream execution runs in the service process. Auto ticks record `busy` when manual Dream is already running; manual HTTP Dream records `manual_run` and moves the next auto run out by one interval after success.
+- Auto Dream execution calls `MemoryClient.dream_run(use_provider=True, actions=None)` so the model chooses every memory maintenance action; explicit `actions` remain a manual/SDK path only.
+- Auto Dream errors are persisted to status with bounded retry backoff and must not kill the HTTP service process.
 - `mnemo dream status` must be read-only and return latest report metadata plus current backlog counts.
 - `mnemo dream report --latest` must load the latest persisted report without recomputing memory maintenance.
 - L1 snapshots contain active memory page cards only for `items`: `id`, `title`, `summary`, `scope`, `confidence`, and `updated_at`.

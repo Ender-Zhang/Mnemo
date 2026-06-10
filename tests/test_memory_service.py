@@ -741,6 +741,20 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("duration_s", app)
         self.assertIn("用时", app)
 
+    def test_webui_exposes_auto_dream_settings(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+        provider_settings = (Path(__file__).resolve().parents[1] / "webui" / "src" / "providerSettings.ts").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('callMemory<AutoDreamStatusResult>("auto-dream-status"', app)
+        self.assertIn('callMemory<AutoDreamStatusResult>("save-auto-dream-config"', app)
+        self.assertIn("自动 Dreaming", app)
+        self.assertIn("间隔分钟", app)
+        self.assertIn("autoDreamFormFromStatus", provider_settings)
+        self.assertIn("autoDreamSavePayload", provider_settings)
+
     def test_webui_shows_dream_elapsed_time_while_running(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
         app = source.read_text(encoding="utf-8")

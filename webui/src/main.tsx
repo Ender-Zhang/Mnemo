@@ -26,10 +26,19 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { filterCandidateReviewItems, filterReviewableCandidates, isReviewableCandidate } from "./candidateFilters";
-import { emptyProviderForm, providerFormFromConfig, providerSavePayload, providerStatusText } from "./providerSettings";
+import {
+  autoDreamFormFromStatus,
+  autoDreamSavePayload,
+  autoDreamStatusText,
+  emptyAutoDreamForm,
+  emptyProviderForm,
+  providerFormFromConfig,
+  providerSavePayload,
+  providerStatusText
+} from "./providerSettings";
 import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
-import type { ProviderConfigResult, ProviderFormState } from "./providerSettings";
+import type { AutoDreamFormState, AutoDreamStatusResult, ProviderConfigResult, ProviderFormState } from "./providerSettings";
 import type { PromotionReviewResult } from "./promotionMessages";
 
 type ApiEnvelope<T> = {
@@ -234,6 +243,8 @@ function App() {
   const [useProvider, setUseProvider] = useState(() => localStorage.getItem("mnemo.useProvider") === "true");
   const [providerConfig, setProviderConfig] = useState<ProviderConfigResult | null>(null);
   const [providerForm, setProviderForm] = useState<ProviderFormState>(() => emptyProviderForm());
+  const [autoDreamStatus, setAutoDreamStatus] = useState<AutoDreamStatusResult | null>(null);
+  const [autoDreamForm, setAutoDreamForm] = useState<AutoDreamFormState>(() => emptyAutoDreamForm());
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [tombstoneReason, setTombstoneReason] = useState("manual_curation");
   const [dreamStartedAtMs, setDreamStartedAtMs] = useState<number | null>(null);
@@ -290,14 +301,24 @@ function App() {
     setLoading(true);
     try {
       const scopedUid = uidFilter.trim() || undefined;
-      const [healthResult, inventoryResult, candidateResult, dreamResult, snapshotResult, tombstoneResult, providerResult] = await Promise.all([
+      const [
+        healthResult,
+        inventoryResult,
+        candidateResult,
+        dreamResult,
+        snapshotResult,
+        tombstoneResult,
+        providerResult,
+        autoDreamResult
+      ] = await Promise.all([
         requestJson<Record<string, unknown>>("/api/health"),
         callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 50 }),
         callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }),
         callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
         callMemory<SnapshotResult>("snapshot", { limit: 50 }),
         callMemory<TombstonesResult>("tombstones", { limit: 20 }),
-        callMemory<ProviderConfigResult>("provider-config", {})
+        callMemory<ProviderConfigResult>("provider-config", {}),
+        callMemory<AutoDreamStatusResult>("auto-dream-status", {})
       ]);
       setServiceOk(Boolean(healthResult.ok));
       setInventory(inventoryResult.items || []);
@@ -307,6 +328,8 @@ function App() {
       setTombstones(tombstoneResult.tombstones || []);
       setProviderConfig(providerResult);
       setProviderForm(providerFormFromConfig(providerResult));
+      setAutoDreamStatus(autoDreamResult);
+      setAutoDreamForm(autoDreamFormFromStatus(autoDreamResult));
       try {
         setHealth(await callMemory<MemoryHealthResult>("health", { limit: 20 }));
       } catch {
@@ -595,6 +618,20 @@ function App() {
     }
   };
 
+  const saveAutoDreamConfig = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<AutoDreamStatusResult>("save-auto-dream-config", autoDreamSavePayload(autoDreamForm));
+      setAutoDreamStatus(result);
+      setAutoDreamForm(autoDreamFormFromStatus(result));
+      setOk("自动 Dreaming 配置已保存。");
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const summaryStats = useMemo(() => {
     const pages = inventory.filter((item) => item.type === "page").length;
     const draft = pendingCandidates.length;
@@ -750,7 +787,11 @@ function App() {
                 providerConfig={providerConfig}
                 providerForm={providerForm}
                 setProviderForm={setProviderForm}
+                autoDreamStatus={autoDreamStatus}
+                autoDreamForm={autoDreamForm}
+                setAutoDreamForm={setAutoDreamForm}
                 onSaveProviderConfig={saveProviderConfig}
+                onSaveAutoDreamConfig={saveAutoDreamConfig}
                 loading={loading}
               />
             ) : null}
@@ -1313,11 +1354,18 @@ function SettingsPanel(props: {
   providerConfig: ProviderConfigResult | null;
   providerForm: ProviderFormState;
   setProviderForm: (value: ProviderFormState) => void;
+  autoDreamStatus: AutoDreamStatusResult | null;
+  autoDreamForm: AutoDreamFormState;
+  setAutoDreamForm: (value: AutoDreamFormState) => void;
   onSaveProviderConfig: () => void;
+  onSaveAutoDreamConfig: () => void;
   loading: boolean;
 }) {
   const setProviderField = <K extends keyof ProviderFormState>(field: K, value: ProviderFormState[K]) => {
     props.setProviderForm({ ...props.providerForm, [field]: value });
+  };
+  const setAutoDreamField = <K extends keyof AutoDreamFormState>(field: K, value: AutoDreamFormState[K]) => {
+    props.setAutoDreamForm({ ...props.autoDreamForm, [field]: value });
   };
 
   return (
@@ -1427,6 +1475,68 @@ function SettingsPanel(props: {
         <button className="ghost-button" onClick={() => props.setAuthToken("")}>
           <X size={15} />
           清除 Token
+        </button>
+      </div>
+      <div className="settings-divider" />
+      <div className="settings-section-header">
+        <div>
+          <h3>自动 Dreaming</h3>
+          <p>服务进程内定时维护，默认每 180 分钟检查一次。</p>
+        </div>
+        <StatusBadge text={autoDreamStatusText(props.autoDreamStatus)} />
+      </div>
+      <div className="provider-status-row">
+        <StatusBadge text={props.autoDreamStatus?.last_outcome || "scheduled"} />
+        <code>{props.autoDreamStatus?.status_path || "auto-dream-status.json"}</code>
+      </div>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={props.autoDreamForm.enabled}
+          onChange={(event) => setAutoDreamField("enabled", event.target.checked)}
+        />
+        <span>
+          <strong>启用自动 Dreaming</strong>
+          <small>仅在有 backlog 且 provider 已配置时调用模型维护。</small>
+        </span>
+      </label>
+      <div className="provider-grid">
+        <label>
+          间隔分钟
+          <input
+            type="number"
+            min="5"
+            step="5"
+            value={props.autoDreamForm.intervalMinutes}
+            onChange={(event) => setAutoDreamField("intervalMinutes", event.target.value)}
+          />
+        </label>
+        <label>
+          下次运行
+          <input readOnly value={formatDate(props.autoDreamStatus?.next_run_at ?? undefined)} />
+        </label>
+        <label>
+          上次检查
+          <input readOnly value={formatDate(props.autoDreamStatus?.last_checked_at ?? undefined)} />
+        </label>
+        <label>
+          上次用时
+          <input
+            readOnly
+            value={props.autoDreamStatus?.last_duration_s == null ? "-" : formatDuration(props.autoDreamStatus.last_duration_s)}
+          />
+        </label>
+      </div>
+      {props.autoDreamStatus?.last_error ? (
+        <div className="auto-dream-error">
+          <strong>最近错误</strong>
+          <span>{props.autoDreamStatus.last_error}</span>
+        </div>
+      ) : null}
+      <div className="settings-actions">
+        <button className="primary-button" onClick={props.onSaveAutoDreamConfig} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />}
+          保存自动 Dreaming
         </button>
       </div>
     </section>

@@ -276,6 +276,43 @@ Thinking 默认关闭。关闭时 provider 请求不会携带 `thinking` 字段�
 
 WebUI 也可以走同一条模型审核通道：先在“设置”里保存 provider，按需打开“开启 Thinking”，并打开“使用模型审核”，再到“维护”里点击 `Run Dream`。开启模型审核后 WebUI 会向 `/api/memory/dream-run` 发送 `use_provider: true`；具体使用哪个模型和 thinking 开关由显式 CLI 参数、state dir 下的 `config.json` 或 `.env` 决定。
 
+### 自动 Dreaming
+
+HTTP 服务启动后会带一个进程内自动 Dreaming 调度器。默认配置是开启、每 180 分钟检查一次、每次最多处理 20 条、`min_confidence=0.7`。调度器不会在服务启动瞬间立刻跑；首次启动会先排一个短暂延迟，之后按配置间隔检查。
+
+自动 Dreaming 只会在同时满足下面条件时调用模型：
+
+- state dir 下有未处理 backlog，例如 draft/needs_review 候选、open working notes、review cards、tombstones 或近期变更页。
+- provider 已配置，即至少有 OpenAI-compatible `base_url` 和 `model`。
+- 当前没有另一个 WebUI 手动 `Run Dream` 正在运行。
+
+如果没有 backlog，它会记录 `no_backlog` 并等下一次检查；如果 provider 未配置，它会记录 `provider_required`，不会退回到本地确定性 promote，也不会静默写入稳定记忆。手动 `Run Dream` 和自动任务共用同一个服务进程内锁；手动运行完成后，会把下一次自动运行时间顺延一个间隔。
+
+WebUI 里可以在“设置”页修改自动 Dreaming：打开或关闭开关，修改“间隔分钟”，并查看上次检查、上次用时、下次运行、最近错误和状态文件路径。保存后会写入 state dir 下的 `config.json`，状态写入 `runs/auto-dream-status.json`。
+
+HTTP API：
+
+```bash
+# 查看自动 Dreaming 状态
+curl -s http://127.0.0.1:8765/api/memory/auto-dream-status \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+
+# 修改自动 Dreaming 间隔，单位是分钟；最小值为 5。
+curl -s http://127.0.0.1:8765/api/memory/save-auto-dream-config \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true,"interval_minutes":180}'
+```
+
+也可以通过环境变量或 `config.json` 预设：
+
+```bash
+export MNEMO_MEMORY_AUTO_DREAM_ENABLED=true
+export MNEMO_MEMORY_AUTO_DREAM_INTERVAL_MINUTES=180
+export MNEMO_MEMORY_AUTO_DREAM_LIMIT=20
+export MNEMO_MEMORY_AUTO_DREAM_MIN_CONFIDENCE=0.7
+```
+
 ## 对一条记忆做增删改查
 
 Mnemo 默认使用“候选优先”的写入流程。新增记忆时，用户事实会先写成 `memory_candidate`；确认它应该长期保留后，再通过 `promote` 审核门生成或合并到稳定记忆页。人工管理、迁移或调试时，也可以用 `stable` 直连接口直接增删改查稳定记忆页；这会绕过候选审核门，所以不建议给普通 agent 自动调用。

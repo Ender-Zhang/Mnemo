@@ -21,6 +21,8 @@ _SCHEMA: dict[str, Any] = {
         "health": {"side_effects": "read_only"},
         "provider_config": {"side_effects": "read_only"},
         "save_provider_config": {"side_effects": "writes_provider_config"},
+        "auto_dream_status": {"side_effects": "read_only"},
+        "save_auto_dream_config": {"side_effects": "writes_auto_dream_config"},
         "tombstones": {"side_effects": "read_only"},
         "stable_create": {"side_effects": "directly_writes_stable_memory_page"},
         "stable_read": {"side_effects": "read_only"},

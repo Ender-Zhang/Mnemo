@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from http import HTTPStatus
 import json
+import os
+from pathlib import Path
 import re
 from threading import Thread
 import tempfile
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -84,6 +87,31 @@ class MemoryWebServiceTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)
+
+    def test_auto_dream_scheduler_skips_backlog_without_provider(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.auto_dream import AutoDreamScheduler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
+                client = MemoryClient(state_dir=tmp)
+                client.update(
+                    facts=[
+                        {
+                            "claim": "User wants automatic Dream maintenance to require a configured provider.",
+                            "dimension": "preferences",
+                            "confidence": 0.9,
+                        }
+                    ],
+                    source="unit-test",
+                )
+                scheduler = AutoDreamScheduler(tmp, startup_delay_s=0)
+
+                status = scheduler.tick_once(now=1000, force=True)
+
+                self.assertEqual(status["last_outcome"], "provider_required")
+                self.assertEqual(status["last_backlog"]["memory_candidates"], 1)
+                self.assertEqual(client.list(kind="page", status="active", limit=10)["items"], [])
 
 
 class HttpResponse:

@@ -4,7 +4,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..core.config import ConfigOverrides, DEFAULT_STATE_DIR, default_config_path, resolve_memory_config
+from ..core.config import (
+    ConfigOverrides,
+    DEFAULT_AUTO_DREAM_INTERVAL_MINUTES,
+    DEFAULT_AUTO_DREAM_LIMIT,
+    DEFAULT_AUTO_DREAM_MIN_CONFIDENCE,
+    DEFAULT_STATE_DIR,
+    default_config_path,
+    resolve_memory_config,
+)
 from ..core.ids import new_id
 from ..memory import MemoryEngine
 from ..memory.query import normalize_memory_dimension
@@ -592,6 +600,43 @@ class MemoryClient:
 
         path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.provider_config()
+
+    def auto_dream_config(self) -> dict[str, Any]:
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        save_path = default_config_path(self.state_dir)
+        return {
+            "kind": "memory_auto_dream_config",
+            "version": "mnemo_memory.auto_dream_config.v1",
+            "enabled": bool(config.auto_dream_enabled),
+            "interval_minutes": int(config.auto_dream_interval_minutes),
+            "limit": int(config.auto_dream_limit),
+            "min_confidence": float(config.auto_dream_min_confidence),
+            "save_path": str(save_path),
+        }
+
+    def save_auto_dream_config(
+        self,
+        *,
+        enabled: bool | int | str | None = None,
+        interval_minutes: int | str | None = None,
+        limit: int | str | None = None,
+        min_confidence: float | int | str | None = None,
+    ) -> dict[str, Any]:
+        path = default_config_path(self.state_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        config = _read_client_config(path)
+        _set_optional_config_bool(config, "auto_dream_enabled", enabled)
+        if interval_minutes is not None and interval_minutes != "":
+            config["auto_dream_interval_minutes"] = max(5, int(interval_minutes))
+        if limit is not None and limit != "":
+            config["auto_dream_limit"] = max(1, min(50, int(limit)))
+        if min_confidence is not None and min_confidence != "":
+            config["auto_dream_min_confidence"] = max(0.0, min(1.0, float(min_confidence)))
+        config.setdefault("auto_dream_interval_minutes", DEFAULT_AUTO_DREAM_INTERVAL_MINUTES)
+        config.setdefault("auto_dream_limit", DEFAULT_AUTO_DREAM_LIMIT)
+        config.setdefault("auto_dream_min_confidence", DEFAULT_AUTO_DREAM_MIN_CONFIDENCE)
+        path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return self.auto_dream_config()
 
     def tombstones(
         self,
