@@ -205,13 +205,15 @@ type Notice = {
 };
 
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
-  { key: "overview", label: "总览", icon: Home },
-  { key: "memories", label: "记忆", icon: Database },
-  { key: "candidates", label: "候选", icon: ClipboardList },
-  { key: "tombstones", label: "墓碑", icon: Archive },
-  { key: "maintenance", label: "维护", icon: Activity },
-  { key: "settings", label: "设置", icon: Settings }
+  { key: "memories", label: "记忆工作台", icon: Home },
+  { key: "maintenance", label: "模型与维护", icon: Activity },
+  { key: "settings", label: "设置", icon: Settings },
+  { key: "candidates", label: "候选审核", icon: ClipboardList },
+  { key: "tombstones", label: "墓碑 / 删除", icon: Archive }
 ];
+
+const defaultNavKeys = new Set<TabKey>(["memories", "maintenance", "settings"]);
+const advancedNavKeys = new Set<TabKey>(["memories", "maintenance", "settings", "candidates", "tombstones"]);
 
 const defaultApiBase = window.location.origin;
 
@@ -222,6 +224,8 @@ function App() {
   const [serviceOk, setServiceOk] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [advancedMode, setAdvancedMode] = useState(() => localStorage.getItem("mnemo.advancedMode") === "true");
+  const [composerOpen, setComposerOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [uidFilter, setUidFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -252,11 +256,19 @@ function App() {
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
 
   const authed = authToken.trim().length > 0;
-  const activeItems = searchMode ? searchItems : inventory;
+  const activeItems = useMemo(() => {
+    if (searchMode) return searchItems;
+    return [...inventory].sort(compareMemoryItems);
+  }, [inventory, searchItems, searchMode]);
   const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
   const candidateReviewItems = useMemo(() => filterCandidateReviewItems(candidates), [candidates]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
   const dreamElapsedS = dreamStartedAtMs === null ? null : Math.max(0, (clockNowMs - dreamStartedAtMs) / 1000);
+  const visibleNavItems = useMemo(
+    () => navItems.filter((item, index, items) => items.findIndex((candidate) => candidate.key === item.key) === index)
+      .filter((item) => (advancedMode ? advancedNavKeys : defaultNavKeys).has(item.key)),
+    [advancedMode]
+  );
 
   const requestJson = useCallback(
     async <T,>(path: string, options: RequestInit = {}) => {
@@ -368,6 +380,17 @@ function App() {
   useEffect(() => {
     localStorage.setItem("mnemo.useProvider", useProvider ? "true" : "false");
   }, [useProvider]);
+
+  useEffect(() => {
+    localStorage.setItem("mnemo.advancedMode", advancedMode ? "true" : "false");
+  }, [advancedMode]);
+
+  useEffect(() => {
+    const allowedTabs = advancedMode ? advancedNavKeys : defaultNavKeys;
+    if (!allowedTabs.has(activeTab)) {
+      setActiveTab("memories");
+    }
+  }, [activeTab, advancedMode]);
 
   useEffect(() => {
     void refresh();
@@ -483,6 +506,7 @@ function App() {
       await callMemory("update", { facts, observations, source: source.trim() || "webui" });
       setFactText("");
       setObservationText("");
+      setComposerOpen(false);
       setOk("已写入候选记忆");
       await refresh({ clearNotice: false });
     } catch (error) {
@@ -731,7 +755,7 @@ function App() {
           </div>
         </div>
         <nav className="nav-list">
-          {navItems.map((item) => (
+          {visibleNavItems.map((item) => (
             <button className={navItemClass(item.key)} key={item.key} onClick={() => setActiveTab(item.key)}>
               <item.icon size={18} />
               <span>{item.label}</span>
@@ -740,16 +764,15 @@ function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-group">
-          <p>SYSTEM</p>
-          <button className={navItemClass("maintenance", "subtle")} onClick={() => setActiveTab("maintenance")}>
-            <FileClock size={18} />
-            <span>Dream Runs</span>
-          </button>
-          <button className={navItemClass("settings", "subtle")} onClick={() => setActiveTab("settings")}>
-            <ShieldCheck size={18} />
-            <span>Auth / API</span>
-          </button>
+        <div className="mode-card">
+          <div>
+            <strong>高级模式</strong>
+            <span>{advancedMode ? "显示候选、Dream、墓碑和 JSON" : "默认隐藏调试和维护细节"}</span>
+          </div>
+          <label className="switch">
+            <input type="checkbox" checked={advancedMode} onChange={(event) => setAdvancedMode(event.target.checked)} />
+            <span />
+          </label>
         </div>
       </aside>
 
@@ -771,15 +794,11 @@ function App() {
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             Refresh
           </button>
+          <button className="primary-button" onClick={() => setComposerOpen(true)}>
+            <Plus size={16} />
+            保存记忆
+          </button>
         </header>
-
-        <div className="tabs">
-          {navItems.map((item) => (
-            <button className={activeTab === item.key ? "tab active" : "tab"} key={item.key} onClick={() => setActiveTab(item.key)}>
-              {item.label}
-            </button>
-          ))}
-        </div>
 
         {notice ? (
           <div className={`notice ${notice.tone}`}>
@@ -790,7 +809,7 @@ function App() {
           </div>
         ) : null}
 
-        <section className="dashboard-grid">
+        <section className={advancedMode ? "dashboard-grid advanced-layout" : "dashboard-grid workbench-layout"}>
           <div className="main-column">
             {activeTab === "overview" ? <Overview stats={summaryStats} health={health} dreamStatus={dreamStatus} snapshot={snapshot} /> : null}
             {activeTab === "memories" || activeTab === "overview" ? (
@@ -808,7 +827,7 @@ function App() {
               />
             ) : null}
             {activeTab === "memories" || activeTab === "overview" ? (
-              <MemoryTable items={activeItems} selectedId={selected?.id} uidFilter={uidFilter} dreamStatus={dreamStatus} onSelect={readMemory} />
+              <MemoryTable items={activeItems} selectedId={selected?.id} uidFilter={uidFilter} dreamStatus={dreamStatus} advancedMode={advancedMode} onSelect={readMemory} />
             ) : null}
             {activeTab === "candidates" ? (
               <CandidateReview
@@ -841,6 +860,7 @@ function App() {
                 snapshot={snapshot}
                 tombstones={tombstones}
                 useProvider={useProvider}
+                advancedMode={advancedMode}
                 loading={loading}
                 dreamElapsedS={dreamElapsedS}
                 onRunDream={runDream}
@@ -876,24 +896,15 @@ function App() {
               links={links}
               provenance={provenance}
               dreamStatus={dreamStatus}
+              advancedMode={advancedMode}
               tombstoneReason={tombstoneReason}
               setTombstoneReason={setTombstoneReason}
               onTombstone={() => curateSelected("tombstone")}
               onForget={() => curateSelected("forget")}
             />
-            <Composer
-              factText={factText}
-              setFactText={setFactText}
-              observationText={observationText}
-              setObservationText={setObservationText}
-              source={source}
-              setSource={setSource}
-              uidFilter={uidFilter}
-              onSubmit={submitMemory}
-            />
           </aside>
 
-          <aside className="ops-column">
+          {advancedMode ? <aside className="ops-column">
             <OperationsQueue
               candidates={pendingCandidates}
               dreamStatus={dreamStatus}
@@ -905,8 +916,21 @@ function App() {
               onReject={rejectCandidate}
               onRunDream={runDream}
             />
-          </aside>
+          </aside> : null}
         </section>
+        <SaveMemoryDrawer
+          open={composerOpen}
+          factText={factText}
+          setFactText={setFactText}
+          observationText={observationText}
+          setObservationText={setObservationText}
+          source={source}
+          setSource={setSource}
+          uidFilter={uidFilter}
+          loading={loading}
+          onSubmit={submitMemory}
+          onClose={() => setComposerOpen(false)}
+        />
       </main>
     </div>
   );
@@ -1011,12 +1035,14 @@ function MemoryTable({
   selectedId,
   uidFilter,
   dreamStatus,
+  advancedMode,
   onSelect
 }: {
   items: MemoryItem[];
   selectedId?: string;
   uidFilter: string;
   dreamStatus: DreamStatusResult | null;
+  advancedMode: boolean;
   onSelect: (item: MemoryItem) => void;
 }) {
   const reviewResults = dreamReviewResultMap(dreamStatus);
@@ -1027,12 +1053,12 @@ function MemoryTable({
         <h2>记忆库存</h2>
         <span>{items.length} items · {uidLabel}</span>
       </div>
-      <div className="memory-table">
+      <div className={advancedMode ? "memory-table advanced" : "memory-table simple"}>
         <div className="table-head">
           <span>Score</span>
           <span>Memory</span>
           <span>Type</span>
-          <span>审核结果</span>
+          {advancedMode ? <span>审核结果</span> : null}
           <span>Status</span>
           <span>Time</span>
         </div>
@@ -1045,7 +1071,7 @@ function MemoryTable({
               <small>{item.scope || item.dimension || item.id}</small>
             </span>
             <StatusBadge text={item.type} />
-            <AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} />
+            {advancedMode ? <AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} /> : null}
             <StatusBadge text={item.status || "unknown"} />
             <span className="time">{formatTime(item.updated_at || item.created_at)}</span>
             <ChevronRight size={16} />
@@ -1084,6 +1110,7 @@ function MemoryDetail(props: {
   links: MemoryLinksResult | null;
   provenance: MemoryProvenanceResult | null;
   dreamStatus: DreamStatusResult | null;
+  advancedMode: boolean;
   tombstoneReason: string;
   setTombstoneReason: (value: string) => void;
   onTombstone: () => void;
@@ -1117,25 +1144,54 @@ function MemoryDetail(props: {
             <label>更新时间</label>
             <strong>{formatDate(item.updated_at || item.created_at)}</strong>
           </div>
-          <AuditDetail item={item} review={review} />
           <div className="content-box">{item.content || item.claim || item.title || "-"}</div>
           <ProvenanceTimeline provenance={props.provenance} />
-          <JsonBlock title="Metadata / Evidence" value={item.metadata || item.evidence || {}} />
-          <JsonBlock title="Links" value={props.links || { outgoing: [], incoming: [] }} />
-          <div className="danger-actions">
-            <input value={props.tombstoneReason} onChange={(event) => props.setTombstoneReason(event.target.value)} placeholder="tombstone reason" />
-            <button className="danger-button" onClick={props.onTombstone}>
-              <Archive size={15} />
-              Tombstone
-            </button>
-            <button className="danger-button" onClick={props.onForget}>
-              <Trash2 size={15} />
-              Forget 擦除
+          <div className="detail-actions">
+            <button className="ghost-button" onClick={() => navigator.clipboard?.writeText(item.content || item.claim || item.title || item.id)}>
+              <ClipboardList size={15} />
+              复制内容
             </button>
           </div>
+          {props.advancedMode ? (
+            <>
+              <AuditDetail item={item} review={review} />
+              <SourceIds item={item} />
+              <JsonBlock title="Metadata / Evidence" value={item.metadata || item.evidence || {}} />
+              <JsonBlock title="Links" value={props.links || { outgoing: [], incoming: [] }} />
+              <div className="danger-actions">
+                <input value={props.tombstoneReason} onChange={(event) => props.setTombstoneReason(event.target.value)} placeholder="tombstone reason" />
+                <button className="danger-button" onClick={props.onTombstone}>
+                  <Archive size={15} />
+                  Tombstone
+                </button>
+                <button className="danger-button" onClick={props.onForget}>
+                  <Trash2 size={15} />
+                  Forget 擦除
+                </button>
+              </div>
+            </>
+          ) : null}
         </>
       )}
     </section>
+  );
+}
+
+function SourceIds({ item }: { item: MemoryItem }) {
+  const ids = [
+    ["run_id", item.run_id],
+    ["source_candidate_id", item.source_candidate_id]
+  ].filter(([, value]) => Boolean(value));
+  if (ids.length === 0) return null;
+  return (
+    <div className="source-ids">
+      {ids.map(([label, value]) => (
+        <div key={label}>
+          <span>{label}</span>
+          <code>{value}</code>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1187,6 +1243,49 @@ function ProvenanceTimeline({ provenance }: { provenance: MemoryProvenanceResult
   );
 }
 
+function SaveMemoryDrawer(props: {
+  open: boolean;
+  factText: string;
+  setFactText: (value: string) => void;
+  observationText: string;
+  setObservationText: (value: string) => void;
+  source: string;
+  setSource: (value: string) => void;
+  uidFilter: string;
+  loading: boolean;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  if (!props.open) return null;
+  return (
+    <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="保存记忆">
+      <button className="drawer-backdrop" aria-label="关闭保存记忆" onClick={props.onClose} />
+      <aside className="memory-drawer">
+        <div className="drawer-header">
+          <div>
+            <h2>保存记忆</h2>
+            <p>写入后会先生成候选记忆，后续由模型审核或高级模式操作进入稳定记忆。</p>
+          </div>
+          <button className="ghost-button icon-only" onClick={props.onClose}>
+            <X size={16} />
+          </button>
+        </div>
+        <Composer
+          factText={props.factText}
+          setFactText={props.setFactText}
+          observationText={props.observationText}
+          setObservationText={props.setObservationText}
+          source={props.source}
+          setSource={props.setSource}
+          uidFilter={props.uidFilter}
+          loading={props.loading}
+          onSubmit={props.onSubmit}
+        />
+      </aside>
+    </div>
+  );
+}
+
 function Composer(props: {
   factText: string;
   setFactText: (value: string) => void;
@@ -1195,6 +1294,7 @@ function Composer(props: {
   source: string;
   setSource: (value: string) => void;
   uidFilter: string;
+  loading?: boolean;
   onSubmit: () => void;
 }) {
   const writeScope = scopeFromUidFilter(props.uidFilter) || "global";
@@ -1218,8 +1318,8 @@ function Composer(props: {
       </label>
       <div className="composer-row">
         <input value={props.source} onChange={(event) => props.setSource(event.target.value)} placeholder="source" />
-        <button className="primary-button" onClick={props.onSubmit}>
-          <Plus size={16} />
+        <button className="primary-button" onClick={props.onSubmit} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
           Add Memory
         </button>
       </div>
@@ -1383,6 +1483,7 @@ function MaintenancePanel(props: {
   snapshot: SnapshotResult | null;
   tombstones: MemoryTombstone[];
   useProvider: boolean;
+  advancedMode: boolean;
   loading: boolean;
   dreamElapsedS: number | null;
   onRunDream: () => void;
@@ -1393,8 +1494,8 @@ function MaintenancePanel(props: {
     <section className="panel maintenance">
       <div className="panel-header">
         <div>
-          <h2>维护</h2>
-          <p>运行 Dream maintenance、刷新快照并检查 tombstone。</p>
+          <h2>模型与维护</h2>
+          <p>运行 Dream maintenance、刷新快照并检查记忆健康状态。</p>
         </div>
         <div className="action-row">
           <button className="primary-button" onClick={props.onRunDream} disabled={props.loading}>
@@ -1410,14 +1511,57 @@ function MaintenancePanel(props: {
         </div>
       </div>
       <DreamTiming elapsedS={props.dreamElapsedS} latestDurationS={latestDurationS} />
-      <DreamReviewReasons items={dreamStatusReviewReasons(props.dreamStatus)} />
-      <div className="maintenance-grid">
-        <JsonBlock title="Health" value={props.health || {}} />
-        <JsonBlock title="Dream Status" value={props.dreamStatus || {}} />
-        <JsonBlock title="Snapshot" value={props.snapshot || {}} />
-        <JsonBlock title="Tombstones" value={props.tombstones} />
-      </div>
+      {props.advancedMode ? <DreamReviewReasons items={dreamStatusReviewReasons(props.dreamStatus)} /> : null}
+      {props.advancedMode ? (
+        <div className="maintenance-grid">
+          <JsonBlock title="Health" value={props.health || {}} />
+          <JsonBlock title="Dream Status" value={props.dreamStatus || {}} />
+          <JsonBlock title="Snapshot" value={props.snapshot || {}} />
+          <JsonBlock title="Tombstones" value={props.tombstones} />
+        </div>
+      ) : (
+        <MaintenanceSummary health={props.health} dreamStatus={props.dreamStatus} snapshot={props.snapshot} tombstones={props.tombstones} useProvider={props.useProvider} />
+      )}
     </section>
+  );
+}
+
+function MaintenanceSummary(props: {
+  health: MemoryHealthResult | null;
+  dreamStatus: DreamStatusResult | null;
+  snapshot: SnapshotResult | null;
+  tombstones: MemoryTombstone[];
+  useProvider: boolean;
+}) {
+  const healthCards = Array.isArray(props.health?.cards) ? props.health.cards.length : 0;
+  const latestDuration = latestDreamDurationS(props.dreamStatus);
+  return (
+    <div className="maintenance-summary">
+      <div className="summary-card">
+        <Sparkles size={18} />
+        <span>模型审核</span>
+        <strong>{props.useProvider ? "已启用" : "未启用"}</strong>
+        <small>{props.useProvider ? "Run Dream 会调用 provider" : "Dream 只生成报告和快照"}</small>
+      </div>
+      <div className="summary-card">
+        <FileClock size={18} />
+        <span>最近 Dream</span>
+        <strong>{latestDuration === null ? "暂无" : formatDuration(latestDuration)}</strong>
+        <small>高级模式可查看完整报告</small>
+      </div>
+      <div className="summary-card">
+        <Gauge size={18} />
+        <span>健康卡片</span>
+        <strong>{healthCards}</strong>
+        <small>用于发现重复、冲突和维护 backlog</small>
+      </div>
+      <div className="summary-card">
+        <Archive size={18} />
+        <span>删除痕迹</span>
+        <strong>{props.tombstones.length}</strong>
+        <small>{props.snapshot?.exists ? "Snapshot 已存在" : "Snapshot 未生成"}</small>
+      </div>
+    </div>
   );
 }
 
@@ -1782,6 +1926,14 @@ function itemMatchesQuery(item: MemoryItem, query: string) {
     .join(" ")
     .toLowerCase();
   return terms.every((term) => haystack.includes(term));
+}
+
+function compareMemoryItems(left: MemoryItem, right: MemoryItem) {
+  const typeRank = (item: MemoryItem) => (item.type === "page" ? 0 : 1);
+  const leftRank = typeRank(left);
+  const rightRank = typeRank(right);
+  if (leftRank !== rightRank) return leftRank - rightRank;
+  return (right.updated_at || right.created_at || 0) - (left.updated_at || left.created_at || 0);
 }
 
 function scopeFromUidFilter(uid: string) {
