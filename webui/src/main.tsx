@@ -169,9 +169,33 @@ type DreamRunReport = {
         };
         applied?: DreamRejectReason[];
         skipped?: DreamRejectReason[];
+        proposals?: DreamProposal[];
       };
     };
   };
+};
+
+type DreamProposal = {
+  id: string;
+  report_id?: string | null;
+  tool: string;
+  title: string;
+  rationale?: string;
+  risk?: string;
+  status: "pending" | "applied" | "rejected" | string;
+  action?: Record<string, unknown>;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  decision?: Record<string, unknown>;
+  created_at?: number;
+  decided_at?: number;
+};
+
+type DreamProposalsResult = {
+  kind: "dream_proposals";
+  status?: string | null;
+  count: number;
+  proposals: DreamProposal[];
 };
 
 type SnapshotResult = {
@@ -246,11 +270,13 @@ function App() {
   const [observationText, setObservationText] = useState("");
   const [source, setSource] = useState("webui");
   const [useProvider, setUseProvider] = useState(() => localStorage.getItem("mnemo.useProvider") === "true");
+  const [advancedDreaming, setAdvancedDreaming] = useState(() => localStorage.getItem("mnemo.advancedDreaming") === "true");
   const [providerConfig, setProviderConfig] = useState<ProviderConfigResult | null>(null);
   const [providerForm, setProviderForm] = useState<ProviderFormState>(() => emptyProviderForm());
   const [autoDreamStatus, setAutoDreamStatus] = useState<AutoDreamStatusResult | null>(null);
   const [autoDreamForm, setAutoDreamForm] = useState<AutoDreamFormState>(() => emptyAutoDreamForm());
   const [rejectReason, setRejectReason] = useState("not_useful");
+  const [proposalRejectReason, setProposalRejectReason] = useState("operator_rejected");
   const [tombstoneReason, setTombstoneReason] = useState("manual_curation");
   const [dreamStartedAtMs, setDreamStartedAtMs] = useState<number | null>(null);
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
@@ -263,6 +289,7 @@ function App() {
   const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
   const candidateReviewItems = useMemo(() => filterCandidateReviewItems(candidates), [candidates]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
+  const [dreamProposals, setDreamProposals] = useState<DreamProposal[]>([]);
   const dreamElapsedS = dreamStartedAtMs === null ? null : Math.max(0, (clockNowMs - dreamStartedAtMs) / 1000);
   const visibleNavItems = useMemo(
     () => navItems.filter((item, index, items) => items.findIndex((candidate) => candidate.key === item.key) === index)
@@ -322,7 +349,8 @@ function App() {
         snapshotResult,
         tombstoneResult,
         providerResult,
-        autoDreamResult
+        autoDreamResult,
+        proposalResult
       ] = await Promise.all([
         requestJson<Record<string, unknown>>("/api/health"),
         callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 50 }),
@@ -331,7 +359,8 @@ function App() {
         callMemory<SnapshotResult>("snapshot", { limit: 50 }),
         callMemory<TombstonesResult>("tombstones", { limit: 500 }),
         callMemory<ProviderConfigResult>("provider-config", {}),
-        callMemory<AutoDreamStatusResult>("auto-dream-status", {})
+        callMemory<AutoDreamStatusResult>("auto-dream-status", {}),
+        callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 })
       ]);
       setServiceOk(Boolean(healthResult.ok));
       setInventory(inventoryResult.items || []);
@@ -343,6 +372,7 @@ function App() {
       setProviderForm(providerFormFromConfig(providerResult));
       setAutoDreamStatus(autoDreamResult);
       setAutoDreamForm(autoDreamFormFromStatus(autoDreamResult));
+      setDreamProposals(proposalResult.proposals || []);
       try {
         setHealth(await callMemory<MemoryHealthResult>("health", { limit: 20 }));
       } catch {
@@ -380,6 +410,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem("mnemo.useProvider", useProvider ? "true" : "false");
   }, [useProvider]);
+
+  useEffect(() => {
+    localStorage.setItem("mnemo.advancedDreaming", advancedDreaming ? "true" : "false");
+  }, [advancedDreaming]);
 
   useEffect(() => {
     localStorage.setItem("mnemo.advancedMode", advancedMode ? "true" : "false");
@@ -673,13 +707,48 @@ function App() {
     setLoading(true);
     setDreamStartedAtMs(Date.now());
     try {
-      const report = await callMemory<DreamRunReport>("dream-run", { limit: 20, min_confidence: 0.7, use_provider: useProvider });
+      const report = await callMemory<DreamRunReport>("dream-run", {
+        limit: 20,
+        min_confidence: 0.7,
+        use_provider: useProvider,
+        advanced_dreaming: advancedDreaming,
+        execution_policy: "semi_auto"
+      });
       await refresh({ clearNotice: false });
-      setOk(dreamRunMessage(report, useProvider));
+      setOk(dreamRunMessage(report, useProvider, advancedDreaming));
     } catch (error) {
       setError(error);
     } finally {
       setDreamStartedAtMs(null);
+      setLoading(false);
+    }
+  };
+
+  const applyDreamProposal = async (proposalId: string) => {
+    setLoading(true);
+    try {
+      await callMemory("apply-dream-proposal", { proposal_id: proposalId });
+      setOk("整理提案已应用");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const rejectDreamProposal = async (proposalId: string) => {
+    setLoading(true);
+    try {
+      await callMemory("reject-dream-proposal", {
+        proposal_id: proposalId,
+        reason: proposalRejectReason.trim() || "operator_rejected"
+      });
+      setOk("整理提案已拒绝");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
       setLoading(false);
     }
   };
@@ -859,12 +928,18 @@ function App() {
                 dreamStatus={dreamStatus}
                 snapshot={snapshot}
                 tombstones={tombstones}
+                proposals={dreamProposals}
                 useProvider={useProvider}
+                advancedDreaming={advancedDreaming}
                 advancedMode={advancedMode}
                 loading={loading}
                 dreamElapsedS={dreamElapsedS}
+                proposalRejectReason={proposalRejectReason}
+                setProposalRejectReason={setProposalRejectReason}
                 onRunDream={runDream}
                 onCompileSnapshot={compileSnapshot}
+                onApplyProposal={applyDreamProposal}
+                onRejectProposal={rejectDreamProposal}
               />
             ) : null}
             {activeTab === "settings" ? (
@@ -877,6 +952,8 @@ function App() {
                 setSource={setSource}
                 useProvider={useProvider}
                 setUseProvider={setUseProvider}
+                advancedDreaming={advancedDreaming}
+                setAdvancedDreaming={setAdvancedDreaming}
                 providerConfig={providerConfig}
                 providerForm={providerForm}
                 setProviderForm={setProviderForm}
@@ -1482,14 +1559,21 @@ function MaintenancePanel(props: {
   dreamStatus: DreamStatusResult | null;
   snapshot: SnapshotResult | null;
   tombstones: MemoryTombstone[];
+  proposals: DreamProposal[];
   useProvider: boolean;
+  advancedDreaming: boolean;
   advancedMode: boolean;
   loading: boolean;
   dreamElapsedS: number | null;
+  proposalRejectReason: string;
+  setProposalRejectReason: (value: string) => void;
   onRunDream: () => void;
   onCompileSnapshot: () => void;
+  onApplyProposal: (id: string) => void;
+  onRejectProposal: (id: string) => void;
 }) {
   const latestDurationS = latestDreamDurationS(props.dreamStatus);
+  const pendingProposals = props.proposals.filter((proposal) => proposal.status === "pending");
   return (
     <section className="panel maintenance">
       <div className="panel-header">
@@ -1501,28 +1585,116 @@ function MaintenancePanel(props: {
           <button className="primary-button" onClick={props.onRunDream} disabled={props.loading}>
             {props.dreamElapsedS !== null ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
             {props.dreamElapsedS !== null
-              ? `Running ${formatDuration(props.dreamElapsedS)}`
-              : props.useProvider ? "Run Model Dream" : "Run Dream"}
+              ? `运行中 ${formatDuration(props.dreamElapsedS)}`
+              : props.useProvider ? "模型 Dream" : "运行 Dream"}
           </button>
           <button className="ghost-button" onClick={props.onCompileSnapshot} disabled={props.loading}>
             <RefreshCcw size={16} />
-            Compile Snapshot
+            刷新快照
           </button>
         </div>
       </div>
       <DreamTiming elapsedS={props.dreamElapsedS} latestDurationS={latestDurationS} />
+      <div className="dream-mode-strip">
+        <StatusBadge text={props.useProvider ? "模型审核开启" : "模型审核关闭"} />
+        <StatusBadge text={props.advancedDreaming ? "高级 Dreaming 开启" : "普通 Dreaming"} />
+        {pendingProposals.length > 0 ? <StatusBadge text={`${pendingProposals.length} 条待确认提案`} /> : null}
+      </div>
       {props.advancedMode ? <DreamReviewReasons items={dreamStatusReviewReasons(props.dreamStatus)} /> : null}
       {props.advancedMode ? (
-        <div className="maintenance-grid">
-          <JsonBlock title="Health" value={props.health || {}} />
-          <JsonBlock title="Dream Status" value={props.dreamStatus || {}} />
-          <JsonBlock title="Snapshot" value={props.snapshot || {}} />
-          <JsonBlock title="Tombstones" value={props.tombstones} />
-        </div>
+        <>
+          <DreamProposalsPanel
+            proposals={props.proposals}
+            rejectReason={props.proposalRejectReason}
+            setRejectReason={props.setProposalRejectReason}
+            loading={props.loading}
+            onApply={props.onApplyProposal}
+            onReject={props.onRejectProposal}
+          />
+          <div className="maintenance-grid">
+            <JsonBlock title="Health" value={props.health || {}} />
+            <JsonBlock title="Dream Status" value={props.dreamStatus || {}} />
+            <JsonBlock title="Snapshot" value={props.snapshot || {}} />
+            <JsonBlock title="Tombstones" value={props.tombstones} />
+          </div>
+        </>
       ) : (
-        <MaintenanceSummary health={props.health} dreamStatus={props.dreamStatus} snapshot={props.snapshot} tombstones={props.tombstones} useProvider={props.useProvider} />
+        <MaintenanceSummary
+          health={props.health}
+          dreamStatus={props.dreamStatus}
+          snapshot={props.snapshot}
+          tombstones={props.tombstones}
+          proposals={props.proposals}
+          useProvider={props.useProvider}
+        />
       )}
     </section>
+  );
+}
+
+function DreamProposalsPanel(props: {
+  proposals: DreamProposal[];
+  rejectReason: string;
+  setRejectReason: (value: string) => void;
+  loading: boolean;
+  onApply: (id: string) => void;
+  onReject: (id: string) => void;
+}) {
+  return (
+    <div className="dream-proposals">
+      <div className="dream-proposals-header">
+        <div>
+          <h3>整理提案</h3>
+          <p>高级 Dreaming 的高风险整理动作会停在这里，确认后才会改稳定记忆。</p>
+        </div>
+        <StatusBadge text={`${props.proposals.length} 条提案`} />
+      </div>
+      <label>
+        拒绝原因
+        <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
+      </label>
+      <div className="dream-proposal-list">
+        {props.proposals.length === 0 ? <EmptyState text="暂无整理提案。开启高级 Dreaming 并运行模型 Dream 后会显示在这里。" /> : null}
+        {props.proposals.map((proposal) => (
+          <article className="dream-proposal-card" key={proposal.id}>
+            <div className="dream-proposal-main">
+              <div className="dream-proposal-title">
+                <StatusBadge text={proposal.status || "pending"} />
+                <StatusBadge text={proposal.tool} />
+                <strong>{proposal.title || proposal.id}</strong>
+              </div>
+              <p>{proposal.rationale || "没有附带 rationale。"}</p>
+              <div className="dream-proposal-meta">
+                <code>{proposal.id}</code>
+                {proposal.report_id ? <code>{proposal.report_id}</code> : null}
+                <span>{formatDate(proposal.created_at)}</span>
+              </div>
+              <details>
+                <summary>Before / After</summary>
+                <JsonBlock title="Before" value={proposal.before || {}} />
+                <JsonBlock title="After" value={proposal.after || {}} />
+              </details>
+            </div>
+            <div className="dream-proposal-actions">
+              {proposal.status === "pending" ? (
+                <>
+                  <button className="success-button" disabled={props.loading} onClick={() => props.onApply(proposal.id)}>
+                    <Check size={15} />
+                    通过
+                  </button>
+                  <button className="danger-button" disabled={props.loading} onClick={() => props.onReject(proposal.id)}>
+                    <X size={15} />
+                    拒绝
+                  </button>
+                </>
+              ) : (
+                <StatusBadge text={proposal.status || "reviewed"} />
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1531,10 +1703,12 @@ function MaintenanceSummary(props: {
   dreamStatus: DreamStatusResult | null;
   snapshot: SnapshotResult | null;
   tombstones: MemoryTombstone[];
+  proposals: DreamProposal[];
   useProvider: boolean;
 }) {
   const healthCards = Array.isArray(props.health?.cards) ? props.health.cards.length : 0;
   const latestDuration = latestDreamDurationS(props.dreamStatus);
+  const pendingProposals = props.proposals.filter((proposal) => proposal.status === "pending").length;
   return (
     <div className="maintenance-summary">
       <div className="summary-card">
@@ -1557,9 +1731,9 @@ function MaintenanceSummary(props: {
       </div>
       <div className="summary-card">
         <Archive size={18} />
-        <span>删除痕迹</span>
-        <strong>{props.tombstones.length}</strong>
-        <small>{props.snapshot?.exists ? "Snapshot 已存在" : "Snapshot 未生成"}</small>
+        <span>整理提案</span>
+        <strong>{pendingProposals}</strong>
+        <small>{props.tombstones.length} 条删除痕迹 · {props.snapshot?.exists ? "Snapshot 已存在" : "Snapshot 未生成"}</small>
       </div>
     </div>
   );
@@ -1605,6 +1779,8 @@ function SettingsPanel(props: {
   setSource: (value: string) => void;
   useProvider: boolean;
   setUseProvider: (value: boolean) => void;
+  advancedDreaming: boolean;
+  setAdvancedDreaming: (value: boolean) => void;
   providerConfig: ProviderConfigResult | null;
   providerForm: ProviderFormState;
   setProviderForm: (value: ProviderFormState) => void;
@@ -1708,6 +1884,17 @@ function SettingsPanel(props: {
         <span>
           <strong>使用模型审核</strong>
           <small>Run Dream 时调用服务端 provider；这里保存的配置会写入 state config。</small>
+        </span>
+      </label>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={props.advancedDreaming}
+          onChange={(event) => props.setAdvancedDreaming(event.target.checked)}
+        />
+        <span>
+          <strong>高级 Dreaming</strong>
+          <small>开启后 Dream 会生成稳定记忆整理提案；高风险合并、拆分、重写需要在维护页确认。</small>
         </span>
       </label>
       <label className="checkbox-row">
@@ -2177,19 +2364,22 @@ function dreamDurationText(report: DreamRunReport) {
   return typeof report.duration_s === "number" && Number.isFinite(report.duration_s) ? `用时 ${formatDuration(report.duration_s)}。` : "";
 }
 
-function dreamRunMessage(report: DreamRunReport, useProvider: boolean) {
+function dreamRunMessage(report: DreamRunReport, useProvider: boolean, advancedDreaming = false) {
   const counts = report.execution?.result?.actions?.counts || {};
   const deltaCounts = report.delta?.counts || {};
   const requested = Number(counts.requested || 0);
   const applied = Number(counts.applied || 0);
   const skipped = Number(counts.skipped || 0);
+  const proposals = report.execution?.result?.actions?.proposals || [];
+  const pendingProposals = proposals.filter((proposal) => proposal.status === "pending").length;
   const draftCandidates = Number(deltaCounts.draft_candidates || deltaCounts.memory_candidates || 0);
   const rejectReasonText = dreamRejectReasonText(dreamRunRejectReasons(report));
   const durationText = dreamDurationText(report);
+  const proposalText = advancedDreaming ? `整理提案 ${pendingProposals} 条。` : "";
   if (!useProvider && requested === 0) {
-    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。${durationText}`;
+    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。${proposalText}${durationText}`;
   }
-  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${durationText}${rejectReasonText}`;
+  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${proposalText}${durationText}${rejectReasonText}`;
 }
 
 createRoot(document.getElementById("root")!).render(

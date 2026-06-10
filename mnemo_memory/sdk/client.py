@@ -703,6 +703,8 @@ class MemoryClient:
         min_confidence: float = 0.7,
         actions: list[dict[str, Any]] | None = None,
         use_provider: bool = False,
+        advanced_dreaming: bool = False,
+        execution_policy: str = "semi_auto",
         config: ConfigOverrides | None = None,
     ) -> dict[str, Any]:
         engine = self._engine()
@@ -712,15 +714,30 @@ class MemoryClient:
             resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
             maintainer = OpenAICompatibleMemoryMaintainer(resolved)
             delta = engine.collect_dream_delta(limit=limit)
-            plan = engine.build_dream_plan(delta, limit=limit)
+            plan = engine.build_dream_plan(delta, limit=limit, advanced_dreaming=advanced_dreaming)
             actions = maintainer.propose_actions(delta=delta, plan=plan)
-        return engine.dream_maintenance(limit=limit, min_confidence=min_confidence, actions=actions)
+        return engine.dream_maintenance(
+            limit=limit,
+            min_confidence=min_confidence,
+            actions=actions,
+            advanced_dreaming=advanced_dreaming,
+            execution_policy=execution_policy,
+        )
 
     def dream_status(self, *, limit: int = 20) -> dict[str, Any]:
         return self._engine().dream_status(limit=limit)
 
     def dream_report(self, report_id: str | None = None, *, latest: bool = False) -> dict[str, Any] | None:
         return self._engine().load_dream_report(report_id, latest=latest)
+
+    def dream_proposals(self, *, status: str | None = "pending", limit: int = 50) -> dict[str, Any]:
+        return self._engine().dream_proposals(status=status, limit=limit)
+
+    def apply_dream_proposal(self, proposal_id: str) -> dict[str, Any]:
+        return self._engine().apply_dream_proposal(proposal_id)
+
+    def reject_dream_proposal(self, proposal_id: str, reason: str = "operator_rejected") -> dict[str, Any]:
+        return self._engine().reject_dream_proposal(proposal_id, reason=reason)
 
     def schema(self) -> dict[str, Any]:
         return memory_api_schema()

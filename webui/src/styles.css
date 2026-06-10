@@ -174,6 +174,11 @@ button {
 
 .switch input {
   position: absolute;
+  width: 1px;
+  min-height: 0;
+  height: 1px;
+  margin: 0;
+  padding: 0;
   opacity: 0;
   pointer-events: none;
 }
@@ -528,6 +533,140 @@ button {
 
 .dream-timing strong {
   font-variant-numeric: tabular-nums;
+}
+
+.dream-mode-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 14px 0;
+}
+
+.dream-proposals {
+  display: grid;
+  gap: 12px;
+  margin: 12px 14px 0;
+  padding: 12px;
+  border: 1px solid #dce3ec;
+  border-radius: 7px;
+  background: #fbfcfe;
+}
+
+.dream-proposals-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.dream-proposals-header h3 {
+  margin: 0;
+  color: #253044;
+  font-size: 14px;
+}
+
+.dream-proposals-header p {
+  margin: 4px 0 0;
+  color: #697586;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.dream-proposals > label {
+  display: grid;
+  gap: 6px;
+  max-width: 520px;
+  margin: 0;
+  color: #5d6878;
+  font-size: 12px;
+  font-weight: 680;
+}
+
+.dream-proposal-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dream-proposal-list .empty-state {
+  margin: 0;
+}
+
+.dream-proposal-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #d5dde9;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.dream-proposal-main {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dream-proposal-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.dream-proposal-title strong {
+  min-width: 0;
+  color: #172033;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.dream-proposal-main p {
+  margin: 0;
+  color: #344052;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.dream-proposal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+  color: #7b8494;
+  font-size: 12px;
+}
+
+.dream-proposal-meta code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.dream-proposal-card details {
+  min-width: 0;
+}
+
+.dream-proposal-card summary {
+  width: fit-content;
+  color: #1f5edb;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dream-proposal-card .json-block {
+  margin: 8px 0 0;
+}
+
+.dream-proposal-actions {
+  display: grid;
+  align-content: start;
+  gap: 8px;
 }
 
 .dream-rejects-header {
@@ -1606,8 +1745,19 @@ pre {
   .table-row,
   .danger-actions,
   .composer-row,
+  .dream-proposal-card,
   .tombstone-card {
     grid-template-columns: 1fr;
+  }
+
+  .dream-proposals-header,
+  .dream-proposal-actions {
+    align-items: stretch;
+  }
+
+  .dream-proposal-actions {
+    display: flex;
+    flex-wrap: wrap;
   }
 
   .tombstone-card {

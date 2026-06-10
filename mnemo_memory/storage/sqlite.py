@@ -11,7 +11,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 _DEFAULT_TOMBSTONE_RULE = "do_not_resurrect"
 
 
@@ -101,6 +101,21 @@ class StateStore:
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS dream_proposals (
+                    id TEXT PRIMARY KEY,
+                    report_id TEXT,
+                    tool TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    rationale TEXT NOT NULL DEFAULT '',
+                    risk TEXT NOT NULL DEFAULT 'high',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    action_json TEXT NOT NULL DEFAULT '{}',
+                    before_json TEXT NOT NULL DEFAULT '{}',
+                    after_json TEXT NOT NULL DEFAULT '{}',
+                    decision_json TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+                    decided_at REAL
+                );
                 CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status);
                 CREATE INDEX IF NOT EXISTS idx_memory_pages_status ON memory_pages(status);
                 CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
@@ -108,6 +123,7 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_memory_tombstones_target ON memory_tombstones(target_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_memory_events_run ON memory_events(run_id);
                 CREATE INDEX IF NOT EXISTS idx_memory_events_observed ON memory_events(observed_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_dream_proposals_status ON dream_proposals(status, created_at DESC);
                 """
             )
             conn.execute(
@@ -764,6 +780,114 @@ class StateStore:
             rows = conn.execute("DELETE FROM memory_tombstones WHERE id = ?", (clean_id,)).rowcount
         return int(rows)
 
+    def add_dream_proposal(
+        self,
+        *,
+        report_id: str | None,
+        tool: str,
+        title: str,
+        rationale: str = "",
+        risk: str = "high",
+        status: str = "pending",
+        action: dict[str, Any] | None = None,
+        before: dict[str, Any] | list[Any] | None = None,
+        after: dict[str, Any] | list[Any] | None = None,
+    ) -> dict[str, Any]:
+        clean_tool = str(tool or "").strip()
+        clean_title = " ".join(str(title or "").split())
+        clean_status = str(status or "pending").strip().casefold()
+        if not clean_tool:
+            raise ValueError("dream proposal tool is required")
+        if not clean_title:
+            clean_title = clean_tool.replace("_", " ")
+        if clean_status not in {"pending", "applied", "rejected"}:
+            raise ValueError(f"invalid dream proposal status: {status}")
+        proposal_id = new_id("dprop")
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO dream_proposals(
+                    id, report_id, tool, title, rationale, risk, status,
+                    action_json, before_json, after_json, decision_json, created_at, decided_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?)
+                """,
+                (
+                    proposal_id,
+                    _optional_str(report_id),
+                    clean_tool,
+                    clean_title[:240],
+                    " ".join(str(rationale or "").split())[:1000],
+                    str(risk or "high").strip().casefold() or "high",
+                    clean_status,
+                    dumps(action or {}),
+                    dumps(before or {}),
+                    dumps(after or {}),
+                    now,
+                    now if clean_status in {"applied", "rejected"} else None,
+                ),
+            )
+        proposal = self.get_dream_proposal(proposal_id)
+        if not proposal:
+            raise RuntimeError(f"dream proposal was not stored: {proposal_id}")
+        return proposal
+
+    def list_dream_proposals(self, status: str | None = "pending", limit: int = 50) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, report_id, tool, title, rationale, risk, status,
+                   action_json, before_json, after_json, decision_json, created_at, decided_at
+            FROM dream_proposals
+        """
+        params: list[Any] = []
+        clean_status = str(status or "").strip().casefold()
+        if clean_status:
+            sql += " WHERE status = ?"
+            params.append(clean_status)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(max(0, int(limit)))
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_dream_proposal_from_row(row) for row in rows]
+
+    def get_dream_proposal(self, proposal_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, report_id, tool, title, rationale, risk, status,
+                       action_json, before_json, after_json, decision_json, created_at, decided_at
+                FROM dream_proposals
+                WHERE id = ?
+                """,
+                (str(proposal_id or "").strip(),),
+            ).fetchone()
+        return _dream_proposal_from_row(row) if row else None
+
+    def update_dream_proposal_status(
+        self,
+        proposal_id: str,
+        status: str,
+        *,
+        decision: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        clean_status = str(status or "").strip().casefold()
+        if clean_status not in {"pending", "applied", "rejected"}:
+            raise ValueError(f"invalid dream proposal status: {status}")
+        decided_at = time.time() if clean_status in {"applied", "rejected"} else None
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE dream_proposals
+                SET status = ?, decision_json = ?, decided_at = ?
+                WHERE id = ?
+                """,
+                (clean_status, dumps(decision or {}), decided_at, str(proposal_id or "").strip()),
+            )
+        proposal = self.get_dream_proposal(proposal_id)
+        if not proposal:
+            raise ValueError(f"dream proposal not found: {proposal_id}")
+        return proposal
+
 
 def _working_note_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
@@ -793,6 +917,15 @@ def _memory_page_from_row(row: sqlite3.Row) -> dict[str, Any]:
 def _memory_tombstone_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
     result["metadata"] = loads(result.pop("metadata_json"), {})
+    return result
+
+
+def _dream_proposal_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["action"] = loads(result.pop("action_json"), {})
+    result["before"] = loads(result.pop("before_json"), {})
+    result["after"] = loads(result.pop("after_json"), {})
+    result["decision"] = loads(result.pop("decision_json"), {})
     return result
 
 

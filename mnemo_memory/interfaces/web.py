@@ -231,6 +231,8 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             min_confidence=float(body.get("min_confidence") or 0.7),
             actions=body.get("actions") if isinstance(body.get("actions"), list) else None,
             use_provider=bool(body.get("use_provider", False)),
+            advanced_dreaming=bool(body.get("advanced_dreaming", False)),
+            execution_policy=str(body.get("execution_policy") or "semi_auto"),
         )
         record_manual_dream_run(client, report)
         return report
@@ -239,6 +241,19 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
     if method == "dream-report":
         report = client.dream_report(_optional(body.get("report_id")), latest=bool(body.get("latest", False)))
         return {"kind": "dream_report_lookup", "report": report}
+    if method == "dream-proposals":
+        status = _optional(body.get("status")) if "status" in body else "pending"
+        return client.dream_proposals(
+            status=status,
+            limit=int(body.get("limit") or 50),
+        )
+    if method == "apply-dream-proposal":
+        return client.apply_dream_proposal(_required(body, "proposal_id"))
+    if method == "reject-dream-proposal":
+        return client.reject_dream_proposal(
+            _required(body, "proposal_id"),
+            reason=str(body.get("reason") or "operator_rejected"),
+        )
     raise KeyError(method)
 
 

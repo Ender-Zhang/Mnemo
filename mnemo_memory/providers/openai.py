@@ -19,6 +19,17 @@ class OpenAICompatibleMemoryMaintainer:
         self.config = config
 
     def propose_actions(self, *, delta: dict[str, Any], plan: dict[str, Any]) -> list[dict[str, Any]]:
+        allowed_tools = plan.get("allowed_tools") if isinstance(plan.get("allowed_tools"), list) else []
+        allowed_tool_text = ", ".join(str(tool) for tool in allowed_tools if tool) or (
+            "memory_promote_candidate, memory_reject_candidate, memory_tombstone, memory_decay_stale_pages"
+        )
+        advanced_note = (
+            " Advanced Dreaming is enabled. You may propose memory_link_pages for additive links. "
+            "For memory_rewrite_page, memory_merge_pages, memory_split_page, and memory_reconcile_conflict, "
+            "return them only when the after state is clear; the service will store them as pending operator proposals."
+            if plan.get("advanced_dreaming")
+            else ""
+        )
         payload = _chat_payload(
             self.config,
             [
@@ -26,13 +37,13 @@ class OpenAICompatibleMemoryMaintainer:
                     "role": "system",
                     "content": (
                         "You are a memory maintenance planner. Return JSON only with an actions array. "
-                        "Allowed tools: memory_promote_candidate, memory_reject_candidate, "
-                        "memory_tombstone, memory_decay_stale_pages. "
+                        f"Allowed tools: {allowed_tool_text}. "
                         "Do not reject user-provided private profile/contact facts solely because they are private; "
                         "promote them when stable and useful. "
                         "Reject or forget private content only when the user asked not to save it, asked to delete it, "
                         "or the source is unsafe/untrusted. "
                         "Include a concise reason on every promote or reject action."
+                        f"{advanced_note}"
                     ),
                 },
                 {

@@ -363,6 +363,9 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("list", schema["methods"])
         self.assertIn("provenance", schema["methods"])
         self.assertIn("dream_run", schema["methods"])
+        self.assertIn("dream_proposals", schema["methods"])
+        self.assertIn("apply_dream_proposal", schema["methods"])
+        self.assertIn("reject_dream_proposal", schema["methods"])
         self.assertIn("force_promote_candidate", schema["methods"])
         self.assertIn("hard_delete", schema["methods"])
         self.assertIn("stable_create", schema["methods"])
@@ -730,13 +733,125 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("mnemo.useProvider", app)
         self.assertIn("use_provider: useProvider", app)
 
+    def test_advanced_dreaming_creates_and_applies_rewrite_proposal(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            page = client.stable_create(
+                title="context: scattered notes",
+                content="- Old scattered project note.",
+                scope="project:mnemo",
+                confidence=0.8,
+            )["item"]
+
+            report = client.dream_run(
+                advanced_dreaming=True,
+                actions=[
+                    {
+                        "tool": "memory_rewrite_page",
+                        "page_id": page["id"],
+                        "proposed_title": "context: Mnemo WebUI direction",
+                        "proposed_content": "- Mnemo WebUI should default to a memory workbench and keep debug details in advanced mode.",
+                        "rationale": "Consolidate scattered wording into a clearer stable memory page.",
+                    }
+                ],
+            )
+            proposals = report["execution"]["result"]["actions"]["proposals"]
+            self.assertEqual(len(proposals), 1)
+            self.assertEqual(proposals[0]["tool"], "memory_rewrite_page")
+            self.assertEqual(proposals[0]["status"], "pending")
+
+            listed = client.dream_proposals()
+            proposal = listed["proposals"][0]
+            self.assertEqual(proposal["status"], "pending")
+            self.assertEqual(proposal["before"]["page"]["id"], page["id"])
+
+            applied = client.apply_dream_proposal(proposal["id"])
+            self.assertEqual(applied["proposal"]["status"], "applied")
+            updated = client.stable_read(page["id"])["item"]
+            self.assertEqual(updated["title"], "context: Mnemo WebUI direction")
+            self.assertIn("memory workbench", updated["content"])
+
+    def test_advanced_dreaming_auto_applies_page_links(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            left = client.stable_create(title="User preferences", content="- Prefers concise updates.")["item"]
+            right = client.stable_create(title="Project rules", content="- Keep WebUI assets packaged.")["item"]
+
+            report = client.dream_run(
+                advanced_dreaming=True,
+                actions=[
+                    {
+                        "tool": "memory_link_pages",
+                        "source_id": left["id"],
+                        "target_id": right["id"],
+                        "relation": "related_context",
+                        "weight": 0.8,
+                    }
+                ],
+            )
+
+            applied = report["execution"]["result"]["actions"]["applied"][0]
+            self.assertEqual(applied["tool"], "memory_link_pages")
+            self.assertEqual(applied["status"], "applied")
+            links = client.links(left["id"])
+            self.assertEqual(links["outgoing"][0]["target_id"], right["id"])
+            self.assertEqual(links["outgoing"][0]["relation"], "related_context")
+
+    def test_http_dispatch_lists_and_rejects_dream_proposals(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.web import dispatch_memory_api
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            page = client.stable_create(
+                title="context: stale stable page",
+                content="- Old version.",
+                scope="project:mnemo",
+            )["item"]
+            client.dream_run(
+                advanced_dreaming=True,
+                actions=[
+                    {
+                        "tool": "memory_rewrite_page",
+                        "page_id": page["id"],
+                        "proposed_content": "- New version.",
+                        "rationale": "Test proposal dispatch.",
+                    }
+                ],
+            )
+
+            pending = dispatch_memory_api(client, "dream-proposals", {"limit": 50})
+            proposal_id = pending["proposals"][0]["id"]
+            rejected = dispatch_memory_api(
+                client,
+                "reject-dream-proposal",
+                {"proposal_id": proposal_id, "reason": "test_rejected"},
+            )
+            all_proposals = dispatch_memory_api(client, "dream-proposals", {"status": None, "limit": 50})
+
+            self.assertEqual(rejected["proposal"]["status"], "rejected")
+            self.assertEqual(all_proposals["count"], 1)
+            self.assertEqual(all_proposals["proposals"][0]["status"], "rejected")
+
+    def test_webui_exposes_advanced_dreaming_controls(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn("mnemo.advancedDreaming", app)
+        self.assertIn("advanced_dreaming: advancedDreaming", app)
+        self.assertIn("DreamProposalsPanel", app)
+
     def test_webui_keeps_dream_run_feedback_after_refresh(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
         app = source.read_text(encoding="utf-8")
 
         self.assertIn('const report = await callMemory<DreamRunReport>("dream-run"', app)
         self.assertIn("await refresh({ clearNotice: false })", app)
-        self.assertIn("setOk(dreamRunMessage(report, useProvider))", app)
+        self.assertIn("setOk(dreamRunMessage(report, useProvider, advancedDreaming))", app)
         self.assertIn("Dream 已运行：已生成报告和快照", app)
         self.assertIn("duration_s", app)
         self.assertIn("用时", app)

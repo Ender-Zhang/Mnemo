@@ -40,6 +40,9 @@ _SCHEMA: dict[str, Any] = {
         "dream_run": {"side_effects": "memory_maintenance_only"},
         "dream_status": {"side_effects": "read_only"},
         "dream_report": {"side_effects": "read_only"},
+        "dream_proposals": {"side_effects": "read_only"},
+        "apply_dream_proposal": {"side_effects": "applies_operator_approved_memory_reorganization"},
+        "reject_dream_proposal": {"side_effects": "rejects_pending_memory_reorganization"},
     },
 }
 

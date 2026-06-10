@@ -29,6 +29,8 @@ def run_dream_with_lock(
     min_confidence: float = 0.7,
     actions: list[dict[str, Any]] | None = None,
     use_provider: bool = False,
+    advanced_dreaming: bool = False,
+    execution_policy: str = "semi_auto",
     blocking: bool = True,
 ) -> dict[str, Any]:
     acquired = _DREAM_RUN_LOCK.acquire(blocking=blocking)
@@ -40,6 +42,8 @@ def run_dream_with_lock(
             min_confidence=min_confidence,
             actions=actions,
             use_provider=use_provider,
+            advanced_dreaming=advanced_dreaming,
+            execution_policy=execution_policy,
         )
     finally:
         _DREAM_RUN_LOCK.release()
