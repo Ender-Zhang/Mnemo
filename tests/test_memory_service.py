@@ -36,6 +36,7 @@ class MemoryServiceTests(unittest.TestCase):
 
             promoted = client.promote_candidate(candidate_id)
             self.assertEqual(promoted["status"], "promoted")
+            self.assertIn("passed quality and confidence gates", promoted["reason"])
 
             context = client.context("implementation status", limit=5)
             self.assertEqual(context["kind"], "memory_context")
@@ -683,12 +684,14 @@ class MemoryServiceTests(unittest.TestCase):
             applied = report["execution"]["result"]["actions"]["applied"]
             self.assertEqual(applied[0]["decision"], "promoted")
             self.assertEqual(applied[0]["reason"], "explicit_user_preference")
+            self.assertIn("passed quality and confidence gates", applied[0]["gate_reason"])
 
             status = client.dream_status()
             review_results = status["latest"]["execution"]["review_results"]
             self.assertEqual(review_results[0]["candidate_id"], candidate_id)
             self.assertEqual(review_results[0]["decision"], "promoted")
             self.assertEqual(review_results[0]["reason"], "explicit_user_preference")
+            self.assertIn("passed quality and confidence gates", review_results[0]["gate_reason"])
 
     def test_webui_can_enable_provider_backed_dream_run(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
@@ -732,6 +735,9 @@ class MemoryServiceTests(unittest.TestCase):
 
         self.assertIn("审核结果", app)
         self.assertIn("AuditResultBadge", app)
+        self.assertIn("AuditDetail", app)
+        self.assertIn("detailedAuditReason", app)
+        self.assertIn("stableMemoryFallbackReason", app)
         self.assertIn("dreamReviewResultMap", app)
         self.assertIn("review_results", app)
 
@@ -743,6 +749,17 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("const reviewResults = dreamReviewResultMap(props.dreamStatus)", app)
         self.assertIn("<AuditResultBadge item={candidate} review={reviewForItem(candidate, reviewResults)} />", app)
         self.assertIn("isReviewableCandidate(candidate)", app)
+
+    def test_webui_keeps_promoted_candidates_out_of_candidate_review(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        app = root.joinpath("webui", "src", "main.tsx").read_text(encoding="utf-8")
+        filters = root.joinpath("webui", "src", "candidateFilters.ts").read_text(encoding="utf-8")
+
+        self.assertIn('useState<"all" | "candidate" | "page">("page")', app)
+        self.assertIn("filterCandidateReviewItems(candidates)", app)
+        self.assertIn("candidates={candidateReviewItems}", app)
+        self.assertIn("Promote 通过后会进入记忆页", app)
+        self.assertIn("!isPromotedCandidate(candidate)", filters)
 
     def test_webui_displays_memory_provenance_timeline(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"

@@ -339,8 +339,11 @@ class MemoryDreamMixin:
         action_reason = _normalize_space(
             str(arguments.get("reason") or arguments.get("rationale") or arguments.get("why") or "")
         )
-        if action_reason and not result.get("reason"):
-            result = {**result, "reason": action_reason}
+        if action_reason:
+            if result.get("reason") and result.get("reason") != action_reason:
+                result = {**result, "gate_reason": result.get("reason"), "reason": action_reason}
+            else:
+                result = {**result, "reason": action_reason}
         return _compact_dream_promote_result(action_id, result)
 
     def _apply_dream_reject_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -413,10 +416,10 @@ def _dream_review_results(actions: Any) -> list[dict[str, Any]]:
             "status": action.get("status"),
             "decision": _dream_review_decision(action),
         }
-        for key in ("candidate_id", "page_id", "action_id", "reason"):
+        for key in ("candidate_id", "page_id", "action_id", "reason", "gate_reason", "page_action"):
             value = action.get(key)
             if value:
-                item[key] = _truncate(str(value), limit=160) if key == "reason" else value
+                item[key] = _truncate(str(value), limit=160) if key in {"reason", "gate_reason"} else value
         if action.get("page_title"):
             item["page_title"] = _truncate(str(action.get("page_title")), limit=120)
         results.append(item)
@@ -612,8 +615,12 @@ def _compact_dream_promote_result(action_id: str, result: dict[str, Any]) -> dic
     }
     if result.get("reason"):
         compact["reason"] = _truncate(str(result.get("reason")), limit=160)
+    if result.get("gate_reason"):
+        compact["gate_reason"] = _truncate(str(result.get("gate_reason")), limit=160)
     if result.get("page_id"):
         compact["page_id"] = result.get("page_id")
+    if result.get("page_action"):
+        compact["page_action"] = result.get("page_action")
     if page.get("title"):
         compact["page_title"] = page.get("title")
     if result.get("conflict_page_id"):

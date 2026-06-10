@@ -717,6 +717,7 @@ label {
 
 .detail-id,
 .detail-grid,
+.audit-detail,
 .content-box,
 .danger-actions,
 .composer label,
@@ -824,6 +825,62 @@ code {
 .detail-grid strong {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.audit-detail {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid #dce3ec;
+  border-radius: 6px;
+  background: #fbfcfe;
+}
+
+.audit-detail span {
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.audit-detail strong {
+  color: #253044;
+  font-size: 13px;
+}
+
+.audit-detail p,
+.audit-detail small {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #5f6b7d;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.audit-detail.good {
+  border-color: #b9e6c6;
+  background: #f3fff6;
+}
+
+.audit-detail.good strong {
+  color: #138037;
+}
+
+.audit-detail.bad {
+  border-color: #ffd0d0;
+  background: #fff7f7;
+}
+
+.audit-detail.bad strong {
+  color: #c52828;
+}
+
+.audit-detail.warn {
+  border-color: #f6dfa8;
+  background: #fffaf0;
+}
+
+.audit-detail.warn strong {
+  color: #9a5b05;
 }
 
 .content-box {

@@ -25,7 +25,7 @@ import {
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { filterReviewableCandidates, isReviewableCandidate } from "./candidateFilters";
+import { filterCandidateReviewItems, filterReviewableCandidates, isReviewableCandidate } from "./candidateFilters";
 import { emptyProviderForm, providerFormFromConfig, providerSavePayload, providerStatusText } from "./providerSettings";
 import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
@@ -123,10 +123,12 @@ type DreamRejectReason = {
   candidate_id?: string;
   page_id?: string;
   page_title?: string;
+  page_action?: string;
   tool?: string;
   status?: string;
   decision?: string;
   reason?: string;
+  gate_reason?: string;
 };
 
 type DreamReviewResult = DreamRejectReason;
@@ -214,7 +216,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [uidFilter, setUidFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [kindFilter, setKindFilter] = useState<"all" | "candidate" | "page">("all");
+  const [kindFilter, setKindFilter] = useState<"all" | "candidate" | "page">("page");
   const [searchMode, setSearchMode] = useState(false);
   const [inventory, setInventory] = useState<MemoryItem[]>([]);
   const [searchItems, setSearchItems] = useState<MemoryItem[]>([]);
@@ -240,6 +242,7 @@ function App() {
   const authed = authToken.trim().length > 0;
   const activeItems = searchMode ? searchItems : inventory;
   const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
+  const candidateReviewItems = useMemo(() => filterCandidateReviewItems(candidates), [candidates]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
   const dreamElapsedS = dreamStartedAtMs === null ? null : Math.max(0, (clockNowMs - dreamStartedAtMs) / 1000);
 
@@ -289,7 +292,7 @@ function App() {
       const scopedUid = uidFilter.trim() || undefined;
       const [healthResult, inventoryResult, candidateResult, dreamResult, snapshotResult, tombstoneResult, providerResult] = await Promise.all([
         requestJson<Record<string, unknown>>("/api/health"),
-        callMemory<MemoryListResult>("list", { kind: "all", status: statusFilter || null, uid: scopedUid, limit: 50 }),
+        callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 50 }),
         callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }),
         callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
         callMemory<SnapshotResult>("snapshot", { limit: 50 }),
@@ -318,7 +321,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [callMemory, requestJson, statusFilter, uidFilter]);
+  }, [callMemory, kindFilter, requestJson, statusFilter, uidFilter]);
 
   const refreshInventory = useCallback(async (options: { clearNotice?: boolean } = {}) => {
     setSearchItems([]);
@@ -354,6 +357,9 @@ function App() {
   }, [dreamStartedAtMs]);
 
   useEffect(() => {
+    if (activeTab !== "memories" && activeTab !== "overview") {
+      return;
+    }
     if (activeItems.length === 0) {
       if (selected) {
         setSelected(null);
@@ -364,7 +370,7 @@ function App() {
     if (!selectedStillVisible) {
       setSelected(activeItems[0]);
     }
-  }, [activeItems, selected]);
+  }, [activeItems, activeTab, selected]);
 
   const searchMemory = async () => {
     const cleanQuery = query.trim();
@@ -700,7 +706,7 @@ function App() {
             ) : null}
             {activeTab === "candidates" ? (
               <CandidateReview
-                candidates={candidates}
+                candidates={candidateReviewItems}
                 dreamStatus={dreamStatus}
                 rejectReason={rejectReason}
                 setRejectReason={setRejectReason}
@@ -755,6 +761,7 @@ function App() {
               selected={selected}
               links={links}
               provenance={provenance}
+              dreamStatus={dreamStatus}
               tombstoneReason={tombstoneReason}
               setTombstoneReason={setTombstoneReason}
               onTombstone={() => curateSelected("tombstone")}
@@ -945,16 +952,31 @@ function AuditResultBadge({ item, review }: { item: MemoryItem; review?: DreamRe
   );
 }
 
+function AuditDetail({ item, review }: { item: MemoryItem; review?: DreamReviewResult }) {
+  const result = auditResultForItem(item, review);
+  const reason = detailedAuditReason(item, review, result.detail);
+  return (
+    <div className={`audit-detail ${result.tone}`}>
+      <span>审核结果</span>
+      <strong>{result.label}</strong>
+      <p>{reason}</p>
+      {review?.gate_reason && review.gate_reason !== review.reason ? <small>规则门槛：{review.gate_reason}</small> : null}
+    </div>
+  );
+}
+
 function MemoryDetail(props: {
   selected: MemoryItem | null;
   links: MemoryLinksResult | null;
   provenance: MemoryProvenanceResult | null;
+  dreamStatus: DreamStatusResult | null;
   tombstoneReason: string;
   setTombstoneReason: (value: string) => void;
   onTombstone: () => void;
   onForget: () => void;
 }) {
   const item = props.selected;
+  const review = item ? reviewForItem(item, dreamReviewResultMap(props.dreamStatus)) : undefined;
   return (
     <section className="panel detail-panel">
       <div className="panel-header compact">
@@ -981,6 +1003,7 @@ function MemoryDetail(props: {
             <label>更新时间</label>
             <strong>{formatDate(item.updated_at || item.created_at)}</strong>
           </div>
+          <AuditDetail item={item} review={review} />
           <div className="content-box">{item.content || item.claim || item.title || "-"}</div>
           <ProvenanceTimeline provenance={props.provenance} />
           <JsonBlock title="Metadata / Evidence" value={item.metadata || item.evidence || {}} />
@@ -1105,12 +1128,12 @@ function CandidateReview(props: {
         <div className="panel-header">
             <div>
               <h2>候选审核</h2>
-              <p>Promote 会先通过审核门，可能新建稳定页，也可能合并到同主题稳定页。</p>
+              <p>Promote 通过后会进入记忆页；这里保留待审核、拒绝和需复核的候选。</p>
           </div>
         <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} placeholder="reject reason" />
       </div>
       <div className="candidate-list">
-        {props.candidates.length === 0 ? <EmptyState text="暂无候选记忆。" /> : null}
+        {props.candidates.length === 0 ? <EmptyState text="暂无待处理或需查看原因的候选记忆。" /> : null}
         {props.candidates.map((candidate) => {
           const reviewable = isReviewableCandidate(candidate);
           return (
@@ -1645,7 +1668,7 @@ function auditResultForItem(item: MemoryItem, review?: DreamReviewResult) {
     return auditResult("已跳过", statusReason(status), "neutral");
   }
   if (item.type === "page" && normalized === "active") {
-    return auditResult("稳定记忆", item.source_candidate_id ? `来自 ${compactId(item.source_candidate_id)}` : "", "good");
+    return auditResult("稳定记忆", stableMemoryFallbackReason(item), "good");
   }
   if (normalized.includes("tombstone") || normalized.includes("delete")) {
     return auditResult("已删除", statusReason(status), "bad");
@@ -1658,7 +1681,7 @@ function auditResultFromDreamReview(review: DreamReviewResult) {
   const status = String(review.status || "");
   const normalizedStatus = status.toLowerCase();
   if (decision === "promoted" || normalizedStatus === "promoted") {
-    return auditResult("模型通过", review.reason || review.page_title || (review.page_id ? `写入 ${compactId(review.page_id)}` : ""), "good");
+    return auditResult("模型通过", review.reason || promotedReviewFallbackReason(review), "good");
   }
   if (decision === "rejected" || normalizedStatus.startsWith("rejected")) {
     return auditResult("模型拒绝", review.reason || statusReason(status), "bad");
@@ -1670,6 +1693,47 @@ function auditResultFromDreamReview(review: DreamReviewResult) {
     return auditResult("需复核", review.reason || "conflict", "warn");
   }
   return auditResult("模型已审", review.reason || status || decision, "blue");
+}
+
+function detailedAuditReason(item: MemoryItem, review: DreamReviewResult | undefined, fallback: string) {
+  if (review) {
+    if (review.reason) return review.reason;
+    if (String(review.decision || "").toLowerCase() === "promoted" || String(review.status || "").toLowerCase() === "promoted") {
+      return promotedReviewFallbackReason(review);
+    }
+    return fallback || review.status || review.decision || "审核结果没有附带详细原因。";
+  }
+  if (item.type === "page" && String(item.status || "").toLowerCase() === "active") {
+    return stableMemoryFallbackReason(item);
+  }
+  return fallback || statusReason(String(item.status || "")) || "暂无详细审核原因。";
+}
+
+function promotedReviewFallbackReason(review: DreamReviewResult) {
+  const actionText =
+    review.page_action === "merged"
+      ? "已合并到已有稳定记忆页"
+      : review.page_action === "created"
+        ? "已新建稳定记忆页"
+        : "已进入稳定记忆";
+  const pageText = review.page_title
+    ? `「${review.page_title}」`
+    : review.page_id
+      ? compactId(review.page_id)
+      : "";
+  const sourceText = review.candidate_id ? `；来源候选 ${compactId(review.candidate_id)}` : "";
+  return `${actionText}${pageText ? ` ${pageText}` : ""}${sourceText}`;
+}
+
+function stableMemoryFallbackReason(item: MemoryItem) {
+  const parts = ["已进入稳定记忆，可用于后续检索和上下文召回"];
+  if (item.source_candidate_id) {
+    parts.push(`来源候选 ${compactId(item.source_candidate_id)}`);
+  }
+  if (typeof item.confidence === "number") {
+    parts.push(`置信度 ${formatConfidence(item.confidence)}`);
+  }
+  return parts.join("；");
 }
 
 function auditReviewLabel(review: DreamReviewResult) {

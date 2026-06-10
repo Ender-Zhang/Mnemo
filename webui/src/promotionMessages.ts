@@ -15,12 +15,12 @@ export function promotionReviewMessage(result: PromotionReviewResult) {
   if (decision === "promoted" || result.status === "promoted") {
     const pageTitle = result.page?.title ? `「${result.page.title}」` : "";
     if (result.page_action === "created") {
-      return `审核通过：已新建稳定记忆页${pageTitle}`;
+      return `审核通过：已新建稳定记忆页${pageTitle}${reason}`;
     }
     if (result.page_action === "merged") {
-      return `审核通过：已合并到已有稳定记忆页${pageTitle}；稳定记忆页数量不会增加`;
+      return `审核通过：已合并到已有稳定记忆页${pageTitle}；稳定记忆页数量不会增加${reason}`;
     }
-    return "审核通过：候选已提升为稳定记忆";
+    return `审核通过：候选已提升为稳定记忆${reason}`;
   }
   if (decision === "rejected" || result.status?.startsWith("rejected")) {
     return `审核拒绝：候选未进入稳定记忆${reason}`;

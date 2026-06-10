@@ -505,11 +505,18 @@ class MemoryLearningMixin:
         promoted = self._promote_candidate_unchecked(candidate["id"])
         page = promoted.get("page") if isinstance(promoted.get("page"), dict) else {}
         wiki = promoted.get("wiki") if isinstance(promoted.get("wiki"), dict) else {}
+        reason = _promotion_approval_reason(
+            candidate,
+            min_confidence=min_confidence,
+            page_action=str(promoted.get("page_action") or ""),
+            page=page,
+        )
         return {
             "kind": "memory_promotion_review",
             "candidate_id": candidate["id"],
             "status": "promoted",
             "decision": "promoted",
+            "reason": reason,
             "page_id": promoted.get("page_id"),
             "page_action": promoted.get("page_action"),
             "page": {
@@ -707,6 +714,24 @@ def _merged_page_content(existing_content: str, claim: str) -> str:
     if claim_text and _fingerprint(claim_text) not in seen:
         facts.append(claim_text)
     return "\n".join(f"- {fact}" for fact in facts) or claim_text
+
+
+def _promotion_approval_reason(
+    candidate: dict[str, Any],
+    *,
+    min_confidence: float,
+    page_action: str,
+    page: dict[str, Any],
+) -> str:
+    confidence = _bounded_confidence(candidate.get("confidence"), 0.0)
+    action_text = "merged into an existing stable page" if page_action == "merged" else "created a stable page"
+    page_title = _normalize_space(str(page.get("title") or ""))
+    title_text = f" ({page_title})" if page_title else ""
+    return (
+        "passed quality and confidence gates; "
+        f"confidence {confidence:.2f} >= {min_confidence:.2f}; "
+        f"{action_text}{title_text}"
+    )
 
 
 def _memory_fact_texts(content: str) -> list[str]:
