@@ -820,6 +820,11 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("function TombstonePanel", app)
         self.assertIn('callMemory("forget"', app)
         self.assertIn('callMemory("hard-delete"', app)
+        self.assertIn("selectedTombstoneIds", app)
+        self.assertIn("toggleAllTombstones", app)
+        self.assertIn("hardDeleteSelectedTombstones", app)
+        self.assertIn("彻底删除选中", app)
+        self.assertIn("全选", app)
         self.assertIn("彻底删除", app)
 
     def test_webui_can_filter_memories_by_uid(self) -> None:

@@ -237,6 +237,7 @@ function App() {
   const [dreamStatus, setDreamStatus] = useState<DreamStatusResult | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotResult | null>(null);
   const [tombstones, setTombstones] = useState<MemoryTombstone[]>([]);
+  const [selectedTombstoneIds, setSelectedTombstoneIds] = useState<Set<string>>(() => new Set());
   const [factText, setFactText] = useState("");
   const [observationText, setObservationText] = useState("");
   const [source, setSource] = useState("webui");
@@ -316,7 +317,7 @@ function App() {
         callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }),
         callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
         callMemory<SnapshotResult>("snapshot", { limit: 50 }),
-        callMemory<TombstonesResult>("tombstones", { limit: 20 }),
+        callMemory<TombstonesResult>("tombstones", { limit: 500 }),
         callMemory<ProviderConfigResult>("provider-config", {}),
         callMemory<AutoDreamStatusResult>("auto-dream-status", {})
       ]);
@@ -394,6 +395,14 @@ function App() {
       setSelected(activeItems[0]);
     }
   }, [activeItems, activeTab, selected]);
+
+  useEffect(() => {
+    const visibleIds = new Set(tombstones.map((tombstone) => tombstone.id));
+    setSelectedTombstoneIds((previous) => {
+      const next = new Set([...previous].filter((id) => visibleIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [tombstones]);
 
   const searchMemory = async () => {
     const cleanQuery = query.trim();
@@ -571,6 +580,66 @@ function App() {
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleTombstoneSelection = (tombstoneId: string, selected: boolean) => {
+    setSelectedTombstoneIds((previous) => {
+      const next = new Set(previous);
+      if (selected) {
+        next.add(tombstoneId);
+      } else {
+        next.delete(tombstoneId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllTombstones = (selected: boolean) => {
+    setSelectedTombstoneIds(selected ? new Set(tombstones.map((tombstone) => tombstone.id)) : new Set());
+  };
+
+  const hardDeleteSelectedTombstones = async () => {
+    const selectedTombstones = tombstones.filter((tombstone) => selectedTombstoneIds.has(tombstone.id));
+    if (selectedTombstones.length === 0) {
+      setWarn("请先选择要彻底删除的 tombstone");
+      return;
+    }
+    const confirmed = window.confirm(`彻底删除选中的 ${selectedTombstones.length} 条 tombstone 及相关记忆/link/wiki 记录？`);
+    if (!confirmed) return;
+    setLoading(true);
+    let deletedCount = 0;
+    let skippedCount = 0;
+    const failures: string[] = [];
+    try {
+      for (const tombstone of selectedTombstones) {
+        try {
+          await callMemory("hard-delete", {
+            tombstone_id: tombstone.id,
+            memory_id: tombstone.target_id,
+            target_type: tombstone.target_type,
+            delete_related: true
+          });
+          deletedCount += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message.includes("not found")) {
+            skippedCount += 1;
+          } else {
+            failures.push(`${compactId(tombstone.id) || tombstone.id}: ${message}`);
+          }
+        }
+      }
+      setSelected(null);
+      setSelectedTombstoneIds(new Set());
+      await refresh({ clearNotice: false });
+      if (failures.length > 0) {
+        setWarn(`已彻底删除 ${deletedCount} 条，跳过 ${skippedCount} 条，失败 ${failures.length} 条：${failures.slice(0, 2).join("；")}`);
+      } else {
+        setOk(`已彻底删除 ${deletedCount} 条 tombstone${skippedCount ? `，跳过 ${skippedCount} 条已删除项` : ""}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -755,10 +824,14 @@ function App() {
             {activeTab === "tombstones" ? (
               <TombstonePanel
                 tombstones={tombstones}
+                selectedTombstoneIds={selectedTombstoneIds}
                 loading={loading}
+                onToggleSelection={toggleTombstoneSelection}
+                onToggleAll={toggleAllTombstones}
                 onSelectTarget={(item) => readMemory(item)}
                 onForget={forgetTombstoneTarget}
                 onHardDelete={hardDeleteTombstoneTarget}
+                onHardDeleteSelected={hardDeleteSelectedTombstones}
               />
             ) : null}
             {activeTab === "maintenance" ? (
@@ -1210,11 +1283,17 @@ function CandidateReview(props: {
 
 function TombstonePanel(props: {
   tombstones: MemoryTombstone[];
+  selectedTombstoneIds: Set<string>;
   loading: boolean;
+  onToggleSelection: (tombstoneId: string, selected: boolean) => void;
+  onToggleAll: (selected: boolean) => void;
   onSelectTarget: (item: MemoryItem) => void;
   onForget: (tombstone: MemoryTombstone) => void;
   onHardDelete: (tombstone: MemoryTombstone) => void;
+  onHardDeleteSelected: () => void;
 }) {
+  const selectedCount = props.tombstones.filter((tombstone) => props.selectedTombstoneIds.has(tombstone.id)).length;
+  const allSelected = props.tombstones.length > 0 && selectedCount === props.tombstones.length;
   return (
     <section className="panel tombstone-panel">
       <div className="panel-header">
@@ -1222,12 +1301,43 @@ function TombstonePanel(props: {
           <h2>Tombstones</h2>
           <p>Forget 会擦除目标内容并保留删除痕迹；彻底删除会移除目标和相关墓碑记录。</p>
         </div>
-        <StatusBadge text={`${props.tombstones.length} tombstones`} />
+        <div className="tombstone-header-actions">
+          <StatusBadge text={`${props.tombstones.length} tombstones`} />
+          {selectedCount > 0 ? <StatusBadge text={`${selectedCount} selected`} /> : null}
+        </div>
+      </div>
+      <div className="tombstone-toolbar">
+        <label className="tombstone-select-all">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            disabled={props.loading || props.tombstones.length === 0}
+            onChange={(event) => props.onToggleAll(event.target.checked)}
+          />
+          <span>全选</span>
+        </label>
+        <button
+          className="danger-button strong-danger"
+          onClick={props.onHardDeleteSelected}
+          disabled={props.loading || selectedCount === 0}
+        >
+          <X size={15} />
+          彻底删除选中
+        </button>
       </div>
       <div className="tombstone-list">
         {props.tombstones.length === 0 ? <EmptyState text="暂无 tombstone。" /> : null}
         {props.tombstones.map((tombstone) => (
           <article className="tombstone-card" key={tombstone.id}>
+            <label className="tombstone-select" title="选择 tombstone">
+              <input
+                type="checkbox"
+                aria-label={`选择 tombstone ${tombstone.id}`}
+                checked={props.selectedTombstoneIds.has(tombstone.id)}
+                disabled={props.loading}
+                onChange={(event) => props.onToggleSelection(tombstone.id, event.target.checked)}
+              />
+            </label>
             <div className="tombstone-main">
               <div className="tombstone-title">
                 <StatusBadge text={tombstone.target_type} />

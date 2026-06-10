@@ -1105,12 +1105,55 @@ code {
   display: grid;
 }
 
+.tombstone-header-actions,
+.tombstone-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tombstone-toolbar {
+  margin: 12px 14px 0;
+}
+
+.tombstone-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 10px;
+  border: 1px solid #d5dde9;
+  border-radius: 6px;
+  background: #fbfcfe;
+  color: #253044;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tombstone-select-all input,
+.tombstone-select input {
+  width: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+}
+
 .tombstone-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 156px;
+  grid-template-columns: 22px minmax(0, 1fr) 156px;
   gap: 14px;
   padding: 14px;
   border-bottom: 1px solid #e8edf4;
+}
+
+.tombstone-select {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  margin: 1px 0 0;
 }
 
 .tombstone-main {
@@ -1344,6 +1387,14 @@ pre {
   .composer-row,
   .tombstone-card {
     grid-template-columns: 1fr;
+  }
+
+  .tombstone-card {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .tombstone-actions {
+    grid-column: 2;
   }
 
   .table-head {
