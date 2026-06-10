@@ -27,7 +27,8 @@ class OpenAICompatibleMemoryMaintainer:
                     "content": (
                         "You are a memory maintenance planner. Return JSON only with an actions array. "
                         "Allowed tools: memory_promote_candidate, memory_reject_candidate, "
-                        "memory_tombstone, memory_decay_stale_pages."
+                        "memory_tombstone, memory_decay_stale_pages. "
+                        "Include a concise reason on every promote or reject action."
                     ),
                 },
                 {

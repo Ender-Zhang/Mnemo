@@ -25,7 +25,7 @@ import {
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { filterReviewableCandidates } from "./candidateFilters";
+import { filterReviewableCandidates, isReviewableCandidate } from "./candidateFilters";
 import { emptyProviderForm, providerFormFromConfig, providerSavePayload, providerStatusText } from "./providerSettings";
 import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
@@ -700,7 +700,8 @@ function App() {
             ) : null}
             {activeTab === "candidates" ? (
               <CandidateReview
-                candidates={pendingCandidates}
+                candidates={candidates}
+                dreamStatus={dreamStatus}
                 rejectReason={rejectReason}
                 setRejectReason={setRejectReason}
                 onPromote={promoteCandidate}
@@ -1091,12 +1092,14 @@ function Composer(props: {
 
 function CandidateReview(props: {
   candidates: MemoryItem[];
+  dreamStatus: DreamStatusResult | null;
   rejectReason: string;
   setRejectReason: (value: string) => void;
   onPromote: (id: string) => void;
   onReject: (id: string) => void;
   onSelect: (item: MemoryItem) => void;
 }) {
+  const reviewResults = dreamReviewResultMap(props.dreamStatus);
   return (
     <section className="panel">
         <div className="panel-header">
@@ -1108,24 +1111,34 @@ function CandidateReview(props: {
       </div>
       <div className="candidate-list">
         {props.candidates.length === 0 ? <EmptyState text="暂无候选记忆。" /> : null}
-        {props.candidates.map((candidate) => (
-          <article className="candidate-row" key={candidate.id}>
-            <button onClick={() => props.onSelect(candidate)}>
-              <strong>{candidate.claim || candidate.title || candidate.id}</strong>
-              <span>{candidate.dimension || candidate.scope || "global"} · {formatTime(candidate.created_at)}</span>
-            </button>
-            <div>
-              <button className="success-button" onClick={() => props.onPromote(candidate.id)}>
-                <Check size={15} />
-                Promote
+        {props.candidates.map((candidate) => {
+          const reviewable = isReviewableCandidate(candidate);
+          return (
+            <article className="candidate-row" key={candidate.id}>
+              <button onClick={() => props.onSelect(candidate)}>
+                <strong>{candidate.claim || candidate.title || candidate.id}</strong>
+                <span>{candidate.dimension || candidate.scope || "global"} · {formatTime(candidate.created_at)}</span>
+                <AuditResultBadge item={candidate} review={reviewForItem(candidate, reviewResults)} />
               </button>
-              <button className="danger-button" onClick={() => props.onReject(candidate.id)}>
-                <Trash2 size={15} />
-                Reject
-              </button>
-            </div>
-          </article>
-        ))}
+              <div className="candidate-actions">
+                {reviewable ? (
+                  <>
+                    <button className="success-button" onClick={() => props.onPromote(candidate.id)}>
+                      <Check size={15} />
+                      Promote
+                    </button>
+                    <button className="danger-button" onClick={() => props.onReject(candidate.id)}>
+                      <Trash2 size={15} />
+                      Reject
+                    </button>
+                  </>
+                ) : (
+                  <StatusBadge text={candidate.status || "reviewed"} />
+                )}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -1223,7 +1236,7 @@ function MaintenancePanel(props: {
         </div>
       </div>
       <DreamTiming elapsedS={props.dreamElapsedS} latestDurationS={latestDurationS} />
-      <DreamRejectReasons items={dreamStatusRejectReasons(props.dreamStatus)} />
+      <DreamReviewReasons items={dreamStatusReviewReasons(props.dreamStatus)} />
       <div className="maintenance-grid">
         <JsonBlock title="Health" value={props.health || {}} />
         <JsonBlock title="Dream Status" value={props.dreamStatus || {}} />
@@ -1245,18 +1258,18 @@ function DreamTiming({ elapsedS, latestDurationS }: { elapsedS: number | null; l
   );
 }
 
-function DreamRejectReasons({ items }: { items: DreamRejectReason[] }) {
+function DreamReviewReasons({ items }: { items: DreamReviewResult[] }) {
   if (items.length === 0) return null;
   return (
     <div className="dream-rejects">
       <div className="dream-rejects-header">
-        <h3>Reject 原因</h3>
-        <StatusBadge text={`${items.length} rejected`} />
+        <h3>审核原因</h3>
+        <StatusBadge text={`${items.length} reviewed`} />
       </div>
       <div className="dream-reject-list">
         {items.map((item, index) => (
           <div className="dream-reject-row" key={`${item.action_id || item.candidate_id || "reject"}:${index}`}>
-            <code>{item.candidate_id || item.action_id || "unknown candidate"}</code>
+            <code>{auditReviewLabel(item)} · {item.candidate_id || item.page_id || item.action_id || "unknown candidate"}</code>
             <p>{item.reason || "unspecified"}</p>
           </div>
         ))}
@@ -1645,7 +1658,7 @@ function auditResultFromDreamReview(review: DreamReviewResult) {
   const status = String(review.status || "");
   const normalizedStatus = status.toLowerCase();
   if (decision === "promoted" || normalizedStatus === "promoted") {
-    return auditResult("模型通过", review.page_title || (review.page_id ? `写入 ${compactId(review.page_id)}` : ""), "good");
+    return auditResult("模型通过", review.reason || review.page_title || (review.page_id ? `写入 ${compactId(review.page_id)}` : ""), "good");
   }
   if (decision === "rejected" || normalizedStatus.startsWith("rejected")) {
     return auditResult("模型拒绝", review.reason || statusReason(status), "bad");
@@ -1657,6 +1670,10 @@ function auditResultFromDreamReview(review: DreamReviewResult) {
     return auditResult("需复核", review.reason || "conflict", "warn");
   }
   return auditResult("模型已审", review.reason || status || decision, "blue");
+}
+
+function auditReviewLabel(review: DreamReviewResult) {
+  return auditResultFromDreamReview(review).label;
 }
 
 function auditResult(label: string, detail: string, tone: "good" | "bad" | "warn" | "blue" | "neutral") {
@@ -1688,8 +1705,8 @@ function formatDuration(value: number) {
   return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
 }
 
-function dreamStatusRejectReasons(status: DreamStatusResult | null) {
-  return normalizeDreamRejectReasons(status?.latest?.execution?.reject_reasons);
+function dreamStatusReviewReasons(status: DreamStatusResult | null) {
+  return normalizeDreamReviewResults(status?.latest?.execution?.review_results).filter((item) => Boolean(item.reason));
 }
 
 function dreamRunRejectReasons(report: DreamRunReport) {

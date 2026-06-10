@@ -336,6 +336,11 @@ class MemoryDreamMixin:
             candidate_id,
             min_confidence=_bounded_confidence(arguments.get("min_confidence"), min_confidence),
         )
+        action_reason = _normalize_space(
+            str(arguments.get("reason") or arguments.get("rationale") or arguments.get("why") or "")
+        )
+        if action_reason and not result.get("reason"):
+            result = {**result, "reason": action_reason}
         return _compact_dream_promote_result(action_id, result)
 
     def _apply_dream_reject_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -498,6 +503,9 @@ def _normalize_dream_action(raw_action: dict[str, Any], index: int) -> dict[str,
         }
     if not isinstance(arguments, dict):
         return {"id": action_id, "tool": tool, "error": "arguments_not_object"}
+    for key in ("reason", "rationale", "why"):
+        if key in raw_action and key not in arguments:
+            arguments[key] = raw_action[key]
     tool_name = _normalize_space(str(tool or ""))
     if not tool_name:
         return {"id": action_id, "tool": None, "error": "missing_tool"}

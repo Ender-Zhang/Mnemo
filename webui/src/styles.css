@@ -936,6 +936,7 @@ code {
 }
 
 .candidate-row > button {
+  min-width: 0;
   border: 0;
   background: transparent;
   text-align: left;
@@ -962,6 +963,32 @@ code {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.candidate-row .candidate-actions {
+  justify-content: flex-end;
+}
+
+.candidate-row .audit-result {
+  margin-top: 8px;
+}
+
+.candidate-row .audit-result strong,
+.candidate-row .audit-result small {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.candidate-row .audit-result strong {
+  font-size: 12px;
+}
+
+.candidate-row .audit-result small {
+  max-width: 100%;
+  color: #596477;
+  line-height: 1.35;
 }
 
 .tombstone-list {
