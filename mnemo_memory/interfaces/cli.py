@@ -50,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "health":
             _print(MemoryClient(state_dir=args.state_dir).health(limit=args.limit), args.json)
             return 0
+        if args.command == "stable":
+            return _cmd_stable(args)
         if args.command == "dream":
             return _cmd_dream(args)
         if args.command == "mcp":
@@ -140,6 +142,49 @@ def build_parser() -> argparse.ArgumentParser:
     _state(health)
     health.add_argument("--limit", type=int, default=20)
     health.add_argument("--json", action="store_true")
+
+    stable = subparsers.add_parser("stable", help="Direct CRUD for stable memory pages")
+    stable_sub = stable.add_subparsers(dest="stable_command")
+
+    stable_add = stable_sub.add_parser("add", help="Create a stable memory page directly")
+    stable_add.add_argument("--title", required=True)
+    stable_add.add_argument("--content", required=True)
+    stable_add.add_argument("--scope", default="global")
+    stable_add.add_argument("--dimension")
+    stable_add.add_argument("--confidence", type=float, default=0.7)
+    stable_add.add_argument("--metadata-json")
+    stable_add.add_argument("--status", default="active")
+
+    stable_read = stable_sub.add_parser("read", help="Read one stable memory page by id")
+    stable_read.add_argument("memory_id")
+
+    stable_update = stable_sub.add_parser("update", help="Update one stable memory page by id")
+    stable_update.add_argument("memory_id")
+    stable_update.add_argument("--title")
+    stable_update.add_argument("--content")
+    stable_update.add_argument("--scope")
+    stable_update.add_argument("--dimension")
+    stable_update.add_argument("--confidence", type=float)
+    stable_update.add_argument("--metadata-json")
+    stable_update.add_argument("--status")
+
+    stable_search = stable_sub.add_parser("search", help="Search stable memory pages, or list all without a query")
+    stable_search.add_argument("query", nargs="*", default=[])
+    stable_search.add_argument("--all", dest="all_items", action="store_true")
+    stable_search.add_argument("--uid")
+    stable_search.add_argument("--status", default="active")
+    stable_search.add_argument("--include-inactive", action="store_true")
+    stable_search.add_argument("--limit", type=int)
+
+    stable_delete = stable_sub.add_parser("delete", help="Delete one stable memory page by tombstone, forget, or hard-delete")
+    stable_delete.add_argument("memory_id")
+    stable_delete.add_argument("--mode", choices=["tombstone", "forget", "hard-delete"], default="tombstone")
+    stable_delete.add_argument("--reason", default="deleted")
+    stable_delete.add_argument("--delete-related", action=argparse.BooleanOptionalAction, default=True)
+
+    for sub in stable_sub.choices.values():
+        _state(sub)
+        sub.add_argument("--json", action="store_true")
 
     dream = subparsers.add_parser("dream", help="Run or inspect memory maintenance")
     _state(dream)
@@ -254,6 +299,65 @@ def _cmd_dream(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_stable(args: argparse.Namespace) -> int:
+    if not args.stable_command:
+        raise ValueError("stable command requires a subcommand")
+    client = MemoryClient(state_dir=args.state_dir)
+    if args.stable_command == "add":
+        _print(
+            client.stable_create(
+                title=args.title,
+                content=args.content,
+                scope=args.scope,
+                confidence=args.confidence,
+                status=args.status,
+                metadata=_json_object_arg(args.metadata_json, "metadata-json"),
+                dimension=args.dimension,
+            ),
+            args.json,
+        )
+        return 0
+    if args.stable_command == "read":
+        _print(client.stable_read(args.memory_id), args.json)
+        return 0
+    if args.stable_command == "update":
+        kwargs: dict[str, Any] = {}
+        for key in ("title", "content", "scope", "dimension", "confidence", "status"):
+            value = getattr(args, key)
+            if value is not None:
+                kwargs[key] = value
+        if args.metadata_json is not None:
+            kwargs["metadata"] = _json_object_arg(args.metadata_json, "metadata-json")
+        _print(client.stable_update(args.memory_id, **kwargs), args.json)
+        return 0
+    if args.stable_command == "search":
+        query = " ".join(args.query).strip()
+        _print(
+            client.stable_search(
+                query,
+                limit=args.limit,
+                all_items=args.all_items or not query,
+                uid=args.uid,
+                status=args.status,
+                include_inactive=args.include_inactive,
+            ),
+            args.json,
+        )
+        return 0
+    if args.stable_command == "delete":
+        _print(
+            client.stable_delete(
+                args.memory_id,
+                mode=args.mode,
+                reason=args.reason,
+                delete_related=args.delete_related,
+            ),
+            args.json,
+        )
+        return 0
+    raise ValueError("stable command requires a subcommand")
+
+
 def _cmd_mcp(args: argparse.Namespace) -> int:
     server = MemoryMcpServer(state_dir=args.state_dir)
     if args.mcp_command == "tools":
@@ -283,3 +387,12 @@ def _print(payload: dict[str, Any], as_json: bool) -> None:
         print(dumps(payload))
     else:
         print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def _json_object_arg(raw: str | None, label: str) -> dict[str, Any] | None:
+    if raw is None:
+        return None
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{label} must be a JSON object")
+    return parsed

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from contextlib import redirect_stdout
+from io import StringIO
+import json
 import tempfile
 from pathlib import Path
 import unittest
@@ -111,6 +114,49 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIn(alpha_page_id, ids)
             self.assertNotIn(beta_candidate_id, ids)
             self.assertNotIn(beta_page_id, ids)
+
+    def test_client_directly_cruds_stable_memory_pages(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            created = client.stable_create(
+                title="preferences: user_123 direct stable CRUD",
+                content="user_123 prefers direct stable memory CRUD examples.\nKeep markdown newlines.",
+                scope="user:user_123",
+                dimension="preferences",
+                confidence=0.91,
+            )
+            page_id = created["memory_id"]
+
+            self.assertEqual(created["kind"], "stable_memory_create")
+            self.assertEqual(created["item"]["id"], page_id)
+            self.assertEqual(created["item"]["metadata"]["dimension"], "preferences")
+            self.assertTrue(Path(tmp).joinpath(created["wiki"]["path"]).exists())
+
+            keyword = client.stable_search("direct stable CRUD", limit=5)
+            self.assertEqual(keyword["kind"], "stable_memory_search")
+            self.assertFalse(keyword["all"])
+            self.assertEqual(keyword["items"][0]["id"], page_id)
+
+            all_pages = client.stable_search(all_items=True)
+            self.assertTrue(all_pages["all"])
+            self.assertEqual(all_pages["count"], 1)
+            self.assertEqual(all_pages["items"][0]["id"], page_id)
+
+            updated = client.stable_update(
+                page_id,
+                content="user_123 prefers direct stable memory CRUD examples with update coverage.",
+            )
+            self.assertEqual(updated["kind"], "stable_memory_update")
+            self.assertIn("update coverage", client.stable_read(page_id)["item"]["content"])
+
+            deleted = client.stable_delete(page_id, mode="tombstone", reason="outdated")
+            self.assertEqual(deleted["kind"], "stable_memory_delete")
+            self.assertEqual(deleted["mode"], "tombstone")
+            self.assertEqual(deleted["result"]["target_type"], "page")
+            self.assertTrue(client.stable_read(page_id)["item"]["status"].startswith("tombstoned:"))
 
     def test_client_traces_promoted_memory_to_source_event(self) -> None:
         from mnemo_memory import MemoryClient
@@ -288,6 +334,11 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("dream_run", schema["methods"])
         self.assertIn("force_promote_candidate", schema["methods"])
         self.assertIn("hard_delete", schema["methods"])
+        self.assertIn("stable_create", schema["methods"])
+        self.assertIn("stable_read", schema["methods"])
+        self.assertIn("stable_update", schema["methods"])
+        self.assertIn("stable_search", schema["methods"])
+        self.assertIn("stable_delete", schema["methods"])
 
     def test_http_dispatch_lists_memory_items(self) -> None:
         from mnemo_memory import MemoryClient
@@ -321,6 +372,58 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(listed["uid"], "alpha")
             self.assertEqual(len(listed["items"]), 1)
             self.assertEqual(listed["items"][0]["id"], candidate_id)
+
+    def test_http_dispatch_directly_cruds_stable_memory_pages(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.web import dispatch_memory_api
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            created = dispatch_memory_api(
+                client,
+                "stable-create",
+                {
+                    "title": "preferences: HTTP direct stable memory",
+                    "content": "HTTP clients can create stable memory pages directly.",
+                    "scope": "user:http",
+                    "dimension": "preferences",
+                    "confidence": 0.9,
+                },
+            )
+            page_id = created["memory_id"]
+
+            keyword = dispatch_memory_api(
+                client,
+                "stable-search",
+                {"query": "direct stable", "uid": "http", "limit": 5},
+            )
+            self.assertEqual(keyword["items"][0]["id"], page_id)
+            self.assertFalse(keyword["all"])
+
+            all_pages = dispatch_memory_api(client, "stable-search", {"all": True})
+            self.assertEqual(all_pages["count"], 1)
+            self.assertTrue(all_pages["all"])
+
+            updated = dispatch_memory_api(
+                client,
+                "stable-update",
+                {
+                    "memory_id": page_id,
+                    "content": "HTTP clients can update stable memory pages directly.",
+                },
+            )
+            self.assertIn("update stable", updated["item"]["content"])
+
+            read = dispatch_memory_api(client, "stable-read", {"memory_id": page_id})
+            self.assertEqual(read["item"]["id"], page_id)
+
+            deleted = dispatch_memory_api(
+                client,
+                "stable-delete",
+                {"memory_id": page_id, "mode": "tombstone", "reason": "outdated"},
+            )
+            self.assertEqual(deleted["result"]["target_type"], "page")
 
     def test_http_dispatch_returns_memory_provenance(self) -> None:
         from mnemo_memory import MemoryClient
@@ -366,6 +469,58 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(result["kind"], "memory_event_ingest")
             self.assertEqual(result["memory_candidates"], [])
             self.assertEqual(result["working_notes"][0]["retention"], "ephemeral")
+
+    def test_cli_directly_cruds_stable_memory_pages(self) -> None:
+        from mnemo_memory.interfaces.cli import main
+
+        def run_cli(argv: list[str]) -> dict[str, object]:
+            output = StringIO()
+            with redirect_stdout(output):
+                code = main(argv)
+            self.assertEqual(code, 0, output.getvalue())
+            return json.loads(output.getvalue())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            created = run_cli(
+                [
+                    "stable",
+                    "add",
+                    "--title",
+                    "preferences: CLI direct stable memory",
+                    "--content",
+                    "CLI users can create stable memories directly.",
+                    "--scope",
+                    "user:cli",
+                    "--dimension",
+                    "preferences",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            page_id = str(created["memory_id"])
+
+            keyword = run_cli(["stable", "search", "direct stable", "--state-dir", tmp, "--json"])
+            self.assertEqual(keyword["items"][0]["id"], page_id)
+            self.assertFalse(keyword["all"])
+
+            all_pages = run_cli(["stable", "search", "--all", "--state-dir", tmp, "--json"])
+            self.assertTrue(all_pages["all"])
+            self.assertEqual(all_pages["items"][0]["id"], page_id)
+
+            updated = run_cli(
+                [
+                    "stable",
+                    "update",
+                    page_id,
+                    "--content",
+                    "CLI users can update stable memories directly.",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            self.assertIn("update stable", updated["item"]["content"])
 
     def test_http_dispatch_force_promotes_candidate(self) -> None:
         from mnemo_memory import MemoryClient

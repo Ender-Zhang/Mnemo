@@ -7,6 +7,8 @@ from typing import Any
 from ..core.config import ConfigOverrides, DEFAULT_STATE_DIR, default_config_path, resolve_memory_config
 from ..core.ids import new_id
 from ..memory import MemoryEngine
+from ..memory.query import normalize_memory_dimension
+from ..memory.wiki import materialize_memory_page
 from ..storage import StateStore
 from .schema import memory_api_schema
 
@@ -104,6 +106,148 @@ class MemoryClient:
             "include_tombstoned": include_tombstoned,
             "count": len(items),
             "items": items,
+        }
+
+    def stable_create(
+        self,
+        *,
+        title: str,
+        content: str,
+        scope: str = "global",
+        confidence: float = 0.7,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+        dimension: str | None = None,
+    ) -> dict[str, Any]:
+        store = self._store()
+        page_id = store.create_memory_page(
+            _required_text(title, "title"),
+            _required_text(content, "content"),
+            scope=_scope_text(scope),
+            confidence=_stable_confidence(confidence),
+            status=_status_text(status),
+            metadata=_stable_metadata(metadata, dimension=dimension),
+        )
+        page = _require_page(store, page_id)
+        wiki = materialize_memory_page(store.state_dir, page)
+        return {
+            "kind": "stable_memory_create",
+            "version": "mnemo_memory.stable.v1",
+            "memory_id": page_id,
+            "item": page,
+            "wiki": wiki,
+        }
+
+    def stable_read(self, memory_id: str) -> dict[str, Any]:
+        store = self._store()
+        page = _require_page(store, memory_id)
+        return {
+            "kind": "stable_memory_read",
+            "version": "mnemo_memory.stable.v1",
+            "memory_id": page["id"],
+            "item": page,
+        }
+
+    def stable_update(
+        self,
+        memory_id: str,
+        *,
+        title: str | None = None,
+        content: str | None = None,
+        scope: str | None = None,
+        confidence: float | int | str | None = None,
+        status: str | None = None,
+        metadata: dict[str, Any] | None | object = _MISSING,
+        dimension: str | None = None,
+    ) -> dict[str, Any]:
+        store = self._store()
+        existing = _require_page(store, memory_id)
+        next_metadata = (
+            dict(existing.get("metadata") if isinstance(existing.get("metadata"), dict) else {})
+            if metadata is _MISSING
+            else _stable_metadata(metadata if isinstance(metadata, dict) else None, dimension=None)
+        )
+        if dimension is not None:
+            next_metadata["dimension"] = normalize_memory_dimension(dimension, fallback="context")
+        store.update_memory_page(
+            existing["id"],
+            title=_required_text(title, "title") if title is not None else str(existing.get("title") or ""),
+            content=_required_text(content, "content") if content is not None else str(existing.get("content") or ""),
+            scope=_scope_text(scope) if scope is not None else str(existing.get("scope") or "global"),
+            source_candidate_id=existing.get("source_candidate_id"),
+            confidence=_stable_confidence(confidence if confidence is not None else existing.get("confidence", 0.7)),
+            status=_status_text(status) if status is not None else str(existing.get("status") or "active"),
+            metadata=next_metadata,
+        )
+        page = _require_page(store, existing["id"])
+        wiki = materialize_memory_page(store.state_dir, page)
+        return {
+            "kind": "stable_memory_update",
+            "version": "mnemo_memory.stable.v1",
+            "memory_id": page["id"],
+            "item": page,
+            "wiki": wiki,
+        }
+
+    def stable_search(
+        self,
+        query: str = "",
+        *,
+        limit: int | None = None,
+        all_items: bool = False,
+        uid: str | None = None,
+        status: str | None = "active",
+        include_inactive: bool = False,
+    ) -> dict[str, Any]:
+        store = self._store()
+        clean_query = " ".join(str(query or "").split())
+        status_filter = None if include_inactive else (_optional_text(status) or "active")
+        fetch_all = bool(all_items or not clean_query)
+        if fetch_all:
+            items = store.list_memory_pages(
+                status=status_filter,
+                limit=_stable_limit(limit, default=None),
+                uid=_optional_text(uid),
+            )
+        else:
+            items = store.search_memory_pages(
+                clean_query,
+                limit=_stable_limit(limit, default=50),
+                uid=_optional_text(uid),
+                status=status_filter,
+            )
+        return {
+            "kind": "stable_memory_search",
+            "version": "mnemo_memory.stable.v1",
+            "query": clean_query,
+            "all": fetch_all,
+            "status": status_filter,
+            "uid": _optional_text(uid),
+            "count": len(items),
+            "items": items,
+        }
+
+    def stable_delete(
+        self,
+        memory_id: str,
+        *,
+        mode: str = "tombstone",
+        reason: str = "deleted",
+        delete_related: bool = True,
+    ) -> dict[str, Any]:
+        normalized_mode = _stable_delete_mode(mode)
+        if normalized_mode == "tombstone":
+            result = self.tombstone(memory_id, reason or "deleted", target_type="page")
+        elif normalized_mode == "forget":
+            result = self.forget(memory_id, reason=reason or "private_delete", target_type="page")
+        else:
+            result = self.hard_delete(memory_id, target_type="page", delete_related=delete_related)
+        return {
+            "kind": "stable_memory_delete",
+            "version": "mnemo_memory.stable.v1",
+            "memory_id": memory_id,
+            "mode": normalized_mode,
+            "result": result,
         }
 
     def update(
@@ -573,6 +717,67 @@ def _item_timestamp(item: dict[str, Any]) -> float:
 def _optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _required_text(value: Any, field: str) -> str:
+    text = str(value or "").strip()
+    if field == "title":
+        text = " ".join(text.split())
+    if not text:
+        raise ValueError(f"{field} is required")
+    return text
+
+
+def _scope_text(value: Any) -> str:
+    return str(value or "").strip() or "global"
+
+
+def _status_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("status is required")
+    return text
+
+
+def _stable_confidence(value: Any) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("confidence must be a number") from exc
+    return max(0.0, min(1.0, parsed))
+
+
+def _stable_metadata(metadata: dict[str, Any] | None, *, dimension: str | None = None) -> dict[str, Any]:
+    result = dict(metadata or {})
+    if dimension is not None:
+        result["dimension"] = normalize_memory_dimension(dimension, fallback="context")
+    return result
+
+
+def _stable_limit(value: Any, *, default: int | None) -> int | None:
+    if value is None or value == "":
+        return default
+    parsed = int(value)
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _require_page(store: StateStore, memory_id: str) -> dict[str, Any]:
+    clean_id = str(memory_id or "").strip()
+    if not clean_id:
+        raise ValueError("stable memory id is required")
+    page = store.get_memory_page(clean_id)
+    if not page:
+        raise ValueError(f"stable memory not found: {clean_id}")
+    return page
+
+
+def _stable_delete_mode(value: Any) -> str:
+    normalized = str(value or "tombstone").strip().casefold().replace("_", "-")
+    if normalized not in {"tombstone", "forget", "hard-delete"}:
+        raise ValueError(f"invalid stable memory delete mode: {value}")
+    return normalized
 
 
 def _is_tombstoned_status(status: Any) -> bool:

@@ -277,7 +277,9 @@ WebUI 也可以走同一条模型审核通道：先在“设置”里保存 prov
 
 ## 对一条记忆做增删改查
 
-Mnemo 使用“候选优先”的写入流程。新增记忆时，用户事实会先写成 `memory_candidate`；确认它应该长期保留后，再通过 `promote` 审核门生成或合并到稳定记忆页。当前公开接口没有“原地 PATCH 某条稳定记忆”的语义；要修改一条记忆，写入更正后的新 fact 并 promote，系统会尽量合并到同主题稳定页。旧内容不应继续使用时，再按需要选择 `tombstone`、`forget` 或 `hard-delete`。
+Mnemo 默认使用“候选优先”的写入流程。新增记忆时，用户事实会先写成 `memory_candidate`；确认它应该长期保留后，再通过 `promote` 审核门生成或合并到稳定记忆页。人工管理、迁移或调试时，也可以用 `stable` 直连接口直接增删改查稳定记忆页；这会绕过候选审核门，所以不建议给普通 agent 自动调用。
+
+修改稳定记忆有两种做法：普通 agent 推荐写入更正后的新 fact 并 promote，让系统按主题合并；管理员可以用 `stable update` / `stable-update` 按 page id 原地修改。旧内容不应继续使用时，再按需要选择 `tombstone`、`forget` 或 `hard-delete`。
 
 | 动作 | 用途 | 是否保留原内容 | 是否保留删除痕迹 |
 | --- | --- | --- | --- |
@@ -287,7 +289,7 @@ Mnemo 使用“候选优先”的写入流程。新增记忆时，用户事实�
 
 ### CLI
 
-普通 CLI 可以完成候选写入、promote/reject 和搜索。按 ID 精确读取、tombstone、forget、hard-delete 目前走 HTTP 或 SDK；其中 tombstone/forget 也可用 MCP 工具。
+CLI 支持两条路径：普通候选审核流程，以及管理员用的稳定记忆直连 CRUD。
 
 ```bash
 # 增：写入一条用户记忆候选，保存返回的 memory_candidates[0].candidate_id。
@@ -327,6 +329,52 @@ mnemo-memory reject mem_yyyyyyyyyyyyyyyy duplicate \
 
 # 仅管理员覆盖使用：跳过审核门，直接写入稳定记忆。
 mnemo-memory force-promote mem_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
+
+# 直接增稳定记忆：绕过候选审核门，返回 memory_id / item.id。
+mnemo-memory stable add \
+  --state-dir .mnemo-memory \
+  --title "preferences: user_123 进度更新偏好" \
+  --content "user_123 偏好简洁、且包含测试结果的实现进度更新。" \
+  --scope user:user_123 \
+  --dimension preferences \
+  --confidence 0.9 \
+  --json
+
+# 直接查稳定记忆：不传关键词或传 --all 都是全量稳定记忆。
+mnemo-memory stable search --state-dir .mnemo-memory --all --json
+
+# 直接查稳定记忆：传关键词时按 title/content 搜索。
+mnemo-memory stable search "简洁 测试结果" \
+  --state-dir .mnemo-memory \
+  --uid user_123 \
+  --limit 10 \
+  --json
+
+# 直接读 / 改稳定记忆。
+mnemo-memory stable read mempg_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
+
+mnemo-memory stable update mempg_xxxxxxxxxxxxxxxx \
+  --state-dir .mnemo-memory \
+  --content "user_123 偏好简洁、包含测试结果、并说明是否已推送的实现进度更新。" \
+  --json
+
+# 直接删稳定记忆：默认 mode=tombstone；也可显式 forget 或 hard-delete。
+mnemo-memory stable delete mempg_xxxxxxxxxxxxxxxx \
+  --state-dir .mnemo-memory \
+  --mode tombstone \
+  --reason outdated \
+  --json
+
+mnemo-memory stable delete mempg_xxxxxxxxxxxxxxxx \
+  --state-dir .mnemo-memory \
+  --mode forget \
+  --reason user_requested_delete \
+  --json
+
+mnemo-memory stable delete mempg_xxxxxxxxxxxxxxxx \
+  --state-dir .mnemo-memory \
+  --mode hard-delete \
+  --json
 ```
 
 ### HTTP
@@ -368,6 +416,44 @@ curl -X POST http://127.0.0.1:8765/api/memory/list \
 curl -X POST http://127.0.0.1:8765/api/memory/list \
   -H 'Content-Type: application/json' \
   -d '{"kind": "all", "uid": "user_123", "limit": 20}'
+
+# 直接增稳定记忆：绕过候选审核门。
+curl -X POST http://127.0.0.1:8765/api/memory/stable-create \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "title": "preferences: user_123 进度更新偏好",
+    "content": "user_123 偏好简洁、且包含测试结果的实现进度更新。",
+    "scope": "user:user_123",
+    "dimension": "preferences",
+    "confidence": 0.9
+  }'
+
+# 直接查稳定记忆：全量查询。
+curl -X POST http://127.0.0.1:8765/api/memory/stable-search \
+  -H 'Content-Type: application/json' \
+  -d '{"all": true}'
+
+# 直接查稳定记忆：关键词查询。
+curl -X POST http://127.0.0.1:8765/api/memory/stable-search \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "简洁 测试结果", "uid": "user_123", "limit": 10}'
+
+# 直接读 / 改稳定记忆。
+curl -X POST http://127.0.0.1:8765/api/memory/stable-read \
+  -H 'Content-Type: application/json' \
+  -d '{"memory_id": "mempg_xxxxxxxxxxxxxxxx"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/stable-update \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "memory_id": "mempg_xxxxxxxxxxxxxxxx",
+    "content": "user_123 偏好简洁、包含测试结果、并说明是否已推送的实现进度更新。"
+  }'
+
+# 直接删稳定记忆：mode 可选 tombstone、forget、hard-delete。
+curl -X POST http://127.0.0.1:8765/api/memory/stable-delete \
+  -H 'Content-Type: application/json' \
+  -d '{"memory_id": "mempg_xxxxxxxxxxxxxxxx", "mode": "tombstone", "reason": "outdated"}'
 
 # 改：写入更正后的新 fact，再 promote 新 candidate；同主题稳定页会被合并更新。
 curl -X POST http://127.0.0.1:8765/api/memory/update \
@@ -454,7 +540,21 @@ if review["decision"] != "promoted":
 results = client.search("user_123 简洁 实现进度更新", limit=10)
 provenance = client.provenance(results["matches"][0]["id"])
 
+# 管理员/人工管理可以直接操作稳定记忆页。
+stable = client.stable_create(
+    title="preferences: user_123 进度更新偏好",
+    content="user_123 偏好简洁、且包含测试结果的实现进度更新。",
+    scope="user:user_123",
+    dimension="preferences",
+    confidence=0.9,
+)
+stable_id = stable["memory_id"]
+all_stable = client.stable_search(all_items=True)
+keyword_stable = client.stable_search("测试结果", uid="user_123", limit=10)
+client.stable_update(stable_id, content="user_123 偏好简洁、包含测试结果、并说明是否已推送的实现进度更新。")
+
 # forget 是私密擦除并保留删除痕迹；hard_delete 是物理删除。
+# client.stable_delete(stable_id, mode="tombstone", reason="outdated")
 # client.forget("mempg_xxxxxxxxxxxxxxxx", target_type="page", reason="user_requested_delete")
 # client.hard_delete(tombstone_id="tomb_xxxxxxxxxxxxxxxx")
 ```

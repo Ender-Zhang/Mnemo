@@ -393,6 +393,42 @@ class StateStore:
             ).fetchone()
         return _memory_candidate_from_row(row) if row else None
 
+    def create_memory_page(
+        self,
+        title: str,
+        content: str,
+        *,
+        scope: str = "global",
+        source_candidate_id: str | None = None,
+        confidence: float = 0.7,
+        status: str = "active",
+        metadata: dict[str, Any] | None = None,
+    ) -> str:
+        page_id = new_id("mempg")
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO memory_pages(
+                    id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    page_id,
+                    title,
+                    content,
+                    scope,
+                    confidence,
+                    status,
+                    source_candidate_id,
+                    dumps(metadata or {}),
+                    now,
+                    now,
+                ),
+            )
+        return page_id
+
     def upsert_memory_page(
         self,
         title: str,
@@ -520,25 +556,41 @@ class StateStore:
             "tombstones": int(tombstone_rows),
         }
 
-    def search_memory_pages(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def search_memory_pages(
+        self,
+        query: str,
+        limit: int | None = 5,
+        *,
+        uid: str | None = None,
+        status: str | None = "active",
+    ) -> list[dict[str, Any]]:
         pattern = f"%{query}%"
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        clauses.append("(title LIKE ? OR content LIKE ?)")
+        params.extend([pattern, pattern])
+        scope_clause, scope_params = _uid_scope_clause(uid)
+        if scope_clause:
+            clauses.append(scope_clause)
+            params.extend(scope_params)
+        sql = """
+            SELECT id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
+            FROM memory_pages
+        """
+        sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY updated_at DESC"
+        sql = _apply_limit(sql, params, limit)
         with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
-                FROM memory_pages
-                WHERE status = 'active' AND (title LIKE ? OR content LIKE ?)
-                ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (pattern, pattern, max(0, int(limit))),
-            ).fetchall()
+            rows = conn.execute(sql, params).fetchall()
         return [_memory_page_from_row(row) for row in rows]
 
     def list_memory_pages(
         self,
         status: str | None = "active",
-        limit: int = 50,
+        limit: int | None = 50,
         *,
         uid: str | None = None,
     ) -> list[dict[str, Any]]:
@@ -557,8 +609,8 @@ class StateStore:
             params.extend(scope_params)
         if clauses:
             sql += " WHERE " + " AND ".join(clauses)
-        sql += " ORDER BY updated_at DESC LIMIT ?"
-        params.append(max(0, int(limit)))
+        sql += " ORDER BY updated_at DESC"
+        sql = _apply_limit(sql, params, limit)
         with self.connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [_memory_page_from_row(row) for row in rows]
@@ -749,6 +801,13 @@ def _target_hash(explicit_hash: str | None, fallback: str) -> str:
     if clean_hash:
         return clean_hash
     return hashlib.sha256(str(fallback or "").encode("utf-8")).hexdigest()
+
+
+def _apply_limit(sql: str, params: list[Any], limit: int | None) -> str:
+    if limit is None:
+        return sql
+    params.append(max(0, int(limit)))
+    return sql + " LIMIT ?"
 
 
 def _uid_scope_clause(uid: str | None) -> tuple[str, list[Any]]:

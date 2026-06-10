@@ -40,6 +40,23 @@ class MemoryWebServiceTests(unittest.TestCase):
                 self.assertEqual(search.status, HTTPStatus.OK)
                 self.assertIn("application/json", search.content_type)
 
+                created = _post(
+                    base + "/api/memory/stable-create",
+                    {
+                        "title": "preferences: web stable route",
+                        "content": "HTTP routes can create stable memories directly.",
+                        "scope": "user:web",
+                    },
+                )
+                self.assertEqual(created.status, HTTPStatus.OK)
+                created_payload = json.loads(created.body)
+                page_id = created_payload["result"]["memory_id"]
+
+                stable_search = _post(base + "/api/memory/stable-search", {"all": True})
+                self.assertEqual(stable_search.status, HTTPStatus.OK)
+                stable_payload = json.loads(stable_search.body)
+                self.assertEqual(stable_payload["result"]["items"][0]["id"], page_id)
+
                 asset_paths = re.findall(r'/(assets/[^"]+)', index.body)
                 self.assertTrue(asset_paths)
                 asset = _get(f"{base}/{asset_paths[0]}")

@@ -79,6 +79,42 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             include_tombstoned=bool(body.get("include_tombstoned", False)),
             uid=_optional(body.get("uid")),
         )
+    if method in {"stable-create", "stable_create"}:
+        return client.stable_create(
+            title=_required(body, "title"),
+            content=_required(body, "content"),
+            scope=str(body.get("scope") or "global"),
+            confidence=float(body.get("confidence") or 0.7),
+            status=str(body.get("status") or "active"),
+            metadata=_metadata(body, "metadata"),
+            dimension=_optional(body.get("dimension")),
+        )
+    if method in {"stable-read", "stable_read"}:
+        return client.stable_read(_required(body, "memory_id"))
+    if method in {"stable-update", "stable_update"}:
+        kwargs: dict[str, Any] = {}
+        for key in ("title", "content", "scope", "confidence", "status", "dimension"):
+            if key in body:
+                kwargs[key] = body.get(key)
+        if "metadata" in body:
+            kwargs["metadata"] = _metadata(body, "metadata")
+        return client.stable_update(_required(body, "memory_id"), **kwargs)
+    if method in {"stable-search", "stable_search"}:
+        return client.stable_search(
+            str(body.get("query") or ""),
+            limit=_optional_int(body.get("limit")),
+            all_items=bool(body.get("all", False)),
+            uid=_optional(body.get("uid")),
+            status=_optional(body.get("status")) or "active",
+            include_inactive=bool(body.get("include_inactive", False)),
+        )
+    if method in {"stable-delete", "stable_delete"}:
+        return client.stable_delete(
+            _required(body, "memory_id"),
+            mode=str(body.get("mode") or "tombstone"),
+            reason=str(body.get("reason") or "deleted"),
+            delete_related=bool(body.get("delete_related", True)),
+        )
     if method == "update":
         return client.update(
             facts=body.get("facts") if isinstance(body.get("facts"), list) else [],
@@ -275,6 +311,21 @@ def _required(body: dict[str, Any], key: str) -> str:
 def _optional(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    return int(value)
+
+
+def _metadata(body: dict[str, Any], key: str) -> dict[str, Any] | None:
+    if key not in body or body.get(key) is None:
+        return None
+    value = body.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"{key} must be a JSON object")
+    return value
 
 
 def _config_field(body: dict[str, Any], key: str) -> str | None:
