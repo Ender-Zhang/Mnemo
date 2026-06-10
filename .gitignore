@@ -15,3 +15,4 @@ dist/
 .mnemo/
 .mnemo-memory*/
 webui/node_modules/
+.superpowers/
