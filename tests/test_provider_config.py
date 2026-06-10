@@ -172,6 +172,27 @@ class ProviderConfigTests(unittest.TestCase):
         self.assertEqual(disabled.propose_actions(delta={}, plan={}), [])
         self.assertNotIn("thinking", disabled.last_payload)
 
+    def test_openai_provider_prompt_allows_user_provided_private_facts(self) -> None:
+        from mnemo_memory.core.config import MemoryConfig
+        from mnemo_memory.providers.openai import OpenAICompatibleMemoryMaintainer
+
+        class CapturingMaintainer(OpenAICompatibleMemoryMaintainer):
+            def _post_json(self, path, payload):
+                self.last_payload = payload
+                return {"choices": [{"message": {"content": '{"actions": []}'}}]}
+
+        maintainer = CapturingMaintainer(
+            MemoryConfig(
+                base_url="http://provider.example/v1",
+                model="memory-maintainer",
+            )
+        )
+
+        self.assertEqual(maintainer.propose_actions(delta={}, plan={}), [])
+        system_prompt = maintainer.last_payload["messages"][0]["content"]
+        self.assertIn("Do not reject user-provided private profile/contact facts solely because they are private", system_prompt)
+        self.assertIn("promote them when stable and useful", system_prompt)
+
     def test_openai_provider_parses_actions_from_reasoning_fallback(self) -> None:
         from mnemo_memory.core.config import MemoryConfig
         from mnemo_memory.providers.openai import OpenAICompatibleMemoryMaintainer

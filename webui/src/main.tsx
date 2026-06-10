@@ -1571,7 +1571,7 @@ function scopeFromUidFilter(uid: string) {
 }
 
 function memoryFactPayload(claim: string, scope: string) {
-  return scope ? { claim, scope } : claim;
+  return scope ? { claim, scope, confidence: 0.9 } : { claim, confidence: 0.9 };
 }
 
 function memoryObservationPayload(content: string, scope: string) {

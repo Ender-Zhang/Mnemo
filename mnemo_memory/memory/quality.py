@@ -111,6 +111,8 @@ def _personalization_score(text: str) -> float:
     score = 0.35
     if any(marker in lowered for marker in _PERSONAL_MARKERS):
         score += 0.35
+    if _has_profile_marker(text):
+        score += 0.25
     if any(marker in lowered for marker in _PREFERENCE_MARKERS | _GOAL_MARKERS | _BOUNDARY_MARKERS):
         score += 0.15
     if any(marker in lowered for marker in _COMMON_KNOWLEDGE_MARKERS):
@@ -121,7 +123,7 @@ def _personalization_score(text: str) -> float:
 def _persistence_score(text: str) -> float:
     lowered = f" {text.casefold()} "
     score = 0.48
-    if any(marker in lowered for marker in _STABLE_MARKERS | _PREFERENCE_MARKERS | _GOAL_MARKERS | _BOUNDARY_MARKERS):
+    if any(marker in lowered for marker in _STABLE_MARKERS | _PREFERENCE_MARKERS | _GOAL_MARKERS | _BOUNDARY_MARKERS) or _has_profile_marker(text):
         score += 0.3
     if any(marker in lowered for marker in _EPHEMERAL_MARKERS):
         score -= 0.35
@@ -135,7 +137,7 @@ def _persistence_score(text: str) -> float:
 def _actionability_score(text: str) -> float:
     lowered = f" {text.casefold()} "
     score = 0.3
-    if any(marker in lowered for marker in _ACTION_MARKERS | _PREFERENCE_MARKERS | _GOAL_MARKERS | _BOUNDARY_MARKERS):
+    if any(marker in lowered for marker in _ACTION_MARKERS | _PREFERENCE_MARKERS | _GOAL_MARKERS | _BOUNDARY_MARKERS) or _has_profile_marker(text):
         score += 0.38
     if _has_domain_marker(text):
         score += 0.15
@@ -177,6 +179,11 @@ def _has_domain_marker(text: str) -> bool:
 def _has_generic_marker(text: str) -> bool:
     lowered = f" {text.casefold()} "
     return any(marker in lowered for marker in _GENERIC_MARKERS)
+
+
+def _has_profile_marker(text: str) -> bool:
+    lowered = text.casefold()
+    return any(marker in lowered for marker in _PROFILE_MARKERS)
 
 
 _QUALITY_STOPWORDS = {
@@ -259,6 +266,37 @@ _STABLE_MARKERS = {
     " 时区",
     " 通常",
     " 习惯",
+}
+
+_PROFILE_MARKERS = {
+    "address",
+    "home address",
+    "mailing address",
+    "private address",
+    "email",
+    "e-mail",
+    "phone",
+    "phone number",
+    "mobile",
+    "birthday",
+    "birth date",
+    "date of birth",
+    "legal name",
+    "real name",
+    "passport",
+    "ssn",
+    "地址",
+    "住址",
+    "家庭住址",
+    "邮箱",
+    "邮件",
+    "电话",
+    "手机",
+    "生日",
+    "出生日期",
+    "真实姓名",
+    "身份证",
+    "护照",
 }
 
 _ACTION_MARKERS = {

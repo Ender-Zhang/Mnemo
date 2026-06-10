@@ -97,6 +97,8 @@
 - After-turn learning reflection writes memory candidates through the same `memory_write_candidate` tool and `MemoryEngine.write_candidate()` path.
 - Candidate writes append compact `memory_safety` evidence with taint, risk, review flag, warning labels, and source summaries.
 - Candidate writes append compact `memory_quality` evidence with bounded specificity, personalization, persistence, actionability, verifiability scores, a weighted average, recommendation, and one-line reason.
+- User-provided private profile/contact facts such as addresses, phone numbers, email, names, and birthdays are valid durable memory candidates when stable and useful; privacy alone must not be treated as a rejection reason.
+- Private profile/contact facts should be rejected or redacted only when the user explicitly asks not to save them, asks to delete them, or the source is unsafe/untrusted.
 - Candidate evidence source taint is deterministic and recognizes trusted user/run/work-note sources, external web/file/tool/imported-skill/MCP/runtime sources, and unknown sources.
 - Candidate claim/evidence text is scanned for prompt override, secret request, and tool-call injection markers through the shared injection warning helper.
 - Candidate writes with injection warnings are marked `needs_review:prompt_injection` and must not be promoted by Dream consolidation.

@@ -28,6 +28,10 @@ class OpenAICompatibleMemoryMaintainer:
                         "You are a memory maintenance planner. Return JSON only with an actions array. "
                         "Allowed tools: memory_promote_candidate, memory_reject_candidate, "
                         "memory_tombstone, memory_decay_stale_pages. "
+                        "Do not reject user-provided private profile/contact facts solely because they are private; "
+                        "promote them when stable and useful. "
+                        "Reject or forget private content only when the user asked not to save it, asked to delete it, "
+                        "or the source is unsafe/untrusted. "
                         "Include a concise reason on every promote or reject action."
                     ),
                 },

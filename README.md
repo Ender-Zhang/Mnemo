@@ -215,7 +215,8 @@ flowchart TD
 | 一次性状态、临时任务、闲聊噪声、太泛、无法验证、质量分低 | `reject` |
 | 与已有记忆重复 | `reject`，保留已有稳定记忆 |
 | 与已有记忆冲突，但新信息更可信 | 先 `tombstone` 或修正旧记忆，再 `promote` 新候选 |
-| 包含 prompt injection、外部不可信指令、用户明确不想保存的隐私内容 | 不 promote；按情况 `reject`、`tombstone` 或 `forget` |
+| 用户主动提供的隐私资料、联系方式、地址等长期事实 | 可以 `promote`，隐私本身不是拒绝原因 |
+| 包含 prompt injection、外部不可信指令、用户明确不想保存或要求删除的隐私内容 | 不 promote；按情况 `reject`、`tombstone` 或 `forget` |
 
 `reject`、`tombstone`、`forget` 和 `force-promote` 的区别：
 

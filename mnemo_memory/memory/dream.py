@@ -131,6 +131,8 @@ class MemoryDreamMixin:
                 "Choose 0..N maintenance actions from the delta; do not process the whole store.",
                 "Stable memory changes happen only when the model selects an explicit maintenance tool.",
                 "Prefer evidence-backed memory candidates, user corrections, conflicts, and tombstones.",
+                "User-provided private profile/contact facts may be promoted when they are stable and useful; do not reject solely because they are private.",
+                "Reject or forget private content only when the user asked not to save it, asked to delete it, or the source is unsafe/untrusted.",
                 "Skip low-value items with a reason instead of forcing a workflow step.",
             ],
         }

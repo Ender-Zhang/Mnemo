@@ -268,6 +268,36 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(reviewed["reason"], "low_quality")
             self.assertEqual(client.list(kind="page", status="active", limit=10)["items"], [])
 
+    def test_user_provided_private_profile_fact_can_be_promoted(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            update = client.update(
+                facts=[
+                    {
+                        "claim": "User private address is 123 Main St.",
+                        "dimension": "identity",
+                        "scope": "user:demo",
+                        "confidence": 0.9,
+                    }
+                ],
+                source="unit-test",
+            )
+            candidate = update["memory_candidates"][0]
+            candidate_id = candidate["candidate_id"]
+
+            self.assertEqual(candidate["status"], "draft")
+            self.assertEqual(candidate["quality"]["recommendation"], "write")
+
+            promoted = client.promote_candidate(candidate_id)
+
+            self.assertEqual(promoted["decision"], "promoted")
+            self.assertEqual(promoted["status"], "promoted")
+            page = client.read(promoted["page_id"])["item"]
+            self.assertEqual(page["metadata"]["dimension"], "identity")
+            self.assertIn("private address", page["content"])
+
     def test_force_promote_candidate_is_admin_override(self) -> None:
         from mnemo_memory import MemoryClient
 
@@ -790,6 +820,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("全部 scope", app)
         self.assertIn("function scopeFromUidFilter", app)
         self.assertIn("memoryFactPayload(factText.trim(), writeScope)", app)
+        self.assertIn("confidence: 0.9", app)
         self.assertIn('retention: "memory_candidate"', app)
         self.assertIn("UID 检索完成", app)
         self.assertIn("user_123 或 user:user_123", app)
