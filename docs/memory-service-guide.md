@@ -60,6 +60,7 @@ flowchart LR
 │   │   ├── engine.py          # 组合多个 mixin，形成 MemoryEngine
 │   │   ├── learning.py        # 写候选、审核、promote、reject、重复/冲突判断
 │   │   ├── recall.py          # search/context/recall 检索逻辑
+│   │   ├── plans.py           # goal/todo 计划项和候选计划
 │   │   ├── dream.py           # Dream 维护、模型建议、维护报告
 │   │   ├── health.py          # 记忆健康检查
 │   │   ├── curation.py        # tombstone、forget、私密删除
@@ -116,11 +117,16 @@ flowchart LR
 | `memory_links` | 记忆图边 | `source_id`, `target_id`, `relation`, `weight`, `created_at` |
 | `memory_tombstones` | 拒绝、删除、不可复活记录 | `target_id`, `target_type`, `target_hash`, `reason`, `summary`, `evidence_run_id` |
 | `working_notes` | 临时观察或 W0 工作笔记 | `mission_id`, `run_id`, `content`, `metadata_json`, `status`, `result_json` |
+| `plan_items` | 已确认的用户 goal/todo | `id`, `kind`, `parent_id`, `title`, `detail`, `scope`, `status`, `priority`, `due_at`, `source_event_id` |
+| `plan_proposals` | 自动抽取但未确认的候选计划 | `id`, `kind`, `action`, `title`, `detail`, `scope`, `confidence`, `reason`, `proposal_status`, `source_event_id` |
 
 几个常见状态：
 
 - candidate: `draft`, `promoted`, `rejected:*`, `needs_review:*`
 - page: `active`, `tombstoned:*`, `private_delete:*`
+- plan goal: `active`, `paused`, `completed`, `cancelled`, `archived`
+- plan todo: `open`, `doing`, `done`, `cancelled`, `archived`
+- plan proposal: `pending`, `accepted`, `rejected`
 - tombstone rule: 默认 `do_not_resurrect`
 
 ## 对外接口层
@@ -154,6 +160,9 @@ flowchart LR
 - `tombstone(memory_id, reason)`
 - `forget(memory_id)`
 - `dream_run(limit, min_confidence, use_provider)`
+- `plan_create(...)`, `plan_list(...)`, `plan_update(...)`
+- `plan_complete(plan_id)`, `plan_cancel(plan_id)`, `plan_archive(plan_id)`
+- `plan_proposals(...)`, `apply_plan_proposal(proposal_id)`, `reject_plan_proposal(proposal_id)`
 
 ### HTTP API
 
@@ -173,6 +182,8 @@ HTTP server 使用 Python stdlib `ThreadingHTTPServer`，没有新增运行时�
 - `/api/memory/search` -> `client.search(...)`
 - `/api/memory/provenance` -> `client.provenance(...)`
 - `/api/memory/dream-run` -> `client.dream_run(...)`
+- `/api/memory/plan-list` -> `client.plan_list(...)`
+- `/api/memory/apply-plan-proposal` -> `client.apply_plan_proposal(...)`
 
 ### MCP
 
@@ -199,6 +210,7 @@ WebUI 是本地管理后台。它不绕过 API，所有记忆操作都通过 HTT
 - 审核：`promote-candidate`, `reject-candidate`
 - 维护：`dream-status`, `dream-run`, `snapshot`, `tombstones`
 - 设置：API Base、默认 source、是否使用模型审核
+- 计划：`plan-list`, `plan-create`, `plan-complete`, `plan-cancel`, `plan-archive`, `plan-proposals`, `apply-plan-proposal`, `reject-plan-proposal`
 
 ## 一条记忆完整走一趟
 

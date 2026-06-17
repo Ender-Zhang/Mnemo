@@ -52,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "stable":
             return _cmd_stable(args)
+        if args.command == "plan":
+            return _cmd_plan(args)
         if args.command == "dream":
             return _cmd_dream(args)
         if args.command == "mcp":
@@ -183,6 +185,74 @@ def build_parser() -> argparse.ArgumentParser:
     stable_delete.add_argument("--delete-related", action=argparse.BooleanOptionalAction, default=True)
 
     for sub in stable_sub.choices.values():
+        _state(sub)
+        sub.add_argument("--json", action="store_true")
+
+    plan = subparsers.add_parser("plan", help="Direct CRUD for user goals and todos")
+    plan_sub = plan.add_subparsers(dest="plan_command")
+
+    plan_add = plan_sub.add_parser("add", help="Create a confirmed plan item directly")
+    plan_add.add_argument("--kind", choices=["goal", "todo"], required=True)
+    plan_add.add_argument("--title", required=True)
+    plan_add.add_argument("--detail", default="")
+    plan_add.add_argument("--parent-id")
+    plan_add.add_argument("--status")
+    plan_add.add_argument("--priority", choices=["low", "normal", "high"], default="normal")
+    plan_add.add_argument("--due-at")
+    plan_add.add_argument("--uid")
+    plan_add.add_argument("--scope", default="global")
+    plan_add.add_argument("--source", default="cli")
+    plan_add.add_argument("--metadata-json")
+
+    plan_read = plan_sub.add_parser("read", help="Read one plan item by id")
+    plan_read.add_argument("plan_id")
+
+    plan_update = plan_sub.add_parser("update", help="Update one plan item by id")
+    plan_update.add_argument("plan_id")
+    plan_update.add_argument("--kind", choices=["goal", "todo"])
+    plan_update.add_argument("--title")
+    plan_update.add_argument("--detail")
+    plan_update.add_argument("--parent-id")
+    plan_update.add_argument("--status")
+    plan_update.add_argument("--priority", choices=["low", "normal", "high"])
+    plan_update.add_argument("--due-at")
+    plan_update.add_argument("--uid")
+    plan_update.add_argument("--scope")
+    plan_update.add_argument("--metadata-json")
+
+    plan_list = plan_sub.add_parser("list", help="List plan items, optionally by query or UID")
+    plan_list.add_argument("query", nargs="*", default=[])
+    plan_list.add_argument("--kind", choices=["goal", "todo"])
+    plan_list.add_argument("--status", action="append")
+    plan_list.add_argument("--uid")
+    plan_list.add_argument("--scope")
+    plan_list.add_argument("--include-archived", action="store_true")
+    plan_list.add_argument("--limit", type=int, default=50)
+
+    plan_complete = plan_sub.add_parser("complete", help="Mark a plan item completed/done")
+    plan_complete.add_argument("plan_id")
+
+    plan_cancel = plan_sub.add_parser("cancel", help="Cancel a plan item")
+    plan_cancel.add_argument("plan_id")
+    plan_cancel.add_argument("--reason", default="cancelled")
+
+    plan_archive = plan_sub.add_parser("archive", help="Archive a plan item")
+    plan_archive.add_argument("plan_id")
+
+    plan_proposals = plan_sub.add_parser("proposals", help="List pending plan proposals")
+    plan_proposals.add_argument("--status", default="pending")
+    plan_proposals.add_argument("--uid")
+    plan_proposals.add_argument("--scope")
+    plan_proposals.add_argument("--limit", type=int, default=50)
+
+    plan_apply = plan_sub.add_parser("apply-proposal", help="Accept a pending plan proposal")
+    plan_apply.add_argument("proposal_id")
+
+    plan_reject = plan_sub.add_parser("reject-proposal", help="Reject a pending plan proposal")
+    plan_reject.add_argument("proposal_id")
+    plan_reject.add_argument("--reason", default="operator_rejected")
+
+    for sub in plan_sub.choices.values():
         _state(sub)
         sub.add_argument("--json", action="store_true")
 
@@ -356,6 +426,87 @@ def _cmd_stable(args: argparse.Namespace) -> int:
         )
         return 0
     raise ValueError("stable command requires a subcommand")
+
+
+def _cmd_plan(args: argparse.Namespace) -> int:
+    if not args.plan_command:
+        raise ValueError("plan command requires a subcommand")
+    client = MemoryClient(state_dir=args.state_dir)
+    if args.plan_command == "add":
+        _print(
+            client.plan_create(
+                kind=args.kind,
+                title=args.title,
+                detail=args.detail,
+                scope=args.scope,
+                uid=args.uid,
+                parent_id=args.parent_id,
+                status=args.status,
+                priority=args.priority,
+                due_at=args.due_at,
+                source=args.source,
+                metadata=_json_object_arg(args.metadata_json, "metadata-json"),
+            ),
+            args.json,
+        )
+        return 0
+    if args.plan_command == "read":
+        _print(client.plan_read(args.plan_id), args.json)
+        return 0
+    if args.plan_command == "update":
+        kwargs: dict[str, Any] = {}
+        for key in ("kind", "title", "detail", "parent_id", "status", "priority", "due_at", "uid", "scope"):
+            value = getattr(args, key)
+            if value is not None:
+                kwargs[key] = value
+        if args.metadata_json is not None:
+            kwargs["metadata"] = _json_object_arg(args.metadata_json, "metadata-json")
+        _print(client.plan_update(args.plan_id, **kwargs), args.json)
+        return 0
+    if args.plan_command == "list":
+        query = " ".join(args.query).strip()
+        status: str | list[str] | None
+        status = args.status if args.status and len(args.status) > 1 else (args.status[0] if args.status else None)
+        _print(
+            client.plan_list(
+                kind=args.kind,
+                status=status,
+                scope=args.scope,
+                uid=args.uid,
+                query=query,
+                limit=args.limit,
+                include_archived=args.include_archived,
+            ),
+            args.json,
+        )
+        return 0
+    if args.plan_command == "complete":
+        _print(client.plan_complete(args.plan_id), args.json)
+        return 0
+    if args.plan_command == "cancel":
+        _print(client.plan_cancel(args.plan_id, reason=args.reason), args.json)
+        return 0
+    if args.plan_command == "archive":
+        _print(client.plan_archive(args.plan_id), args.json)
+        return 0
+    if args.plan_command == "proposals":
+        _print(
+            client.plan_proposals(
+                status=None if args.status == "all" else args.status,
+                scope=args.scope,
+                uid=args.uid,
+                limit=args.limit,
+            ),
+            args.json,
+        )
+        return 0
+    if args.plan_command == "apply-proposal":
+        _print(client.apply_plan_proposal(args.proposal_id), args.json)
+        return 0
+    if args.plan_command == "reject-proposal":
+        _print(client.reject_plan_proposal(args.proposal_id, reason=args.reason), args.json)
+        return 0
+    raise ValueError("plan command requires a subcommand")
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

@@ -19,6 +19,16 @@
 - `MemoryEngine.undo_candidate(candidate_id: str, reason: str = "user undo") -> dict[str, Any]`
 - `MemoryEngine.tombstone_memory(memory_id: str, reason: str, *, target_type: str = "auto", replacement_id: str | None = None, eval_run_id: str | None = None) -> dict[str, Any]`
 - `MemoryEngine.private_delete_memory(memory_id: str, reason: str = "private_delete", *, target_type: str = "auto") -> dict[str, Any]`
+- `MemoryEngine.create_plan_item(*, kind: str, title: str, detail: str = "", scope: str = "global", parent_id: str | None = None, status: str | None = None, priority: str = "normal", due_at: float | int | str | None = None, source: str = "manual", source_event_id: str | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]`
+- `MemoryEngine.read_plan_item(item_id: str) -> dict[str, Any]`
+- `MemoryEngine.update_plan_item(item_id: str, **fields: Any) -> dict[str, Any]`
+- `MemoryEngine.list_plan_items(*, kind: str | None = None, status: str | list[str] | tuple[str, ...] | None = None, scope: str | None = None, uid: str | None = None, query: str = "", limit: int = 50, include_archived: bool = False) -> dict[str, Any]`
+- `MemoryEngine.complete_plan_item(item_id: str) -> dict[str, Any]`
+- `MemoryEngine.cancel_plan_item(item_id: str, reason: str = "cancelled") -> dict[str, Any]`
+- `MemoryEngine.archive_plan_item(item_id: str) -> dict[str, Any]`
+- `MemoryEngine.plan_proposals(*, status: str | None = "pending", scope: str | None = None, uid: str | None = None, limit: int = 50) -> dict[str, Any]`
+- `MemoryEngine.apply_plan_proposal(proposal_id: str) -> dict[str, Any]`
+- `MemoryEngine.reject_plan_proposal(proposal_id: str, reason: str = "operator_rejected") -> dict[str, Any]`
 - `MemoryEngine.health_report(limit: int = 20) -> dict[str, Any]`
 - `MemoryEngine.decay_stale_pages(limit: int = 50, *, now: float | None = None, stale_confidence: float = 0.35) -> dict[str, Any]`
 - `MemoryEngine.collect_dream_delta(limit: int = 20, *, since: float | None = None) -> dict[str, Any]`
@@ -78,6 +88,12 @@
 - CLI: `mnemo dream report [REPORT_ID|--latest] [--state-dir DIR] [--json]`
 - HTTP: `POST /api/memory/auto-dream-status` returns auto Dream config plus persisted scheduler status.
 - HTTP: `POST /api/memory/save-auto-dream-config` accepts `enabled`, `interval_minutes`, optional `limit`, and optional `min_confidence`, then persists config and reschedules the next run.
+- CLI: `mnemo-memory plan add --kind goal|todo --title TITLE [--detail DETAIL] [--parent-id ID] [--uid UID|--scope SCOPE] [--priority low|normal|high] [--due-at TS] [--state-dir DIR] [--json]`
+- CLI: `mnemo-memory plan list [QUERY...] [--kind goal|todo] [--status STATUS] [--uid UID] [--scope SCOPE] [--include-archived] [--limit N] [--state-dir DIR] [--json]`
+- CLI: `mnemo-memory plan read|update|complete|cancel|archive ...`
+- CLI: `mnemo-memory plan proposals|apply-proposal|reject-proposal ...`
+- HTTP: `POST /api/memory/plan-create`, `plan-read`, `plan-update`, `plan-list`, `plan-complete`, `plan-cancel`, `plan-archive`
+- HTTP: `POST /api/memory/plan-proposals`, `apply-plan-proposal`, `reject-plan-proposal`
 
 ### 3. Contracts
 - `mnemo/memory/engine.py` is a compatibility facade only; domain behavior lives in focused modules under `mnemo/memory/`.
@@ -94,6 +110,11 @@
   - `utils.py` and `constants.py`: dependency-free shared helpers/constants.
 - Public imports continue to use `from mnemo.memory import MemoryEngine`; direct engine constants such as `W0_MEMORY_RETENTION` remain re-exported by `mnemo/memory/engine.py` for compatibility.
 - Normal tools write memory candidates, not stable pages.
+- Plan items are a sibling durable user model for intended future work; they do not replace `memory_pages` with `dimension="goals"`.
+- `plan_items.kind` must be `goal` or `todo`; `parent_id` may link a todo to a goal.
+- Manual plan CRUD writes `plan_items` directly. Automatic event/provider extraction writes `plan_proposals` first and must not silently create active/open plan items.
+- Active prompt context may include compact plan items only when status is `active`, `paused`, `open`, or `doing`; completed, cancelled, and archived plans must not be injected.
+- Plan list and proposal list must support UID filtering with the same scope matching behavior used by stable memory inventory.
 - Normal tools and W0 ingestion write memory candidates through `MemoryEngine.write_candidate()`.
 - `MemoryEngine.write_candidate()` normalizes every durable candidate dimension into the configured memory ontology; non-standard labels such as `finance`, `profile`, or `work_style` must not persist as separate user-facing buckets.
 - After-turn learning reflection writes memory candidates through the same `memory_write_candidate` tool and `MemoryEngine.write_candidate()` path.

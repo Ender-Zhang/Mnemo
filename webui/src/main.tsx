@@ -12,6 +12,7 @@ import {
   Gauge,
   Home,
   Link2,
+  ListTodo,
   Loader2,
   Lock,
   Play,
@@ -221,7 +222,69 @@ type TombstonesResult = {
   tombstones?: MemoryTombstone[];
 };
 
-type TabKey = "overview" | "memories" | "candidates" | "tombstones" | "maintenance" | "settings";
+type PlanItem = {
+  id: string;
+  kind: "goal" | "todo" | string;
+  parent_id?: string | null;
+  title: string;
+  detail?: string;
+  scope?: string;
+  status?: string;
+  priority?: "low" | "normal" | "high" | string;
+  due_at?: number | null;
+  source?: string;
+  source_event_id?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at?: number;
+  updated_at?: number;
+  completed_at?: number | null;
+};
+
+type PlanListResult = {
+  kind: "plan_item_list";
+  count: number;
+  items: PlanItem[];
+};
+
+type PlanProposal = {
+  id: string;
+  kind: "goal" | "todo" | string;
+  action?: string;
+  target_id?: string | null;
+  parent_id?: string | null;
+  title: string;
+  detail?: string;
+  scope?: string;
+  status?: string | null;
+  priority?: string;
+  due_at?: number | null;
+  confidence?: number;
+  reason?: string;
+  source?: string;
+  source_event_id?: string | null;
+  metadata?: Record<string, unknown>;
+  proposal_status?: "pending" | "accepted" | "rejected" | string;
+  created_at?: number;
+  decided_at?: number | null;
+  decision_reason?: string | null;
+};
+
+type PlanProposalsResult = {
+  kind: "plan_proposals";
+  count: number;
+  proposals: PlanProposal[];
+};
+
+type PlanFormState = {
+  kind: "goal" | "todo";
+  title: string;
+  detail: string;
+  parentId: string;
+  priority: "low" | "normal" | "high";
+  dueAt: string;
+};
+
+type TabKey = "overview" | "memories" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
 
 type Notice = {
   tone: "ok" | "warn" | "error";
@@ -230,14 +293,15 @@ type Notice = {
 
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "memories", label: "记忆工作台", icon: Home },
+  { key: "plans", label: "计划", icon: ListTodo },
   { key: "maintenance", label: "模型与维护", icon: Activity },
   { key: "settings", label: "设置", icon: Settings },
   { key: "candidates", label: "候选审核", icon: ClipboardList },
   { key: "tombstones", label: "墓碑 / 删除", icon: Archive }
 ];
 
-const defaultNavKeys = new Set<TabKey>(["memories", "maintenance", "settings"]);
-const advancedNavKeys = new Set<TabKey>(["memories", "maintenance", "settings", "candidates", "tombstones"]);
+const defaultNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings"]);
+const advancedNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings", "candidates", "tombstones"]);
 
 const defaultApiBase = window.location.origin;
 
@@ -265,6 +329,10 @@ function App() {
   const [dreamStatus, setDreamStatus] = useState<DreamStatusResult | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotResult | null>(null);
   const [tombstones, setTombstones] = useState<MemoryTombstone[]>([]);
+  const [planItems, setPlanItems] = useState<PlanItem[]>([]);
+  const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
+  const [planForm, setPlanForm] = useState<PlanFormState>(() => emptyPlanForm());
+  const [planRejectReason, setPlanRejectReason] = useState("operator_rejected");
   const [selectedTombstoneIds, setSelectedTombstoneIds] = useState<Set<string>>(() => new Set());
   const [factText, setFactText] = useState("");
   const [observationText, setObservationText] = useState("");
@@ -350,7 +418,9 @@ function App() {
         tombstoneResult,
         providerResult,
         autoDreamResult,
-        proposalResult
+        proposalResult,
+        planResult,
+        planProposalResult
       ] = await Promise.all([
         requestJson<Record<string, unknown>>("/api/health"),
         callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 50 }),
@@ -360,7 +430,9 @@ function App() {
         callMemory<TombstonesResult>("tombstones", { limit: 500 }),
         callMemory<ProviderConfigResult>("provider-config", {}),
         callMemory<AutoDreamStatusResult>("auto-dream-status", {}),
-        callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 })
+        callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 }),
+        callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }),
+        callMemory<PlanProposalsResult>("plan-proposals", { status: "pending", uid: scopedUid, limit: 50 })
       ]);
       setServiceOk(Boolean(healthResult.ok));
       setInventory(inventoryResult.items || []);
@@ -373,6 +445,8 @@ function App() {
       setAutoDreamStatus(autoDreamResult);
       setAutoDreamForm(autoDreamFormFromStatus(autoDreamResult));
       setDreamProposals(proposalResult.proposals || []);
+      setPlanItems(planResult.items || []);
+      setPlanProposals(planProposalResult.proposals || []);
       try {
         setHealth(await callMemory<MemoryHealthResult>("health", { limit: 20 }));
       } catch {
@@ -496,6 +570,7 @@ function App() {
       });
       const mapped = (result.matches || [])
         .map(searchMatchToItem)
+        .filter((item): item is MemoryItem => Boolean(item))
         .filter((item) => kindFilter === "all" || item.type === kindFilter)
         .filter((item) => !statusFilter || item.status === statusFilter);
       setSearchMode(true);
@@ -753,6 +828,103 @@ function App() {
     }
   };
 
+  const createPlanItem = async () => {
+    const title = planForm.title.trim();
+    if (!title) {
+      setWarn("请输入计划标题");
+      return;
+    }
+    setLoading(true);
+    try {
+      await callMemory("plan-create", {
+        kind: planForm.kind,
+        title,
+        detail: planForm.detail.trim(),
+        parent_id: planForm.parentId.trim() || null,
+        priority: planForm.priority,
+        due_at: datetimeLocalToUnix(planForm.dueAt),
+        uid: uidFilter.trim() || null,
+        scope: uidFilter.trim() ? undefined : "global",
+        source: source.trim() || "webui"
+      });
+      setPlanForm(emptyPlanForm());
+      setOk("计划已创建");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const completePlanItem = async (planId: string) => {
+    setLoading(true);
+    try {
+      await callMemory("plan-complete", { plan_id: planId });
+      setOk("计划已完成");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelPlanItem = async (planId: string) => {
+    setLoading(true);
+    try {
+      await callMemory("plan-cancel", { plan_id: planId, reason: "cancelled_from_webui" });
+      setOk("计划已取消");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const archivePlanItem = async (planId: string) => {
+    setLoading(true);
+    try {
+      await callMemory("plan-archive", { plan_id: planId });
+      setOk("计划已归档");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const applyPlanProposal = async (proposalId: string) => {
+    setLoading(true);
+    try {
+      await callMemory("apply-plan-proposal", { proposal_id: proposalId });
+      setOk("计划提案已接受");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const rejectPlanProposal = async (proposalId: string) => {
+    setLoading(true);
+    try {
+      await callMemory("reject-plan-proposal", {
+        proposal_id: proposalId,
+        reason: planRejectReason.trim() || "operator_rejected"
+      });
+      setOk("计划提案已拒绝");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const compileSnapshot = async () => {
     setLoading(true);
     try {
@@ -828,6 +1000,7 @@ function App() {
             <button className={navItemClass(item.key)} key={item.key} onClick={() => setActiveTab(item.key)}>
               <item.icon size={18} />
               <span>{item.label}</span>
+              {item.key === "plans" && planProposals.length > 0 ? <b>{planProposals.length}</b> : null}
               {item.key === "candidates" && pendingCandidates.length > 0 ? <b>{pendingCandidates.length}</b> : null}
               {item.key === "tombstones" && tombstones.length > 0 ? <b>{tombstones.length}</b> : null}
             </button>
@@ -897,6 +1070,24 @@ function App() {
             ) : null}
             {activeTab === "memories" || activeTab === "overview" ? (
               <MemoryTable items={activeItems} selectedId={selected?.id} uidFilter={uidFilter} dreamStatus={dreamStatus} advancedMode={advancedMode} onSelect={readMemory} />
+            ) : null}
+            {activeTab === "plans" ? (
+              <PlanPanel
+                items={planItems}
+                proposals={planProposals}
+                form={planForm}
+                setForm={setPlanForm}
+                rejectReason={planRejectReason}
+                setRejectReason={setPlanRejectReason}
+                uidFilter={uidFilter}
+                loading={loading}
+                onCreate={createPlanItem}
+                onComplete={completePlanItem}
+                onCancel={cancelPlanItem}
+                onArchive={archivePlanItem}
+                onApplyProposal={applyPlanProposal}
+                onRejectProposal={rejectPlanProposal}
+              />
             ) : null}
             {activeTab === "candidates" ? (
               <CandidateReview
@@ -1455,6 +1646,196 @@ function CandidateReview(props: {
         })}
       </div>
     </section>
+  );
+}
+
+function PlanPanel(props: {
+  items: PlanItem[];
+  proposals: PlanProposal[];
+  form: PlanFormState;
+  setForm: (value: PlanFormState) => void;
+  rejectReason: string;
+  setRejectReason: (value: string) => void;
+  uidFilter: string;
+  loading: boolean;
+  onCreate: () => void;
+  onComplete: (id: string) => void;
+  onCancel: (id: string) => void;
+  onArchive: (id: string) => void;
+  onApplyProposal: (id: string) => void;
+  onRejectProposal: (id: string) => void;
+}) {
+  const goals = props.items.filter((item) => item.kind === "goal");
+  const todos = props.items.filter((item) => item.kind === "todo");
+  const parentGoals = goals.filter((goal) => !["completed", "cancelled", "archived"].includes(String(goal.status || "")));
+  const setField = <K extends keyof PlanFormState>(field: K, value: PlanFormState[K]) => {
+    props.setForm({ ...props.form, [field]: value });
+  };
+  return (
+    <section className="panel plan-panel">
+      <div className="panel-header">
+        <div>
+          <h2>计划</h2>
+          <p>Goal 和 Todo 使用同一套计划项；自动抽取会先进入候选计划。</p>
+        </div>
+        <StatusBadge text={props.uidFilter.trim() ? `UID ${props.uidFilter.trim()}` : "global"} />
+      </div>
+      <div className="plan-composer">
+        <label>
+          类型
+          <select value={props.form.kind} onChange={(event) => setField("kind", event.target.value as "goal" | "todo")}>
+            <option value="goal">Goal</option>
+            <option value="todo">Todo</option>
+          </select>
+        </label>
+        <label className="plan-title-field">
+          标题
+          <input value={props.form.title} onChange={(event) => setField("title", event.target.value)} placeholder="例如：完成 Mnemo 计划模块" />
+        </label>
+        <label>
+          优先级
+          <select value={props.form.priority} onChange={(event) => setField("priority", event.target.value as "low" | "normal" | "high")}>
+            <option value="low">low</option>
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+        <label>
+          截止时间
+          <input type="datetime-local" value={props.form.dueAt} onChange={(event) => setField("dueAt", event.target.value)} />
+        </label>
+        <label>
+          父 Goal
+          <select value={props.form.parentId} onChange={(event) => setField("parentId", event.target.value)} disabled={props.form.kind === "goal"}>
+            <option value="">无</option>
+            {parentGoals.map((goal) => (
+              <option value={goal.id} key={goal.id}>{goal.title}</option>
+            ))}
+          </select>
+        </label>
+        <label className="plan-detail-field">
+          详情
+          <textarea value={props.form.detail} onChange={(event) => setField("detail", event.target.value)} placeholder="补充范围、验收点或上下文" />
+        </label>
+        <button className="primary-button" onClick={props.onCreate} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+          新增计划
+        </button>
+      </div>
+      <div className="plan-sections">
+        <PlanSection
+          title="Goals"
+          items={goals}
+          emptyText="暂无 goal。"
+          onComplete={props.onComplete}
+          onCancel={props.onCancel}
+          onArchive={props.onArchive}
+        />
+        <PlanSection
+          title="Todos"
+          items={todos}
+          emptyText="暂无 todo。"
+          goals={goals}
+          onComplete={props.onComplete}
+          onCancel={props.onCancel}
+          onArchive={props.onArchive}
+        />
+      </div>
+      <div className="plan-proposals">
+        <div className="plan-proposals-header">
+          <div>
+            <h3>候选计划</h3>
+            <p>来自事件摄入或模型抽取，接受后才会进入正式计划。</p>
+          </div>
+          <StatusBadge text={`${props.proposals.length} pending`} />
+        </div>
+        <label>
+          拒绝原因
+          <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
+        </label>
+        <div className="plan-proposal-list">
+          {props.proposals.length === 0 ? <EmptyState text="暂无候选计划。" /> : null}
+          {props.proposals.map((proposal) => (
+            <article className="plan-proposal-card" key={proposal.id}>
+              <div>
+                <div className="plan-row-title">
+                  <StatusBadge text={proposal.kind || "todo"} />
+                  <StatusBadge text={proposal.priority || "normal"} />
+                  <strong>{proposal.title || proposal.id}</strong>
+                </div>
+                <p>{proposal.detail || proposal.reason || "没有附带详情。"}</p>
+                <small>{proposal.scope || "global"} · {formatConfidence(proposal.confidence)} · {formatDate(proposal.created_at)}</small>
+                <code>{proposal.id}</code>
+              </div>
+              <div className="plan-actions">
+                <button className="success-button" disabled={props.loading} onClick={() => props.onApplyProposal(proposal.id)}>
+                  <Check size={15} />
+                  接受
+                </button>
+                <button className="danger-button" disabled={props.loading} onClick={() => props.onRejectProposal(proposal.id)}>
+                  <X size={15} />
+                  拒绝
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlanSection(props: {
+  title: string;
+  items: PlanItem[];
+  goals?: PlanItem[];
+  emptyText: string;
+  onComplete: (id: string) => void;
+  onCancel: (id: string) => void;
+  onArchive: (id: string) => void;
+}) {
+  return (
+    <div className="plan-section">
+      <div className="plan-section-header">
+        <h3>{props.title}</h3>
+        <StatusBadge text={`${props.items.length} items`} />
+      </div>
+      <div className="plan-list">
+        {props.items.length === 0 ? <EmptyState text={props.emptyText} /> : null}
+        {props.items.map((item) => (
+          <article className="plan-card" key={item.id}>
+            <div className="plan-card-main">
+              <div className="plan-row-title">
+                <StatusBadge text={item.status || "open"} />
+                <StatusBadge text={item.priority || "normal"} />
+                <strong>{item.title}</strong>
+              </div>
+              {item.detail ? <p>{item.detail}</p> : null}
+              <div className="plan-meta">
+                <span>{item.scope || "global"}</span>
+                {item.parent_id ? <span>父级：{planTitleById(props.goals || [], item.parent_id)}</span> : null}
+                {item.due_at ? <span>截止：{formatDate(item.due_at)}</span> : null}
+                <code>{item.id}</code>
+              </div>
+            </div>
+            <div className="plan-actions">
+              <button className="success-button" onClick={() => props.onComplete(item.id)} disabled={isClosedPlan(item)}>
+                <Check size={15} />
+                完成
+              </button>
+              <button className="danger-button" onClick={() => props.onCancel(item.id)} disabled={isClosedPlan(item)}>
+                <X size={15} />
+                取消
+              </button>
+              <button className="ghost-button" onClick={() => props.onArchive(item.id)}>
+                <Archive size={15} />
+                归档
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -2082,8 +2463,36 @@ function EmptyState({ text }: { text: string }) {
   return <div className="empty-state">{text}</div>;
 }
 
-function searchMatchToItem(match: Record<string, unknown>): MemoryItem {
+function emptyPlanForm(): PlanFormState {
+  return {
+    kind: "todo",
+    title: "",
+    detail: "",
+    parentId: "",
+    priority: "normal",
+    dueAt: ""
+  };
+}
+
+function datetimeLocalToUnix(value: string) {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? Math.round(ms / 1000) : null;
+}
+
+function isClosedPlan(item: PlanItem) {
+  return ["completed", "done", "cancelled", "archived"].includes(String(item.status || "").toLowerCase());
+}
+
+function planTitleById(items: PlanItem[], id: string) {
+  return items.find((item) => item.id === id)?.title || compactId(id);
+}
+
+function searchMatchToItem(match: Record<string, unknown>): MemoryItem | null {
   const rawType = String(match.type || match.item_type || "page");
+  if (rawType.includes("plan")) {
+    return null;
+  }
   const type = rawType.includes("candidate") ? "candidate" : "page";
   return {
     ...(match as MemoryItem),

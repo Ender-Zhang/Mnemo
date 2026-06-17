@@ -11,7 +11,7 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 _DEFAULT_TOMBSTONE_RULE = "do_not_resurrect"
 
 
@@ -116,6 +116,45 @@ class StateStore:
                     created_at REAL NOT NULL,
                     decided_at REAL
                 );
+                CREATE TABLE IF NOT EXISTS plan_items (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    parent_id TEXT,
+                    title TEXT NOT NULL,
+                    detail TEXT NOT NULL DEFAULT '',
+                    scope TEXT NOT NULL DEFAULT 'global',
+                    status TEXT NOT NULL,
+                    priority TEXT NOT NULL DEFAULT 'normal',
+                    due_at REAL,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    source_event_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    completed_at REAL
+                );
+                CREATE TABLE IF NOT EXISTS plan_proposals (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    action TEXT NOT NULL DEFAULT 'create',
+                    target_id TEXT,
+                    parent_id TEXT,
+                    title TEXT NOT NULL,
+                    detail TEXT NOT NULL DEFAULT '',
+                    scope TEXT NOT NULL DEFAULT 'global',
+                    status TEXT,
+                    priority TEXT NOT NULL DEFAULT 'normal',
+                    due_at REAL,
+                    confidence REAL NOT NULL DEFAULT 0.5,
+                    reason TEXT NOT NULL DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'auto',
+                    source_event_id TEXT,
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    proposal_status TEXT NOT NULL DEFAULT 'pending',
+                    created_at REAL NOT NULL,
+                    decided_at REAL,
+                    decision_reason TEXT
+                );
                 CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status);
                 CREATE INDEX IF NOT EXISTS idx_memory_pages_status ON memory_pages(status);
                 CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
@@ -124,6 +163,10 @@ class StateStore:
                 CREATE INDEX IF NOT EXISTS idx_memory_events_run ON memory_events(run_id);
                 CREATE INDEX IF NOT EXISTS idx_memory_events_observed ON memory_events(observed_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_dream_proposals_status ON dream_proposals(status, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_plan_items_scope_status ON plan_items(scope, status, updated_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_plan_items_parent ON plan_items(parent_id, status);
+                CREATE INDEX IF NOT EXISTS idx_plan_proposals_status ON plan_proposals(proposal_status, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_plan_proposals_scope ON plan_proposals(scope, proposal_status, created_at DESC);
                 """
             )
             conn.execute(
@@ -888,6 +931,350 @@ class StateStore:
             raise ValueError(f"dream proposal not found: {proposal_id}")
         return proposal
 
+    def add_plan_item(
+        self,
+        *,
+        kind: str,
+        title: str,
+        detail: str = "",
+        scope: str = "global",
+        parent_id: str | None = None,
+        status: str | None = None,
+        priority: str = "normal",
+        due_at: float | int | str | None = None,
+        source: str = "manual",
+        source_event_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        created_at: float | int | str | None = None,
+    ) -> dict[str, Any]:
+        clean_kind = _plan_kind(kind)
+        clean_title = _required_single_line(title, "plan item title")[:240]
+        now = time.time()
+        created = _timestamp(created_at, default=now)
+        item_id = new_id("plan")
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO plan_items(
+                    id, kind, parent_id, title, detail, scope, status, priority,
+                    due_at, source, source_event_id, metadata_json, created_at, updated_at, completed_at
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    item_id,
+                    clean_kind,
+                    _optional_str(parent_id),
+                    clean_title,
+                    _clean_detail(detail),
+                    _scope_or_global(scope),
+                    _plan_status(clean_kind, status),
+                    _plan_priority(priority),
+                    _nullable_timestamp(due_at),
+                    str(source or "manual").strip() or "manual",
+                    _optional_str(source_event_id),
+                    dumps(metadata or {}),
+                    created,
+                    created,
+                    created if _is_plan_done_status(clean_kind, status) else None,
+                ),
+            )
+        item = self.get_plan_item(item_id)
+        if not item:
+            raise RuntimeError(f"plan item was not stored: {item_id}")
+        return item
+
+    def get_plan_item(self, item_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, kind, parent_id, title, detail, scope, status, priority,
+                       due_at, source, source_event_id, metadata_json, created_at, updated_at, completed_at
+                FROM plan_items
+                WHERE id = ?
+                """,
+                (str(item_id or "").strip(),),
+            ).fetchone()
+        return _plan_item_from_row(row) if row else None
+
+    def list_plan_items(
+        self,
+        *,
+        kind: str | None = None,
+        status: str | Iterable[str] | None = None,
+        scope: str | None = None,
+        uid: str | None = None,
+        limit: int | None = 50,
+        include_archived: bool = False,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, kind, parent_id, title, detail, scope, status, priority,
+                   due_at, source, source_event_id, metadata_json, created_at, updated_at, completed_at
+            FROM plan_items
+        """
+        params: list[Any] = []
+        clauses: list[str] = []
+        clean_kind = _optional_plan_kind(kind)
+        if clean_kind:
+            clauses.append("kind = ?")
+            params.append(clean_kind)
+        _append_status_clause(clauses, params, "status", status)
+        clean_scope = str(scope or "").strip()
+        if clean_scope:
+            clauses.append("scope = ?")
+            params.append(clean_scope)
+        scope_clause, scope_params = _uid_scope_clause(uid)
+        if scope_clause:
+            clauses.append(scope_clause)
+            params.extend(scope_params)
+        if not include_archived:
+            clauses.append("status != 'archived'")
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY COALESCE(due_at, updated_at) ASC, updated_at DESC"
+        sql = _apply_limit(sql, params, limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_plan_item_from_row(row) for row in rows]
+
+    def search_plan_items(
+        self,
+        query: str,
+        *,
+        kind: str | None = None,
+        status: str | Iterable[str] | None = None,
+        uid: str | None = None,
+        limit: int | None = 10,
+    ) -> list[dict[str, Any]]:
+        clean_query = " ".join(str(query or "").split())
+        if not clean_query:
+            return self.list_plan_items(kind=kind, status=status, uid=uid, limit=limit)
+        sql = """
+            SELECT id, kind, parent_id, title, detail, scope, status, priority,
+                   due_at, source, source_event_id, metadata_json, created_at, updated_at, completed_at
+            FROM plan_items
+        """
+        params: list[Any] = []
+        clauses: list[str] = ["(title LIKE ? OR detail LIKE ? OR scope LIKE ?)"]
+        pattern = f"%{clean_query}%"
+        params.extend([pattern, pattern, pattern])
+        clean_kind = _optional_plan_kind(kind)
+        if clean_kind:
+            clauses.append("kind = ?")
+            params.append(clean_kind)
+        _append_status_clause(clauses, params, "status", status)
+        scope_clause, scope_params = _uid_scope_clause(uid)
+        if scope_clause:
+            clauses.append(scope_clause)
+            params.extend(scope_params)
+        sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY updated_at DESC"
+        sql = _apply_limit(sql, params, limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_plan_item_from_row(row) for row in rows]
+
+    def update_plan_item(self, item_id: str, **fields: Any) -> dict[str, Any]:
+        existing = self.get_plan_item(item_id)
+        if not existing:
+            raise ValueError(f"plan item not found: {item_id}")
+        clean_kind = _plan_kind(fields.get("kind", existing["kind"]))
+        updates: dict[str, Any] = {}
+        for key in ("kind", "parent_id", "title", "detail", "scope", "status", "priority", "due_at", "source", "source_event_id"):
+            if key not in fields:
+                continue
+            value = fields[key]
+            if key == "kind":
+                updates[key] = clean_kind
+            elif key == "title":
+                updates[key] = _required_single_line(value, "plan item title")[:240]
+            elif key == "detail":
+                updates[key] = _clean_detail(value)
+            elif key == "scope":
+                updates[key] = _scope_or_global(value)
+            elif key == "status":
+                updates[key] = _plan_status(clean_kind, value)
+            elif key == "priority":
+                updates[key] = _plan_priority(value)
+            elif key == "due_at":
+                updates[key] = _nullable_timestamp(value)
+            elif key in {"parent_id", "source_event_id"}:
+                updates[key] = _optional_str(value)
+            else:
+                updates[key] = str(value or "").strip() or "manual"
+        if "metadata" in fields:
+            updates["metadata_json"] = dumps(fields["metadata"] if isinstance(fields["metadata"], dict) else {})
+        if "kind" in updates and "status" not in updates:
+            updates["status"] = _plan_status(clean_kind, None)
+        status_value = str(updates.get("status", existing.get("status") or "")).strip()
+        completed_at = fields.get("completed_at") if "completed_at" in fields else None
+        if status_value and _is_plan_done_status(clean_kind, status_value):
+            updates["completed_at"] = _nullable_timestamp(completed_at) or existing.get("completed_at") or time.time()
+        elif "status" in updates and not _is_plan_done_status(clean_kind, status_value):
+            updates["completed_at"] = None
+        if not updates:
+            return existing
+        updates["updated_at"] = time.time()
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = [*updates.values(), str(item_id or "").strip()]
+        with self.connect() as conn:
+            conn.execute(f"UPDATE plan_items SET {assignments} WHERE id = ?", params)
+        updated = self.get_plan_item(item_id)
+        if not updated:
+            raise ValueError(f"plan item not found: {item_id}")
+        return updated
+
+    def delete_plan_item(self, item_id: str) -> int:
+        clean_id = str(item_id or "").strip()
+        if not clean_id:
+            raise ValueError("plan item id is required")
+        with self.connect() as conn:
+            rows = conn.execute("DELETE FROM plan_items WHERE id = ?", (clean_id,)).rowcount
+        return int(rows)
+
+    def add_plan_proposal(
+        self,
+        *,
+        kind: str,
+        title: str,
+        detail: str = "",
+        scope: str = "global",
+        action: str = "create",
+        target_id: str | None = None,
+        parent_id: str | None = None,
+        status: str | None = None,
+        priority: str = "normal",
+        due_at: float | int | str | None = None,
+        confidence: float = 0.5,
+        reason: str = "",
+        source: str = "auto",
+        source_event_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        proposal_status: str = "pending",
+        created_at: float | int | str | None = None,
+    ) -> dict[str, Any]:
+        clean_kind = _plan_kind(kind)
+        clean_action = _plan_proposal_action(action)
+        clean_proposal_status = _plan_proposal_status(proposal_status)
+        proposal_id = new_id("plprop")
+        now = time.time()
+        created = _timestamp(created_at, default=now)
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO plan_proposals(
+                    id, kind, action, target_id, parent_id, title, detail, scope, status,
+                    priority, due_at, confidence, reason, source, source_event_id, metadata_json,
+                    proposal_status, created_at, decided_at, decision_reason
+                )
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    proposal_id,
+                    clean_kind,
+                    clean_action,
+                    _optional_str(target_id),
+                    _optional_str(parent_id),
+                    _required_single_line(title, "plan proposal title")[:240],
+                    _clean_detail(detail),
+                    _scope_or_global(scope),
+                    _optional_str(status),
+                    _plan_priority(priority),
+                    _nullable_timestamp(due_at),
+                    _bounded_float(confidence, default=0.5, minimum=0.0, maximum=1.0),
+                    _clean_detail(reason)[:1000],
+                    str(source or "auto").strip() or "auto",
+                    _optional_str(source_event_id),
+                    dumps(metadata or {}),
+                    clean_proposal_status,
+                    created,
+                    created if clean_proposal_status in {"accepted", "rejected"} else None,
+                    None,
+                ),
+            )
+        proposal = self.get_plan_proposal(proposal_id)
+        if not proposal:
+            raise RuntimeError(f"plan proposal was not stored: {proposal_id}")
+        return proposal
+
+    def get_plan_proposal(self, proposal_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, kind, action, target_id, parent_id, title, detail, scope, status,
+                       priority, due_at, confidence, reason, source, source_event_id,
+                       metadata_json, proposal_status, created_at, decided_at, decision_reason
+                FROM plan_proposals
+                WHERE id = ?
+                """,
+                (str(proposal_id or "").strip(),),
+            ).fetchone()
+        return _plan_proposal_from_row(row) if row else None
+
+    def list_plan_proposals(
+        self,
+        *,
+        status: str | None = "pending",
+        scope: str | None = None,
+        uid: str | None = None,
+        limit: int | None = 50,
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT id, kind, action, target_id, parent_id, title, detail, scope, status,
+                   priority, due_at, confidence, reason, source, source_event_id,
+                   metadata_json, proposal_status, created_at, decided_at, decision_reason
+            FROM plan_proposals
+        """
+        params: list[Any] = []
+        clauses: list[str] = []
+        clean_status = str(status or "").strip().casefold()
+        if clean_status and clean_status != "all":
+            clauses.append("proposal_status = ?")
+            params.append(_plan_proposal_status(clean_status))
+        clean_scope = str(scope or "").strip()
+        if clean_scope:
+            clauses.append("scope = ?")
+            params.append(clean_scope)
+        scope_clause, scope_params = _uid_scope_clause(uid)
+        if scope_clause:
+            clauses.append(scope_clause)
+            params.extend(scope_params)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at DESC, id DESC"
+        sql = _apply_limit(sql, params, limit)
+        with self.connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+        return [_plan_proposal_from_row(row) for row in rows]
+
+    def update_plan_proposal_status(
+        self,
+        proposal_id: str,
+        status: str,
+        *,
+        reason: str = "",
+    ) -> dict[str, Any]:
+        clean_status = _plan_proposal_status(status)
+        decided_at = time.time() if clean_status in {"accepted", "rejected"} else None
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE plan_proposals
+                SET proposal_status = ?, decided_at = ?, decision_reason = ?
+                WHERE id = ?
+                """,
+                (
+                    clean_status,
+                    decided_at,
+                    _clean_detail(reason)[:1000] if reason else None,
+                    str(proposal_id or "").strip(),
+                ),
+            )
+        proposal = self.get_plan_proposal(proposal_id)
+        if not proposal:
+            raise ValueError(f"plan proposal not found: {proposal_id}")
+        return proposal
+
 
 def _working_note_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result = dict(row)
@@ -927,6 +1314,127 @@ def _dream_proposal_from_row(row: sqlite3.Row) -> dict[str, Any]:
     result["after"] = loads(result.pop("after_json"), {})
     result["decision"] = loads(result.pop("decision_json"), {})
     return result
+
+
+def _plan_item_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json"), {})
+    return result
+
+
+def _plan_proposal_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json"), {})
+    return result
+
+
+def _append_status_clause(clauses: list[str], params: list[Any], field: str, status: str | Iterable[str] | None) -> None:
+    if status is None:
+        return
+    if isinstance(status, str):
+        values = [status]
+    else:
+        values = [str(item or "").strip() for item in status]
+    clean_values = [value for value in values if value]
+    if not clean_values:
+        return
+    placeholders = ", ".join("?" for _ in clean_values)
+    clauses.append(f"{field} IN ({placeholders})")
+    params.extend(clean_values)
+
+
+def _plan_kind(value: Any) -> str:
+    clean = str(value or "").strip().casefold()
+    if clean not in {"goal", "todo"}:
+        raise ValueError(f"invalid plan kind: {value}")
+    return clean
+
+
+def _optional_plan_kind(value: Any) -> str | None:
+    clean = str(value or "").strip()
+    if not clean:
+        return None
+    return _plan_kind(clean)
+
+
+def _plan_status(kind: str, value: Any) -> str:
+    clean_kind = _plan_kind(kind)
+    default = "active" if clean_kind == "goal" else "open"
+    clean = str(value or default).strip().casefold()
+    allowed = {"active", "paused", "completed", "cancelled", "archived"} if clean_kind == "goal" else {
+        "open",
+        "doing",
+        "done",
+        "cancelled",
+        "archived",
+    }
+    if clean not in allowed:
+        raise ValueError(f"invalid {clean_kind} plan status: {value}")
+    return clean
+
+
+def _is_plan_done_status(kind: str, value: Any) -> bool:
+    try:
+        clean_kind = _plan_kind(kind)
+    except ValueError:
+        return False
+    clean_status = str(value or "").strip().casefold()
+    return clean_status == ("completed" if clean_kind == "goal" else "done")
+
+
+def _plan_priority(value: Any) -> str:
+    clean = str(value or "normal").strip().casefold()
+    if clean not in {"low", "normal", "high"}:
+        raise ValueError(f"invalid plan priority: {value}")
+    return clean
+
+
+def _plan_proposal_action(value: Any) -> str:
+    clean = str(value or "create").strip().casefold()
+    if clean not in {"create", "update"}:
+        raise ValueError(f"invalid plan proposal action: {value}")
+    return clean
+
+
+def _plan_proposal_status(value: Any) -> str:
+    clean = str(value or "pending").strip().casefold()
+    if clean == "applied":
+        clean = "accepted"
+    if clean not in {"pending", "accepted", "rejected"}:
+        raise ValueError(f"invalid plan proposal status: {value}")
+    return clean
+
+
+def _required_single_line(value: Any, field: str) -> str:
+    text = " ".join(str(value or "").split())
+    if not text:
+        raise ValueError(f"{field} is required")
+    return text
+
+
+def _clean_detail(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _scope_or_global(value: Any) -> str:
+    return str(value or "").strip() or "global"
+
+
+def _nullable_timestamp(value: float | int | str | None) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bounded_float(value: Any, *, default: float, minimum: float, maximum: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
 
 
 def _target_hash(explicit_hash: str | None, fallback: str) -> str:

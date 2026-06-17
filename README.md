@@ -109,7 +109,7 @@ curl -X POST http://127.0.0.1:8765/api/memory/search \
   -d '{"query": "user_123 简洁 实现进度更新", "limit": 10}'
 ```
 
-如果上层 agent 只有原始对话事件，还没有抽好 `facts`，可以使用事件摄入口。它会先记录 source event，再把明显长期的信息整理成候选记忆；一次性任务槽位回答会进入 ephemeral working note，不会直接变成长期记忆。
+如果上层 agent 只有原始对话事件，还没有抽好 `facts`，可以使用事件摄入口。它会先记录 source event，再把明显长期的信息整理成候选记忆；目标、待办和后续计划会进入候选计划；一次性任务槽位回答会进入 ephemeral working note，不会直接变成长期记忆。
 
 例如咖啡订单里用户只回答“冰美式”：
 
@@ -542,6 +542,114 @@ curl -X POST http://127.0.0.1:8765/api/memory/force-promote-candidate \
   -d '{"candidate_id": "mem_xxxxxxxxxxxxxxxx"}'
 ```
 
+## 计划项：Goal 和 Todo
+
+稳定记忆记录“用户是谁、偏好什么、长期事实是什么”；计划项记录“用户接下来想做什么、要跟进什么”。Mnemo 把 goal 和 todo 放在同一套 `plan_items` 里：`kind=goal` 表示更抽象的目标，`kind=todo` 表示可执行事项，todo 可以通过 `parent_id` 挂到某个 goal 下。
+
+手动写入计划是直接 CRUD；从 `ingest-event` 或 provider 抽取出来的计划会先进入 `plan_proposals`，需要人工或 WebUI 接受后才会进入正式计划。active/open/doing 的计划项会参与 `context` / `recall`，但已完成、取消、归档的计划不会注入提示词上下文。
+
+### CLI
+
+```bash
+# 增：直接创建一个 goal。
+mnemo-memory plan add \
+  --state-dir .mnemo-memory \
+  --kind goal \
+  --title "完成 Mnemo 计划模块" \
+  --detail "包含 SDK、HTTP、CLI、WebUI、测试和文档" \
+  --uid user_123 \
+  --priority high \
+  --json
+
+# 增：直接创建一个 todo，并挂到父 goal。
+mnemo-memory plan add \
+  --state-dir .mnemo-memory \
+  --kind todo \
+  --title "补齐 plan-list HTTP 测试" \
+  --parent-id plan_xxxxxxxxxxxxxxxx \
+  --uid user_123 \
+  --json
+
+# 查：全量计划，或按关键词 / UID / 状态查询。
+mnemo-memory plan list --state-dir .mnemo-memory --uid user_123 --json
+mnemo-memory plan list "HTTP 测试" --state-dir .mnemo-memory --uid user_123 --json
+mnemo-memory plan list --state-dir .mnemo-memory --status open --status doing --json
+
+# 读 / 改 / 完成 / 取消 / 归档。
+mnemo-memory plan read plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
+mnemo-memory plan update plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --status doing --json
+mnemo-memory plan complete plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
+mnemo-memory plan cancel plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --reason obsolete --json
+mnemo-memory plan archive plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
+
+# 查看、接受或拒绝候选计划。
+mnemo-memory plan proposals --state-dir .mnemo-memory --uid user_123 --json
+mnemo-memory plan apply-proposal plprop_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
+mnemo-memory plan reject-proposal plprop_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --reason not_a_real_plan --json
+```
+
+### HTTP
+
+```bash
+# 直接创建计划项。
+curl -X POST http://127.0.0.1:8765/api/memory/plan-create \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "kind": "goal",
+    "title": "完成 Mnemo 计划模块",
+    "detail": "包含 SDK、HTTP、CLI、WebUI、测试和文档",
+    "uid": "user_123",
+    "priority": "high"
+  }'
+
+# 全量查询，或按关键词 / UID 查询。
+curl -X POST http://127.0.0.1:8765/api/memory/plan-list \
+  -H 'Content-Type: application/json' \
+  -d '{"uid": "user_123", "limit": 100}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/plan-list \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "Mnemo 计划", "uid": "user_123", "limit": 20}'
+
+# 读 / 改 / 完成 / 取消 / 归档。
+curl -X POST http://127.0.0.1:8765/api/memory/plan-read \
+  -H 'Content-Type: application/json' \
+  -d '{"plan_id": "plan_xxxxxxxxxxxxxxxx"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/plan-update \
+  -H 'Content-Type: application/json' \
+  -d '{"plan_id": "plan_xxxxxxxxxxxxxxxx", "status": "doing"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/plan-complete \
+  -H 'Content-Type: application/json' \
+  -d '{"plan_id": "plan_xxxxxxxxxxxxxxxx"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/plan-cancel \
+  -H 'Content-Type: application/json' \
+  -d '{"plan_id": "plan_xxxxxxxxxxxxxxxx", "reason": "obsolete"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/plan-archive \
+  -H 'Content-Type: application/json' \
+  -d '{"plan_id": "plan_xxxxxxxxxxxxxxxx"}'
+
+# 事件摄入中的计划语言会先变成候选计划。
+curl -X POST http://127.0.0.1:8765/api/memory/ingest-event \
+  -H 'Content-Type: application/json' \
+  -d '{"text": "我计划下周完成 Mnemo 的计划页面", "scope": "user:user_123", "source": "agent:user_123"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/plan-proposals \
+  -H 'Content-Type: application/json' \
+  -d '{"status": "pending", "uid": "user_123"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/apply-plan-proposal \
+  -H 'Content-Type: application/json' \
+  -d '{"proposal_id": "plprop_xxxxxxxxxxxxxxxx"}'
+
+curl -X POST http://127.0.0.1:8765/api/memory/reject-plan-proposal \
+  -H 'Content-Type: application/json' \
+  -d '{"proposal_id": "plprop_xxxxxxxxxxxxxxxx", "reason": "not_a_real_plan"}'
+```
+
 ### Python
 
 ```python
@@ -626,6 +734,7 @@ mnemo-memory serve --state-dir .mnemo-memory
 
 - 搜索和查看稳定记忆页或候选记忆
 - 在“记忆”里按关键词、UID、类型和状态检索某个用户 scope 下的记忆库存；填写 UID 后，WebUI 新写入的 fact / observation 也会写到对应 `user:<uid>` scope
+- 在“计划”里查看、创建、完成、取消、归档 goal/todo，并接受或拒绝自动抽取出的候选计划
 - 添加 facts 和 observations
 - 通过审核门 promote 候选记忆，或 reject 候选记忆
 - tombstone 或 forget 选中的记忆项

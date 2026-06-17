@@ -125,6 +125,65 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             reason=str(body.get("reason") or "deleted"),
             delete_related=bool(body.get("delete_related", True)),
         )
+    if method in {"plan-create", "plan_create"}:
+        return client.plan_create(
+            kind=str(body.get("kind") or "todo"),
+            title=_required(body, "title"),
+            detail=str(body.get("detail") or ""),
+            scope=str(body.get("scope") or "global"),
+            uid=_optional(body.get("uid")),
+            parent_id=_optional(body.get("parent_id")),
+            status=_optional(body.get("status")),
+            priority=str(body.get("priority") or "normal"),
+            due_at=body.get("due_at"),
+            source=str(body.get("source") or "http"),
+            source_event_id=_optional(body.get("source_event_id")),
+            metadata=_metadata(body, "metadata"),
+        )
+    if method in {"plan-read", "plan_read"}:
+        return client.plan_read(_required(body, "plan_id"))
+    if method in {"plan-update", "plan_update"}:
+        kwargs: dict[str, Any] = {}
+        for key in ("kind", "title", "detail", "scope", "uid", "parent_id", "status", "priority", "due_at", "source", "source_event_id"):
+            if key in body:
+                kwargs[key] = body.get(key)
+        if "metadata" in body:
+            kwargs["metadata"] = _metadata(body, "metadata")
+        return client.plan_update(_required(body, "plan_id"), **kwargs)
+    if method in {"plan-list", "plan_list"}:
+        return client.plan_list(
+            kind=_optional(body.get("kind")),
+            status=_status_filter(body.get("status")),
+            scope=_optional(body.get("scope")),
+            uid=_optional(body.get("uid")),
+            query=str(body.get("query") or ""),
+            limit=int(body.get("limit") or 50),
+            include_archived=bool(body.get("include_archived", False)),
+        )
+    if method in {"plan-complete", "plan_complete"}:
+        return client.plan_complete(_required(body, "plan_id"))
+    if method in {"plan-cancel", "plan_cancel"}:
+        return client.plan_cancel(
+            _required(body, "plan_id"),
+            reason=str(body.get("reason") or "cancelled"),
+        )
+    if method in {"plan-archive", "plan_archive"}:
+        return client.plan_archive(_required(body, "plan_id"))
+    if method in {"plan-proposals", "plan_proposals"}:
+        status = _optional(body.get("status")) if "status" in body else "pending"
+        return client.plan_proposals(
+            status=status,
+            scope=_optional(body.get("scope")),
+            uid=_optional(body.get("uid")),
+            limit=int(body.get("limit") or 50),
+        )
+    if method in {"apply-plan-proposal", "apply_plan_proposal"}:
+        return client.apply_plan_proposal(_required(body, "proposal_id"))
+    if method in {"reject-plan-proposal", "reject_plan_proposal"}:
+        return client.reject_plan_proposal(
+            _required(body, "proposal_id"),
+            reason=str(body.get("reason") or "operator_rejected"),
+        )
     if method == "update":
         return client.update(
             facts=body.get("facts") if isinstance(body.get("facts"), list) else [],
@@ -355,6 +414,12 @@ def _optional_int(value: Any) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def _status_filter(value: Any) -> str | list[str] | None:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return _optional(value)
 
 
 def _metadata(body: dict[str, Any], key: str) -> dict[str, Any] | None:

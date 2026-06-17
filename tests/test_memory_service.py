@@ -159,6 +159,78 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(deleted["result"]["target_type"], "page")
             self.assertTrue(client.stable_read(page_id)["item"]["status"].startswith("tombstoned:"))
 
+    def test_client_cruds_plan_items_and_includes_active_plans_in_context(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            goal = client.plan_create(
+                kind="goal",
+                title="完成 Mnemo 计划模块",
+                detail="覆盖 SDK、HTTP、CLI、WebUI 和测试。",
+                uid="user_123",
+                priority="high",
+            )["item"]
+            todo = client.plan_create(
+                kind="todo",
+                title="补齐 plan-list HTTP 测试",
+                parent_id=goal["id"],
+                uid="user_123",
+            )["item"]
+            client.plan_create(kind="todo", title="另一个用户的计划", uid="user_456")
+
+            listed = client.plan_list(uid="user_123")
+            ids = {item["id"] for item in listed["items"]}
+            self.assertEqual(listed["kind"], "plan_item_list")
+            self.assertIn(goal["id"], ids)
+            self.assertIn(todo["id"], ids)
+            self.assertNotIn("另一个用户的计划", {item["title"] for item in listed["items"]})
+
+            updated = client.plan_update(todo["id"], status="doing", detail="HTTP dispatch 需要覆盖 query 和全量 list。")
+            self.assertEqual(updated["item"]["status"], "doing")
+
+            context = client.context("Mnemo 计划模块 HTTP 测试", limit=5)
+            plan_cards = [card for card in context["cards"] if card["type"] == "plan_item"]
+            self.assertTrue(plan_cards)
+            self.assertIn("计划", plan_cards[0]["title"])
+
+            completed = client.plan_complete(todo["id"])
+            self.assertEqual(completed["item"]["status"], "done")
+            cancelled = client.plan_cancel(goal["id"], reason="changed_direction")
+            self.assertEqual(cancelled["item"]["status"], "cancelled")
+            self.assertEqual(cancelled["item"]["metadata"]["cancel_reason"], "changed_direction")
+
+    def test_ingest_event_extracts_plan_proposal_before_direct_plan_write(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            result = client.ingest_event(
+                text="我计划下周完成 Mnemo 的计划页面。",
+                source="unit-test",
+                actor="user",
+                scope="user:demo",
+            )
+
+            self.assertEqual(result["kind"], "memory_event_ingest")
+            self.assertEqual(result["memory_candidates"], [])
+            self.assertEqual(result["working_notes"], [])
+            self.assertEqual(result["plan_proposals"][0]["proposal_status"], "pending")
+            self.assertEqual(result["plan_proposals"][0]["scope"], "user:demo")
+
+            listed = client.plan_list(uid="demo")
+            self.assertEqual(listed["items"], [])
+            applied = client.apply_plan_proposal(result["plan_proposals"][0]["id"])
+            self.assertEqual(applied["proposal"]["proposal_status"], "accepted")
+            self.assertEqual(applied["result"]["item"]["kind"], "goal")
+            self.assertEqual(client.plan_list(uid="demo")["count"], 1)
+
+            other = client.ingest_event(text="提醒我补齐计划模块 README。", source="unit-test", scope="user:demo")
+            rejected = client.reject_plan_proposal(other["plan_proposals"][0]["id"], reason="duplicate")
+            self.assertEqual(rejected["proposal"]["proposal_status"], "rejected")
+
     def test_client_traces_promoted_memory_to_source_event(self) -> None:
         from mnemo_memory import MemoryClient
 
@@ -373,6 +445,16 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("stable_update", schema["methods"])
         self.assertIn("stable_search", schema["methods"])
         self.assertIn("stable_delete", schema["methods"])
+        self.assertIn("plan_create", schema["methods"])
+        self.assertIn("plan_read", schema["methods"])
+        self.assertIn("plan_update", schema["methods"])
+        self.assertIn("plan_list", schema["methods"])
+        self.assertIn("plan_complete", schema["methods"])
+        self.assertIn("plan_cancel", schema["methods"])
+        self.assertIn("plan_archive", schema["methods"])
+        self.assertIn("plan_proposals", schema["methods"])
+        self.assertIn("apply_plan_proposal", schema["methods"])
+        self.assertIn("reject_plan_proposal", schema["methods"])
 
     def test_http_dispatch_lists_memory_items(self) -> None:
         from mnemo_memory import MemoryClient
@@ -458,6 +540,51 @@ class MemoryServiceTests(unittest.TestCase):
                 {"memory_id": page_id, "mode": "tombstone", "reason": "outdated"},
             )
             self.assertEqual(deleted["result"]["target_type"], "page")
+
+    def test_http_dispatch_cruds_plan_items_and_proposals(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.web import dispatch_memory_api
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            created = dispatch_memory_api(
+                client,
+                "plan-create",
+                {
+                    "kind": "goal",
+                    "title": "完成 HTTP 计划接口",
+                    "uid": "http",
+                    "priority": "high",
+                },
+            )
+            plan_id = created["item"]["id"]
+
+            listed = dispatch_memory_api(client, "plan-list", {"uid": "http", "limit": 20})
+            self.assertEqual(listed["kind"], "plan_item_list")
+            self.assertEqual(listed["items"][0]["id"], plan_id)
+
+            updated = dispatch_memory_api(client, "plan-update", {"plan_id": plan_id, "status": "paused"})
+            self.assertEqual(updated["item"]["status"], "paused")
+
+            completed = dispatch_memory_api(client, "plan-complete", {"plan_id": plan_id})
+            self.assertEqual(completed["item"]["status"], "completed")
+
+            ingest = dispatch_memory_api(
+                client,
+                "ingest-event",
+                {"text": "待办：补齐 HTTP plan proposal 测试。", "scope": "user:http", "source": "http-test"},
+            )
+            proposal_id = ingest["plan_proposals"][0]["id"]
+            proposals = dispatch_memory_api(client, "plan-proposals", {"uid": "http"})
+            self.assertEqual(proposals["proposals"][0]["id"], proposal_id)
+
+            rejected = dispatch_memory_api(
+                client,
+                "reject-plan-proposal",
+                {"proposal_id": proposal_id, "reason": "test_rejected"},
+            )
+            self.assertEqual(rejected["proposal"]["proposal_status"], "rejected")
 
     def test_http_dispatch_returns_memory_provenance(self) -> None:
         from mnemo_memory import MemoryClient
@@ -555,6 +682,43 @@ class MemoryServiceTests(unittest.TestCase):
                 ]
             )
             self.assertIn("update stable", updated["item"]["content"])
+
+    def test_cli_cruds_plan_items(self) -> None:
+        from mnemo_memory.interfaces.cli import main
+
+        def run_cli(argv: list[str]) -> dict[str, object]:
+            output = StringIO()
+            with redirect_stdout(output):
+                code = main(argv)
+            self.assertEqual(code, 0, output.getvalue())
+            return json.loads(output.getvalue())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            created = run_cli(
+                [
+                    "plan",
+                    "add",
+                    "--kind",
+                    "todo",
+                    "--title",
+                    "补齐 CLI 计划测试",
+                    "--uid",
+                    "cli",
+                    "--state-dir",
+                    tmp,
+                    "--json",
+                ]
+            )
+            plan_id = str(created["item"]["id"])
+
+            listed = run_cli(["plan", "list", "CLI", "--uid", "cli", "--state-dir", tmp, "--json"])
+            self.assertEqual(listed["items"][0]["id"], plan_id)
+
+            updated = run_cli(["plan", "update", plan_id, "--status", "doing", "--state-dir", tmp, "--json"])
+            self.assertEqual(updated["item"]["status"], "doing")
+
+            completed = run_cli(["plan", "complete", plan_id, "--state-dir", tmp, "--json"])
+            self.assertEqual(completed["item"]["status"], "done")
 
     def test_http_dispatch_force_promotes_candidate(self) -> None:
         from mnemo_memory import MemoryClient
@@ -941,6 +1105,19 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("彻底删除选中", app)
         self.assertIn("全选", app)
         self.assertIn("彻底删除", app)
+
+    def test_webui_exposes_plan_page_and_plan_proposals(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
+        app = source.read_text(encoding="utf-8")
+
+        self.assertIn('key: "plans"', app)
+        self.assertIn("function PlanPanel", app)
+        self.assertIn('callMemory<PlanListResult>("plan-list"', app)
+        self.assertIn('callMemory<PlanProposalsResult>("plan-proposals"', app)
+        self.assertIn('callMemory("plan-create"', app)
+        self.assertIn('callMemory("plan-complete"', app)
+        self.assertIn('callMemory("apply-plan-proposal"', app)
+        self.assertIn("候选计划", app)
 
     def test_webui_can_filter_memories_by_uid(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"

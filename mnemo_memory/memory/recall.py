@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .associations import metadata_alias_pages, metadata_association_links_for_page
-from .cards import _candidate_result, _context_card, _is_prompt_context_item, _page_result, _session_result
+from .cards import _candidate_result, _context_card, _is_prompt_context_item, _page_result, _plan_result, _session_result
 from .constants import PRIVATE_DELETE_TOMBSTONE_REASON
 from .query import MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
 from .utils import _is_tombstone_status, _keywords, _normalize_search_scope, _normalize_space
@@ -103,7 +103,15 @@ class MemoryRecallMixin:
                 _candidate_result(candidate)
                 for candidate in self.store.search_memory_candidates(query, limit=max(limit, 1))
             ]
-            batches.append((route["route"], query, [*pages, *alias_pages, *candidates]))
+            plan_items = [
+                _plan_result(item)
+                for item in self.store.search_plan_items(
+                    query,
+                    status=("active", "paused", "open", "doing"),
+                    limit=max(limit, 1),
+                )
+            ]
+            batches.append((route["route"], query, [*pages, *alias_pages, *candidates, *plan_items]))
         return fuse_ranked_batches(batches, plan=plan, limit=max(limit * 2, 1))
 
     def _search_session_routes(

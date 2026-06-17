@@ -258,6 +258,123 @@ class MemoryClient:
             "result": result,
         }
 
+    def plan_create(
+        self,
+        *,
+        kind: str,
+        title: str,
+        detail: str = "",
+        scope: str = "global",
+        uid: str | None = None,
+        parent_id: str | None = None,
+        status: str | None = None,
+        priority: str = "normal",
+        due_at: float | int | str | None = None,
+        source: str = "manual",
+        source_event_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._engine().create_plan_item(
+            kind=kind,
+            title=title,
+            detail=detail,
+            scope=_scope_from_uid(scope, uid),
+            parent_id=parent_id,
+            status=status,
+            priority=priority,
+            due_at=due_at,
+            source=source,
+            source_event_id=source_event_id,
+            metadata=metadata,
+        )
+
+    def plan_read(self, plan_id: str) -> dict[str, Any]:
+        return self._engine().read_plan_item(plan_id)
+
+    def plan_update(
+        self,
+        plan_id: str,
+        *,
+        kind: str | None = None,
+        title: str | None = None,
+        detail: str | None = None,
+        scope: str | None = None,
+        uid: str | None = None,
+        parent_id: str | None = None,
+        status: str | None = None,
+        priority: str | None = None,
+        due_at: float | int | str | None = None,
+        source: str | None = None,
+        source_event_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        fields: dict[str, Any] = {
+            "kind": kind,
+            "title": title,
+            "detail": detail,
+            "parent_id": parent_id,
+            "status": status,
+            "priority": priority,
+            "due_at": due_at,
+            "source": source,
+            "source_event_id": source_event_id,
+            "metadata": metadata,
+        }
+        if scope is not None or uid is not None:
+            fields["scope"] = _scope_from_uid(scope or "global", uid)
+        return self._engine().update_plan_item(plan_id, **fields)
+
+    def plan_list(
+        self,
+        *,
+        kind: str | None = None,
+        status: str | list[str] | tuple[str, ...] | None = None,
+        scope: str | None = None,
+        uid: str | None = None,
+        query: str = "",
+        limit: int = 50,
+        include_archived: bool = False,
+    ) -> dict[str, Any]:
+        return self._engine().list_plan_items(
+            kind=_optional_text(kind),
+            status=status,
+            scope=_optional_text(scope),
+            uid=_optional_text(uid),
+            query=query,
+            limit=_limit(limit),
+            include_archived=include_archived,
+        )
+
+    def plan_complete(self, plan_id: str) -> dict[str, Any]:
+        return self._engine().complete_plan_item(plan_id)
+
+    def plan_cancel(self, plan_id: str, reason: str = "cancelled") -> dict[str, Any]:
+        return self._engine().cancel_plan_item(plan_id, reason=reason)
+
+    def plan_archive(self, plan_id: str) -> dict[str, Any]:
+        return self._engine().archive_plan_item(plan_id)
+
+    def plan_proposals(
+        self,
+        *,
+        status: str | None = "pending",
+        scope: str | None = None,
+        uid: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        return self._engine().plan_proposals(
+            status=status,
+            scope=_optional_text(scope),
+            uid=_optional_text(uid),
+            limit=_limit(limit),
+        )
+
+    def apply_plan_proposal(self, proposal_id: str) -> dict[str, Any]:
+        return self._engine().apply_plan_proposal(proposal_id)
+
+    def reject_plan_proposal(self, proposal_id: str, reason: str = "operator_rejected") -> dict[str, Any]:
+        return self._engine().reject_plan_proposal(proposal_id, reason=reason)
+
     def update(
         self,
         *,
@@ -413,7 +530,31 @@ class MemoryClient:
 
         memory_candidates: list[dict[str, Any]] = []
         working_notes: list[dict[str, Any]] = []
+        plan_proposals: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
+
+        for proposal in extraction.get("plan_proposals", []):
+            normalized_proposal = _normalize_plan_proposal(
+                {
+                    **proposal,
+                    "scope": proposal.get("scope") or effective_scope,
+                    "source_event_id": event["id"],
+                    "metadata": {
+                        **(proposal.get("metadata") if isinstance(proposal.get("metadata"), dict) else {}),
+                        "event_id": event["id"],
+                        "event_type": event_type or "message",
+                    },
+                }
+            )
+            if not normalized_proposal["title"]:
+                skipped.append({"kind": "plan_proposal", "reason": "empty_title"})
+                continue
+            created = engine.create_plan_proposal(
+                **normalized_proposal,
+                source=source,
+                source_event_id=event["id"],
+            )
+            plan_proposals.append(created["proposal"])
 
         for fact in extraction["facts"]:
             normalized = _normalize_fact(
@@ -490,6 +631,7 @@ class MemoryClient:
             "extraction": extraction,
             "memory_candidates": memory_candidates,
             "working_notes": working_notes,
+            "plan_proposals": plan_proposals,
             "promotions": promotions,
             "skipped": skipped,
         }
@@ -794,6 +936,13 @@ def _scope_text(value: Any) -> str:
     return str(value or "").strip() or "global"
 
 
+def _scope_from_uid(scope: Any, uid: str | None) -> str:
+    clean_uid = str(uid or "").strip()
+    if clean_uid:
+        return clean_uid if clean_uid.casefold().startswith("user:") else f"user:{clean_uid}"
+    return _scope_text(scope)
+
+
 def _status_text(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -913,6 +1062,15 @@ def _extract_event_memory(
     scope: str,
     mission_id: str,
 ) -> dict[str, Any]:
+    plan_proposal = _heuristic_event_plan_proposal(text, scope=scope)
+    if plan_proposal:
+        return {
+            "kind": "event_memory_extraction",
+            "strategy": "heuristic",
+            "facts": [],
+            "observations": [],
+            "plan_proposals": [plan_proposal],
+        }
     fact = _heuristic_event_fact(text, scope=scope)
     if fact:
         return {
@@ -920,6 +1078,7 @@ def _extract_event_memory(
             "strategy": "heuristic",
             "facts": [fact],
             "observations": [],
+            "plan_proposals": [],
         }
     return {
         "kind": "event_memory_extraction",
@@ -933,20 +1092,26 @@ def _extract_event_memory(
                 "scope": f"mission:{mission_id}" if mission_id else scope,
             }
         ],
+        "plan_proposals": [],
     }
 
 
 def _merge_event_extractions(local: dict[str, Any], provider: dict[str, Any]) -> dict[str, Any]:
     facts = _dict_list(provider.get("facts"))
     observations = _dict_list(provider.get("observations"))
-    if not facts and not observations:
+    provider_plans = _dict_list(provider.get("plan_proposals")) or _dict_list(provider.get("plans"))
+    if not facts and not observations and not provider_plans:
         return local
+    local_facts = _dict_list(local.get("facts"))
+    local_observations = _dict_list(local.get("observations"))
+    local_plans = _dict_list(local.get("plan_proposals")) or _dict_list(local.get("plans"))
     return {
         "kind": "event_memory_extraction",
         "strategy": "provider",
         "fallback": local,
-        "facts": facts,
-        "observations": observations,
+        "facts": _dedupe_extraction_items([*facts, *local_facts], "claim"),
+        "observations": _dedupe_extraction_items([*observations, *local_observations], "content"),
+        "plan_proposals": _dedupe_extraction_items([*provider_plans, *local_plans], "title"),
     }
 
 
@@ -968,6 +1133,23 @@ def _heuristic_event_fact(text: str, *, scope: str) -> dict[str, Any] | None:
     return None
 
 
+def _heuristic_event_plan_proposal(text: str, *, scope: str) -> dict[str, Any] | None:
+    if not _has_plan_memory_marker(text):
+        return None
+    title = _plan_subject(text)
+    kind = "todo" if _has_todo_memory_marker(text) else "goal"
+    return {
+        "kind": kind,
+        "title": title,
+        "detail": _normalize_event_text(text),
+        "scope": scope,
+        "priority": "high" if _has_high_priority_marker(text) else "normal",
+        "confidence": 0.78,
+        "reason": "explicit_user_plan_or_todo",
+        "metadata": {"extraction": "heuristic"},
+    }
+
+
 def _has_preference_memory_marker(text: str) -> bool:
     lowered = f" {text.casefold()} "
     return any(marker in lowered for marker in _PREFERENCE_EVENT_MARKERS)
@@ -981,6 +1163,21 @@ def _has_future_memory_marker(text: str) -> bool:
 def _has_goal_memory_marker(text: str) -> bool:
     lowered = f" {text.casefold()} "
     return any(marker in lowered for marker in _GOAL_EVENT_MARKERS)
+
+
+def _has_plan_memory_marker(text: str) -> bool:
+    lowered = f" {text.casefold()} "
+    return any(marker in lowered for marker in (*_GOAL_EVENT_MARKERS, *_TODO_EVENT_MARKERS))
+
+
+def _has_todo_memory_marker(text: str) -> bool:
+    lowered = f" {text.casefold()} "
+    return any(marker in lowered for marker in _TODO_EVENT_MARKERS)
+
+
+def _has_high_priority_marker(text: str) -> bool:
+    lowered = f" {text.casefold()} "
+    return any(marker in lowered for marker in _HIGH_PRIORITY_MARKERS)
 
 
 def _preference_claim(text: str) -> str:
@@ -1013,6 +1210,14 @@ def _goal_subject(text: str) -> str:
     return result or _normalize_event_text(text)
 
 
+def _plan_subject(text: str) -> str:
+    result = _normalize_event_text(text).strip("。.!！?")
+    for marker in (*_PLAN_STRIP_MARKERS, *_GOAL_STRIP_MARKERS):
+        result = result.replace(marker, "")
+    result = _normalize_event_text(result).strip("，,。.!！?")
+    return result or _normalize_event_text(text)
+
+
 def _event_observation_text(text: str, context: list[dict[str, str]]) -> str:
     prompt = _last_assistant_prompt(context)
     if prompt:
@@ -1032,6 +1237,20 @@ def _dict_list(value: Any) -> list[dict[str, Any]]:
     return [item for item in value or [] if isinstance(item, dict)] if isinstance(value, list) else []
 
 
+def _dedupe_extraction_items(items: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        value = _normalize_event_text(item.get(key) or item.get("title") or item.get("claim") or item.get("content"))
+        fingerprint = value.casefold()
+        if fingerprint and fingerprint in seen:
+            continue
+        if fingerprint:
+            seen.add(fingerprint)
+        result.append(item)
+    return result
+
+
 def _normalize_fact(fact: Any) -> dict[str, Any]:
     if isinstance(fact, str):
         return {"claim": " ".join(fact.split()), "dimension": "context", "scope": "global", "confidence": 0.5}
@@ -1042,6 +1261,41 @@ def _normalize_fact(fact: Any) -> dict[str, Any]:
         "dimension": str(fact.get("dimension") or "context"),
         "scope": str(fact.get("scope") or "global"),
         "confidence": _confidence(fact.get("confidence"), default=0.5),
+    }
+
+
+def _normalize_plan_proposal(proposal: Any) -> dict[str, Any]:
+    if not isinstance(proposal, dict):
+        return {
+            "kind": "todo",
+            "title": "",
+            "detail": "",
+            "scope": "global",
+            "priority": "normal",
+            "confidence": 0.5,
+            "reason": "",
+            "metadata": {},
+        }
+    title = _normalize_event_text(proposal.get("title") or proposal.get("task") or proposal.get("goal") or "")
+    kind = str(proposal.get("kind") or ("todo" if proposal.get("task") else "goal")).strip().casefold()
+    if kind not in {"goal", "todo"}:
+        kind = "todo"
+    priority = str(proposal.get("priority") or "normal").strip().casefold()
+    if priority not in {"low", "normal", "high"}:
+        priority = "normal"
+    metadata = proposal.get("metadata") if isinstance(proposal.get("metadata"), dict) else {}
+    return {
+        "kind": kind,
+        "title": title,
+        "detail": _normalize_event_text(proposal.get("detail") or proposal.get("description") or ""),
+        "scope": str(proposal.get("scope") or "global"),
+        "parent_id": _optional_text(proposal.get("parent_id")),
+        "status": _optional_text(proposal.get("status")),
+        "priority": priority,
+        "due_at": proposal.get("due_at"),
+        "confidence": _confidence(proposal.get("confidence"), default=0.5),
+        "reason": _normalize_event_text(proposal.get("reason") or proposal.get("rationale") or ""),
+        "metadata": metadata,
     }
 
 
@@ -1199,6 +1453,33 @@ _GOAL_EVENT_MARKERS = (
     " learning ",
 )
 
+_TODO_EVENT_MARKERS = (
+    "待办",
+    "todo",
+    "to-do",
+    "todolist",
+    "要做",
+    "需要做",
+    "准备做",
+    "提醒我",
+    "记得",
+    "安排",
+    "任务",
+    " next step ",
+    " follow up ",
+    " remind me ",
+)
+
+_HIGH_PRIORITY_MARKERS = (
+    "紧急",
+    "尽快",
+    "马上",
+    "今天",
+    " priority high ",
+    " urgent ",
+    " asap ",
+)
+
 _PREFERENCE_STRIP_MARKERS = (
     "我",
     "以后",
@@ -1238,6 +1519,23 @@ _GOAL_STRIP_MARKERS = (
     "希望",
     "准备",
     "会",
+)
+
+_PLAN_STRIP_MARKERS = (
+    "我的",
+    "请",
+    "帮我",
+    "待办是",
+    "待办",
+    "todo",
+    "to-do",
+    "需要做",
+    "要做",
+    "准备做",
+    "提醒我",
+    "记得",
+    "安排",
+    "任务是",
 )
 
 

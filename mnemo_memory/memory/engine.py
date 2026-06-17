@@ -19,6 +19,7 @@ from .curation import MemoryCurationMixin
 from .dream import MemoryDreamMixin
 from .health import MemoryHealthMixin
 from .learning import MemoryLearningMixin
+from .plans import MemoryPlanMixin
 from .recall import MemoryRecallMixin
 
 
@@ -27,6 +28,7 @@ class MemoryEngine(
     MemoryRecallMixin,
     MemoryLearningMixin,
     MemoryCurationMixin,
+    MemoryPlanMixin,
     MemoryHealthMixin,
     MemoryDreamMixin,
 ):

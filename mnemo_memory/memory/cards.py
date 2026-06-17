@@ -109,6 +109,25 @@ def _session_result(message: dict[str, Any]) -> dict[str, Any]:
         "created_at": message["created_at"],
     }
 
+def _plan_result(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "plan_item",
+        "id": item["id"],
+        "kind": item["kind"],
+        "title": item["title"],
+        "detail": item.get("detail") or "",
+        "scope": item.get("scope") or "global",
+        "status": item.get("status") or "open",
+        "priority": item.get("priority") or "normal",
+        "parent_id": item.get("parent_id"),
+        "due_at": item.get("due_at"),
+        "source": item.get("source"),
+        "source_event_id": item.get("source_event_id"),
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+        "completed_at": item.get("completed_at"),
+    }
+
 def _candidate_title(candidate: dict[str, Any]) -> str:
     claim = _normalize_space(candidate.get("claim", ""))
     dimension = normalize_memory_dimension(candidate.get("dimension"), fallback="context")
@@ -146,6 +165,21 @@ def _context_card(item: dict[str, Any]) -> dict[str, Any]:
             "role": item.get("role"),
             "created_at": item.get("created_at"),
         }
+    if item["type"] == "plan_item":
+        summary_parts = [item.get("detail") or ""]
+        if item.get("due_at"):
+            summary_parts.append(f"due_at={item.get('due_at')}")
+        return {
+            "id": item["id"],
+            "type": "plan_item",
+            "title": f"{item.get('kind') or 'plan'}: {item.get('title') or item['id']}",
+            "summary": _truncate("；".join(part for part in summary_parts if part) or item.get("title", "")),
+            "scope": item.get("scope"),
+            "status": item.get("status"),
+            "priority": item.get("priority"),
+            "parent_id": item.get("parent_id"),
+            "due_at": item.get("due_at"),
+        }
     return {
         "id": item["id"],
         "type": "candidate",
@@ -164,6 +198,8 @@ def _is_prompt_context_item(item: dict[str, Any]) -> bool:
         return status == "draft"
     if item_type == "session_message":
         return not _is_tombstone_status(status)
+    if item_type == "plan_item":
+        return status in {"active", "paused", "open", "doing"}
     return False
 
 def _snapshot_item(page: dict[str, Any]) -> dict[str, Any]:

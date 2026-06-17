@@ -67,8 +67,9 @@ class OpenAICompatibleMemoryMaintainer:
                     "role": "system",
                     "content": (
                         "You classify one conversation event for long-term memory. Return JSON only with "
-                        "facts and observations arrays. Facts are durable user preferences, identity, goals, "
-                        "boundaries, or project context. Observations are task-local or uncertain context. "
+                        "facts, observations, and plan_proposals arrays. Facts are durable user preferences, "
+                        "identity, boundaries, or project context. Plan proposals are user goals, todos, "
+                        "follow-ups, reminders, or intended future work. Observations are task-local or uncertain context. "
                         "Do not infer a durable preference from a single slot-filling answer such as a coffee "
                         "choice unless the user explicitly says it is a default, habit, usual preference, or "
                         "future instruction."
@@ -91,6 +92,16 @@ class OpenAICompatibleMemoryMaintainer:
                                 "retention": "ephemeral|memory_candidate",
                                 "dimension": "context",
                                 "scope": "memory scope",
+                            },
+                            "plan_proposal_schema": {
+                                "kind": "goal|todo",
+                                "title": "short user-visible plan title",
+                                "detail": "optional supporting detail",
+                                "scope": "memory scope",
+                                "priority": "low|normal|high",
+                                "due_at": "optional unix timestamp when explicit",
+                                "confidence": "0.0-1.0",
+                                "reason": "concise extraction reason",
                             },
                         }
                     ),

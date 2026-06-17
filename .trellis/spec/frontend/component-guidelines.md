@@ -45,6 +45,9 @@
 - Settings provider tiles and the Provider select must stay visually synchronized before save.
 - Ten-dimensional memory inspection lives in the memory Wiki view through progressive disclosure: `/api/memory/ontology` shows L1 coverage, `/api/memory/dimension` shows L2 clipped cards, and `/api/memory/item` shows L3 compact evidence plus markdown for a selected item.
 - Memory inspection should prioritize a wiki-browser flow: readable counts and coverage, a dimension index, a scannable item list, and a selected Markdown detail pane. Decorative 3D/orbit visuals should not be part of the primary memory browsing flow.
+- In the current memory-only WebUI, plan management is a first-class navigation page labeled Plans/计划. It must call `/api/memory/plan-list`, `/api/memory/plan-create`, `/api/memory/plan-complete`, `/api/memory/plan-cancel`, `/api/memory/plan-archive`, `/api/memory/plan-proposals`, `/api/memory/apply-plan-proposal`, and `/api/memory/reject-plan-proposal`.
+- The plan page must keep confirmed plan items separate from proposal review: manual create writes a `goal` or `todo` directly, while extracted `plan_proposals` require explicit accept/reject before becoming visible plan items.
+- The plan page must respect the same UID filter as memory inventory and must wrap long titles, reasons, ids, and details without overflowing cards.
 - Settings actions should save narrow settings only; ordinary user tasks still route through the single composer.
 - Assistant Markdown must be rendered by DOM builder helpers, never by assigning model output to `innerHTML`.
 - Streaming assistant deltas should render as safe Markdown DOM from `dataset.rawText`; final `assistant.message` or `run.completed` re-renders the same source.
@@ -74,6 +77,7 @@
 | Web auth login | Shows a password gate before the app shell and does not expose protected assets without a valid cookie | `tests/test_web.py` |
 | Feishu onboarding controls | Show QR onboarding state and masked channel status without browser-persisted secrets | `tests/test_web.py` |
 | Memory compass page | Loads compact L1 coverage, then L2/L3 memory detail and markdown on demand without raw secrets | `tests/test_web.py` |
+| Plan page | Exposes plan CRUD and proposal review through `/api/memory/plan-*` calls without mixing plan items into memory candidate/page detail reads | `tests/test_memory_service.py` |
 | Markdown assistant message | Renders headings, lists, code, emphasis, and links with DOM-created nodes | Asset behavior in `tests/test_web.py` |
 | Activity upsert | Merges action lifecycle events into a stable row | Asset behavior in `tests/test_web.py` |
 | Internal learning housekeeping | Suppresses `learning_discard` and learning-tone status from visible activity | Asset behavior in `tests/test_web.py` |
@@ -120,6 +124,7 @@
 - For Feishu onboarding, assert the asset calls `/api/channels/feishu/onboard/start` and `/api/channels/feishu/onboard/poll`, renders masked status, and does not add localStorage keys for channel secrets.
 - For skills/tools catalogs, assert the asset calls `/api/catalog`, renders Skills and Tools views, and never exposes skill bodies or raw tool schemas.
 - For memory ontology, assert `/api/memory/ontology`, `/api/memory/dimension`, `/api/memory/item`, and memory Wiki assets expose progressive L1/L2/L3 disclosure with in-page markdown detail viewing.
+- For plan management, assert the asset calls `plan-list`, `plan-create`, `plan-complete`, `plan-proposals`, and `apply-plan-proposal`, and filters `plan_item` search matches out of memory item detail reads.
 - For Markdown, assert DOM builder helpers exist, `innerHTML` is absent, and Markdown CSS classes are present.
 - For Memory Wiki Markdown, assert frontmatter helpers and `.markdown-frontmatter` styling are present so the raw metadata block remains visible.
 - For activity rows, assert `activityRows`, `activityActionId`, and compact tool-card upsert behavior are present.
