@@ -7,6 +7,7 @@ from typing import Any
 
 from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
+from .associations import discover_orphan_associations
 from .cards import _compact_candidate, _compact_page, _compact_run, _compact_tombstone, _compact_working_note
 from .constants import DREAM_LATEST_FILENAME, DREAM_REPORTS_DIRNAME
 from .utils import _bounded_confidence, _float_or_zero, _normalize_space, _truncate
@@ -67,6 +68,14 @@ class MemoryDreamMixin:
             else []
         )
         health = self.health_report(limit=min(10, bounded_limit))
+        orphan_ids = [
+            card["page_id"]
+            for card in health.get("review_cards", [])
+            if card.get("kind") == "connect_orphan" and card.get("page_id")
+        ]
+        association_suggestions = discover_orphan_associations(
+            self.store, orphan_ids, limit=bounded_limit
+        ) if orphan_ids else []
         draft_candidate_ids = [item["id"] for item in candidates if item.get("status") == "draft"]
         note_ids = [item["id"] for item in notes]
         return {
@@ -81,6 +90,7 @@ class MemoryDreamMixin:
                 "tombstones": len(tombstones),
                 "recent_runs": len(recent_runs),
                 "review_cards": len(health.get("review_cards", [])),
+                "association_suggestions": len(association_suggestions),
             },
             "note_ids": note_ids,
             "candidate_ids": draft_candidate_ids,
@@ -89,6 +99,7 @@ class MemoryDreamMixin:
             "changed_pages": pages,
             "tombstones": tombstones,
             "recent_runs": recent_runs,
+            "association_suggestions": association_suggestions,
             "health": {
                 "counts": health.get("counts", {}),
                 "score": health.get("score", {}),
@@ -103,6 +114,20 @@ class MemoryDreamMixin:
             focus.append({"kind": "ingest_w0", "count": counts["w0_pending"], "tool": "memory_write_candidate"})
         if counts.get("draft_candidates"):
             focus.append({"kind": "review_drafts", "count": counts["draft_candidates"], "tool": "memory_read"})
+        conflict_candidates = [
+            c for c in delta.get("memory_candidates", [])
+            if str(c.get("status") or "").startswith("needs_review:conflict")
+        ]
+        if conflict_candidates:
+            focus.append({
+                "kind": "resolve_conflicts",
+                "count": len(conflict_candidates),
+                "tool": "memory_reconcile_conflict",
+                "candidates": [
+                    {"candidate_id": c["id"], "claim": c.get("claim", "")[:120]}
+                    for c in conflict_candidates[:5]
+                ],
+            })
         if counts.get("review_cards"):
             focus.append({"kind": "memory_health", "count": counts["review_cards"], "tool": "memory_health_report"})
         health_counts = delta.get("health", {}).get("counts", {}) if isinstance(delta.get("health"), dict) else {}
@@ -115,6 +140,12 @@ class MemoryDreamMixin:
                     "tool": "memory_decay_stale_pages",
                 }
             )
+        if counts.get("association_suggestions"):
+            focus.append({
+                "kind": "connect_orphans",
+                "count": counts["association_suggestions"],
+                "tool": "memory_link_pages",
+            })
         if counts.get("tombstones"):
             focus.append({"kind": "respect_tombstones", "count": counts["tombstones"], "tool": "memory_search"})
         allowed_tools = [
@@ -174,6 +205,7 @@ class MemoryDreamMixin:
         plan: dict[str, Any] | None = None,
         advanced_dreaming: bool = False,
         execution_policy: str = "semi_auto",
+        deterministic_fallback: bool = False,
     ) -> dict[str, Any]:
         started_at = time.time()
         if since is None:
@@ -188,8 +220,10 @@ class MemoryDreamMixin:
                 for index, action in enumerate(dream_actions[: max(1, int(limit))])
             ]
         report_id = new_id("dream")
-        action_execution = (
-            self.apply_dream_actions(
+        execution_mode = "model_required"
+        action_execution = None
+        if dream_actions:
+            action_execution = self.apply_dream_actions(
                 dream_actions,
                 limit=limit,
                 min_confidence=min_confidence,
@@ -197,9 +231,34 @@ class MemoryDreamMixin:
                 advanced_dreaming=advanced_dreaming,
                 execution_policy=execution_policy,
             )
-            if dream_actions
-            else None
-        )
+            execution_mode = "model_actions"
+        elif deterministic_fallback:
+            consolidation = self.dream_consolidate(
+                limit=limit,
+                min_confidence=min_confidence,
+                candidate_ids=set(delta.get("candidate_ids", [])),
+                note_ids=set(delta.get("note_ids", [])),
+            )
+            # Auto-link discovered associations for orphan pages
+            auto_links: list[dict[str, Any]] = []
+            for suggestion in delta.get("association_suggestions", []):
+                if suggestion.get("weight", 0) >= 0.5:
+                    try:
+                        link_result = self._apply_dream_link_action(
+                            f"auto_link_{suggestion['source_id']}_{suggestion['target_id']}",
+                            {
+                                "source_id": suggestion["source_id"],
+                                "target_id": suggestion["target_id"],
+                                "relation": suggestion.get("relation", "discovered_association"),
+                                "weight": suggestion.get("weight", 0.5),
+                            },
+                        )
+                        link_result["reason"] = suggestion.get("reason", "keyword_overlap")
+                        auto_links.append(link_result)
+                    except (ValueError, KeyError):
+                        continue
+            action_execution = _consolidation_as_action_result(consolidation, auto_links=auto_links)
+            execution_mode = "deterministic_fallback"
         snapshot = self.compile_l1_snapshot(limit=50)
         execution = {
             "actions": action_execution or {
@@ -223,7 +282,7 @@ class MemoryDreamMixin:
             "delta": delta,
             "plan": dream_plan,
             "execution": {
-                "mode": "model_actions" if action_execution else "model_required",
+                "mode": execution_mode,
                 "result": execution,
             },
             "health_after": self.health_report(limit=min(10, max(1, int(limit)))),
@@ -534,6 +593,7 @@ class MemoryDreamMixin:
     def _apply_rewrite_proposal(self, arguments: dict[str, Any]) -> dict[str, Any]:
         page_id = _proposal_page_id(arguments)
         page = _require_page(self.store, page_id)
+        self._snapshot_page_before_mutation(page, change_reason="dream_rewrite", changed_by="dream")
         next_title = _normalize_space(str(arguments.get("title") or arguments.get("proposed_title") or page.get("title") or ""))
         next_content = _normalize_space(str(arguments.get("content") or arguments.get("proposed_content") or page.get("content") or ""))
         if not next_content:
@@ -560,6 +620,7 @@ class MemoryDreamMixin:
         if not target_id:
             raise ValueError("merge proposal requires target_page_id")
         target = _require_page(self.store, target_id)
+        self._snapshot_page_before_mutation(target, change_reason="dream_merge", changed_by="dream")
         source_ids = _proposal_source_page_ids(arguments, exclude={target_id})
         next_content = _normalize_space(str(arguments.get("content") or arguments.get("proposed_content") or ""))
         if not next_content:
@@ -1065,3 +1126,65 @@ def _report_completed_at(report: dict[str, Any] | None) -> float | None:
 def _safe_report_id(report_id: str) -> str:
     normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(report_id or "")).strip("._-")
     return normalized or new_id("dream")
+
+
+def _consolidation_as_action_result(
+    consolidation: dict[str, Any],
+    *,
+    auto_links: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    promoted = consolidation.get("promoted", [])
+    rejected = consolidation.get("rejected", [])
+    skipped = consolidation.get("skipped", [])
+    conflicts = consolidation.get("conflicts", [])
+    applied: list[dict[str, Any]] = []
+    for item in promoted:
+        applied.append({
+            "action_id": f"auto_promote_{item.get('candidate_id', '')}",
+            "tool": "memory_promote_candidate",
+            "candidate_id": item.get("candidate_id"),
+            "status": "promoted",
+            "decision": "promoted",
+            "page_id": item.get("page_id"),
+            "page_action": item.get("page_action"),
+            "reason": item.get("reason") or "deterministic_fallback",
+        })
+    for item in rejected:
+        applied.append({
+            "action_id": f"auto_reject_{item.get('candidate_id', '')}",
+            "tool": "memory_reject_candidate",
+            "candidate_id": item.get("candidate_id"),
+            "status": item.get("status"),
+            "reason": item.get("reason") or "deterministic_fallback",
+        })
+    skipped_items: list[dict[str, Any]] = []
+    for item in [*skipped, *conflicts]:
+        skipped_items.append({
+            "action_id": f"auto_skip_{item.get('candidate_id', '')}",
+            "tool": "memory_promote_candidate",
+            "status": "skipped",
+            "reason": item.get("reason") or item.get("status") or "deterministic_fallback",
+        })
+    w0 = consolidation.get("w0", {})
+    w0_applied = [
+        {
+            "action_id": f"auto_ingest_{item.get('note_id', '')}",
+            "tool": "memory_write_candidate",
+            "status": "candidate_created",
+            "note_id": item.get("note_id"),
+            "candidate_id": item.get("candidate_id"),
+        }
+        for item in w0.get("created", [])
+    ]
+    all_applied = [*w0_applied, *applied, *(auto_links or [])]
+    return {
+        "kind": "dream_memory_action_result",
+        "mode": "deterministic_fallback",
+        "counts": {
+            "requested": len(all_applied) + len(skipped_items),
+            "applied": len(all_applied),
+            "skipped": len(skipped_items),
+        },
+        "applied": all_applied,
+        "skipped": skipped_items,
+    }

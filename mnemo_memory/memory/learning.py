@@ -15,6 +15,7 @@ from .quality import (
     score_memory_quality,
 )
 from .query import normalize_memory_dimension
+from .profile import compile_l0_profile
 from .safety import append_safety_evidence, scan_memory_candidate
 from .snapshot import compile_l1_snapshot_payload
 from .utils import (
@@ -161,6 +162,10 @@ class MemoryLearningMixin:
 
         return {"created": created, "skipped": skipped}
 
+    def compile_l0(self, *, limit: int = 50) -> dict[str, Any]:
+        pages = self.store.list_memory_pages(status="active", limit=max(1, int(limit)))
+        return compile_l0_profile(pages)
+
     def compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any]:
         pages = self.store.list_memory_pages(status="active", limit=max(0, int(limit)))
         materialize_memory_pages(self.store.state_dir, pages)
@@ -203,6 +208,11 @@ class MemoryLearningMixin:
             **result,
         }
 
+    def _snapshot_page_before_mutation(self, page: dict[str, Any], *, change_reason: str, changed_by: str = "system") -> None:
+        snapshot_fn = getattr(self.store, "snapshot_page_version", None)
+        if snapshot_fn and page and page.get("id"):
+            snapshot_fn(str(page["id"]), change_reason=change_reason, changed_by=changed_by)
+
     def _promote_candidate_unchecked(self, candidate_id: str) -> dict[str, Any]:
         candidate = self._get_candidate(candidate_id)
         if not candidate:
@@ -221,6 +231,7 @@ class MemoryLearningMixin:
         confidence = _merged_page_confidence(target_page, candidate)
         metadata = _merged_page_metadata(target_page, candidate, dimension=str(route["dimension"]), topic=str(route["topic"]))
         if target_page:
+            self._snapshot_page_before_mutation(target_page, change_reason=f"promote_merge:{candidate_id}", changed_by="dream_consolidate")
             page_id = str(target_page["id"])
             update_page = getattr(self.store, "update_memory_page", None)
             if update_page:
@@ -435,12 +446,32 @@ class MemoryLearningMixin:
             else:
                 skipped.append(result)
 
+        # Auto-resolve conflict candidates with high confidence advantage
+        conflict_candidates = [
+            c for c in self.store.list_memory_candidates(status=None, limit=limit * 2)
+            if str(c.get("status") or "").startswith("needs_review:conflict")
+        ]
+        resolved: list[dict[str, Any]] = []
+        for candidate in conflict_candidates[:limit]:
+            conflict_page = self._conflict_page_for_candidate(candidate)
+            if not conflict_page:
+                continue
+            candidate_conf = float(candidate.get("confidence") or 0.0)
+            page_conf = float(conflict_page.get("confidence") or 0.0)
+            if candidate_conf >= min_confidence and candidate_conf - page_conf >= 0.2:
+                result = self.resolve_conflict(candidate["id"], resolution="keep_new")
+                result["decision"] = "conflict_resolved"
+                result["auto_reason"] = "candidate_confidence_advantage"
+                resolved.append(result)
+                promoted.append(result)
+
         return {
             "w0": w0,
             "promoted": promoted,
             "rejected": rejected,
             "skipped": skipped,
             "conflicts": conflicts,
+            "resolved": resolved,
             "snapshot": self.compile_l1_snapshot(limit=50),
         }
 
@@ -623,7 +654,94 @@ class MemoryLearningMixin:
             "status": status,
             "conflict_page_id": page["id"],
             "reason": "conflicts_with_active_memory",
+            "conflict_card": _build_conflict_card(candidate, page),
         }
+
+    def resolve_conflict(
+        self,
+        candidate_id: str,
+        *,
+        resolution: str,
+    ) -> dict[str, Any]:
+        candidate = self._get_candidate(candidate_id)
+        if not candidate:
+            raise ValueError(f"candidate not found: {candidate_id}")
+        if not str(candidate.get("status") or "").startswith("needs_review:conflict"):
+            raise ValueError(f"candidate {candidate_id} is not in conflict status")
+
+        conflict_page = self._conflict_page_for_candidate(candidate)
+        resolution = resolution.strip().casefold().replace("-", "_")
+
+        if resolution == "keep_new":
+            if conflict_page:
+                self.tombstone_memory(
+                    conflict_page["id"],
+                    f"superseded_by_candidate:{candidate_id}",
+                    target_type="page",
+                )
+            self.store.update_memory_candidate_status(candidate_id, "draft")
+            promoted = self._promote_candidate_unchecked(candidate_id)
+            return {
+                "kind": "conflict_resolution",
+                "resolution": "keep_new",
+                "candidate_id": candidate_id,
+                "superseded_page_id": conflict_page["id"] if conflict_page else None,
+                **promoted,
+            }
+        elif resolution == "keep_old":
+            result = self.reject_candidate(candidate_id, "conflict_resolved:keep_old")
+            return {
+                "kind": "conflict_resolution",
+                "resolution": "keep_old",
+                "candidate_id": candidate_id,
+                "kept_page_id": conflict_page["id"] if conflict_page else None,
+                **result,
+            }
+        elif resolution == "keep_both":
+            self.store.update_memory_candidate_status(candidate_id, "draft")
+            self.store.update_memory_candidate_status(
+                candidate_id,
+                "draft",
+            )
+            promoted = self._promote_candidate_unchecked(candidate_id)
+            return {
+                "kind": "conflict_resolution",
+                "resolution": "keep_both",
+                "candidate_id": candidate_id,
+                "existing_page_id": conflict_page["id"] if conflict_page else None,
+                **promoted,
+            }
+        else:
+            raise ValueError(f"invalid conflict resolution: {resolution} (expected keep_new, keep_old, keep_both)")
+
+    def _conflict_page_for_candidate(self, candidate: dict[str, Any]) -> dict[str, Any] | None:
+        list_links = getattr(self.store, "list_memory_links", None)
+        if list_links:
+            for link in list_links(candidate["id"]):
+                if link.get("relation") == "conflicts_with":
+                    page = self._get_page(str(link.get("target_id") or ""))
+                    if page and page.get("status") == "active":
+                        return page
+        return None
+
+
+def _build_conflict_card(candidate: dict[str, Any], page: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "kind": "conflict_decision_card",
+        "candidate_id": candidate.get("id"),
+        "candidate_claim": _truncate(_normalize_space(str(candidate.get("claim") or "")), limit=200),
+        "candidate_dimension": candidate.get("dimension"),
+        "candidate_confidence": candidate.get("confidence"),
+        "page_id": page.get("id"),
+        "page_title": _truncate(_normalize_space(str(page.get("title") or "")), limit=120),
+        "page_content": _truncate(_normalize_space(str(page.get("content") or "")), limit=200),
+        "page_confidence": page.get("confidence"),
+        "options": [
+            {"resolution": "keep_new", "description": "Replace existing memory with the new candidate"},
+            {"resolution": "keep_old", "description": "Reject the new candidate, keep existing memory"},
+            {"resolution": "keep_both", "description": "Keep both as separate memories (no conflict)"},
+        ],
+    }
 
 
 def _candidate_page_topic(dimension: str, claim: str) -> str:

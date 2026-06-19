@@ -5,6 +5,7 @@ from typing import Any
 from .associations import metadata_alias_pages, metadata_association_links_for_page
 from .cards import _candidate_result, _context_card, _is_prompt_context_item, _page_result, _plan_result, _session_result
 from .constants import PRIVATE_DELETE_TOMBSTONE_REASON
+from .embedding import vector_search_pages
 from .query import MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
 from .utils import _is_tombstone_status, _keywords, _normalize_search_scope, _normalize_space
 
@@ -112,6 +113,14 @@ class MemoryRecallMixin:
                 )
             ]
             batches.append((route["route"], query, [*pages, *alias_pages, *candidates, *plan_items]))
+
+        embedding_provider = getattr(self, "_embedding_provider", None)
+        if embedding_provider is not None:
+            vector_results = vector_search_pages(
+                self.store, embedding_provider, plan.original, limit=max(limit, 1)
+            )
+            if vector_results:
+                batches.append(("vector", plan.original, vector_results))
         return fuse_ranked_batches(batches, plan=plan, limit=max(limit * 2, 1))
 
     def _search_session_routes(

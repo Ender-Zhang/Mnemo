@@ -4,7 +4,7 @@ import re
 from typing import Any, Iterable
 
 from .query import CONTENT_DIMENSIONS, normalize_memory_dimension
-from .utils import _bounded_confidence, _normalize_space, _truncate
+from .utils import _bounded_confidence, _keywords, _normalize_space, _truncate
 
 
 ASSOCIATION_SCAN_LIMIT = 1000
@@ -471,3 +471,77 @@ def _reference_terms(value: Any) -> list[str]:
         for token in re.findall(r"[\w]+", _normalize_reference(value), flags=re.UNICODE)
         if len(token) >= 2
     ]
+
+
+DISCOVERY_MIN_OVERLAP = 2
+DISCOVERY_MIN_KEYWORD_LEN = 3
+
+
+def discover_orphan_associations(
+    store: Any,
+    orphan_page_ids: list[str] | set[str],
+    *,
+    all_pages: list[dict[str, Any]] | None = None,
+    min_overlap: int = DISCOVERY_MIN_OVERLAP,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Find potential associations for orphan pages based on keyword overlap.
+
+    Returns a list of suggested links with source_id, target_id, relation,
+    weight, and reason fields.
+    """
+    if not orphan_page_ids:
+        return []
+
+    pages = all_pages if all_pages is not None else _active_pages(store, limit=ASSOCIATION_SCAN_LIMIT)
+    pages_by_id: dict[str, dict[str, Any]] = {}
+    keywords_by_id: dict[str, set[str]] = {}
+    for page in pages:
+        page_id = str(page.get("id") or "")
+        if not page_id or page.get("status") != "active":
+            continue
+        pages_by_id[page_id] = page
+        text = f"{page.get('title', '')} {page.get('content', '')}"
+        keywords_by_id[page_id] = set(_keywords(text))
+
+    orphan_ids = set(orphan_page_ids) & set(pages_by_id.keys())
+    non_orphan_ids = set(pages_by_id.keys()) - orphan_ids
+
+    suggestions: list[dict[str, Any]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+
+    for orphan_id in sorted(orphan_ids):
+        orphan_kw = keywords_by_id.get(orphan_id, set())
+        if not orphan_kw:
+            continue
+        scored: list[tuple[int, str]] = []
+        for target_id in non_orphan_ids:
+            if target_id == orphan_id:
+                continue
+            target_kw = keywords_by_id.get(target_id, set())
+            overlap = orphan_kw & target_kw
+            significant = {w for w in overlap if len(w) >= DISCOVERY_MIN_KEYWORD_LEN}
+            if len(significant) >= min_overlap:
+                scored.append((len(significant), target_id))
+        scored.sort(key=lambda x: -x[0])
+        for overlap_count, target_id in scored[:3]:
+            pair = (orphan_id, target_id)
+            if pair in seen_pairs or (target_id, orphan_id) in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            overlap_words = keywords_by_id[orphan_id] & keywords_by_id[target_id]
+            significant = sorted(w for w in overlap_words if len(w) >= DISCOVERY_MIN_KEYWORD_LEN)[:5]
+            weight = min(0.8, 0.3 + 0.1 * overlap_count)
+            suggestions.append({
+                "source_id": orphan_id,
+                "target_id": target_id,
+                "relation": "discovered_association",
+                "weight": round(weight, 3),
+                "reason": f"keyword overlap: {', '.join(significant)}",
+                "source_title": _truncate(str(pages_by_id[orphan_id].get("title") or ""), limit=80),
+                "target_title": _truncate(str(pages_by_id[target_id].get("title") or ""), limit=80),
+            })
+            if len(suggestions) >= max(1, int(limit)):
+                return suggestions
+
+    return suggestions

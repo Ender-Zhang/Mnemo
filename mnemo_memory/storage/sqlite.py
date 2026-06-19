@@ -155,6 +155,32 @@ class StateStore:
                     decided_at REAL,
                     decision_reason TEXT
                 );
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    id TEXT PRIMARY KEY,
+                    target_id TEXT NOT NULL,
+                    target_type TEXT NOT NULL,
+                    content_hash TEXT NOT NULL,
+                    embedding BLOB NOT NULL,
+                    model TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    created_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS memory_page_versions (
+                    id TEXT PRIMARY KEY,
+                    page_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    scope TEXT NOT NULL DEFAULT 'global',
+                    confidence REAL NOT NULL DEFAULT 0.7,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    change_reason TEXT NOT NULL DEFAULT '',
+                    changed_by TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_embeddings_target ON memory_embeddings(target_id);
+                CREATE INDEX IF NOT EXISTS idx_memory_page_versions_page ON memory_page_versions(page_id, version DESC);
                 CREATE INDEX IF NOT EXISTS idx_memory_candidates_status ON memory_candidates(status);
                 CREATE INDEX IF NOT EXISTS idx_memory_pages_status ON memory_pages(status);
                 CREATE INDEX IF NOT EXISTS idx_memory_links_source ON memory_links(source_id);
@@ -1274,6 +1300,135 @@ class StateStore:
         if not proposal:
             raise ValueError(f"plan proposal not found: {proposal_id}")
         return proposal
+
+    # ── Embedding storage ──
+
+    def store_embedding(
+        self,
+        target_id: str,
+        target_type: str,
+        content_hash: str,
+        embedding_bytes: bytes,
+        model: str,
+        dimensions: int,
+    ) -> str:
+        import struct
+
+        embedding_id = new_id("emb")
+        now = time.time()
+        with self.connect() as conn:
+            conn.execute("DELETE FROM memory_embeddings WHERE target_id = ?", (target_id,))
+            conn.execute(
+                """
+                INSERT INTO memory_embeddings(id, target_id, target_type, content_hash, embedding, model, dimensions, created_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (embedding_id, target_id, target_type, content_hash, embedding_bytes, model, dimensions, now),
+            )
+        return embedding_id
+
+    def get_embedding(self, target_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT id, target_id, target_type, content_hash, embedding, model, dimensions, created_at FROM memory_embeddings WHERE target_id = ?",
+                (target_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+    def list_embeddings(self, target_type: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            if target_type:
+                rows = conn.execute(
+                    "SELECT id, target_id, target_type, content_hash, embedding, model, dimensions, created_at FROM memory_embeddings WHERE target_type = ? ORDER BY created_at DESC LIMIT ?",
+                    (target_type, max(0, int(limit))),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT id, target_id, target_type, content_hash, embedding, model, dimensions, created_at FROM memory_embeddings ORDER BY created_at DESC LIMIT ?",
+                    (max(0, int(limit)),),
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_embedding(self, target_id: str) -> int:
+        with self.connect() as conn:
+            cursor = conn.execute("DELETE FROM memory_embeddings WHERE target_id = ?", (target_id,))
+        return cursor.rowcount
+
+    # ── Page version history ──
+
+    def snapshot_page_version(
+        self,
+        page_id: str,
+        *,
+        change_reason: str = "",
+        changed_by: str = "",
+    ) -> str | None:
+        page = self.get_memory_page(page_id)
+        if not page:
+            return None
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM memory_page_versions WHERE page_id = ?",
+                (page_id,),
+            ).fetchone()
+            next_version = (row[0] if row else 0) + 1
+            version_id = new_id("pgver")
+            metadata = page.get("metadata") if isinstance(page.get("metadata"), dict) else {}
+            conn.execute(
+                """
+                INSERT INTO memory_page_versions(id, page_id, version, title, content, scope, confidence, status, metadata_json, change_reason, changed_by, created_at)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    version_id,
+                    page_id,
+                    next_version,
+                    str(page.get("title") or ""),
+                    str(page.get("content") or ""),
+                    str(page.get("scope") or "global"),
+                    float(page.get("confidence") or 0.7),
+                    str(page.get("status") or "active"),
+                    dumps(metadata),
+                    str(change_reason or ""),
+                    str(changed_by or ""),
+                    time.time(),
+                ),
+            )
+        return version_id
+
+    def list_page_versions(self, page_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, page_id, version, title, content, scope, confidence, status, metadata_json, change_reason, changed_by, created_at
+                FROM memory_page_versions
+                WHERE page_id = ?
+                ORDER BY version DESC
+                LIMIT ?
+                """,
+                (page_id, max(0, int(limit))),
+            ).fetchall()
+        return [_page_version_from_row(row) for row in rows]
+
+    def get_page_version(self, version_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, page_id, version, title, content, scope, confidence, status, metadata_json, change_reason, changed_by, created_at
+                FROM memory_page_versions
+                WHERE id = ?
+                """,
+                (version_id,),
+            ).fetchone()
+        return _page_version_from_row(row) if row else None
+
+
+def _page_version_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    result = dict(row)
+    result["metadata"] = loads(result.pop("metadata_json", None), {})
+    return result
 
 
 def _working_note_from_row(row: sqlite3.Row) -> dict[str, Any]:

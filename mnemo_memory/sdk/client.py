@@ -36,6 +36,7 @@ class MemoryClient:
             "version": "mnemo_memory.context.v1",
             "intent": intent,
             "cards": cards,
+            "profile": engine.compile_l0(),
             "snapshot": engine.load_l1_snapshot(),
         }
 
@@ -646,6 +647,19 @@ class MemoryClient:
             return {"kind": "memory_item", "type": "page", "item": page}
         raise ValueError(f"memory not found: {memory_id}")
 
+    def versions(self, memory_id: str, *, limit: int = 20) -> dict[str, Any]:
+        store = self._store()
+        list_versions = getattr(store, "list_page_versions", None)
+        if not list_versions:
+            return {"kind": "memory_versions", "memory_id": memory_id, "versions": []}
+        versions = list_versions(memory_id, limit=max(1, min(50, int(limit))))
+        return {
+            "kind": "memory_versions",
+            "memory_id": memory_id,
+            "count": len(versions),
+            "versions": versions,
+        }
+
     def links(self, memory_id: str, *, direction: str = "both") -> dict[str, Any]:
         store = self._store()
         return {
@@ -684,6 +698,9 @@ class MemoryClient:
             "candidates": candidates,
             "events": events,
         }
+
+    def profile(self, *, limit: int = 50) -> dict[str, Any]:
+        return self._engine().compile_l0(limit=limit)
 
     def snapshot(self, *, compile: bool = False, limit: int = 50) -> dict[str, Any]:
         engine = self._engine()
@@ -805,6 +822,9 @@ class MemoryClient:
     def reject_candidate(self, candidate_id: str, reason: str) -> dict[str, Any]:
         return self._engine().reject_candidate(candidate_id, reason)
 
+    def resolve_conflict(self, candidate_id: str, *, resolution: str) -> dict[str, Any]:
+        return self._engine().resolve_conflict(candidate_id, resolution=resolution)
+
     def tombstone(
         self,
         memory_id: str,
@@ -850,20 +870,27 @@ class MemoryClient:
         config: ConfigOverrides | None = None,
     ) -> dict[str, Any]:
         engine = self._engine()
+        deterministic_fallback = False
         if use_provider and actions is None:
-            from ..providers.openai import OpenAICompatibleMemoryMaintainer
+            try:
+                from ..providers.openai import OpenAICompatibleMemoryMaintainer
 
-            resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
-            maintainer = OpenAICompatibleMemoryMaintainer(resolved)
-            delta = engine.collect_dream_delta(limit=limit)
-            plan = engine.build_dream_plan(delta, limit=limit, advanced_dreaming=advanced_dreaming)
-            actions = maintainer.propose_actions(delta=delta, plan=plan)
+                resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
+                maintainer = OpenAICompatibleMemoryMaintainer(resolved)
+                delta = engine.collect_dream_delta(limit=limit)
+                plan = engine.build_dream_plan(delta, limit=limit, advanced_dreaming=advanced_dreaming)
+                actions = maintainer.propose_actions(delta=delta, plan=plan)
+            except (ValueError, OSError):
+                deterministic_fallback = True
+        elif not use_provider and actions is None:
+            deterministic_fallback = True
         return engine.dream_maintenance(
             limit=limit,
             min_confidence=min_confidence,
             actions=actions,
             advanced_dreaming=advanced_dreaming,
             execution_policy=execution_policy,
+            deterministic_fallback=deterministic_fallback,
         )
 
     def dream_status(self, *, limit: int = 20) -> dict[str, Any]:

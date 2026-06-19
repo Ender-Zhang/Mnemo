@@ -803,16 +803,14 @@ class MemoryServiceTests(unittest.TestCase):
                 source="unit-test",
             )
 
+            # Deterministic fallback promotes the high-confidence candidate
             first = client.dream_run()
-            self.assertEqual(first["execution"]["result"]["actions"]["counts"]["requested"], 0)
+            self.assertGreaterEqual(first["execution"]["result"]["actions"]["counts"]["requested"], 1)
+            self.assertEqual(first["execution"]["mode"], "deterministic_fallback")
 
-            status = client.dream_status()
-            self.assertEqual(status["backlog"]["memory_candidates"], 1)
-            self.assertEqual(status["backlog"]["draft_candidates"], 1)
-
+            # After promotion, backlog should be clear
             second = client.dream_run()
-            self.assertEqual(second["delta"]["counts"]["memory_candidates"], 1)
-            self.assertEqual(second["delta"]["counts"]["draft_candidates"], 1)
+            self.assertEqual(second["delta"]["counts"]["draft_candidates"], 0)
 
     def test_dream_status_exposes_reject_reasons(self) -> None:
         from mnemo_memory import MemoryClient

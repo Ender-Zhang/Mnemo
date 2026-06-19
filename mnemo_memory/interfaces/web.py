@@ -313,6 +313,18 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             _required(body, "proposal_id"),
             reason=str(body.get("reason") or "operator_rejected"),
         )
+    if method in {"resolve-conflict", "resolve_conflict"}:
+        return client.resolve_conflict(
+            _required(body, "candidate_id"),
+            resolution=_required(body, "resolution"),
+        )
+    if method == "versions":
+        return client.versions(
+            _required(body, "memory_id"),
+            limit=int(body.get("limit") or 20),
+        )
+    if method == "profile":
+        return client.profile(limit=int(body.get("limit") or 50))
     raise KeyError(method)
 
 
