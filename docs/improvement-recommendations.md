@@ -19,7 +19,7 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 | 闭环性 | ✅ 改善 | 已新增「记忆预览 / Agent 视角」面板（调用 `context`/`recall`），可直接看到 agent 会拿到什么 |
 | 全自动化 | ✅ 改善 | 已支持「本地确定性整理」开关：无 provider 也能自动 promote/去重/拒低质（仍有轮询/常驻等 P1 项待办） |
 | 易用性 | ⚠️ 中 | 术语门槛高、首启无引导、中英混排、危险操作确认不一致（P1/P2） |
-| 好用性（UI） | ✅ 改善 | 每次操作改为按需局部刷新（不再 13 请求全量）；暗色模式/raw JSON/拆分仍待办 |
+| 好用性（UI） | ✅ 改善 | 按需局部刷新（不再 13 请求全量）+ 结构化视图替代 raw JSON + `main.tsx` 首轮拆分；暗色模式仍待办 |
 | 配置便利性 | ✅ 改善 | 已移除误导的 auth UI 并加可信网络提示；「生效配置」视图、连通测试、阈值可配仍待办 |
 | 内核能力 | ✅ 强 | 写入/审核/检索/维护/溯源链路完整，设计有深度 |
 
@@ -131,14 +131,18 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **建议**：引入查询缓存（React Query / SWR）做按需失效，或改成**局部刷新 + 乐观更新**（promote 后只更新该条和候选列表，而不是全量）。这是 UI 体验最划算的一处优化。
 - **涉及**：`webui/src/main.tsx:478 refresh`，以及所有 `await refresh({ clearNotice: false })` 调用点。
 
-### 4.2 【P1】2900 行单文件 + 几乎无组件测试
+### 4.2 【P1 · ✅ 已修复】2900 行单文件 + 几乎无组件测试
 
-- **现状**：`webui/src/main.tsx` 单文件 2923 行，约 25 个组件 + 工具函数全在里面；测试只有 `candidateFilters`/`providerSettings`/`promotionMessages` 三个纯函数文件。
+> **已修复（首轮拆分）**：从 `main.tsx`（~3171 行）抽出 `types.ts`（全部类型）、`format.ts`（纯工具/格式化/审核派生/快照/计划 helpers）、`components/shared.tsx`（JsonBlock/StatusBadge/StatusDot/EmptyState）、`components/structured.tsx`（结构化视图）。`main.tsx` 降至 ~2610 行，App 与有状态面板仍在其中。后续可继续抽 `hooks/`（如 `useMemoryApi`）和把更多展示型组件移入 `components/`。
+
+- **现状（原）**：`webui/src/main.tsx` 单文件 2923 行，约 25 个组件 + 工具函数全在里面；测试只有 `candidateFilters`/`providerSettings`/`promotionMessages` 三个纯函数文件。
 - **建议**：拆分为 `components/`、`hooks/`（如 `useMemoryApi`）、`api/`、`types.ts`；为关键交互组件补测试。利于维护与后续协作。
 
-### 4.3 【P1】大量 raw JSON 直接当成品界面
+### 4.3 【P1 · ✅ 已修复】大量 raw JSON 直接当成品界面
 
-- **现状**：高级模式下 Health、Dream Status、Snapshot、Tombstones、Metadata、Links 全是 `JsonBlock`（`JSON.stringify` + `<pre>`）。
+> **已修复**：新增 `components/structured.tsx`——`HealthView`（健康卡片结构化）、`SnapshotView`（pointers/hubs + 元信息）、`LinksView`（关联边）、`KeyValueGrid`（metadata/概要键值表），以及可折叠的 `DeveloperJson`。MaintenancePanel、MemoryDetail、TombstonePanel、OperationsQueue 的 Health/Snapshot/Links/Metadata 已改为结构化展示；原始 JSON 收进 `DeveloperJson`「开发者详情」作为兜底。Dream Status、Tombstones 列表、提案 Before/After 这类任意 diff 仍保留为可折叠 JSON。
+
+- **现状（原）**：高级模式下 Health、Dream Status、Snapshot、Tombstones、Metadata、Links 全是 `JsonBlock`（`JSON.stringify` + `<pre>`）。
 - **问题**：这是调试视图不是产品视图，信息密度高但可读性差。
 - **建议**：把 health cards、snapshot 的 pointers/hubs、links 渲染成结构化卡片/列表；raw JSON 折叠到「开发者详情」里作为兜底。
 
@@ -218,7 +222,7 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 | 1.2 | 向量检索状态可见 + 重建索引入口 |
 | 2.2 / 2.3 | backlog 阈值触发；独立常驻 auto-dream 方案 |
 | 3.1 / 3.2 / 3.3 | 首启引导；术语帮助 + 统一中英文案；UID/scope 解耦提示 |
-| 4.2 / 4.3 / 4.4 | 拆分 `main.tsx`；结构化展示替代 raw JSON；颜色 token 化 + 暗色模式 |
+| 4.2 ✅ / 4.3 ✅ / 4.4 | 拆分 `main.tsx`（已完成首轮）；结构化展示替代 raw JSON（已完成）；颜色 token 化 + 暗色模式（待办） |
 | 5.2 / 5.3 | 「生效配置/来源」视图；provider 连通测试 |
 
 ### P2 — 体验打磨
@@ -256,7 +260,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 | 4.1 局部刷新 | `refresh({ parts })` 切片刷新，21 处 mutation 改为按需刷新 | `webui/src/main.tsx` |
 | 5.1 删除误导 auth UI | 移除前端 token 状态丸/输入框/请求头/本地存储，加可信网络提示；后端兼容字段保留 | `webui/src/main.tsx` |
 
-剩余 P1/P2 项（向量检索状态、首启引导、术语帮助、拆分 `main.tsx`、暗色模式、结构化替代 raw JSON、生效配置视图、provider 连通测试、阈值可配、事件触发/常驻调度等）仍按 §6 路线图推进。
+**2026-06-20 续：P1 中的 4.2（拆分 `main.tsx` 首轮）与 4.3（结构化替代 raw JSON）已完成**，新增 `webui/src/types.ts`、`format.ts`、`components/shared.tsx`、`components/structured.tsx`；source-contract 测试改为读整棵 webui src 树。
+
+剩余 P1/P2 项（向量检索状态、首启引导、术语帮助、暗色模式 + 颜色 token 化、生效配置视图、provider 连通测试、阈值可配、事件触发/常驻调度、`hooks/` 进一步拆分等）仍按 §6 路线图推进。
 
 ---
 
