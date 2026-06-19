@@ -8,13 +8,17 @@ import {
   ChevronRight,
   ClipboardList,
   Database,
+  Edit3,
   FileClock,
   Gauge,
+  GitMerge,
+  History,
   Home,
   Link2,
   ListTodo,
   Loader2,
   Lock,
+  MessageSquare,
   Play,
   Plus,
   RefreshCcw,
@@ -23,6 +27,7 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  User,
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -41,6 +46,8 @@ import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
 import type { AutoDreamFormState, AutoDreamStatusResult, ProviderConfigResult, ProviderFormState } from "./providerSettings";
 import type { PromotionReviewResult } from "./promotionMessages";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type ApiEnvelope<T> = {
   method?: string;
@@ -64,6 +71,21 @@ type MemoryItem = {
   updated_at?: number;
   evidence?: unknown[];
   metadata?: Record<string, unknown>;
+  conflict_card?: ConflictCard | null;
+};
+
+type ConflictCard = {
+  candidate_id?: string;
+  existing_page_id?: string;
+  candidate_claim?: string;
+  existing_content?: string;
+  options?: ConflictOption[];
+};
+
+type ConflictOption = {
+  resolution: string;
+  label: string;
+  description?: string;
 };
 
 type MemoryListResult = {
@@ -222,6 +244,28 @@ type TombstonesResult = {
   tombstones?: MemoryTombstone[];
 };
 
+type L0Profile = {
+  kind?: string;
+  summary?: string;
+  dimensions?: Record<string, unknown>;
+  page_count?: number;
+};
+
+type PageVersion = {
+  id?: string;
+  page_id?: string;
+  change_reason?: string;
+  changed_by?: string;
+  snapshot_data?: Record<string, unknown>;
+  created_at?: number;
+};
+
+type VersionsResult = {
+  kind?: string;
+  memory_id?: string;
+  versions?: PageVersion[];
+};
+
 type PlanItem = {
   id: string;
   kind: "goal" | "todo" | string;
@@ -284,12 +328,14 @@ type PlanFormState = {
   dueAt: string;
 };
 
-type TabKey = "overview" | "memories" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
+type TabKey = "memories" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
 
 type Notice = {
   tone: "ok" | "warn" | "error";
   text: string;
 };
+
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "memories", label: "记忆工作台", icon: Home },
@@ -303,7 +349,14 @@ const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
 const defaultNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings"]);
 const advancedNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings", "candidates", "tombstones"]);
 
+const DIMENSIONS = [
+  "identity", "cognition", "values", "goals", "preferences",
+  "relationships", "context", "history", "patterns", "boundaries"
+];
+
 const defaultApiBase = window.location.origin;
+
+// ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("memories");
@@ -314,10 +367,15 @@ function App() {
   const [notice, setNotice] = useState<Notice | null>(null);
   const [advancedMode, setAdvancedMode] = useState(() => localStorage.getItem("mnemo.advancedMode") === "true");
   const [composerOpen, setComposerOpen] = useState(false);
+  const [ingestOpen, setIngestOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editorItem, setEditorItem] = useState<MemoryItem | null>(null);
   const [query, setQuery] = useState("");
   const [uidFilter, setUidFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [kindFilter, setKindFilter] = useState<"all" | "candidate" | "page">("page");
+  const [searchScope, setSearchScope] = useState<string>("memory");
+  const [dimensionFilter, setDimensionFilter] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [inventory, setInventory] = useState<MemoryItem[]>([]);
   const [searchItems, setSearchItems] = useState<MemoryItem[]>([]);
@@ -329,10 +387,6 @@ function App() {
   const [dreamStatus, setDreamStatus] = useState<DreamStatusResult | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotResult | null>(null);
   const [tombstones, setTombstones] = useState<MemoryTombstone[]>([]);
-  const [planItems, setPlanItems] = useState<PlanItem[]>([]);
-  const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
-  const [planForm, setPlanForm] = useState<PlanFormState>(() => emptyPlanForm());
-  const [planRejectReason, setPlanRejectReason] = useState("operator_rejected");
   const [selectedTombstoneIds, setSelectedTombstoneIds] = useState<Set<string>>(() => new Set());
   const [factText, setFactText] = useState("");
   const [observationText, setObservationText] = useState("");
@@ -344,18 +398,34 @@ function App() {
   const [autoDreamStatus, setAutoDreamStatus] = useState<AutoDreamStatusResult | null>(null);
   const [autoDreamForm, setAutoDreamForm] = useState<AutoDreamFormState>(() => emptyAutoDreamForm());
   const [rejectReason, setRejectReason] = useState("not_useful");
+  const [planItems, setPlanItems] = useState<PlanItem[]>([]);
+  const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
+  const [planForm, setPlanForm] = useState<PlanFormState>(() => emptyPlanForm());
+  const [planRejectReason, setPlanRejectReason] = useState("operator_rejected");
   const [proposalRejectReason, setProposalRejectReason] = useState("operator_rejected");
   const [tombstoneReason, setTombstoneReason] = useState("manual_curation");
   const [dreamStartedAtMs, setDreamStartedAtMs] = useState<number | null>(null);
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
+  const [profile, setProfile] = useState<L0Profile | null>(null);
+  const [versions, setVersions] = useState<PageVersion[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
+  // pagination
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
 
   const authed = authToken.trim().length > 0;
   const activeItems = useMemo(() => {
-    if (searchMode) return searchItems;
-    return [...inventory].sort(compareMemoryItems);
-  }, [inventory, searchItems, searchMode]);
+    let items = searchMode ? searchItems : [...inventory].sort(compareMemoryItems);
+    if (dimensionFilter) {
+      items = items.filter((item) => item.dimension === dimensionFilter);
+    }
+    return items;
+  }, [inventory, searchItems, searchMode, dimensionFilter]);
+  const pagedItems = useMemo(() => activeItems.slice(page * pageSize, (page + 1) * pageSize), [activeItems, page]);
+  const totalPages = Math.max(1, Math.ceil(activeItems.length / pageSize));
   const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
   const candidateReviewItems = useMemo(() => filterCandidateReviewItems(candidates), [candidates]);
+  const conflictCandidates = useMemo(() => candidates.filter((c) => String(c.status || "").includes("conflict")), [candidates]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
   const [dreamProposals, setDreamProposals] = useState<DreamProposal[]>([]);
   const dreamElapsedS = dreamStartedAtMs === null ? null : Math.max(0, (clockNowMs - dreamStartedAtMs) / 1000);
@@ -419,11 +489,12 @@ function App() {
         providerResult,
         autoDreamResult,
         proposalResult,
+        profileResult,
         planResult,
         planProposalResult
       ] = await Promise.all([
         requestJson<Record<string, unknown>>("/api/health"),
-        callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 50 }),
+        callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 200 }),
         callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }),
         callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
         callMemory<SnapshotResult>("snapshot", { limit: 50 }),
@@ -431,6 +502,7 @@ function App() {
         callMemory<ProviderConfigResult>("provider-config", {}),
         callMemory<AutoDreamStatusResult>("auto-dream-status", {}),
         callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 }),
+        callMemory<L0Profile>("profile", {}).catch(() => null),
         callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }),
         callMemory<PlanProposalsResult>("plan-proposals", { status: "pending", uid: scopedUid, limit: 50 })
       ]);
@@ -447,6 +519,7 @@ function App() {
       setDreamProposals(proposalResult.proposals || []);
       setPlanItems(planResult.items || []);
       setPlanProposals(planProposalResult.proposals || []);
+      setProfile(profileResult);
       try {
         setHealth(await callMemory<MemoryHealthResult>("health", { limit: 20 }));
       } catch {
@@ -466,43 +539,25 @@ function App() {
   const refreshInventory = useCallback(async (options: { clearNotice?: boolean } = {}) => {
     setSearchItems([]);
     setSearchMode(false);
+    setPage(0);
     await refresh(options);
   }, [refresh]);
 
+  useEffect(() => { localStorage.setItem("mnemo.apiBase", apiBase); }, [apiBase]);
   useEffect(() => {
-    localStorage.setItem("mnemo.apiBase", apiBase);
-  }, [apiBase]);
-
-  useEffect(() => {
-    if (authToken.trim()) {
-      localStorage.setItem("mnemo.authToken", authToken);
-    } else {
-      localStorage.removeItem("mnemo.authToken");
-    }
+    if (authToken.trim()) { localStorage.setItem("mnemo.authToken", authToken); }
+    else { localStorage.removeItem("mnemo.authToken"); }
   }, [authToken]);
-
-  useEffect(() => {
-    localStorage.setItem("mnemo.useProvider", useProvider ? "true" : "false");
-  }, [useProvider]);
-
-  useEffect(() => {
-    localStorage.setItem("mnemo.advancedDreaming", advancedDreaming ? "true" : "false");
-  }, [advancedDreaming]);
-
-  useEffect(() => {
-    localStorage.setItem("mnemo.advancedMode", advancedMode ? "true" : "false");
-  }, [advancedMode]);
+  useEffect(() => { localStorage.setItem("mnemo.useProvider", useProvider ? "true" : "false"); }, [useProvider]);
+  useEffect(() => { localStorage.setItem("mnemo.advancedDreaming", advancedDreaming ? "true" : "false"); }, [advancedDreaming]);
+  useEffect(() => { localStorage.setItem("mnemo.advancedMode", advancedMode ? "true" : "false"); }, [advancedMode]);
 
   useEffect(() => {
     const allowedTabs = advancedMode ? advancedNavKeys : defaultNavKeys;
-    if (!allowedTabs.has(activeTab)) {
-      setActiveTab("memories");
-    }
+    if (!allowedTabs.has(activeTab)) { setActiveTab("memories"); }
   }, [activeTab, advancedMode]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh]);
 
   useEffect(() => {
     if (dreamStartedAtMs === null) return undefined;
@@ -512,50 +567,36 @@ function App() {
   }, [dreamStartedAtMs]);
 
   useEffect(() => {
-    if (activeTab !== "memories" && activeTab !== "overview") {
-      return;
-    }
-    if (activeItems.length === 0) {
-      if (selected) {
-        setSelected(null);
-      }
-      return;
-    }
+    if (activeTab !== "memories") return;
+    if (activeItems.length === 0) { if (selected) setSelected(null); return; }
     const selectedStillVisible = selected ? activeItems.some((item) => item.id === selected.id && item.type === selected.type) : false;
-    if (!selectedStillVisible) {
-      setSelected(activeItems[0]);
-    }
+    if (!selectedStillVisible) setSelected(activeItems[0]);
   }, [activeItems, activeTab, selected]);
 
   useEffect(() => {
-    const visibleIds = new Set(tombstones.map((tombstone) => tombstone.id));
-    setSelectedTombstoneIds((previous) => {
-      const next = new Set([...previous].filter((id) => visibleIds.has(id)));
-      return next.size === previous.size ? previous : next;
+    const visibleIds = new Set(tombstones.map((t) => t.id));
+    setSelectedTombstoneIds((prev) => {
+      const next = new Set([...prev].filter((id) => visibleIds.has(id)));
+      return next.size === prev.size ? prev : next;
     });
   }, [tombstones]);
+
+  // ─── Actions ─────────────────────────────────────────────────────────────
 
   const searchMemory = async () => {
     const cleanQuery = query.trim();
     const cleanUid = uidFilter.trim();
-    if (!cleanQuery && !cleanUid) {
-      await refreshInventory();
-      return;
-    }
+    if (!cleanQuery && !cleanUid) { await refreshInventory(); return; }
     if (cleanUid && !cleanQuery) {
       await refreshInventory({ clearNotice: false });
       setOk(`UID 过滤已应用：${cleanUid}`);
       return;
     }
     setLoading(true);
+    setPage(0);
     try {
       if (cleanUid) {
-        const result = await callMemory<MemoryListResult>("list", {
-          kind: kindFilter,
-          status: statusFilter || null,
-          uid: cleanUid,
-          limit: 50
-        });
+        const result = await callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: cleanUid, limit: 200 });
         const mapped = (result.items || []).filter((item) => itemMatchesQuery(item, cleanQuery));
         setSearchMode(true);
         setSearchItems(mapped);
@@ -563,11 +604,7 @@ function App() {
         setOk(`UID 检索完成：${mapped.length} 条结果`);
         return;
       }
-      const result = await callMemory<MemorySearchResult>("search", {
-        query: cleanQuery,
-        scope: "memory",
-        limit: 30
-      });
+      const result = await callMemory<MemorySearchResult>("search", { query: cleanQuery, scope: searchScope, limit: 30 });
       const mapped = (result.matches || [])
         .map(searchMatchToItem)
         .filter((item): item is MemoryItem => Boolean(item))
@@ -588,6 +625,8 @@ function App() {
     setSelected(item);
     setLinks(null);
     setProvenance(null);
+    setVersions([]);
+    setShowVersions(false);
     try {
       const [readResult, linkResult, provenanceResult] = await Promise.all([
         callMemory<MemoryReadResult>("read", { memory_id: item.id }),
@@ -597,6 +636,16 @@ function App() {
       setSelected({ ...readResult.item, type: readResult.type });
       setLinks(linkResult);
       setProvenance(provenanceResult);
+    } catch (error) {
+      setError(error);
+    }
+  };
+
+  const loadVersions = async (memoryId: string) => {
+    try {
+      const result = await callMemory<VersionsResult>("versions", { memory_id: memoryId, limit: 20 });
+      setVersions(result.versions || []);
+      setShowVersions(true);
     } catch (error) {
       setError(error);
     }
@@ -625,16 +674,95 @@ function App() {
     }
   };
 
+  const ingestEvent = async (form: IngestEventForm) => {
+    setLoading(true);
+    try {
+      await callMemory("ingest-event", {
+        text: form.text,
+        source: form.source || "webui",
+        actor: form.actor || undefined,
+        event_type: form.eventType || "message",
+        scope: form.scope || undefined,
+        auto_promote: form.autoPromote,
+        use_provider: form.useProvider
+      });
+      setIngestOpen(false);
+      setOk("事件已录入，已提取记忆候选");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stableCreate = async (form: PageEditorForm) => {
+    setLoading(true);
+    try {
+      await callMemory("stable-create", {
+        title: form.title,
+        content: form.content,
+        scope: form.scope || "global",
+        confidence: parseFloat(form.confidence) || 0.7,
+        dimension: form.dimension || undefined
+      });
+      setEditorOpen(false);
+      setEditorItem(null);
+      setOk("稳定记忆页已创建");
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const stableUpdate = async (memoryId: string, form: PageEditorForm) => {
+    setLoading(true);
+    try {
+      await callMemory("stable-update", {
+        memory_id: memoryId,
+        title: form.title,
+        content: form.content,
+        scope: form.scope || undefined,
+        confidence: parseFloat(form.confidence) || undefined,
+        dimension: form.dimension || undefined
+      });
+      setEditorOpen(false);
+      setEditorItem(null);
+      setOk("稳定记忆页已更新");
+      await refresh({ clearNotice: false });
+      // reload detail
+      if (selected?.id === memoryId) {
+        await readMemory({ ...selected, id: memoryId } as MemoryItem);
+      }
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resolveConflict = async (candidateId: string, resolution: string) => {
+    setLoading(true);
+    try {
+      await callMemory("resolve-conflict", { candidate_id: candidateId, resolution });
+      setOk(`冲突已解决：${resolution}`);
+      await refresh({ clearNotice: false });
+    } catch (error) {
+      setError(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const promoteCandidate = async (candidateId: string) => {
     setLoading(true);
     try {
       const result = await callMemory<PromotionReviewResult>("promote-candidate", { candidate_id: candidateId, min_confidence: 0.7 });
       const message = promotionReviewMessage(result);
-      if (result.decision === "promoted" || result.status === "promoted") {
-        setOk(message);
-      } else {
-        setWarn(message);
-      }
+      if (result.decision === "promoted" || result.status === "promoted") { setOk(message); }
+      else { setWarn(message); }
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
@@ -656,6 +784,43 @@ function App() {
     }
   };
 
+  const batchPromoteCandidates = async (ids: string[]) => {
+    setLoading(true);
+    let promoted = 0;
+    let failed = 0;
+    try {
+      for (const id of ids) {
+        try {
+          await callMemory("promote-candidate", { candidate_id: id, min_confidence: 0.7 });
+          promoted++;
+        } catch {
+          failed++;
+        }
+      }
+      await refresh({ clearNotice: false });
+      setOk(`批量审核完成：通过 ${promoted} 条${failed ? `，失败 ${failed} 条` : ""}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const batchRejectCandidates = async (ids: string[]) => {
+    setLoading(true);
+    let rejected = 0;
+    try {
+      for (const id of ids) {
+        try {
+          await callMemory("reject-candidate", { candidate_id: id, reason: rejectReason.trim() || "batch_reject" });
+          rejected++;
+        } catch { /* skip */ }
+      }
+      await refresh({ clearNotice: false });
+      setOk(`批量拒绝完成：${rejected} 条`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const curateSelected = async (mode: "tombstone" | "forget") => {
     if (!selected) return;
     setLoading(true);
@@ -664,11 +829,7 @@ function App() {
         await callMemory("forget", { memory_id: selected.id, target_type: selected.type, reason: "private_delete" });
         setOk("记忆已私密删除");
       } else {
-        await callMemory("tombstone", {
-          memory_id: selected.id,
-          target_type: selected.type,
-          reason: tombstoneReason.trim() || "manual_curation"
-        });
+        await callMemory("tombstone", { memory_id: selected.id, target_type: selected.type, reason: tombstoneReason.trim() || "manual_curation" });
         setOk("记忆已标记 tombstone");
       }
       setSelected(null);
@@ -683,18 +844,11 @@ function App() {
   const forgetTombstoneTarget = async (tombstone: MemoryTombstone) => {
     setLoading(true);
     try {
-      await callMemory("forget", {
-        memory_id: tombstone.target_id,
-        target_type: tombstone.target_type,
-        reason: "private_delete"
-      });
+      await callMemory("forget", { memory_id: tombstone.target_id, target_type: tombstone.target_type, reason: "private_delete" });
       setOk("目标记忆已 Forget 擦除，删除痕迹仍会保留");
       await refresh({ clearNotice: false });
-    } catch (error) {
-      setError(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
   };
 
   const hardDeleteTombstoneTarget = async (tombstone: MemoryTombstone) => {
@@ -702,67 +856,44 @@ function App() {
     if (!confirmed) return;
     setLoading(true);
     try {
-      await callMemory("hard-delete", {
-        tombstone_id: tombstone.id,
-        memory_id: tombstone.target_id,
-        target_type: tombstone.target_type,
-        delete_related: true
-      });
+      await callMemory("hard-delete", { tombstone_id: tombstone.id, memory_id: tombstone.target_id, target_type: tombstone.target_type, delete_related: true });
       setSelected(null);
       setOk("目标记忆和相关 tombstone 记录已彻底删除");
       await refresh({ clearNotice: false });
-    } catch (error) {
-      setError(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
   };
 
-  const toggleTombstoneSelection = (tombstoneId: string, selected: boolean) => {
-    setSelectedTombstoneIds((previous) => {
-      const next = new Set(previous);
-      if (selected) {
-        next.add(tombstoneId);
-      } else {
-        next.delete(tombstoneId);
-      }
+  const toggleTombstoneSelection = (tombstoneId: string, sel: boolean) => {
+    setSelectedTombstoneIds((prev) => {
+      const next = new Set(prev);
+      if (sel) next.add(tombstoneId); else next.delete(tombstoneId);
       return next;
     });
   };
 
-  const toggleAllTombstones = (selected: boolean) => {
-    setSelectedTombstoneIds(selected ? new Set(tombstones.map((tombstone) => tombstone.id)) : new Set());
+  const toggleAllTombstones = (sel: boolean) => {
+    setSelectedTombstoneIds(sel ? new Set(tombstones.map((t) => t.id)) : new Set());
   };
 
   const hardDeleteSelectedTombstones = async () => {
-    const selectedTombstones = tombstones.filter((tombstone) => selectedTombstoneIds.has(tombstone.id));
-    if (selectedTombstones.length === 0) {
-      setWarn("请先选择要彻底删除的 tombstone");
-      return;
-    }
-    const confirmed = window.confirm(`彻底删除选中的 ${selectedTombstones.length} 条 tombstone 及相关记忆/link/wiki 记录？`);
+    const selectedTs = tombstones.filter((t) => selectedTombstoneIds.has(t.id));
+    if (selectedTs.length === 0) { setWarn("请先选择要彻底删除的 tombstone"); return; }
+    const confirmed = window.confirm(`彻底删除选中的 ${selectedTs.length} 条 tombstone 及相关记忆/link/wiki 记录？`);
     if (!confirmed) return;
     setLoading(true);
     let deletedCount = 0;
     let skippedCount = 0;
     const failures: string[] = [];
     try {
-      for (const tombstone of selectedTombstones) {
+      for (const t of selectedTs) {
         try {
-          await callMemory("hard-delete", {
-            tombstone_id: tombstone.id,
-            memory_id: tombstone.target_id,
-            target_type: tombstone.target_type,
-            delete_related: true
-          });
+          await callMemory("hard-delete", { tombstone_id: t.id, memory_id: t.target_id, target_type: t.target_type, delete_related: true });
           deletedCount += 1;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (message.includes("not found")) {
-            skippedCount += 1;
-          } else {
-            failures.push(`${compactId(tombstone.id) || tombstone.id}: ${message}`);
-          }
+          const msg = error instanceof Error ? error.message : String(error);
+          if (msg.includes("not found")) { skippedCount += 1; }
+          else { failures.push(`${compactId(t.id) || t.id}: ${msg}`); }
         }
       }
       setSelected(null);
@@ -773,9 +904,7 @@ function App() {
       } else {
         setOk(`已彻底删除 ${deletedCount} 条 tombstone${skippedCount ? `，跳过 ${skippedCount} 条已删除项` : ""}`);
       }
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const runDream = async () => {
@@ -783,20 +912,13 @@ function App() {
     setDreamStartedAtMs(Date.now());
     try {
       const report = await callMemory<DreamRunReport>("dream-run", {
-        limit: 20,
-        min_confidence: 0.7,
-        use_provider: useProvider,
-        advanced_dreaming: advancedDreaming,
-        execution_policy: "semi_auto"
+        limit: 20, min_confidence: 0.7, use_provider: useProvider,
+        advanced_dreaming: advancedDreaming, execution_policy: "semi_auto"
       });
       await refresh({ clearNotice: false });
       setOk(dreamRunMessage(report, useProvider, advancedDreaming));
-    } catch (error) {
-      setError(error);
-    } finally {
-      setDreamStartedAtMs(null);
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setDreamStartedAtMs(null); setLoading(false); }
   };
 
   const applyDreamProposal = async (proposalId: string) => {
@@ -805,27 +927,18 @@ function App() {
       await callMemory("apply-dream-proposal", { proposal_id: proposalId });
       setOk("整理提案已应用");
       await refresh({ clearNotice: false });
-    } catch (error) {
-      setError(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
   };
 
   const rejectDreamProposal = async (proposalId: string) => {
     setLoading(true);
     try {
-      await callMemory("reject-dream-proposal", {
-        proposal_id: proposalId,
-        reason: proposalRejectReason.trim() || "operator_rejected"
-      });
+      await callMemory("reject-dream-proposal", { proposal_id: proposalId, reason: proposalRejectReason.trim() || "operator_rejected" });
       setOk("整理提案已拒绝");
       await refresh({ clearNotice: false });
-    } catch (error) {
-      setError(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
   };
 
   const createPlanItem = async () => {
@@ -931,11 +1044,8 @@ function App() {
       const result = await callMemory<SnapshotResult>("snapshot", { compile: true, limit: 50 });
       setSnapshot(result);
       setOk("快照已刷新");
-    } catch (error) {
-      setError(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
   };
 
   const saveProviderConfig = async () => {
@@ -945,11 +1055,8 @@ function App() {
       setProviderConfig(result);
       setProviderForm(providerFormFromConfig(result));
       setOk("Provider 配置已保存；Run Dream 将使用服务端配置。");
-    } catch (error) {
-      setError(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
   };
 
   const saveAutoDreamConfig = async () => {
@@ -959,11 +1066,8 @@ function App() {
       setAutoDreamStatus(result);
       setAutoDreamForm(autoDreamFormFromStatus(result));
       setOk("自动 Dreaming 配置已保存。");
-    } catch (error) {
-      setError(error);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
   };
 
   const summaryStats = useMemo(() => {
@@ -978,11 +1082,15 @@ function App() {
     ];
   }, [healthCards.length, inventory, pendingCandidates.length, tombstones.length]);
 
-  const navItemClass = (key: TabKey, extra = "") => {
+  const navItemClass = (key: TabKey) => {
     const classes = ["nav-item"];
     if (activeTab === key) classes.push("active");
-    if (extra) classes.push(extra);
     return classes.join(" ");
+  };
+
+  const openEditor = (item: MemoryItem | null) => {
+    setEditorItem(item);
+    setEditorOpen(true);
   };
 
   return (
@@ -1002,17 +1110,25 @@ function App() {
               <span>{item.label}</span>
               {item.key === "plans" && planProposals.length > 0 ? <b>{planProposals.length}</b> : null}
               {item.key === "candidates" && pendingCandidates.length > 0 ? <b>{pendingCandidates.length}</b> : null}
+              {item.key === "candidates" && conflictCandidates.length > 0 ? <span className="badge bad" style={{marginLeft: 4, fontSize: 11}}>{conflictCandidates.length} 冲突</span> : null}
               {item.key === "tombstones" && tombstones.length > 0 ? <b>{tombstones.length}</b> : null}
             </button>
           ))}
         </nav>
+        {/* Show conflict badge in default mode too */}
+        {!advancedMode && conflictCandidates.length > 0 ? (
+          <button className="nav-item conflict-alert" onClick={() => { setAdvancedMode(true); setActiveTab("candidates"); }}>
+            <GitMerge size={18} />
+            <span>{conflictCandidates.length} 条冲突待解决</span>
+          </button>
+        ) : null}
         <div className="mode-card">
           <div>
             <strong>高级模式</strong>
             <span>{advancedMode ? "显示候选、Dream、墓碑和 JSON" : "默认隐藏调试和维护细节"}</span>
           </div>
           <label className="switch">
-            <input type="checkbox" checked={advancedMode} onChange={(event) => setAdvancedMode(event.target.checked)} />
+            <input type="checkbox" checked={advancedMode} onChange={(e) => setAdvancedMode(e.target.checked)} />
             <span />
           </label>
         </div>
@@ -1036,6 +1152,14 @@ function App() {
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             Refresh
           </button>
+          <button className="ghost-button" onClick={() => setIngestOpen(true)}>
+            <MessageSquare size={16} />
+            录入事件
+          </button>
+          <button className="ghost-button" onClick={() => openEditor(null)}>
+            <Edit3 size={16} />
+            新建记忆
+          </button>
           <button className="primary-button" onClick={() => setComposerOpen(true)}>
             <Plus size={16} />
             保存记忆
@@ -1045,16 +1169,18 @@ function App() {
         {notice ? (
           <div className={`notice ${notice.tone}`}>
             <span>{notice.text}</span>
-            <button onClick={() => setNotice(null)}>
-              <X size={14} />
-            </button>
+            <button onClick={() => setNotice(null)}><X size={14} /></button>
           </div>
         ) : null}
 
         <section className={advancedMode ? "dashboard-grid advanced-layout" : "dashboard-grid workbench-layout"}>
           <div className="main-column">
-            {activeTab === "overview" ? <Overview stats={summaryStats} health={health} dreamStatus={dreamStatus} snapshot={snapshot} /> : null}
-            {activeTab === "memories" || activeTab === "overview" ? (
+            {/* L0 Profile Card */}
+            {activeTab === "memories" && profile?.summary ? (
+              <ProfileCard profile={profile} />
+            ) : null}
+
+            {activeTab === "memories" ? (
               <SearchPanel
                 query={query}
                 setQuery={setQuery}
@@ -1064,12 +1190,19 @@ function App() {
                 setKindFilter={setKindFilter}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
+                searchScope={searchScope}
+                setSearchScope={setSearchScope}
+                dimensionFilter={dimensionFilter}
+                setDimensionFilter={setDimensionFilter}
                 onSearch={searchMemory}
                 onRefresh={refreshInventory}
               />
             ) : null}
-            {activeTab === "memories" || activeTab === "overview" ? (
-              <MemoryTable items={activeItems} selectedId={selected?.id} uidFilter={uidFilter} dreamStatus={dreamStatus} advancedMode={advancedMode} onSelect={readMemory} />
+            {activeTab === "memories" ? (
+              <>
+                <MemoryTable items={pagedItems} selectedId={selected?.id} uidFilter={uidFilter} dreamStatus={dreamStatus} advancedMode={advancedMode} onSelect={readMemory} onEdit={openEditor} />
+                <Pagination page={page} totalPages={totalPages} totalItems={activeItems.length} onPageChange={setPage} />
+              </>
             ) : null}
             {activeTab === "plans" ? (
               <PlanPanel
@@ -1095,9 +1228,13 @@ function App() {
                 dreamStatus={dreamStatus}
                 rejectReason={rejectReason}
                 setRejectReason={setRejectReason}
+                loading={loading}
                 onPromote={promoteCandidate}
                 onReject={rejectCandidate}
                 onSelect={readMemory}
+                onResolveConflict={resolveConflict}
+                onBatchPromote={batchPromoteCandidates}
+                onBatchReject={batchRejectCandidates}
               />
             ) : null}
             {activeTab === "tombstones" ? (
@@ -1135,22 +1272,13 @@ function App() {
             ) : null}
             {activeTab === "settings" ? (
               <SettingsPanel
-                apiBase={apiBase}
-                setApiBase={setApiBase}
-                authToken={authToken}
-                setAuthToken={setAuthToken}
-                source={source}
-                setSource={setSource}
-                useProvider={useProvider}
-                setUseProvider={setUseProvider}
-                advancedDreaming={advancedDreaming}
-                setAdvancedDreaming={setAdvancedDreaming}
-                providerConfig={providerConfig}
-                providerForm={providerForm}
-                setProviderForm={setProviderForm}
-                autoDreamStatus={autoDreamStatus}
-                autoDreamForm={autoDreamForm}
-                setAutoDreamForm={setAutoDreamForm}
+                apiBase={apiBase} setApiBase={setApiBase}
+                authToken={authToken} setAuthToken={setAuthToken}
+                source={source} setSource={setSource}
+                useProvider={useProvider} setUseProvider={setUseProvider}
+                advancedDreaming={advancedDreaming} setAdvancedDreaming={setAdvancedDreaming}
+                providerConfig={providerConfig} providerForm={providerForm} setProviderForm={setProviderForm}
+                autoDreamStatus={autoDreamStatus} autoDreamForm={autoDreamForm} setAutoDreamForm={setAutoDreamForm}
                 onSaveProviderConfig={saveProviderConfig}
                 onSaveAutoDreamConfig={saveAutoDreamConfig}
                 loading={loading}
@@ -1167,8 +1295,12 @@ function App() {
               advancedMode={advancedMode}
               tombstoneReason={tombstoneReason}
               setTombstoneReason={setTombstoneReason}
+              versions={versions}
+              showVersions={showVersions}
               onTombstone={() => curateSelected("tombstone")}
               onForget={() => curateSelected("forget")}
+              onLoadVersions={loadVersions}
+              onEdit={openEditor}
             />
           </aside>
 
@@ -1186,71 +1318,80 @@ function App() {
             />
           </aside> : null}
         </section>
+
         <SaveMemoryDrawer
           open={composerOpen}
-          factText={factText}
-          setFactText={setFactText}
-          observationText={observationText}
-          setObservationText={setObservationText}
-          source={source}
-          setSource={setSource}
-          uidFilter={uidFilter}
+          factText={factText} setFactText={setFactText}
+          observationText={observationText} setObservationText={setObservationText}
+          source={source} setSource={setSource}
+          uidFilter={uidFilter} loading={loading}
+          onSubmit={submitMemory} onClose={() => setComposerOpen(false)}
+        />
+        <IngestEventDrawer
+          open={ingestOpen}
           loading={loading}
-          onSubmit={submitMemory}
-          onClose={() => setComposerOpen(false)}
+          useProvider={useProvider}
+          onSubmit={ingestEvent}
+          onClose={() => setIngestOpen(false)}
+        />
+        <PageEditorDrawer
+          open={editorOpen}
+          item={editorItem}
+          loading={loading}
+          onCreate={stableCreate}
+          onUpdate={stableUpdate}
+          onClose={() => { setEditorOpen(false); setEditorItem(null); }}
         />
       </main>
     </div>
   );
 }
 
-function Overview({
-  stats,
-  health,
-  dreamStatus,
-  snapshot
-}: {
-  stats: Array<{ label: string; value: number; icon: LucideIcon; tone: string }>;
-  health: MemoryHealthResult | null;
-  dreamStatus: DreamStatusResult | null;
-  snapshot: SnapshotResult | null;
-}) {
+// ─── Profile Card ────────────────────────────────────────────────────────────
+
+function ProfileCard({ profile }: { profile: L0Profile }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = (profile.summary || "").split("\n").filter(Boolean);
+  const preview = lines.slice(0, 4);
+  const hasMore = lines.length > 4;
   return (
-    <section className="panel overview-panel">
-      <div className="panel-header">
-        <div>
-          <h2>服务总览</h2>
-          <p>当前记忆库存、候选审核和维护状态。</p>
+    <section className="panel profile-card">
+      <div className="panel-header compact">
+        <div style={{display: "flex", alignItems: "center", gap: 8}}>
+          <User size={18} />
+          <h2>记忆画像</h2>
+          <span className="badge blue">{profile.page_count || 0} 页</span>
         </div>
-        <Brain size={22} />
+        {hasMore ? (
+          <button className="ghost-button" onClick={() => setExpanded(!expanded)}>
+            {expanded ? "收起" : "展开"}
+          </button>
+        ) : null}
       </div>
-      <div className="stat-grid">
-        {stats.map((stat) => (
-          <div className={`stat ${stat.tone}`} key={stat.label}>
-            <stat.icon size={20} />
-            <span>{stat.label}</span>
-            <strong>{stat.value}</strong>
-          </div>
+      <div className="profile-summary">
+        {(expanded ? lines : preview).map((line, i) => (
+          <div key={i} className="profile-line">{line}</div>
         ))}
-      </div>
-      <div className="overview-split">
-        <JsonBlock title="Health" value={health || { status: "no health report" }} />
-        <JsonBlock title="Dream Status" value={dreamStatus || { status: "not loaded" }} />
-        <JsonBlock title="Snapshot" value={snapshot || { exists: false }} />
       </div>
     </section>
   );
 }
 
+// ─── Search Panel ────────────────────────────────────────────────────────────
+
 function SearchPanel(props: {
   query: string;
-  setQuery: (value: string) => void;
+  setQuery: (v: string) => void;
   uidFilter: string;
-  setUidFilter: (value: string) => void;
+  setUidFilter: (v: string) => void;
   kindFilter: "all" | "candidate" | "page";
-  setKindFilter: (value: "all" | "candidate" | "page") => void;
+  setKindFilter: (v: "all" | "candidate" | "page") => void;
   statusFilter: string;
-  setStatusFilter: (value: string) => void;
+  setStatusFilter: (v: string) => void;
+  searchScope: string;
+  setSearchScope: (v: string) => void;
+  dimensionFilter: string;
+  setDimensionFilter: (v: string) => void;
   onSearch: () => void;
   onRefresh: () => void;
 }) {
@@ -1259,7 +1400,8 @@ function SearchPanel(props: {
       <div className="search-line">
         <div className="input-with-icon">
           <Search size={18} />
-          <input value={props.query} onChange={(event) => props.setQuery(event.target.value)} placeholder="搜索记忆、偏好、事实..." />
+          <input value={props.query} onChange={(e) => props.setQuery(e.target.value)} placeholder="搜索记忆、偏好、事实..."
+            onKeyDown={(e) => { if (e.key === "Enter") props.onSearch(); }} />
         </div>
         <button className="primary-button" onClick={props.onSearch}>
           <Search size={16} />
@@ -1272,8 +1414,16 @@ function SearchPanel(props: {
       </div>
       <div className="filters">
         <label>
+          搜索范围
+          <select value={props.searchScope} onChange={(e) => props.setSearchScope(e.target.value)}>
+            <option value="memory">记忆</option>
+            <option value="sessions">会话</option>
+            <option value="all">全部</option>
+          </select>
+        </label>
+        <label>
           类型
-          <select value={props.kindFilter} onChange={(event) => props.setKindFilter(event.target.value as "all" | "candidate" | "page")}>
+          <select value={props.kindFilter} onChange={(e) => props.setKindFilter(e.target.value as "all" | "candidate" | "page")}>
             <option value="all">全部</option>
             <option value="page">稳定记忆</option>
             <option value="candidate">候选</option>
@@ -1281,7 +1431,7 @@ function SearchPanel(props: {
         </label>
         <label>
           状态
-          <select value={props.statusFilter} onChange={(event) => props.setStatusFilter(event.target.value)}>
+          <select value={props.statusFilter} onChange={(e) => props.setStatusFilter(e.target.value)}>
             <option value="">全部</option>
             <option value="active">active</option>
             <option value="draft">draft</option>
@@ -1290,21 +1440,40 @@ function SearchPanel(props: {
           </select>
         </label>
         <label>
+          维度
+          <select value={props.dimensionFilter} onChange={(e) => props.setDimensionFilter(e.target.value)}>
+            <option value="">全部维度</option>
+            {DIMENSIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </label>
+        <label>
           UID
-          <input value={props.uidFilter} onChange={(event) => props.setUidFilter(event.target.value)} placeholder="user_123 或 user:user_123" />
+          <input value={props.uidFilter} onChange={(e) => props.setUidFilter(e.target.value)} placeholder="user_123 或 user:user_123" />
         </label>
       </div>
     </section>
   );
 }
 
+// ─── Pagination ──────────────────────────────────────────────────────────────
+
+function Pagination({ page, totalPages, totalItems, onPageChange }: {
+  page: number; totalPages: number; totalItems: number; onPageChange: (p: number) => void;
+}) {
+  if (totalItems <= 20) return null;
+  return (
+    <div className="pagination">
+      <button className="ghost-button" disabled={page <= 0} onClick={() => onPageChange(page - 1)}>上一页</button>
+      <span>{page + 1} / {totalPages} ({totalItems} 条)</span>
+      <button className="ghost-button" disabled={page >= totalPages - 1} onClick={() => onPageChange(page + 1)}>下一页</button>
+    </div>
+  );
+}
+
+// ─── Memory Table ────────────────────────────────────────────────────────────
+
 function MemoryTable({
-  items,
-  selectedId,
-  uidFilter,
-  dreamStatus,
-  advancedMode,
-  onSelect
+  items, selectedId, uidFilter, dreamStatus, advancedMode, onSelect, onEdit
 }: {
   items: MemoryItem[];
   selectedId?: string;
@@ -1312,6 +1481,7 @@ function MemoryTable({
   dreamStatus: DreamStatusResult | null;
   advancedMode: boolean;
   onSelect: (item: MemoryItem) => void;
+  onEdit: (item: MemoryItem) => void;
 }) {
   const reviewResults = dreamReviewResultMap(dreamStatus);
   const uidLabel = uidFilter.trim() ? `UID: ${uidFilter.trim()}` : "全部 scope";
@@ -1332,23 +1502,475 @@ function MemoryTable({
         </div>
         {items.length === 0 ? <EmptyState text="暂无记忆。先写入 fact 或 observation。" /> : null}
         {items.map((item) => (
-          <button className={selectedId === item.id ? "table-row active" : "table-row"} key={`${item.type}:${item.id}`} onClick={() => onSelect(item)}>
-            <span className="score">{formatConfidence(item.confidence)}</span>
-            <span>
-              <strong>{itemTitle(item)}</strong>
-              <small>{item.scope || item.dimension || item.id}</small>
-            </span>
-            <StatusBadge text={item.type} />
-            {advancedMode ? <AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} /> : null}
-            <StatusBadge text={item.status || "unknown"} />
-            <span className="time">{formatTime(item.updated_at || item.created_at)}</span>
-            <ChevronRight size={16} />
-          </button>
+          <div className={selectedId === item.id ? "table-row active" : "table-row"} key={`${item.type}:${item.id}`}>
+            <button className="table-row-main" onClick={() => onSelect(item)}>
+              <span className="score">{formatConfidence(item.confidence)}</span>
+              <span>
+                <strong>{itemTitle(item)}</strong>
+                <small>{item.dimension ? `[${item.dimension}] ` : ""}{item.scope || item.id}</small>
+              </span>
+              <StatusBadge text={item.type} />
+              {advancedMode ? <AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} /> : null}
+              <StatusBadge text={item.status || "unknown"} />
+              <span className="time">{formatTime(item.updated_at || item.created_at)}</span>
+              <ChevronRight size={16} />
+            </button>
+            {item.type === "page" ? (
+              <button className="table-row-edit" onClick={(e) => { e.stopPropagation(); onEdit(item); }} title="编辑">
+                <Edit3 size={14} />
+              </button>
+            ) : null}
+          </div>
         ))}
       </div>
     </section>
   );
 }
+
+// ─── Memory Detail ───────────────────────────────────────────────────────────
+
+function MemoryDetail(props: {
+  selected: MemoryItem | null;
+  links: MemoryLinksResult | null;
+  provenance: MemoryProvenanceResult | null;
+  dreamStatus: DreamStatusResult | null;
+  advancedMode: boolean;
+  tombstoneReason: string;
+  setTombstoneReason: (v: string) => void;
+  versions: PageVersion[];
+  showVersions: boolean;
+  onTombstone: () => void;
+  onForget: () => void;
+  onLoadVersions: (id: string) => void;
+  onEdit: (item: MemoryItem) => void;
+}) {
+  const item = props.selected;
+  const review = item ? reviewForItem(item, dreamReviewResultMap(props.dreamStatus)) : undefined;
+  return (
+    <section className="panel detail-panel">
+      <div className="panel-header compact">
+        <h2>记忆详情</h2>
+        {item ? <StatusBadge text={item.status || item.type} /> : null}
+      </div>
+      {!item ? (
+        <EmptyState text="选择一条记忆查看详情。" />
+      ) : (
+        <>
+          <div className="detail-id">
+            <span>Memory ID</span>
+            <code>{item.id}</code>
+          </div>
+          <div className="detail-grid">
+            <label>类型</label><strong>{item.type}</strong>
+            <label>状态</label><strong>{item.status || "-"}</strong>
+            <label>范围</label><strong>{item.scope || "-"}</strong>
+            <label>置信度</label><strong>{formatConfidence(item.confidence)}</strong>
+            {item.dimension ? <><label>维度</label><strong>{item.dimension}</strong></> : null}
+            <label>更新时间</label><strong>{formatDate(item.updated_at || item.created_at)}</strong>
+          </div>
+          <div className="content-box">{item.content || item.claim || item.title || "-"}</div>
+          <ProvenanceTimeline provenance={props.provenance} />
+          <div className="detail-actions">
+            <button className="ghost-button" onClick={() => navigator.clipboard?.writeText(item.content || item.claim || item.title || item.id)}>
+              <ClipboardList size={15} />
+              复制内容
+            </button>
+            {item.type === "page" ? (
+              <>
+                <button className="ghost-button" onClick={() => props.onEdit(item)}>
+                  <Edit3 size={15} />
+                  编辑
+                </button>
+                <button className="ghost-button" onClick={() => props.onLoadVersions(item.id)}>
+                  <History size={15} />
+                  版本历史
+                </button>
+              </>
+            ) : null}
+          </div>
+          {/* Version History */}
+          {props.showVersions ? (
+            <VersionHistory versions={props.versions} />
+          ) : null}
+          {props.advancedMode ? (
+            <>
+              <AuditDetail item={item} review={review} />
+              <SourceIds item={item} />
+              <JsonBlock title="Metadata / Evidence" value={item.metadata || item.evidence || {}} />
+              <JsonBlock title="Links" value={props.links || { outgoing: [], incoming: [] }} />
+              <div className="danger-actions">
+                <input value={props.tombstoneReason} onChange={(e) => props.setTombstoneReason(e.target.value)} placeholder="tombstone reason" />
+                <button className="danger-button" onClick={props.onTombstone}>
+                  <Archive size={15} />
+                  Tombstone
+                </button>
+                <button className="danger-button" onClick={props.onForget}>
+                  <Trash2 size={15} />
+                  Forget 擦除
+                </button>
+              </div>
+            </>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ─── Version History ─────────────────────────────────────────────────────────
+
+function VersionHistory({ versions }: { versions: PageVersion[] }) {
+  if (versions.length === 0) {
+    return (
+      <div className="version-history">
+        <h3>版本历史</h3>
+        <div className="timeline-empty">暂无版本记录。</div>
+      </div>
+    );
+  }
+  return (
+    <div className="version-history">
+      <h3>版本历史 ({versions.length})</h3>
+      <div className="version-list">
+        {versions.map((v, i) => (
+          <details key={v.id || i} className="version-entry">
+            <summary>
+              <span className="badge neutral">{v.change_reason || "unknown"}</span>
+              <span>{v.changed_by || "system"}</span>
+              <span className="time">{formatDate(v.created_at)}</span>
+            </summary>
+            <pre className="version-snapshot">{JSON.stringify(v.snapshot_data || {}, null, 2)}</pre>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Ingest Event Drawer ─────────────────────────────────────────────────────
+
+type IngestEventForm = {
+  text: string;
+  source: string;
+  actor: string;
+  eventType: string;
+  scope: string;
+  autoPromote: boolean;
+  useProvider: boolean;
+};
+
+function IngestEventDrawer({ open, loading, useProvider, onSubmit, onClose }: {
+  open: boolean;
+  loading: boolean;
+  useProvider: boolean;
+  onSubmit: (form: IngestEventForm) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<IngestEventForm>({
+    text: "", source: "webui", actor: "", eventType: "message", scope: "",
+    autoPromote: false, useProvider: false
+  });
+  const set = <K extends keyof IngestEventForm>(k: K, v: IngestEventForm[K]) => setForm({ ...form, [k]: v });
+
+  if (!open) return null;
+  return (
+    <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="录入事件">
+      <button className="drawer-backdrop" aria-label="关闭" onClick={onClose} />
+      <aside className="memory-drawer">
+        <div className="drawer-header">
+          <div>
+            <h2>录入事件</h2>
+            <p>输入对话或事件文本，系统会自动提取 fact/observation 生成记忆候选。</p>
+          </div>
+          <button className="ghost-button icon-only" onClick={onClose}><X size={16} /></button>
+        </div>
+        <label>
+          事件内容 *
+          <textarea value={form.text} onChange={(e) => set("text", e.target.value)}
+            placeholder="例如：用户说他喜欢简洁的代码风格，不要过度封装。" rows={5} />
+        </label>
+        <div className="provider-grid">
+          <label>
+            事件类型
+            <select value={form.eventType} onChange={(e) => set("eventType", e.target.value)}>
+              <option value="message">message</option>
+              <option value="observation">observation</option>
+              <option value="feedback">feedback</option>
+              <option value="system">system</option>
+            </select>
+          </label>
+          <label>来源 <input value={form.source} onChange={(e) => set("source", e.target.value)} /></label>
+          <label>Actor <input value={form.actor} onChange={(e) => set("actor", e.target.value)} placeholder="user / assistant" /></label>
+          <label>Scope <input value={form.scope} onChange={(e) => set("scope", e.target.value)} placeholder="user:xxx 或留空" /></label>
+        </div>
+        <label className="checkbox-row">
+          <input type="checkbox" checked={form.autoPromote} onChange={(e) => set("autoPromote", e.target.checked)} />
+          <span><strong>自动提升</strong><small>高置信候选自动进入稳定记忆</small></span>
+        </label>
+        <label className="checkbox-row">
+          <input type="checkbox" checked={form.useProvider} onChange={(e) => set("useProvider", e.target.checked)} />
+          <span><strong>使用模型提取</strong><small>调用 provider 进行智能记忆提取{useProvider ? "" : "（需先在设置中配置）"}</small></span>
+        </label>
+        <div className="settings-actions">
+          <button className="primary-button" onClick={() => onSubmit(form)} disabled={loading || !form.text.trim()}>
+            {loading ? <Loader2 className="spin" size={16} /> : <MessageSquare size={16} />}
+            录入事件
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+// ─── Page Editor Drawer ──────────────────────────────────────────────────────
+
+type PageEditorForm = {
+  title: string;
+  content: string;
+  scope: string;
+  confidence: string;
+  dimension: string;
+};
+
+function PageEditorDrawer({ open, item, loading, onCreate, onUpdate, onClose }: {
+  open: boolean;
+  item: MemoryItem | null;
+  loading: boolean;
+  onCreate: (form: PageEditorForm) => void;
+  onUpdate: (id: string, form: PageEditorForm) => void;
+  onClose: () => void;
+}) {
+  const isEdit = item !== null;
+  const [form, setForm] = useState<PageEditorForm>({
+    title: "", content: "", scope: "global", confidence: "0.7", dimension: ""
+  });
+  const set = <K extends keyof PageEditorForm>(k: K, v: PageEditorForm[K]) => setForm({ ...form, [k]: v });
+
+  useEffect(() => {
+    if (item) {
+      setForm({
+        title: item.title || item.claim || "",
+        content: item.content || item.claim || "",
+        scope: item.scope || "global",
+        confidence: String(item.confidence ?? 0.7),
+        dimension: item.dimension || ""
+      });
+    } else {
+      setForm({ title: "", content: "", scope: "global", confidence: "0.7", dimension: "" });
+    }
+  }, [item, open]);
+
+  if (!open) return null;
+  return (
+    <div className="drawer-layer" role="dialog" aria-modal="true" aria-label={isEdit ? "编辑记忆" : "新建记忆"}>
+      <button className="drawer-backdrop" aria-label="关闭" onClick={onClose} />
+      <aside className="memory-drawer">
+        <div className="drawer-header">
+          <div>
+            <h2>{isEdit ? "编辑稳定记忆" : "新建稳定记忆"}</h2>
+            <p>{isEdit ? `正在编辑 ${compactId(item.id)}` : "直接创建稳定记忆页，跳过候选流程。"}</p>
+          </div>
+          <button className="ghost-button icon-only" onClick={onClose}><X size={16} /></button>
+        </div>
+        <label>标题 * <input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="记忆标题" /></label>
+        <label>内容 * <textarea value={form.content} onChange={(e) => set("content", e.target.value)} placeholder="记忆内容" rows={5} /></label>
+        <div className="provider-grid">
+          <label>Scope <input value={form.scope} onChange={(e) => set("scope", e.target.value)} placeholder="global" /></label>
+          <label>置信度 <input type="number" min="0" max="1" step="0.1" value={form.confidence} onChange={(e) => set("confidence", e.target.value)} /></label>
+          <label>
+            维度
+            <select value={form.dimension} onChange={(e) => set("dimension", e.target.value)}>
+              <option value="">未指定</option>
+              {DIMENSIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="settings-actions">
+          <button className="primary-button" onClick={() => isEdit ? onUpdate(item.id, form) : onCreate(form)} disabled={loading || !form.title.trim() || !form.content.trim()}>
+            {loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />}
+            {isEdit ? "保存修改" : "创建记忆"}
+          </button>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+// ─── Candidate Review with Conflict Resolution ──────────────────────────────
+
+function CandidateReview(props: {
+  candidates: MemoryItem[];
+  dreamStatus: DreamStatusResult | null;
+  rejectReason: string;
+  setRejectReason: (v: string) => void;
+  loading: boolean;
+  onPromote: (id: string) => void;
+  onReject: (id: string) => void;
+  onSelect: (item: MemoryItem) => void;
+  onResolveConflict: (candidateId: string, resolution: string) => void;
+  onBatchPromote: (ids: string[]) => void;
+  onBatchReject: (ids: string[]) => void;
+}) {
+  const reviewResults = dreamReviewResultMap(props.dreamStatus);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const reviewable = props.candidates.filter((c) => isReviewableCandidate(c));
+  const conflicts = props.candidates.filter((c) => String(c.status || "").includes("conflict"));
+  const toggleId = (id: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+  const toggleAll = (checked: boolean) => {
+    setSelectedIds(checked ? new Set(reviewable.map((c) => c.id)) : new Set());
+  };
+  const selArray = [...selectedIds].filter((id) => reviewable.some((c) => c.id === id));
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <div>
+          <h2>候选审核</h2>
+          <p>Promote 通过后会进入记忆页；这里保留待审核、拒绝和需复核的候选。</p>
+        </div>
+        <input value={props.rejectReason} onChange={(e) => props.setRejectReason(e.target.value)} placeholder="reject reason" />
+      </div>
+
+      {/* Conflict Resolution Section */}
+      {conflicts.length > 0 ? (
+        <div className="conflict-section">
+          <div className="conflict-section-header">
+            <GitMerge size={18} />
+            <h3>冲突待解决 ({conflicts.length})</h3>
+          </div>
+          {conflicts.map((candidate) => (
+            <ConflictCard
+              key={candidate.id}
+              candidate={candidate}
+              loading={props.loading}
+              onResolve={props.onResolveConflict}
+              onSelect={() => props.onSelect(candidate)}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {/* Batch Actions */}
+      {reviewable.length > 0 ? (
+        <div className="batch-actions">
+          <label className="tombstone-select-all">
+            <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size >= reviewable.length}
+              onChange={(e) => toggleAll(e.target.checked)} />
+            <span>全选待审 ({reviewable.length})</span>
+          </label>
+          {selArray.length > 0 ? (
+            <>
+              <button className="success-button" onClick={() => props.onBatchPromote(selArray)} disabled={props.loading}>
+                <Check size={15} /> 批量通过 ({selArray.length})
+              </button>
+              <button className="danger-button" onClick={() => props.onBatchReject(selArray)} disabled={props.loading}>
+                <Trash2 size={15} /> 批量拒绝 ({selArray.length})
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="candidate-list">
+        {props.candidates.length === 0 ? <EmptyState text="暂无待处理或需查看原因的候选记忆。" /> : null}
+        {props.candidates.map((candidate) => {
+          const isConflict = String(candidate.status || "").includes("conflict");
+          if (isConflict) return null; // already shown in conflict section
+          const reviewableItem = isReviewableCandidate(candidate);
+          return (
+            <article className="candidate-row" key={candidate.id}>
+              {reviewableItem ? (
+                <input type="checkbox" checked={selectedIds.has(candidate.id)}
+                  onChange={(e) => toggleId(candidate.id, e.target.checked)} />
+              ) : <span style={{width: 18}} />}
+              <button onClick={() => props.onSelect(candidate)}>
+                <strong>{candidate.claim || candidate.title || candidate.id}</strong>
+                <span>{candidate.dimension || candidate.scope || "global"} · {formatTime(candidate.created_at)}</span>
+                <AuditResultBadge item={candidate} review={reviewForItem(candidate, reviewResults)} />
+              </button>
+              <div className="candidate-actions">
+                {reviewableItem ? (
+                  <>
+                    <button className="success-button" onClick={() => props.onPromote(candidate.id)}>
+                      <Check size={15} /> Promote
+                    </button>
+                    <button className="danger-button" onClick={() => props.onReject(candidate.id)}>
+                      <Trash2 size={15} /> Reject
+                    </button>
+                  </>
+                ) : (
+                  <StatusBadge text={candidate.status || "reviewed"} />
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// ─── Conflict Card ───────────────────────────────────────────────────────────
+
+function ConflictCard({ candidate, loading, onResolve, onSelect }: {
+  candidate: MemoryItem;
+  loading: boolean;
+  onResolve: (candidateId: string, resolution: string) => void;
+  onSelect: () => void;
+}) {
+  const card = candidate.conflict_card || candidate.metadata?.conflict_card as ConflictCard | undefined;
+  const options: ConflictOption[] = card?.options || [
+    { resolution: "keep_new", label: "保留新记忆", description: "用候选替换现有记忆" },
+    { resolution: "keep_old", label: "保留旧记忆", description: "拒绝此候选" },
+    { resolution: "keep_both", label: "都保留", description: "两条记忆都保留" }
+  ];
+  return (
+    <div className="conflict-card">
+      <div className="conflict-card-header">
+        <button className="ghost-button" onClick={onSelect}>
+          <strong>{candidate.claim || candidate.title || candidate.id}</strong>
+        </button>
+        <StatusBadge text="conflict" />
+      </div>
+      {card ? (
+        <div className="conflict-comparison">
+          {card.candidate_claim ? (
+            <div className="conflict-side">
+              <span className="badge blue">新候选</span>
+              <p>{card.candidate_claim}</p>
+            </div>
+          ) : null}
+          {card.existing_content ? (
+            <div className="conflict-side">
+              <span className="badge good">现有记忆</span>
+              <p>{card.existing_content}</p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="conflict-actions">
+        {options.map((opt) => (
+          <button key={opt.resolution}
+            className={opt.resolution === "keep_new" ? "success-button" : opt.resolution === "keep_old" ? "ghost-button" : "ghost-button"}
+            onClick={() => onResolve(candidate.id, opt.resolution)}
+            disabled={loading}
+            title={opt.description}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Remaining Components (unchanged logic, cleaned formatting) ──────────────
 
 function AuditResultBadge({ item, review }: { item: MemoryItem; review?: DreamReviewResult }) {
   const result = auditResultForItem(item, review);
@@ -1373,92 +1995,12 @@ function AuditDetail({ item, review }: { item: MemoryItem; review?: DreamReviewR
   );
 }
 
-function MemoryDetail(props: {
-  selected: MemoryItem | null;
-  links: MemoryLinksResult | null;
-  provenance: MemoryProvenanceResult | null;
-  dreamStatus: DreamStatusResult | null;
-  advancedMode: boolean;
-  tombstoneReason: string;
-  setTombstoneReason: (value: string) => void;
-  onTombstone: () => void;
-  onForget: () => void;
-}) {
-  const item = props.selected;
-  const review = item ? reviewForItem(item, dreamReviewResultMap(props.dreamStatus)) : undefined;
-  return (
-    <section className="panel detail-panel">
-      <div className="panel-header compact">
-        <h2>记忆详情</h2>
-        {item ? <StatusBadge text={item.status || item.type} /> : null}
-      </div>
-      {!item ? (
-        <EmptyState text="选择一条记忆查看详情。" />
-      ) : (
-        <>
-          <div className="detail-id">
-            <span>Memory ID</span>
-            <code>{item.id}</code>
-          </div>
-          <div className="detail-grid">
-            <label>类型</label>
-            <strong>{item.type}</strong>
-            <label>状态</label>
-            <strong>{item.status || "-"}</strong>
-            <label>范围</label>
-            <strong>{item.scope || "-"}</strong>
-            <label>置信度</label>
-            <strong>{formatConfidence(item.confidence)}</strong>
-            <label>更新时间</label>
-            <strong>{formatDate(item.updated_at || item.created_at)}</strong>
-          </div>
-          <div className="content-box">{item.content || item.claim || item.title || "-"}</div>
-          <ProvenanceTimeline provenance={props.provenance} />
-          <div className="detail-actions">
-            <button className="ghost-button" onClick={() => navigator.clipboard?.writeText(item.content || item.claim || item.title || item.id)}>
-              <ClipboardList size={15} />
-              复制内容
-            </button>
-          </div>
-          {props.advancedMode ? (
-            <>
-              <AuditDetail item={item} review={review} />
-              <SourceIds item={item} />
-              <JsonBlock title="Metadata / Evidence" value={item.metadata || item.evidence || {}} />
-              <JsonBlock title="Links" value={props.links || { outgoing: [], incoming: [] }} />
-              <div className="danger-actions">
-                <input value={props.tombstoneReason} onChange={(event) => props.setTombstoneReason(event.target.value)} placeholder="tombstone reason" />
-                <button className="danger-button" onClick={props.onTombstone}>
-                  <Archive size={15} />
-                  Tombstone
-                </button>
-                <button className="danger-button" onClick={props.onForget}>
-                  <Trash2 size={15} />
-                  Forget 擦除
-                </button>
-              </div>
-            </>
-          ) : null}
-        </>
-      )}
-    </section>
-  );
-}
-
 function SourceIds({ item }: { item: MemoryItem }) {
-  const ids = [
-    ["run_id", item.run_id],
-    ["source_candidate_id", item.source_candidate_id]
-  ].filter(([, value]) => Boolean(value));
+  const ids = [["run_id", item.run_id], ["source_candidate_id", item.source_candidate_id]].filter(([, v]) => Boolean(v));
   if (ids.length === 0) return null;
   return (
     <div className="source-ids">
-      {ids.map(([label, value]) => (
-        <div key={label}>
-          <span>{label}</span>
-          <code>{value}</code>
-        </div>
-      ))}
+      {ids.map(([label, value]) => <div key={label}><span>{label}</span><code>{value}</code></div>)}
     </div>
   );
 }
@@ -1480,9 +2022,7 @@ function ProvenanceTimeline({ provenance }: { provenance: MemoryProvenanceResult
           <span className="timeline-kind">事件</span>
           <div>
             <strong>{event.excerpt || event.id}</strong>
-            <small>
-              {event.source || "unknown"} · 发生 {formatDate(event.event_at)} · 记录 {formatDate(event.observed_at)}
-            </small>
+            <small>{event.source || "unknown"} · 发生 {formatDate(event.event_at)} · 记录 {formatDate(event.observed_at)}</small>
             <code>{event.message_id || event.run_id || compactId(event.raw_hash) || event.id}</code>
           </div>
         </div>
@@ -1512,17 +2052,10 @@ function ProvenanceTimeline({ provenance }: { provenance: MemoryProvenanceResult
 }
 
 function SaveMemoryDrawer(props: {
-  open: boolean;
-  factText: string;
-  setFactText: (value: string) => void;
-  observationText: string;
-  setObservationText: (value: string) => void;
-  source: string;
-  setSource: (value: string) => void;
-  uidFilter: string;
-  loading: boolean;
-  onSubmit: () => void;
-  onClose: () => void;
+  open: boolean; factText: string; setFactText: (v: string) => void;
+  observationText: string; setObservationText: (v: string) => void;
+  source: string; setSource: (v: string) => void;
+  uidFilter: string; loading: boolean; onSubmit: () => void; onClose: () => void;
 }) {
   if (!props.open) return null;
   return (
@@ -1534,20 +2067,13 @@ function SaveMemoryDrawer(props: {
             <h2>保存记忆</h2>
             <p>写入后会先生成候选记忆，后续由模型审核或高级模式操作进入稳定记忆。</p>
           </div>
-          <button className="ghost-button icon-only" onClick={props.onClose}>
-            <X size={16} />
-          </button>
+          <button className="ghost-button icon-only" onClick={props.onClose}><X size={16} /></button>
         </div>
         <Composer
-          factText={props.factText}
-          setFactText={props.setFactText}
-          observationText={props.observationText}
-          setObservationText={props.setObservationText}
-          source={props.source}
-          setSource={props.setSource}
-          uidFilter={props.uidFilter}
-          loading={props.loading}
-          onSubmit={props.onSubmit}
+          factText={props.factText} setFactText={props.setFactText}
+          observationText={props.observationText} setObservationText={props.setObservationText}
+          source={props.source} setSource={props.setSource}
+          uidFilter={props.uidFilter} loading={props.loading} onSubmit={props.onSubmit}
         />
       </aside>
     </div>
@@ -1555,15 +2081,10 @@ function SaveMemoryDrawer(props: {
 }
 
 function Composer(props: {
-  factText: string;
-  setFactText: (value: string) => void;
-  observationText: string;
-  setObservationText: (value: string) => void;
-  source: string;
-  setSource: (value: string) => void;
-  uidFilter: string;
-  loading?: boolean;
-  onSubmit: () => void;
+  factText: string; setFactText: (v: string) => void;
+  observationText: string; setObservationText: (v: string) => void;
+  source: string; setSource: (v: string) => void;
+  uidFilter: string; loading?: boolean; onSubmit: () => void;
 }) {
   const writeScope = scopeFromUidFilter(props.uidFilter) || "global";
   return (
@@ -1572,78 +2093,14 @@ function Composer(props: {
         <h2>写入记忆</h2>
         <StatusBadge text={writeScope} />
       </div>
-      <label>
-        Fact
-        <textarea value={props.factText} onChange={(event) => props.setFactText(event.target.value)} placeholder="例如：用户偏好简洁的实现进度更新。" />
-      </label>
-      <label>
-        Observation
-        <textarea
-          value={props.observationText}
-          onChange={(event) => props.setObservationText(event.target.value)}
-          placeholder="例如：本次任务需要保留 WebUI 构建产物。"
-        />
-      </label>
+      <label>Fact <textarea value={props.factText} onChange={(e) => props.setFactText(e.target.value)} placeholder="例如：用户偏好简洁的实现进度更新。" /></label>
+      <label>Observation <textarea value={props.observationText} onChange={(e) => props.setObservationText(e.target.value)} placeholder="例如：本次任务需要保留 WebUI 构建产物。" /></label>
       <div className="composer-row">
-        <input value={props.source} onChange={(event) => props.setSource(event.target.value)} placeholder="source" />
+        <input value={props.source} onChange={(e) => props.setSource(e.target.value)} placeholder="source" />
         <button className="primary-button" onClick={props.onSubmit} disabled={props.loading}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
           Add Memory
         </button>
-      </div>
-    </section>
-  );
-}
-
-function CandidateReview(props: {
-  candidates: MemoryItem[];
-  dreamStatus: DreamStatusResult | null;
-  rejectReason: string;
-  setRejectReason: (value: string) => void;
-  onPromote: (id: string) => void;
-  onReject: (id: string) => void;
-  onSelect: (item: MemoryItem) => void;
-}) {
-  const reviewResults = dreamReviewResultMap(props.dreamStatus);
-  return (
-    <section className="panel">
-        <div className="panel-header">
-            <div>
-              <h2>候选审核</h2>
-              <p>Promote 通过后会进入记忆页；这里保留待审核、拒绝和需复核的候选。</p>
-          </div>
-        <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} placeholder="reject reason" />
-      </div>
-      <div className="candidate-list">
-        {props.candidates.length === 0 ? <EmptyState text="暂无待处理或需查看原因的候选记忆。" /> : null}
-        {props.candidates.map((candidate) => {
-          const reviewable = isReviewableCandidate(candidate);
-          return (
-            <article className="candidate-row" key={candidate.id}>
-              <button onClick={() => props.onSelect(candidate)}>
-                <strong>{candidate.claim || candidate.title || candidate.id}</strong>
-                <span>{candidate.dimension || candidate.scope || "global"} · {formatTime(candidate.created_at)}</span>
-                <AuditResultBadge item={candidate} review={reviewForItem(candidate, reviewResults)} />
-              </button>
-              <div className="candidate-actions">
-                {reviewable ? (
-                  <>
-                    <button className="success-button" onClick={() => props.onPromote(candidate.id)}>
-                      <Check size={15} />
-                      Promote
-                    </button>
-                    <button className="danger-button" onClick={() => props.onReject(candidate.id)}>
-                      <Trash2 size={15} />
-                      Reject
-                    </button>
-                  </>
-                ) : (
-                  <StatusBadge text={candidate.status || "reviewed"} />
-                )}
-              </div>
-            </article>
-          );
-        })}
       </div>
     </section>
   );
@@ -1840,17 +2297,12 @@ function PlanSection(props: {
 }
 
 function TombstonePanel(props: {
-  tombstones: MemoryTombstone[];
-  selectedTombstoneIds: Set<string>;
-  loading: boolean;
-  onToggleSelection: (tombstoneId: string, selected: boolean) => void;
-  onToggleAll: (selected: boolean) => void;
-  onSelectTarget: (item: MemoryItem) => void;
-  onForget: (tombstone: MemoryTombstone) => void;
-  onHardDelete: (tombstone: MemoryTombstone) => void;
-  onHardDeleteSelected: () => void;
+  tombstones: MemoryTombstone[]; selectedTombstoneIds: Set<string>; loading: boolean;
+  onToggleSelection: (id: string, sel: boolean) => void; onToggleAll: (sel: boolean) => void;
+  onSelectTarget: (item: MemoryItem) => void; onForget: (t: MemoryTombstone) => void;
+  onHardDelete: (t: MemoryTombstone) => void; onHardDeleteSelected: () => void;
 }) {
-  const selectedCount = props.tombstones.filter((tombstone) => props.selectedTombstoneIds.has(tombstone.id)).length;
+  const selectedCount = props.tombstones.filter((t) => props.selectedTombstoneIds.has(t.id)).length;
   const allSelected = props.tombstones.length > 0 && selectedCount === props.tombstones.length;
   return (
     <section className="panel tombstone-panel">
@@ -1866,66 +2318,45 @@ function TombstonePanel(props: {
       </div>
       <div className="tombstone-toolbar">
         <label className="tombstone-select-all">
-          <input
-            type="checkbox"
-            checked={allSelected}
-            disabled={props.loading || props.tombstones.length === 0}
-            onChange={(event) => props.onToggleAll(event.target.checked)}
-          />
+          <input type="checkbox" checked={allSelected} disabled={props.loading || props.tombstones.length === 0} onChange={(e) => props.onToggleAll(e.target.checked)} />
           <span>全选</span>
         </label>
-        <button
-          className="danger-button strong-danger"
-          onClick={props.onHardDeleteSelected}
-          disabled={props.loading || selectedCount === 0}
-        >
-          <X size={15} />
-          彻底删除选中
+        <button className="danger-button strong-danger" onClick={props.onHardDeleteSelected} disabled={props.loading || selectedCount === 0}>
+          <X size={15} /> 彻底删除选中
         </button>
       </div>
       <div className="tombstone-list">
         {props.tombstones.length === 0 ? <EmptyState text="暂无 tombstone。" /> : null}
-        {props.tombstones.map((tombstone) => (
-          <article className="tombstone-card" key={tombstone.id}>
+        {props.tombstones.map((t) => (
+          <article className="tombstone-card" key={t.id}>
             <label className="tombstone-select" title="选择 tombstone">
-              <input
-                type="checkbox"
-                aria-label={`选择 tombstone ${tombstone.id}`}
-                checked={props.selectedTombstoneIds.has(tombstone.id)}
-                disabled={props.loading}
-                onChange={(event) => props.onToggleSelection(tombstone.id, event.target.checked)}
-              />
+              <input type="checkbox" aria-label={`选择 tombstone ${t.id}`} checked={props.selectedTombstoneIds.has(t.id)} disabled={props.loading}
+                onChange={(e) => props.onToggleSelection(t.id, e.target.checked)} />
             </label>
             <div className="tombstone-main">
               <div className="tombstone-title">
-                <StatusBadge text={tombstone.target_type} />
-                <strong>{tombstone.reason || "unspecified"}</strong>
-                <span>{formatDate(tombstone.created_at)}</span>
+                <StatusBadge text={t.target_type} />
+                <strong>{t.reason || "unspecified"}</strong>
+                <span>{formatDate(t.created_at)}</span>
               </div>
-              <div className="tombstone-target">
-                <span>Target</span>
-                <code>{tombstone.target_id}</code>
-              </div>
-              <p>{tombstone.summary || tombstone.rule || tombstone.target_hash || "No tombstone summary."}</p>
+              <div className="tombstone-target"><span>Target</span><code>{t.target_id}</code></div>
+              <p>{t.summary || t.rule || t.target_hash || "No tombstone summary."}</p>
               <div className="tombstone-meta">
-                <code>{tombstone.id}</code>
-                {tombstone.evidence_run_id ? <code>{tombstone.evidence_run_id}</code> : null}
-                {tombstone.rule ? <span>{tombstone.rule}</span> : null}
+                <code>{t.id}</code>
+                {t.evidence_run_id ? <code>{t.evidence_run_id}</code> : null}
+                {t.rule ? <span>{t.rule}</span> : null}
               </div>
-              <JsonBlock title="Metadata" value={tombstone.metadata || {}} />
+              <JsonBlock title="Metadata" value={t.metadata || {}} />
             </div>
             <div className="tombstone-actions">
-              <button className="ghost-button" onClick={() => props.onSelectTarget(tombstoneTargetItem(tombstone))} disabled={props.loading}>
-                <ChevronRight size={15} />
-                查看目标
+              <button className="ghost-button" onClick={() => props.onSelectTarget(tombstoneTargetItem(t))} disabled={props.loading}>
+                <ChevronRight size={15} /> 查看目标
               </button>
-              <button className="danger-button" onClick={() => props.onForget(tombstone)} disabled={props.loading}>
-                <Trash2 size={15} />
-                Forget 擦除
+              <button className="danger-button" onClick={() => props.onForget(t)} disabled={props.loading}>
+                <Trash2 size={15} /> Forget 擦除
               </button>
-              <button className="danger-button strong-danger" onClick={() => props.onHardDelete(tombstone)} disabled={props.loading}>
-                <X size={15} />
-                彻底删除
+              <button className="danger-button strong-danger" onClick={() => props.onHardDelete(t)} disabled={props.loading}>
+                <X size={15} /> 彻底删除
               </button>
             </div>
           </article>
@@ -1936,25 +2367,16 @@ function TombstonePanel(props: {
 }
 
 function MaintenancePanel(props: {
-  health: MemoryHealthResult | null;
-  dreamStatus: DreamStatusResult | null;
-  snapshot: SnapshotResult | null;
-  tombstones: MemoryTombstone[];
-  proposals: DreamProposal[];
-  useProvider: boolean;
-  advancedDreaming: boolean;
-  advancedMode: boolean;
-  loading: boolean;
-  dreamElapsedS: number | null;
-  proposalRejectReason: string;
-  setProposalRejectReason: (value: string) => void;
-  onRunDream: () => void;
-  onCompileSnapshot: () => void;
-  onApplyProposal: (id: string) => void;
-  onRejectProposal: (id: string) => void;
+  health: MemoryHealthResult | null; dreamStatus: DreamStatusResult | null;
+  snapshot: SnapshotResult | null; tombstones: MemoryTombstone[];
+  proposals: DreamProposal[]; useProvider: boolean; advancedDreaming: boolean;
+  advancedMode: boolean; loading: boolean; dreamElapsedS: number | null;
+  proposalRejectReason: string; setProposalRejectReason: (v: string) => void;
+  onRunDream: () => void; onCompileSnapshot: () => void;
+  onApplyProposal: (id: string) => void; onRejectProposal: (id: string) => void;
 }) {
   const latestDurationS = latestDreamDurationS(props.dreamStatus);
-  const pendingProposals = props.proposals.filter((proposal) => proposal.status === "pending");
+  const pendingProposals = props.proposals.filter((p) => p.status === "pending");
   return (
     <section className="panel maintenance">
       <div className="panel-header">
@@ -1965,13 +2387,10 @@ function MaintenancePanel(props: {
         <div className="action-row">
           <button className="primary-button" onClick={props.onRunDream} disabled={props.loading}>
             {props.dreamElapsedS !== null ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
-            {props.dreamElapsedS !== null
-              ? `运行中 ${formatDuration(props.dreamElapsedS)}`
-              : props.useProvider ? "模型 Dream" : "运行 Dream"}
+            {props.dreamElapsedS !== null ? `运行中 ${formatDuration(props.dreamElapsedS)}` : props.useProvider ? "模型 Dream" : "运行 Dream"}
           </button>
           <button className="ghost-button" onClick={props.onCompileSnapshot} disabled={props.loading}>
-            <RefreshCcw size={16} />
-            刷新快照
+            <RefreshCcw size={16} /> 刷新快照
           </button>
         </div>
       </div>
@@ -1985,12 +2404,9 @@ function MaintenancePanel(props: {
       {props.advancedMode ? (
         <>
           <DreamProposalsPanel
-            proposals={props.proposals}
-            rejectReason={props.proposalRejectReason}
-            setRejectReason={props.setProposalRejectReason}
-            loading={props.loading}
-            onApply={props.onApplyProposal}
-            onReject={props.onRejectProposal}
+            proposals={props.proposals} rejectReason={props.proposalRejectReason}
+            setRejectReason={props.setProposalRejectReason} loading={props.loading}
+            onApply={props.onApplyProposal} onReject={props.onRejectProposal}
           />
           <div className="maintenance-grid">
             <JsonBlock title="Health" value={props.health || {}} />
@@ -2000,40 +2416,24 @@ function MaintenancePanel(props: {
           </div>
         </>
       ) : (
-        <MaintenanceSummary
-          health={props.health}
-          dreamStatus={props.dreamStatus}
-          snapshot={props.snapshot}
-          tombstones={props.tombstones}
-          proposals={props.proposals}
-          useProvider={props.useProvider}
-        />
+        <MaintenanceSummary health={props.health} dreamStatus={props.dreamStatus} snapshot={props.snapshot}
+          tombstones={props.tombstones} proposals={props.proposals} useProvider={props.useProvider} />
       )}
     </section>
   );
 }
 
 function DreamProposalsPanel(props: {
-  proposals: DreamProposal[];
-  rejectReason: string;
-  setRejectReason: (value: string) => void;
-  loading: boolean;
-  onApply: (id: string) => void;
-  onReject: (id: string) => void;
+  proposals: DreamProposal[]; rejectReason: string; setRejectReason: (v: string) => void;
+  loading: boolean; onApply: (id: string) => void; onReject: (id: string) => void;
 }) {
   return (
     <div className="dream-proposals">
       <div className="dream-proposals-header">
-        <div>
-          <h3>整理提案</h3>
-          <p>高级 Dreaming 的高风险整理动作会停在这里，确认后才会改稳定记忆。</p>
-        </div>
+        <div><h3>整理提案</h3><p>高级 Dreaming 的高风险整理动作会停在这里，确认后才会改稳定记忆。</p></div>
         <StatusBadge text={`${props.proposals.length} 条提案`} />
       </div>
-      <label>
-        拒绝原因
-        <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
-      </label>
+      <label>拒绝原因 <input value={props.rejectReason} onChange={(e) => props.setRejectReason(e.target.value)} /></label>
       <div className="dream-proposal-list">
         {props.proposals.length === 0 ? <EmptyState text="暂无整理提案。开启高级 Dreaming 并运行模型 Dream 后会显示在这里。" /> : null}
         {props.proposals.map((proposal) => (
@@ -2060,12 +2460,10 @@ function DreamProposalsPanel(props: {
               {proposal.status === "pending" ? (
                 <>
                   <button className="success-button" disabled={props.loading} onClick={() => props.onApply(proposal.id)}>
-                    <Check size={15} />
-                    通过
+                    <Check size={15} /> 通过
                   </button>
                   <button className="danger-button" disabled={props.loading} onClick={() => props.onReject(proposal.id)}>
-                    <X size={15} />
-                    拒绝
+                    <X size={15} /> 拒绝
                   </button>
                 </>
               ) : (
@@ -2080,42 +2478,19 @@ function DreamProposalsPanel(props: {
 }
 
 function MaintenanceSummary(props: {
-  health: MemoryHealthResult | null;
-  dreamStatus: DreamStatusResult | null;
-  snapshot: SnapshotResult | null;
-  tombstones: MemoryTombstone[];
-  proposals: DreamProposal[];
-  useProvider: boolean;
+  health: MemoryHealthResult | null; dreamStatus: DreamStatusResult | null;
+  snapshot: SnapshotResult | null; tombstones: MemoryTombstone[];
+  proposals: DreamProposal[]; useProvider: boolean;
 }) {
   const healthCards = Array.isArray(props.health?.cards) ? props.health.cards.length : 0;
   const latestDuration = latestDreamDurationS(props.dreamStatus);
-  const pendingProposals = props.proposals.filter((proposal) => proposal.status === "pending").length;
+  const pendingProposals = props.proposals.filter((p) => p.status === "pending").length;
   return (
     <div className="maintenance-summary">
-      <div className="summary-card">
-        <Sparkles size={18} />
-        <span>模型审核</span>
-        <strong>{props.useProvider ? "已启用" : "未启用"}</strong>
-        <small>{props.useProvider ? "Run Dream 会调用 provider" : "Dream 只生成报告和快照"}</small>
-      </div>
-      <div className="summary-card">
-        <FileClock size={18} />
-        <span>最近 Dream</span>
-        <strong>{latestDuration === null ? "暂无" : formatDuration(latestDuration)}</strong>
-        <small>高级模式可查看完整报告</small>
-      </div>
-      <div className="summary-card">
-        <Gauge size={18} />
-        <span>健康卡片</span>
-        <strong>{healthCards}</strong>
-        <small>用于发现重复、冲突和维护 backlog</small>
-      </div>
-      <div className="summary-card">
-        <Archive size={18} />
-        <span>整理提案</span>
-        <strong>{pendingProposals}</strong>
-        <small>{props.tombstones.length} 条删除痕迹 · {props.snapshot?.exists ? "Snapshot 已存在" : "Snapshot 未生成"}</small>
-      </div>
+      <div className="summary-card"><Sparkles size={18} /><span>模型审核</span><strong>{props.useProvider ? "已启用" : "未启用"}</strong><small>{props.useProvider ? "Run Dream 会调用 provider" : "Dream 只生成报告和快照"}</small></div>
+      <div className="summary-card"><FileClock size={18} /><span>最近 Dream</span><strong>{latestDuration === null ? "暂无" : formatDuration(latestDuration)}</strong><small>高级模式可查看完整报告</small></div>
+      <div className="summary-card"><Gauge size={18} /><span>健康卡片</span><strong>{healthCards}</strong><small>用于发现重复、冲突和维护 backlog</small></div>
+      <div className="summary-card"><Archive size={18} /><span>整理提案</span><strong>{pendingProposals}</strong><small>{props.tombstones.length} 条删除痕迹 · {props.snapshot?.exists ? "Snapshot 已存在" : "Snapshot 未生成"}</small></div>
     </div>
   );
 }
@@ -2135,13 +2510,10 @@ function DreamReviewReasons({ items }: { items: DreamReviewResult[] }) {
   if (items.length === 0) return null;
   return (
     <div className="dream-rejects">
-      <div className="dream-rejects-header">
-        <h3>审核原因</h3>
-        <StatusBadge text={`${items.length} reviewed`} />
-      </div>
+      <div className="dream-rejects-header"><h3>审核原因</h3><StatusBadge text={`${items.length} reviewed`} /></div>
       <div className="dream-reject-list">
-        {items.map((item, index) => (
-          <div className="dream-reject-row" key={`${item.action_id || item.candidate_id || "reject"}:${index}`}>
+        {items.map((item, i) => (
+          <div className="dream-reject-row" key={`${item.action_id || item.candidate_id || "reject"}:${i}`}>
             <code>{auditReviewLabel(item)} · {item.candidate_id || item.page_id || item.action_id || "unknown candidate"}</code>
             <p>{item.reason || "unspecified"}</p>
           </div>
@@ -2152,25 +2524,16 @@ function DreamReviewReasons({ items }: { items: DreamReviewResult[] }) {
 }
 
 function SettingsPanel(props: {
-  apiBase: string;
-  setApiBase: (value: string) => void;
-  authToken: string;
-  setAuthToken: (value: string) => void;
-  source: string;
-  setSource: (value: string) => void;
-  useProvider: boolean;
-  setUseProvider: (value: boolean) => void;
-  advancedDreaming: boolean;
-  setAdvancedDreaming: (value: boolean) => void;
+  apiBase: string; setApiBase: (v: string) => void;
+  authToken: string; setAuthToken: (v: string) => void;
+  source: string; setSource: (v: string) => void;
+  useProvider: boolean; setUseProvider: (v: boolean) => void;
+  advancedDreaming: boolean; setAdvancedDreaming: (v: boolean) => void;
   providerConfig: ProviderConfigResult | null;
-  providerForm: ProviderFormState;
-  setProviderForm: (value: ProviderFormState) => void;
+  providerForm: ProviderFormState; setProviderForm: (v: ProviderFormState) => void;
   autoDreamStatus: AutoDreamStatusResult | null;
-  autoDreamForm: AutoDreamFormState;
-  setAutoDreamForm: (value: AutoDreamFormState) => void;
-  onSaveProviderConfig: () => void;
-  onSaveAutoDreamConfig: () => void;
-  loading: boolean;
+  autoDreamForm: AutoDreamFormState; setAutoDreamForm: (v: AutoDreamFormState) => void;
+  onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void; loading: boolean;
 }) {
   const setProviderField = <K extends keyof ProviderFormState>(field: K, value: ProviderFormState[K]) => {
     props.setProviderForm({ ...props.providerForm, [field]: value });
@@ -2178,133 +2541,45 @@ function SettingsPanel(props: {
   const setAutoDreamField = <K extends keyof AutoDreamFormState>(field: K, value: AutoDreamFormState[K]) => {
     props.setAutoDreamForm({ ...props.autoDreamForm, [field]: value });
   };
-
   return (
     <section className="panel settings-panel">
-      <div className="panel-header">
-        <div>
-          <h2>设置</h2>
-          <p>本地 API、Bearer token 和维护模型配置。</p>
-        </div>
-        <ShieldCheck size={22} />
-      </div>
-      <label>
-        API Base
-        <input value={props.apiBase} onChange={(event) => props.setApiBase(event.target.value)} />
-      </label>
-      <label>
-        Bearer Token
-        <input value={props.authToken} onChange={(event) => props.setAuthToken(event.target.value)} placeholder="mnemo-memory serve --auth-token ..." />
-      </label>
-      <label>
-        默认 Source
-        <input value={props.source} onChange={(event) => props.setSource(event.target.value)} />
-      </label>
+      <div className="panel-header"><div><h2>设置</h2><p>本地 API、Bearer token 和维护模型配置。</p></div><ShieldCheck size={22} /></div>
+      <label>API Base <input value={props.apiBase} onChange={(e) => props.setApiBase(e.target.value)} /></label>
+      <label>Bearer Token <input value={props.authToken} onChange={(e) => props.setAuthToken(e.target.value)} placeholder="mnemo-memory serve --auth-token ..." /></label>
+      <label>默认 Source <input value={props.source} onChange={(e) => props.setSource(e.target.value)} /></label>
       <div className="provider-status-row">
         <StatusBadge text={providerStatusText(props.providerConfig)} />
         <code>{props.providerConfig?.save_path || "config.json"}</code>
       </div>
       <div className="provider-grid">
-        <label>
-          Provider
-          <select value={props.providerForm.provider} onChange={(event) => setProviderField("provider", event.target.value)}>
-            <option value="openai-compatible">openai-compatible</option>
-          </select>
-        </label>
-        <label>
-          Base URL
-          <input
-            value={props.providerForm.baseUrl}
-            onChange={(event) => setProviderField("baseUrl", event.target.value)}
-            placeholder="https://api.openai.com/v1"
-          />
-        </label>
-        <label>
-          Model
-          <input
-            value={props.providerForm.model}
-            onChange={(event) => setProviderField("model", event.target.value)}
-            placeholder="gpt-4.1-mini"
-          />
-        </label>
-        <label>
-          API Key
-          <input
-            type="password"
-            autoComplete="off"
-            value={props.providerForm.apiKey}
-            onChange={(event) => setProviderField("apiKey", event.target.value)}
-            placeholder={props.providerConfig?.api_key_configured ? "已保存；留空保持不变" : "sk-..."}
-          />
-        </label>
-        <label>
-          API Key Env
-          <input
-            value={props.providerForm.apiKeyEnv}
-            onChange={(event) => setProviderField("apiKeyEnv", event.target.value)}
-            placeholder="OPENAI_API_KEY"
-          />
-        </label>
-        <label>
-          Timeout
-          <input
-            type="number"
-            min="0.1"
-            step="0.1"
-            value={props.providerForm.timeoutS}
-            onChange={(event) => setProviderField("timeoutS", event.target.value)}
-          />
-        </label>
+        <label>Provider <select value={props.providerForm.provider} onChange={(e) => setProviderField("provider", e.target.value)}><option value="openai-compatible">openai-compatible</option></select></label>
+        <label>Base URL <input value={props.providerForm.baseUrl} onChange={(e) => setProviderField("baseUrl", e.target.value)} placeholder="https://api.openai.com/v1" /></label>
+        <label>Model <input value={props.providerForm.model} onChange={(e) => setProviderField("model", e.target.value)} placeholder="gpt-4.1-mini" /></label>
+        <label>API Key <input type="password" autoComplete="off" value={props.providerForm.apiKey} onChange={(e) => setProviderField("apiKey", e.target.value)} placeholder={props.providerConfig?.api_key_configured ? "已保存；留空保持不变" : "sk-..."} /></label>
+        <label>API Key Env <input value={props.providerForm.apiKeyEnv} onChange={(e) => setProviderField("apiKeyEnv", e.target.value)} placeholder="OPENAI_API_KEY" /></label>
+        <label>Timeout <input type="number" min="0.1" step="0.1" value={props.providerForm.timeoutS} onChange={(e) => setProviderField("timeoutS", e.target.value)} /></label>
       </div>
       <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={props.useProvider}
-          onChange={(event) => props.setUseProvider(event.target.checked)}
-        />
-        <span>
-          <strong>使用模型审核</strong>
-          <small>Run Dream 时调用服务端 provider；这里保存的配置会写入 state config。</small>
-        </span>
+        <input type="checkbox" checked={props.useProvider} onChange={(e) => props.setUseProvider(e.target.checked)} />
+        <span><strong>使用模型审核</strong><small>Run Dream 时调用服务端 provider；这里保存的配置会写入 state config。</small></span>
       </label>
       <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={props.advancedDreaming}
-          onChange={(event) => props.setAdvancedDreaming(event.target.checked)}
-        />
-        <span>
-          <strong>高级 Dreaming</strong>
-          <small>开启后 Dream 会生成稳定记忆整理提案；高风险合并、拆分、重写需要在维护页确认。</small>
-        </span>
+        <input type="checkbox" checked={props.advancedDreaming} onChange={(e) => props.setAdvancedDreaming(e.target.checked)} />
+        <span><strong>高级 Dreaming</strong><small>开启后 Dream 会生成稳定记忆整理提案；高风险合并、拆分、重写需要在维护页确认。</small></span>
       </label>
       <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={props.providerForm.thinkingEnabled}
-          onChange={(event) => setProviderField("thinkingEnabled", event.target.checked)}
-        />
-        <span>
-          <strong>开启 Thinking</strong>
-          <small>保存后 provider 请求会携带 thinking 参数；关闭时不发送该字段。</small>
-        </span>
+        <input type="checkbox" checked={props.providerForm.thinkingEnabled} onChange={(e) => setProviderField("thinkingEnabled", e.target.checked)} />
+        <span><strong>开启 Thinking</strong><small>保存后 provider 请求会携带 thinking 参数；关闭时不发送该字段。</small></span>
       </label>
       <div className="settings-actions">
         <button className="primary-button" onClick={props.onSaveProviderConfig} disabled={props.loading}>
-          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />}
-          保存 Provider
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存 Provider
         </button>
-        <button className="ghost-button" onClick={() => props.setAuthToken("")}>
-          <X size={15} />
-          清除 Token
-        </button>
+        <button className="ghost-button" onClick={() => props.setAuthToken("")}><X size={15} /> 清除 Token</button>
       </div>
       <div className="settings-divider" />
       <div className="settings-section-header">
-        <div>
-          <h3>自动 Dreaming</h3>
-          <p>服务进程内定时维护，默认每 180 分钟检查一次。</p>
-        </div>
+        <div><h3>自动 Dreaming</h3><p>服务进程内定时维护，默认每 180 分钟检查一次。</p></div>
         <StatusBadge text={autoDreamStatusText(props.autoDreamStatus)} />
       </div>
       <div className="provider-status-row">
@@ -2312,53 +2587,21 @@ function SettingsPanel(props: {
         <code>{props.autoDreamStatus?.status_path || "auto-dream-status.json"}</code>
       </div>
       <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={props.autoDreamForm.enabled}
-          onChange={(event) => setAutoDreamField("enabled", event.target.checked)}
-        />
-        <span>
-          <strong>启用自动 Dreaming</strong>
-          <small>仅在有 backlog 且 provider 已配置时调用模型维护。</small>
-        </span>
+        <input type="checkbox" checked={props.autoDreamForm.enabled} onChange={(e) => setAutoDreamField("enabled", e.target.checked)} />
+        <span><strong>启用自动 Dreaming</strong><small>仅在有 backlog 且 provider 已配置时调用模型维护。</small></span>
       </label>
       <div className="provider-grid">
-        <label>
-          间隔分钟
-          <input
-            type="number"
-            min="5"
-            step="5"
-            value={props.autoDreamForm.intervalMinutes}
-            onChange={(event) => setAutoDreamField("intervalMinutes", event.target.value)}
-          />
-        </label>
-        <label>
-          下次运行
-          <input readOnly value={formatDate(props.autoDreamStatus?.next_run_at ?? undefined)} />
-        </label>
-        <label>
-          上次检查
-          <input readOnly value={formatDate(props.autoDreamStatus?.last_checked_at ?? undefined)} />
-        </label>
-        <label>
-          上次用时
-          <input
-            readOnly
-            value={props.autoDreamStatus?.last_duration_s == null ? "-" : formatDuration(props.autoDreamStatus.last_duration_s)}
-          />
-        </label>
+        <label>间隔分钟 <input type="number" min="5" step="5" value={props.autoDreamForm.intervalMinutes} onChange={(e) => setAutoDreamField("intervalMinutes", e.target.value)} /></label>
+        <label>下次运行 <input readOnly value={formatDate(props.autoDreamStatus?.next_run_at ?? undefined)} /></label>
+        <label>上次检查 <input readOnly value={formatDate(props.autoDreamStatus?.last_checked_at ?? undefined)} /></label>
+        <label>上次用时 <input readOnly value={props.autoDreamStatus?.last_duration_s == null ? "-" : formatDuration(props.autoDreamStatus.last_duration_s)} /></label>
       </div>
       {props.autoDreamStatus?.last_error ? (
-        <div className="auto-dream-error">
-          <strong>最近错误</strong>
-          <span>{props.autoDreamStatus.last_error}</span>
-        </div>
+        <div className="auto-dream-error"><strong>最近错误</strong><span>{props.autoDreamStatus.last_error}</span></div>
       ) : null}
       <div className="settings-actions">
         <button className="primary-button" onClick={props.onSaveAutoDreamConfig} disabled={props.loading}>
-          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />}
-          保存自动 Dreaming
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存自动 Dreaming
         </button>
       </div>
     </section>
@@ -2366,43 +2609,32 @@ function SettingsPanel(props: {
 }
 
 function OperationsQueue(props: {
-  candidates: MemoryItem[];
-  dreamStatus: DreamStatusResult | null;
-  snapshot: SnapshotResult | null;
-  useProvider: boolean;
-  loading: boolean;
+  candidates: MemoryItem[]; dreamStatus: DreamStatusResult | null;
+  snapshot: SnapshotResult | null; useProvider: boolean; loading: boolean;
   dreamElapsedS: number | null;
-  onPromote: (id: string) => void;
-  onReject: (id: string) => void;
-  onRunDream: () => void;
+  onPromote: (id: string) => void; onReject: (id: string) => void; onRunDream: () => void;
 }) {
   return (
     <div className="ops-stack">
       <section className="panel ops-panel">
-        <div className="panel-header compact">
-          <h2>Operations Queue</h2>
-          <StatusBadge text={`${props.candidates.length} candidates`} />
-        </div>
+        <div className="panel-header compact"><h2>Operations Queue</h2><StatusBadge text={`${props.candidates.length} candidates`} /></div>
         {props.candidates.length === 0 ? <EmptyState text="没有待审候选。" /> : null}
-        {props.candidates.slice(0, 6).map((candidate) => (
-          <article className="queue-item" key={candidate.id}>
+        {props.candidates.slice(0, 6).map((c) => (
+          <article className="queue-item" key={c.id}>
             <div>
-              <span className="score">{formatConfidence(candidate.confidence)}</span>
-              <strong>{candidate.claim || candidate.id}</strong>
-              <small>{candidate.scope || candidate.dimension || "global"}</small>
+              <span className="score">{formatConfidence(c.confidence)}</span>
+              <strong>{c.claim || c.id}</strong>
+              <small>{c.scope || c.dimension || "global"}</small>
             </div>
             <div>
-              <button className="success-button" onClick={() => props.onPromote(candidate.id)} disabled={props.loading}>Promote</button>
-              <button className="danger-button" onClick={() => props.onReject(candidate.id)} disabled={props.loading}>Reject</button>
+              <button className="success-button" onClick={() => props.onPromote(c.id)} disabled={props.loading}>Promote</button>
+              <button className="danger-button" onClick={() => props.onReject(c.id)} disabled={props.loading}>Reject</button>
             </div>
           </article>
         ))}
       </section>
       <section className="panel ops-panel">
-        <div className="panel-header compact">
-          <h2>Dream Run</h2>
-          <Sparkles size={18} />
-        </div>
+        <div className="panel-header compact"><h2>Dream Run</h2><Sparkles size={18} /></div>
         <JsonBlock title="Status" value={props.dreamStatus || {}} />
         <button className="primary-button full" onClick={props.onRunDream} disabled={props.loading}>
           {props.dreamElapsedS !== null ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
@@ -2410,58 +2642,252 @@ function OperationsQueue(props: {
         </button>
       </section>
       <section className="panel ops-panel">
-        <div className="panel-header compact">
-          <h2>Snapshot</h2>
-          <StatusBadge text={props.snapshot?.exists ? "OK" : "Missing"} />
-        </div>
+        <div className="panel-header compact"><h2>Snapshot</h2><StatusBadge text={props.snapshot?.exists ? "OK" : "Missing"} /></div>
         <JsonBlock title="Latest" value={props.snapshot || { exists: false }} />
       </section>
     </div>
   );
 }
 
+// ─── Shared Components ───────────────────────────────────────────────────────
+
 function JsonBlock({ title, value }: { title: string; value: unknown }) {
   return (
     <div className="json-block">
-      <div>
-        <span>{title}</span>
-        <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(value, null, 2))}>
-          <Link2 size={13} />
-        </button>
-      </div>
+      <div><span>{title}</span><button onClick={() => navigator.clipboard?.writeText(JSON.stringify(value, null, 2))}><Link2 size={13} /></button></div>
       <pre>{JSON.stringify(value, null, 2)}</pre>
     </div>
   );
 }
 
 function StatusBadge({ text }: { text: string }) {
-  const normalized = text.toLowerCase();
-  const tone = normalized.includes("active") || normalized.includes("ok") || normalized.includes("page")
-    ? "good"
-    : normalized.includes("draft") || normalized.includes("candidate")
-      ? "blue"
-      : normalized.includes("reject") || normalized.includes("tomb") || normalized.includes("delete")
-        ? "bad"
-        : "neutral";
+  const n = text.toLowerCase();
+  const tone = n.includes("active") || n.includes("ok") || n.includes("page") ? "good"
+    : n.includes("draft") || n.includes("candidate") ? "blue"
+    : n.includes("reject") || n.includes("tomb") || n.includes("delete") ? "bad"
+    : n.includes("conflict") ? "warn"
+    : "neutral";
   return <span className={`badge ${tone}`} title={text}>{compactStatusText(text)}</span>;
 }
 
 function compactStatusText(text: string) {
-  const cleanText = text.trim();
-  const separator = cleanText.indexOf(":");
-  if (separator > 0) {
-    return cleanText.slice(0, separator);
+  const clean = text.trim();
+  const sep = clean.indexOf(":");
+  return sep > 0 ? clean.slice(0, sep) : clean;
+}
+
+function StatusDot({ ok }: { ok: boolean }) { return <span className={ok ? "dot ok" : "dot"} />; }
+function EmptyState({ text }: { text: string }) { return <div className="empty-state">{text}</div>; }
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+
+function searchMatchToItem(match: Record<string, unknown>): MemoryItem | null {
+  const rawType = String(match.type || match.item_type || "page");
+  if (rawType.includes("plan")) {
+    return null;
   }
-  return cleanText;
+  const type = rawType.includes("candidate") ? "candidate" : "page";
+  return { ...(match as MemoryItem), type, id: String(match.id || match.memory_id || ""), title: String(match.title || match.claim || ""), content: String(match.content || match.claim || match.summary || "") };
 }
 
-function StatusDot({ ok }: { ok: boolean }) {
-  return <span className={ok ? "dot ok" : "dot"} />;
+function itemMatchesQuery(item: MemoryItem, query: string) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = [item.id, item.type, item.status, item.claim, item.title, item.content, item.scope, item.dimension, item.run_id, item.source_candidate_id].filter(Boolean).join(" ").toLowerCase();
+  return terms.every((t) => haystack.includes(t));
 }
 
-function EmptyState({ text }: { text: string }) {
-  return <div className="empty-state">{text}</div>;
+function compareMemoryItems(left: MemoryItem, right: MemoryItem) {
+  const typeRank = (item: MemoryItem) => (item.type === "page" ? 0 : 1);
+  const lr = typeRank(left), rr = typeRank(right);
+  if (lr !== rr) return lr - rr;
+  return (right.updated_at || right.created_at || 0) - (left.updated_at || left.created_at || 0);
 }
+
+function scopeFromUidFilter(uid: string) {
+  const clean = uid.trim();
+  if (!clean) return "";
+  return clean.toLowerCase().startsWith("user:") ? clean : `user:${clean}`;
+}
+
+function memoryFactPayload(claim: string, scope: string) {
+  return scope ? { claim, scope, confidence: 0.9 } : { claim, confidence: 0.9 };
+}
+
+function memoryObservationPayload(content: string, scope: string) {
+  return scope ? { content, retention: "memory_candidate", scope } : content;
+}
+
+function tombstoneTargetItem(t: MemoryTombstone): MemoryItem {
+  return { id: t.target_id, type: t.target_type, status: `tombstoned:${t.reason || "unknown"}`, title: t.summary || t.reason || t.target_id, content: t.summary || "", updated_at: t.created_at };
+}
+
+function itemTitle(item: MemoryItem) { return item.title || item.claim || item.content || item.id; }
+function formatConfidence(value?: number) { if (typeof value !== "number") return "-"; return value.toFixed(2); }
+
+function formatTime(value?: number) {
+  if (!value) return "-";
+  const diff = Date.now() - value * 1000;
+  const minute = 60 * 1000, hour = 60 * minute, day = 24 * hour;
+  if (diff < hour) return `${Math.max(1, Math.round(diff / minute))}m`;
+  if (diff < day) return `${Math.round(diff / hour)}h`;
+  return `${Math.round(diff / day)}d`;
+}
+
+function formatDate(value?: number) {
+  if (!value) return "-";
+  return new Date(value * 1000).toLocaleString("zh-CN");
+}
+
+function compactId(value?: string) {
+  if (!value) return "";
+  return value.length > 24 ? `${value.slice(0, 21)}...` : value;
+}
+
+function dreamReviewResultMap(status: DreamStatusResult | null) {
+  const map = new Map<string, DreamReviewResult>();
+  for (const result of normalizeDreamReviewResults(status?.latest?.execution?.review_results)) {
+    for (const key of [result.candidate_id, result.page_id]) {
+      if (key && !map.has(key)) map.set(key, result);
+    }
+  }
+  return map;
+}
+
+function normalizeDreamReviewResults(items: unknown) {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item): item is DreamReviewResult => {
+    if (!item || typeof item !== "object") return false;
+    const r = item as DreamReviewResult;
+    return Boolean(r.candidate_id || r.page_id) && Boolean(r.decision || r.status || r.reason);
+  }).slice(0, 20);
+}
+
+function reviewForItem(item: MemoryItem, results: Map<string, DreamReviewResult>) {
+  return results.get(item.id) || (item.source_candidate_id ? results.get(item.source_candidate_id) : undefined);
+}
+
+function auditResultForItem(item: MemoryItem, review?: DreamReviewResult) {
+  if (review) return auditResultFromDreamReview(review);
+  const status = String(item.status || "").trim();
+  const n = status.toLowerCase();
+  if (n === "promoted") return auditResult("审核通过", "候选已进入稳定记忆", "good");
+  if (n === "draft") return auditResult("待审核", "等待模型或人工审核", "blue");
+  if (n.startsWith("rejected")) return auditResult("审核拒绝", statusReason(status), "bad");
+  if (n.startsWith("needs_review")) return auditResult("待复核", statusReason(status), "warn");
+  if (n.startsWith("skipped")) return auditResult("已跳过", statusReason(status), "neutral");
+  if (item.type === "page" && n === "active") return auditResult("稳定记忆", stableMemoryFallbackReason(item), "good");
+  if (n.includes("tombstone") || n.includes("delete")) return auditResult("已删除", statusReason(status), "bad");
+  if (n.includes("conflict")) return auditResult("冲突", statusReason(status), "warn");
+  return auditResult("未审核", status || "unknown", "neutral");
+}
+
+function auditResultFromDreamReview(review: DreamReviewResult) {
+  const decision = String(review.decision || "").toLowerCase();
+  const status = String(review.status || "");
+  const n = status.toLowerCase();
+  if (decision === "promoted" || n === "promoted") return auditResult("模型通过", review.reason || promotedReviewFallbackReason(review), "good");
+  if (decision === "rejected" || n.startsWith("rejected")) return auditResult("模型拒绝", review.reason || statusReason(status), "bad");
+  if (decision === "skipped") return auditResult("模型跳过", review.reason || statusReason(status), "neutral");
+  if (decision === "conflict" || n.includes("conflict")) return auditResult("需复核", review.reason || "conflict", "warn");
+  return auditResult("模型已审", review.reason || status || decision, "blue");
+}
+
+function detailedAuditReason(item: MemoryItem, review: DreamReviewResult | undefined, fallback: string) {
+  if (review) {
+    if (review.reason) return review.reason;
+    if (String(review.decision || "").toLowerCase() === "promoted" || String(review.status || "").toLowerCase() === "promoted") return promotedReviewFallbackReason(review);
+    return fallback || review.status || review.decision || "审核结果没有附带详细原因。";
+  }
+  if (item.type === "page" && String(item.status || "").toLowerCase() === "active") return stableMemoryFallbackReason(item);
+  return fallback || statusReason(String(item.status || "")) || "暂无详细审核原因。";
+}
+
+function promotedReviewFallbackReason(review: DreamReviewResult) {
+  const actionText = review.page_action === "merged" ? "已合并到已有稳定记忆页" : review.page_action === "created" ? "已新建稳定记忆页" : "已进入稳定记忆";
+  const pageText = review.page_title ? `「${review.page_title}」` : review.page_id ? compactId(review.page_id) : "";
+  const sourceText = review.candidate_id ? `；来源候选 ${compactId(review.candidate_id)}` : "";
+  return `${actionText}${pageText ? ` ${pageText}` : ""}${sourceText}`;
+}
+
+function stableMemoryFallbackReason(item: MemoryItem) {
+  const parts = ["已进入稳定记忆，可用于后续检索和上下文召回"];
+  if (item.source_candidate_id) parts.push(`来源候选 ${compactId(item.source_candidate_id)}`);
+  if (typeof item.confidence === "number") parts.push(`置信度 ${formatConfidence(item.confidence)}`);
+  return parts.join("；");
+}
+
+function auditReviewLabel(review: DreamReviewResult) { return auditResultFromDreamReview(review).label; }
+
+function auditResult(label: string, detail: string, tone: "good" | "bad" | "warn" | "blue" | "neutral") {
+  return { label, detail, tone, title: detail ? `${label}: ${detail}` : label };
+}
+
+function statusReason(status: string) {
+  const sep = status.indexOf(":");
+  if (sep < 0) return "";
+  return status.slice(sep + 1).replace(/[_-]+/g, " ");
+}
+
+function latestDreamDurationS(status: DreamStatusResult | null) {
+  const v = status?.latest?.duration_s;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function formatDuration(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "0.0s";
+  if (value < 10) return `${value.toFixed(1)}s`;
+  if (value < 60) return `${Math.round(value)}s`;
+  const m = Math.floor(value / 60), s = Math.round(value % 60);
+  return `${m}m ${s.toString().padStart(2, "0")}s`;
+}
+
+function dreamStatusReviewReasons(status: DreamStatusResult | null) {
+  return normalizeDreamReviewResults(status?.latest?.execution?.review_results).filter((i) => Boolean(i.reason));
+}
+
+function dreamRunRejectReasons(report: DreamRunReport) {
+  return normalizeDreamRejectReasons(report.execution?.result?.actions?.applied);
+}
+
+function normalizeDreamRejectReasons(items: unknown) {
+  if (!Array.isArray(items)) return [];
+  return items.filter((item): item is DreamRejectReason => {
+    if (!item || typeof item !== "object") return false;
+    const a = item as DreamRejectReason;
+    const tool = String(a.tool || ""), decision = String(a.decision || ""), status = String(a.status || "");
+    return Boolean(a.reason) && (tool === "memory_reject_candidate" || decision === "rejected" || status.startsWith("rejected"));
+  }).slice(0, 10);
+}
+
+function dreamRejectReasonText(items: DreamRejectReason[]) {
+  if (items.length === 0) return "";
+  const details = items.slice(0, 3).map((i) => `${compactId(i.candidate_id || i.action_id)}: ${i.reason || "unspecified"}`).join("；");
+  const more = items.length > 3 ? `；另有 ${items.length - 3} 条` : "";
+  return ` Reject 原因：${details}${more}`;
+}
+
+function dreamDurationText(report: DreamRunReport) {
+  return typeof report.duration_s === "number" && Number.isFinite(report.duration_s) ? `用时 ${formatDuration(report.duration_s)}。` : "";
+}
+
+function dreamRunMessage(report: DreamRunReport, useProvider: boolean, advancedDreaming = false) {
+  const counts = report.execution?.result?.actions?.counts || {};
+  const deltaCounts = report.delta?.counts || {};
+  const requested = Number(counts.requested || 0), applied = Number(counts.applied || 0), skipped = Number(counts.skipped || 0);
+  const proposals = report.execution?.result?.actions?.proposals || [];
+  const pendingProposals = proposals.filter((p) => p.status === "pending").length;
+  const draftCandidates = Number(deltaCounts.draft_candidates || deltaCounts.memory_candidates || 0);
+  const rejectReasonText = dreamRejectReasonText(dreamRunRejectReasons(report));
+  const durationText = dreamDurationText(report);
+  const proposalText = advancedDreaming ? `整理提案 ${pendingProposals} 条。` : "";
+  if (!useProvider && requested === 0) {
+    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。${proposalText}${durationText}`;
+  }
+  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${proposalText}${durationText}${rejectReasonText}`;
+}
+
+// ─── Plan Helpers ───────────────────────────────────────────────────────────
 
 function emptyPlanForm(): PlanFormState {
   return {
@@ -2488,308 +2914,7 @@ function planTitleById(items: PlanItem[], id: string) {
   return items.find((item) => item.id === id)?.title || compactId(id);
 }
 
-function searchMatchToItem(match: Record<string, unknown>): MemoryItem | null {
-  const rawType = String(match.type || match.item_type || "page");
-  if (rawType.includes("plan")) {
-    return null;
-  }
-  const type = rawType.includes("candidate") ? "candidate" : "page";
-  return {
-    ...(match as MemoryItem),
-    type,
-    id: String(match.id || match.memory_id || ""),
-    title: String(match.title || match.claim || ""),
-    content: String(match.content || match.claim || match.summary || "")
-  };
-}
-
-function itemMatchesQuery(item: MemoryItem, query: string) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return true;
-  const haystack = [
-    item.id,
-    item.type,
-    item.status,
-    item.claim,
-    item.title,
-    item.content,
-    item.scope,
-    item.dimension,
-    item.run_id,
-    item.source_candidate_id
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return terms.every((term) => haystack.includes(term));
-}
-
-function compareMemoryItems(left: MemoryItem, right: MemoryItem) {
-  const typeRank = (item: MemoryItem) => (item.type === "page" ? 0 : 1);
-  const leftRank = typeRank(left);
-  const rightRank = typeRank(right);
-  if (leftRank !== rightRank) return leftRank - rightRank;
-  return (right.updated_at || right.created_at || 0) - (left.updated_at || left.created_at || 0);
-}
-
-function scopeFromUidFilter(uid: string) {
-  const cleanUid = uid.trim();
-  if (!cleanUid) return "";
-  return cleanUid.toLowerCase().startsWith("user:") ? cleanUid : `user:${cleanUid}`;
-}
-
-function memoryFactPayload(claim: string, scope: string) {
-  return scope ? { claim, scope, confidence: 0.9 } : { claim, confidence: 0.9 };
-}
-
-function memoryObservationPayload(content: string, scope: string) {
-  return scope ? { content, retention: "memory_candidate", scope } : content;
-}
-
-function tombstoneTargetItem(tombstone: MemoryTombstone): MemoryItem {
-  return {
-    id: tombstone.target_id,
-    type: tombstone.target_type,
-    status: `tombstoned:${tombstone.reason || "unknown"}`,
-    title: tombstone.summary || tombstone.reason || tombstone.target_id,
-    content: tombstone.summary || "",
-    updated_at: tombstone.created_at
-  };
-}
-
-function itemTitle(item: MemoryItem) {
-  return item.title || item.claim || item.content || item.id;
-}
-
-function formatConfidence(value?: number) {
-  if (typeof value !== "number") return "-";
-  return value.toFixed(2);
-}
-
-function formatTime(value?: number) {
-  if (!value) return "-";
-  const diff = Date.now() - value * 1000;
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  if (diff < hour) return `${Math.max(1, Math.round(diff / minute))}m`;
-  if (diff < day) return `${Math.round(diff / hour)}h`;
-  return `${Math.round(diff / day)}d`;
-}
-
-function formatDate(value?: number) {
-  if (!value) return "-";
-  return new Date(value * 1000).toLocaleString("zh-CN");
-}
-
-function compactId(value?: string) {
-  if (!value) return "";
-  return value.length > 24 ? `${value.slice(0, 21)}...` : value;
-}
-
-function dreamReviewResultMap(status: DreamStatusResult | null) {
-  const map = new Map<string, DreamReviewResult>();
-  for (const result of normalizeDreamReviewResults(status?.latest?.execution?.review_results)) {
-    for (const key of [result.candidate_id, result.page_id]) {
-      if (key && !map.has(key)) {
-        map.set(key, result);
-      }
-    }
-  }
-  return map;
-}
-
-function normalizeDreamReviewResults(items: unknown) {
-  if (!Array.isArray(items)) return [];
-  return items
-    .filter((item): item is DreamReviewResult => {
-      if (!item || typeof item !== "object") return false;
-      const result = item as DreamReviewResult;
-      return Boolean(result.candidate_id || result.page_id) && Boolean(result.decision || result.status || result.reason);
-    })
-    .slice(0, 20);
-}
-
-function reviewForItem(item: MemoryItem, results: Map<string, DreamReviewResult>) {
-  return results.get(item.id) || (item.source_candidate_id ? results.get(item.source_candidate_id) : undefined);
-}
-
-function auditResultForItem(item: MemoryItem, review?: DreamReviewResult) {
-  if (review) {
-    return auditResultFromDreamReview(review);
-  }
-  const status = String(item.status || "").trim();
-  const normalized = status.toLowerCase();
-  if (normalized === "promoted") {
-    return auditResult("审核通过", "候选已进入稳定记忆", "good");
-  }
-  if (normalized === "draft") {
-    return auditResult("待审核", "等待模型或人工审核", "blue");
-  }
-  if (normalized.startsWith("rejected")) {
-    return auditResult("审核拒绝", statusReason(status), "bad");
-  }
-  if (normalized.startsWith("needs_review")) {
-    return auditResult("待复核", statusReason(status), "warn");
-  }
-  if (normalized.startsWith("skipped")) {
-    return auditResult("已跳过", statusReason(status), "neutral");
-  }
-  if (item.type === "page" && normalized === "active") {
-    return auditResult("稳定记忆", stableMemoryFallbackReason(item), "good");
-  }
-  if (normalized.includes("tombstone") || normalized.includes("delete")) {
-    return auditResult("已删除", statusReason(status), "bad");
-  }
-  return auditResult("未审核", status || "unknown", "neutral");
-}
-
-function auditResultFromDreamReview(review: DreamReviewResult) {
-  const decision = String(review.decision || "").toLowerCase();
-  const status = String(review.status || "");
-  const normalizedStatus = status.toLowerCase();
-  if (decision === "promoted" || normalizedStatus === "promoted") {
-    return auditResult("模型通过", review.reason || promotedReviewFallbackReason(review), "good");
-  }
-  if (decision === "rejected" || normalizedStatus.startsWith("rejected")) {
-    return auditResult("模型拒绝", review.reason || statusReason(status), "bad");
-  }
-  if (decision === "skipped") {
-    return auditResult("模型跳过", review.reason || statusReason(status), "neutral");
-  }
-  if (decision === "conflict" || normalizedStatus.includes("conflict")) {
-    return auditResult("需复核", review.reason || "conflict", "warn");
-  }
-  return auditResult("模型已审", review.reason || status || decision, "blue");
-}
-
-function detailedAuditReason(item: MemoryItem, review: DreamReviewResult | undefined, fallback: string) {
-  if (review) {
-    if (review.reason) return review.reason;
-    if (String(review.decision || "").toLowerCase() === "promoted" || String(review.status || "").toLowerCase() === "promoted") {
-      return promotedReviewFallbackReason(review);
-    }
-    return fallback || review.status || review.decision || "审核结果没有附带详细原因。";
-  }
-  if (item.type === "page" && String(item.status || "").toLowerCase() === "active") {
-    return stableMemoryFallbackReason(item);
-  }
-  return fallback || statusReason(String(item.status || "")) || "暂无详细审核原因。";
-}
-
-function promotedReviewFallbackReason(review: DreamReviewResult) {
-  const actionText =
-    review.page_action === "merged"
-      ? "已合并到已有稳定记忆页"
-      : review.page_action === "created"
-        ? "已新建稳定记忆页"
-        : "已进入稳定记忆";
-  const pageText = review.page_title
-    ? `「${review.page_title}」`
-    : review.page_id
-      ? compactId(review.page_id)
-      : "";
-  const sourceText = review.candidate_id ? `；来源候选 ${compactId(review.candidate_id)}` : "";
-  return `${actionText}${pageText ? ` ${pageText}` : ""}${sourceText}`;
-}
-
-function stableMemoryFallbackReason(item: MemoryItem) {
-  const parts = ["已进入稳定记忆，可用于后续检索和上下文召回"];
-  if (item.source_candidate_id) {
-    parts.push(`来源候选 ${compactId(item.source_candidate_id)}`);
-  }
-  if (typeof item.confidence === "number") {
-    parts.push(`置信度 ${formatConfidence(item.confidence)}`);
-  }
-  return parts.join("；");
-}
-
-function auditReviewLabel(review: DreamReviewResult) {
-  return auditResultFromDreamReview(review).label;
-}
-
-function auditResult(label: string, detail: string, tone: "good" | "bad" | "warn" | "blue" | "neutral") {
-  return {
-    label,
-    detail,
-    tone,
-    title: detail ? `${label}: ${detail}` : label
-  };
-}
-
-function statusReason(status: string) {
-  const separator = status.indexOf(":");
-  if (separator < 0) return "";
-  return status.slice(separator + 1).replace(/[_-]+/g, " ");
-}
-
-function latestDreamDurationS(status: DreamStatusResult | null) {
-  const value = status?.latest?.duration_s;
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function formatDuration(value: number) {
-  if (!Number.isFinite(value) || value < 0) return "0.0s";
-  if (value < 10) return `${value.toFixed(1)}s`;
-  if (value < 60) return `${Math.round(value)}s`;
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.round(value % 60);
-  return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
-}
-
-function dreamStatusReviewReasons(status: DreamStatusResult | null) {
-  return normalizeDreamReviewResults(status?.latest?.execution?.review_results).filter((item) => Boolean(item.reason));
-}
-
-function dreamRunRejectReasons(report: DreamRunReport) {
-  return normalizeDreamRejectReasons(report.execution?.result?.actions?.applied);
-}
-
-function normalizeDreamRejectReasons(items: unknown) {
-  if (!Array.isArray(items)) return [];
-  return items
-    .filter((item): item is DreamRejectReason => {
-      if (!item || typeof item !== "object") return false;
-      const action = item as DreamRejectReason;
-      const tool = String(action.tool || "");
-      const decision = String(action.decision || "");
-      const status = String(action.status || "");
-      return Boolean(action.reason) && (tool === "memory_reject_candidate" || decision === "rejected" || status.startsWith("rejected"));
-    })
-    .slice(0, 10);
-}
-
-function dreamRejectReasonText(items: DreamRejectReason[]) {
-  if (items.length === 0) return "";
-  const details = items
-    .slice(0, 3)
-    .map((item) => `${compactId(item.candidate_id || item.action_id)}: ${item.reason || "unspecified"}`)
-    .join("；");
-  const more = items.length > 3 ? `；另有 ${items.length - 3} 条` : "";
-  return ` Reject 原因：${details}${more}`;
-}
-
-function dreamDurationText(report: DreamRunReport) {
-  return typeof report.duration_s === "number" && Number.isFinite(report.duration_s) ? `用时 ${formatDuration(report.duration_s)}。` : "";
-}
-
-function dreamRunMessage(report: DreamRunReport, useProvider: boolean, advancedDreaming = false) {
-  const counts = report.execution?.result?.actions?.counts || {};
-  const deltaCounts = report.delta?.counts || {};
-  const requested = Number(counts.requested || 0);
-  const applied = Number(counts.applied || 0);
-  const skipped = Number(counts.skipped || 0);
-  const proposals = report.execution?.result?.actions?.proposals || [];
-  const pendingProposals = proposals.filter((proposal) => proposal.status === "pending").length;
-  const draftCandidates = Number(deltaCounts.draft_candidates || deltaCounts.memory_candidates || 0);
-  const rejectReasonText = dreamRejectReasonText(dreamRunRejectReasons(report));
-  const durationText = dreamDurationText(report);
-  const proposalText = advancedDreaming ? `整理提案 ${pendingProposals} 条。` : "";
-  if (!useProvider && requested === 0) {
-    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。${proposalText}${durationText}`;
-  }
-  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${proposalText}${durationText}${rejectReasonText}`;
-}
+// ─── Mount ───────────────────────────────────────────────────────────────────
 
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
