@@ -770,6 +770,7 @@ class MemoryClient:
             "interval_minutes": int(config.auto_dream_interval_minutes),
             "limit": int(config.auto_dream_limit),
             "min_confidence": float(config.auto_dream_min_confidence),
+            "local_fallback": bool(config.auto_dream_local_fallback),
             "save_path": str(save_path),
         }
 
@@ -780,11 +781,13 @@ class MemoryClient:
         interval_minutes: int | str | None = None,
         limit: int | str | None = None,
         min_confidence: float | int | str | None = None,
+        local_fallback: bool | int | str | None = None,
     ) -> dict[str, Any]:
         path = default_config_path(self.state_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
         config = _read_client_config(path)
         _set_optional_config_bool(config, "auto_dream_enabled", enabled)
+        _set_optional_config_bool(config, "auto_dream_local_fallback", local_fallback)
         if interval_minutes is not None and interval_minutes != "":
             config["auto_dream_interval_minutes"] = max(5, int(interval_minutes))
         if limit is not None and limit != "":

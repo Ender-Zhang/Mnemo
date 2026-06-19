@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Database,
   Edit3,
+  Eye,
   FileClock,
   Gauge,
   GitMerge,
@@ -17,7 +18,6 @@ import {
   Link2,
   ListTodo,
   Loader2,
-  Lock,
   MessageSquare,
   Play,
   Plus,
@@ -251,6 +251,33 @@ type L0Profile = {
   page_count?: number;
 };
 
+type ContextCardItem = {
+  type?: string;
+  id?: string;
+  title?: string;
+  content?: string;
+  claim?: string;
+  scope?: string;
+  dimension?: string;
+  confidence?: number;
+  [key: string]: unknown;
+};
+
+type ContextPreviewResult = {
+  kind?: string;
+  intent?: string;
+  cards?: ContextCardItem[];
+  profile?: L0Profile | null;
+  snapshot?: Record<string, unknown> | null;
+};
+
+type RecallPreviewResult = {
+  kind?: string;
+  seed?: string;
+  items?: Array<Record<string, unknown>>;
+  query_plan?: Record<string, unknown>;
+};
+
 type PageVersion = {
   id?: string;
   page_id?: string;
@@ -328,7 +355,7 @@ type PlanFormState = {
   dueAt: string;
 };
 
-type TabKey = "memories" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
+type TabKey = "memories" | "preview" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
 
 type Notice = {
   tone: "ok" | "warn" | "error";
@@ -339,6 +366,7 @@ type Notice = {
 
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "memories", label: "记忆工作台", icon: Home },
+  { key: "preview", label: "记忆预览", icon: Eye },
   { key: "plans", label: "计划", icon: ListTodo },
   { key: "maintenance", label: "模型与维护", icon: Activity },
   { key: "settings", label: "设置", icon: Settings },
@@ -346,13 +374,18 @@ const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "tombstones", label: "墓碑 / 删除", icon: Archive }
 ];
 
-const defaultNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings"]);
-const advancedNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings", "candidates", "tombstones"]);
+const defaultNavKeys = new Set<TabKey>(["memories", "preview", "plans", "maintenance", "settings"]);
+const advancedNavKeys = new Set<TabKey>(["memories", "preview", "plans", "maintenance", "settings", "candidates", "tombstones"]);
 
 const DIMENSIONS = [
   "identity", "cognition", "values", "goals", "preferences",
   "relationships", "context", "history", "patterns", "boundaries"
 ];
+
+// Granular refresh slices so a single mutation only refetches what it affects,
+// instead of firing every endpoint on every action.
+type RefreshPart = "service" | "inventory" | "candidates" | "maintenance" | "tombstones" | "config" | "plans" | "profile" | "health";
+const ALL_REFRESH_PARTS: RefreshPart[] = ["service", "inventory", "candidates", "maintenance", "tombstones", "config", "plans", "profile", "health"];
 
 const defaultApiBase = window.location.origin;
 
@@ -361,7 +394,6 @@ const defaultApiBase = window.location.origin;
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("memories");
   const [apiBase, setApiBase] = useState(() => localStorage.getItem("mnemo.apiBase") || defaultApiBase);
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem("mnemo.authToken") || "");
   const [serviceOk, setServiceOk] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -409,11 +441,16 @@ function App() {
   const [profile, setProfile] = useState<L0Profile | null>(null);
   const [versions, setVersions] = useState<PageVersion[]>([]);
   const [showVersions, setShowVersions] = useState(false);
+  // memory preview (agent view)
+  const [previewIntent, setPreviewIntent] = useState("");
+  const [previewScope, setPreviewScope] = useState("memory");
+  const [previewContext, setPreviewContext] = useState<ContextPreviewResult | null>(null);
+  const [previewRecall, setPreviewRecall] = useState<RecallPreviewResult | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   // pagination
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
-  const authed = authToken.trim().length > 0;
   const activeItems = useMemo(() => {
     let items = searchMode ? searchItems : [...inventory].sort(compareMemoryItems);
     if (dimensionFilter) {
@@ -442,9 +479,6 @@ function App() {
       if (options.body && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      if (authToken.trim()) {
-        headers.set("Authorization", `Bearer ${authToken.trim()}`);
-      }
       const response = await fetch(`${apiBase.replace(/\/$/, "")}${path}`, { ...options, headers });
       const payload = (await response.json()) as ApiEnvelope<T> | T;
       if (!response.ok) {
@@ -456,7 +490,7 @@ function App() {
       }
       return payload as T;
     },
-    [apiBase, authToken]
+    [apiBase]
   );
 
   const callMemory = useCallback(
@@ -475,61 +509,51 @@ function App() {
     setNotice({ tone: "error", text });
   };
 
-  const refresh = useCallback(async (options: { clearNotice?: boolean } = {}) => {
+  const refresh = useCallback(async (options: { parts?: RefreshPart[]; clearNotice?: boolean } = {}) => {
+    const parts = new Set(options.parts ?? ALL_REFRESH_PARTS);
     setLoading(true);
     try {
       const scopedUid = uidFilter.trim() || undefined;
-      const [
-        healthResult,
-        inventoryResult,
-        candidateResult,
-        dreamResult,
-        snapshotResult,
-        tombstoneResult,
-        providerResult,
-        autoDreamResult,
-        proposalResult,
-        profileResult,
-        planResult,
-        planProposalResult
-      ] = await Promise.all([
-        requestJson<Record<string, unknown>>("/api/health"),
-        callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 200 }),
-        callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }),
-        callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
-        callMemory<SnapshotResult>("snapshot", { limit: 50 }),
-        callMemory<TombstonesResult>("tombstones", { limit: 500 }),
-        callMemory<ProviderConfigResult>("provider-config", {}),
-        callMemory<AutoDreamStatusResult>("auto-dream-status", {}),
-        callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 }),
-        callMemory<L0Profile>("profile", {}).catch(() => null),
-        callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }),
-        callMemory<PlanProposalsResult>("plan-proposals", { status: "pending", uid: scopedUid, limit: 50 })
-      ]);
-      setServiceOk(Boolean(healthResult.ok));
-      setInventory(inventoryResult.items || []);
-      setCandidates(candidateResult.items || []);
-      setDreamStatus(dreamResult);
-      setSnapshot(snapshotResult);
-      setTombstones(tombstoneResult.tombstones || []);
-      setProviderConfig(providerResult);
-      setProviderForm(providerFormFromConfig(providerResult));
-      setAutoDreamStatus(autoDreamResult);
-      setAutoDreamForm(autoDreamFormFromStatus(autoDreamResult));
-      setDreamProposals(proposalResult.proposals || []);
-      setPlanItems(planResult.items || []);
-      setPlanProposals(planProposalResult.proposals || []);
-      setProfile(profileResult);
-      try {
-        setHealth(await callMemory<MemoryHealthResult>("health", { limit: 20 }));
-      } catch {
-        setHealth(null);
+      const tasks: Array<Promise<unknown>> = [];
+      if (parts.has("service")) {
+        tasks.push(requestJson<Record<string, unknown>>("/api/health").then((r) => setServiceOk(Boolean(r.ok))));
       }
+      if (parts.has("inventory")) {
+        tasks.push(callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 200 }).then((r) => setInventory(r.items || [])));
+      }
+      if (parts.has("candidates")) {
+        tasks.push(callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }).then((r) => setCandidates(r.items || [])));
+      }
+      if (parts.has("maintenance")) {
+        tasks.push(callMemory<DreamStatusResult>("dream-status", { limit: 20 }).then(setDreamStatus));
+        tasks.push(callMemory<SnapshotResult>("snapshot", { limit: 50 }).then(setSnapshot));
+        tasks.push(callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 }).then((r) => setDreamProposals(r.proposals || [])));
+      }
+      if (parts.has("tombstones")) {
+        tasks.push(callMemory<TombstonesResult>("tombstones", { limit: 500 }).then((r) => setTombstones(r.tombstones || [])));
+      }
+      if (parts.has("config")) {
+        tasks.push(callMemory<ProviderConfigResult>("provider-config", {}).then((r) => { setProviderConfig(r); setProviderForm(providerFormFromConfig(r)); }));
+        tasks.push(callMemory<AutoDreamStatusResult>("auto-dream-status", {}).then((r) => { setAutoDreamStatus(r); setAutoDreamForm(autoDreamFormFromStatus(r)); }));
+      }
+      if (parts.has("plans")) {
+        tasks.push(callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }).then((r) => setPlanItems(r.items || [])));
+        tasks.push(callMemory<PlanProposalsResult>("plan-proposals", { status: "pending", uid: scopedUid, limit: 50 }).then((r) => setPlanProposals(r.proposals || [])));
+      }
+      if (parts.has("profile")) {
+        tasks.push(callMemory<L0Profile>("profile", {}).then(setProfile).catch(() => setProfile(null)));
+      }
+      if (parts.has("health")) {
+        tasks.push(callMemory<MemoryHealthResult>("health", { limit: 20 }).then(setHealth).catch(() => setHealth(null)));
+      }
+      await Promise.all(tasks);
       if (options.clearNotice !== false) {
         setNotice(null);
       }
     } catch (error) {
-      setServiceOk(false);
+      if (parts.has("service")) {
+        setServiceOk(false);
+      }
       setError(error);
     } finally {
       setLoading(false);
@@ -544,10 +568,6 @@ function App() {
   }, [refresh]);
 
   useEffect(() => { localStorage.setItem("mnemo.apiBase", apiBase); }, [apiBase]);
-  useEffect(() => {
-    if (authToken.trim()) { localStorage.setItem("mnemo.authToken", authToken); }
-    else { localStorage.removeItem("mnemo.authToken"); }
-  }, [authToken]);
   useEffect(() => { localStorage.setItem("mnemo.useProvider", useProvider ? "true" : "false"); }, [useProvider]);
   useEffect(() => { localStorage.setItem("mnemo.advancedDreaming", advancedDreaming ? "true" : "false"); }, [advancedDreaming]);
   useEffect(() => { localStorage.setItem("mnemo.advancedMode", advancedMode ? "true" : "false"); }, [advancedMode]);
@@ -651,6 +671,29 @@ function App() {
     }
   };
 
+  const runPreview = async () => {
+    const intent = previewIntent.trim();
+    setPreviewLoading(true);
+    try {
+      const ctx = await callMemory<ContextPreviewResult>("context", { intent, scope: previewScope, limit: 8 });
+      setPreviewContext(ctx);
+      if (intent) {
+        try {
+          setPreviewRecall(await callMemory<RecallPreviewResult>("recall", { seed: intent, limit: 8 }));
+        } catch {
+          setPreviewRecall(null);
+        }
+      } else {
+        setPreviewRecall(null);
+      }
+      setOk("已生成 Agent 视角预览");
+    } catch (error) {
+      setError(error);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const submitMemory = async () => {
     const writeScope = scopeFromUidFilter(uidFilter);
     const facts = factText.trim() ? [memoryFactPayload(factText.trim(), writeScope)] : [];
@@ -666,7 +709,7 @@ function App() {
       setObservationText("");
       setComposerOpen(false);
       setOk("已写入候选记忆");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "candidates"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -688,7 +731,7 @@ function App() {
       });
       setIngestOpen(false);
       setOk("事件已录入，已提取记忆候选");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "candidates", "plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -709,7 +752,7 @@ function App() {
       setEditorOpen(false);
       setEditorItem(null);
       setOk("稳定记忆页已创建");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "profile", "maintenance"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -731,7 +774,7 @@ function App() {
       setEditorOpen(false);
       setEditorItem(null);
       setOk("稳定记忆页已更新");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "profile", "maintenance"], clearNotice: false });
       // reload detail
       if (selected?.id === memoryId) {
         await readMemory({ ...selected, id: memoryId } as MemoryItem);
@@ -748,7 +791,7 @@ function App() {
     try {
       await callMemory("resolve-conflict", { candidate_id: candidateId, resolution });
       setOk(`冲突已解决：${resolution}`);
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "profile"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -763,7 +806,7 @@ function App() {
       const message = promotionReviewMessage(result);
       if (result.decision === "promoted" || result.status === "promoted") { setOk(message); }
       else { setWarn(message); }
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "profile", "maintenance", "tombstones"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -776,7 +819,7 @@ function App() {
     try {
       await callMemory("reject-candidate", { candidate_id: candidateId, reason: rejectReason.trim() || "not_useful" });
       setOk("候选已拒绝");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "tombstones"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -797,7 +840,7 @@ function App() {
           failed++;
         }
       }
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "profile", "maintenance", "tombstones"], clearNotice: false });
       setOk(`批量审核完成：通过 ${promoted} 条${failed ? `，失败 ${failed} 条` : ""}`);
     } finally {
       setLoading(false);
@@ -814,7 +857,7 @@ function App() {
           rejected++;
         } catch { /* skip */ }
       }
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "tombstones"], clearNotice: false });
       setOk(`批量拒绝完成：${rejected} 条`);
     } finally {
       setLoading(false);
@@ -833,7 +876,7 @@ function App() {
         setOk("记忆已标记 tombstone");
       }
       setSelected(null);
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "tombstones", "profile"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -846,7 +889,7 @@ function App() {
     try {
       await callMemory("forget", { memory_id: tombstone.target_id, target_type: tombstone.target_type, reason: "private_delete" });
       setOk("目标记忆已 Forget 擦除，删除痕迹仍会保留");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory", "profile"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -859,7 +902,7 @@ function App() {
       await callMemory("hard-delete", { tombstone_id: tombstone.id, memory_id: tombstone.target_id, target_type: tombstone.target_type, delete_related: true });
       setSelected(null);
       setOk("目标记忆和相关 tombstone 记录已彻底删除");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -898,7 +941,7 @@ function App() {
       }
       setSelected(null);
       setSelectedTombstoneIds(new Set());
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory"], clearNotice: false });
       if (failures.length > 0) {
         setWarn(`已彻底删除 ${deletedCount} 条，跳过 ${skippedCount} 条，失败 ${failures.length} 条：${failures.slice(0, 2).join("；")}`);
       } else {
@@ -926,7 +969,7 @@ function App() {
     try {
       await callMemory("apply-dream-proposal", { proposal_id: proposalId });
       setOk("整理提案已应用");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["maintenance", "inventory", "profile"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -936,7 +979,7 @@ function App() {
     try {
       await callMemory("reject-dream-proposal", { proposal_id: proposalId, reason: proposalRejectReason.trim() || "operator_rejected" });
       setOk("整理提案已拒绝");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["maintenance"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -962,7 +1005,7 @@ function App() {
       });
       setPlanForm(emptyPlanForm());
       setOk("计划已创建");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -975,7 +1018,7 @@ function App() {
     try {
       await callMemory("plan-complete", { plan_id: planId });
       setOk("计划已完成");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -988,7 +1031,7 @@ function App() {
     try {
       await callMemory("plan-cancel", { plan_id: planId, reason: "cancelled_from_webui" });
       setOk("计划已取消");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1001,7 +1044,7 @@ function App() {
     try {
       await callMemory("plan-archive", { plan_id: planId });
       setOk("计划已归档");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1014,7 +1057,7 @@ function App() {
     try {
       await callMemory("apply-plan-proposal", { proposal_id: proposalId });
       setOk("计划提案已接受");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1030,7 +1073,7 @@ function App() {
         reason: planRejectReason.trim() || "operator_rejected"
       });
       setOk("计划提案已拒绝");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1139,15 +1182,10 @@ function App() {
           <div className="status-row">
             <StatusDot ok={serviceOk} />
             <strong>Service:</strong>
-            <span>{serviceOk ? "Running" : "Needs token / offline"}</span>
+            <span>{serviceOk ? "Running" : "服务离线"}</span>
           </div>
           <div className="divider" />
           <div className="endpoint">HTTP: {apiBase}</div>
-          <div className="divider" />
-          <div className={authed ? "auth-pill ok" : "auth-pill"}>
-            <Lock size={14} />
-            {authed ? "Token 已设置" : "未设置 Token"}
-          </div>
           <button className="ghost-button" onClick={() => refreshInventory()} disabled={loading}>
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             Refresh
@@ -1203,6 +1241,18 @@ function App() {
                 <MemoryTable items={pagedItems} selectedId={selected?.id} uidFilter={uidFilter} dreamStatus={dreamStatus} advancedMode={advancedMode} onSelect={readMemory} onEdit={openEditor} />
                 <Pagination page={page} totalPages={totalPages} totalItems={activeItems.length} onPageChange={setPage} />
               </>
+            ) : null}
+            {activeTab === "preview" ? (
+              <PreviewPanel
+                intent={previewIntent}
+                setIntent={setPreviewIntent}
+                scope={previewScope}
+                setScope={setPreviewScope}
+                context={previewContext}
+                recall={previewRecall}
+                loading={previewLoading}
+                onRun={runPreview}
+              />
             ) : null}
             {activeTab === "plans" ? (
               <PlanPanel
@@ -1273,7 +1323,6 @@ function App() {
             {activeTab === "settings" ? (
               <SettingsPanel
                 apiBase={apiBase} setApiBase={setApiBase}
-                authToken={authToken} setAuthToken={setAuthToken}
                 source={source} setSource={setSource}
                 useProvider={useProvider} setUseProvider={setUseProvider}
                 advancedDreaming={advancedDreaming} setAdvancedDreaming={setAdvancedDreaming}
@@ -1375,6 +1424,202 @@ function ProfileCard({ profile }: { profile: L0Profile }) {
       </div>
     </section>
   );
+}
+
+// ─── Memory Preview (Agent View) ─────────────────────────────────────────────
+
+function PreviewPanel(props: {
+  intent: string;
+  setIntent: (v: string) => void;
+  scope: string;
+  setScope: (v: string) => void;
+  context: ContextPreviewResult | null;
+  recall: RecallPreviewResult | null;
+  loading: boolean;
+  onRun: () => void;
+}) {
+  const profileSummary = props.context?.profile?.summary || "";
+  const snapshot = props.context?.snapshot || null;
+  const cards = props.context?.cards || [];
+  const recallItems = props.recall?.items || [];
+  const pointers = snapshotPointers(snapshot);
+  const hubs = snapshotHubs(snapshot);
+  const tokenEstimate = estimateContextTokens(profileSummary, snapshot, cards);
+  return (
+    <section className="panel preview-panel">
+      <div className="panel-header">
+        <div>
+          <h2>记忆预览 · Agent 视角</h2>
+          <p>输入一个查询，查看 agent 实际会被注入的记忆上下文：L0 画像（每轮）+ L1 快照（默认）+ 召回卡片（按需）。</p>
+        </div>
+      </div>
+      <div className="search-line">
+        <div className="input-with-icon">
+          <Eye size={18} />
+          <input value={props.intent} onChange={(e) => props.setIntent(e.target.value)}
+            placeholder="例如：用户偏好怎样的进度更新？（留空查看默认上下文）"
+            onKeyDown={(e) => { if (e.key === "Enter") props.onRun(); }} />
+        </div>
+        <label className="preview-scope">
+          范围
+          <select value={props.scope} onChange={(e) => props.setScope(e.target.value)}>
+            <option value="memory">记忆</option>
+            <option value="sessions">会话</option>
+            <option value="all">全部</option>
+          </select>
+        </label>
+        <button className="primary-button" onClick={props.onRun} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Eye size={16} />}
+          预览
+        </button>
+      </div>
+
+      {!props.context ? (
+        <EmptyState text="点击预览，查看 agent 在这个查询下会拿到什么记忆。" />
+      ) : (
+        <>
+          <div className="preview-token-strip">
+            <Gauge size={16} />
+            <span>预计注入</span>
+            <strong>≈ {tokenEstimate} tokens</strong>
+            <small>粗略估算；L0 每轮注入、L1 默认注入、卡片按需召回</small>
+          </div>
+
+          <div className="preview-layer">
+            <div className="preview-layer-head">
+              <span className="badge blue">L0 · 每轮注入</span>
+              <h3>记忆画像</h3>
+              <StatusBadge text={`${props.context.profile?.page_count || 0} 页`} />
+            </div>
+            {profileSummary ? (
+              <div className="profile-summary">
+                {profileSummary.split("\n").filter(Boolean).map((line, i) => (
+                  <div className="profile-line" key={i}>{line}</div>
+                ))}
+              </div>
+            ) : <EmptyState text="暂无画像。promote 一些稳定记忆后会自动蒸馏。" />}
+          </div>
+
+          <div className="preview-layer">
+            <div className="preview-layer-head">
+              <span className="badge good">L1 · 默认注入</span>
+              <h3>快照路标</h3>
+              <StatusBadge text={`${pointers.length} pointers · ${hubs.length} hubs`} />
+            </div>
+            {pointers.length === 0 && hubs.length === 0 ? (
+              <EmptyState text="快照为空。运行一次 Dream 或刷新快照后生成。" />
+            ) : (
+              <div className="preview-pointer-list">
+                {pointers.slice(0, 12).map((p, i) => (
+                  <div className="preview-pointer" key={i}>
+                    <code>{p.trigger || "—"}</code>
+                    <ChevronRight size={13} />
+                    <span>{p.title || p.target}</span>
+                  </div>
+                ))}
+                {hubs.length > 0 ? <div className="preview-hubs">联想热点：{hubs.slice(0, 8).join("、")}</div> : null}
+              </div>
+            )}
+          </div>
+
+          <div className="preview-layer">
+            <div className="preview-layer-head">
+              <span className="badge neutral">L2 · 按需召回</span>
+              <h3>上下文卡片</h3>
+              <StatusBadge text={`${cards.length} cards`} />
+            </div>
+            {cards.length === 0 ? (
+              <EmptyState text="没有命中上下文卡片。换个查询，或先写入/promote 相关记忆。" />
+            ) : (
+              <div className="preview-card-list">
+                {cards.map((card, i) => (
+                  <article className="preview-card" key={card.id || i}>
+                    <div className="preview-card-head">
+                      <strong>{card.title || card.claim || card.id}</strong>
+                      <StatusBadge text={previewCardType(card)} />
+                    </div>
+                    <p>{card.content || card.claim || "-"}</p>
+                    <small>{[card.dimension, card.scope, typeof card.confidence === "number" ? `conf ${card.confidence.toFixed(2)}` : ""].filter(Boolean).join(" · ")}</small>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {recallItems.length > 0 ? (
+            <div className="preview-layer">
+              <div className="preview-layer-head">
+                <span className="badge">recall</span>
+                <h3>联想召回</h3>
+                <StatusBadge text={`${recallItems.length} items`} />
+              </div>
+              <div className="preview-card-list">
+                {recallItems.slice(0, 8).map((item, i) => {
+                  const it = item as ContextCardItem;
+                  return (
+                    <article className="preview-card" key={it.id || i}>
+                      <div className="preview-card-head">
+                        <strong>{it.title || it.claim || it.id}</strong>
+                        <StatusBadge text={previewCardType(it)} />
+                      </div>
+                      <p>{it.content || it.claim || "-"}</p>
+                      <small>{[it.dimension, it.scope].filter(Boolean).join(" · ")}</small>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+function previewCardType(card: ContextCardItem) {
+  const t = String(card.type || "");
+  if (t.includes("candidate")) return "candidate";
+  if (t.includes("page")) return "page";
+  return t || "memory";
+}
+
+function snapshotPointers(snapshot: Record<string, unknown> | null): Array<{ trigger: string; target: string; title: string }> {
+  const raw = snapshot ? (snapshot as { pointers?: unknown }).pointers : null;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((p) => {
+      const obj = (p || {}) as Record<string, unknown>;
+      return {
+        trigger: String(obj.trigger ?? ""),
+        target: String(obj.target ?? ""),
+        title: String(obj.title ?? "")
+      };
+    })
+    .filter((p) => p.trigger || p.target || p.title);
+}
+
+function snapshotHubs(snapshot: Record<string, unknown> | null): string[] {
+  const raw = snapshot ? (snapshot as { association_hubs?: unknown }).association_hubs : null;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((h) => {
+      const obj = (h || {}) as Record<string, unknown>;
+      return String(obj.title ?? obj.target ?? obj.page_id ?? "");
+    })
+    .filter(Boolean);
+}
+
+function estimateContextTokens(profileSummary: string, snapshot: Record<string, unknown> | null, cards: ContextCardItem[]): number {
+  const cardText = cards.map((c) => `${c.title || ""}${c.content || c.claim || ""}`).join("");
+  const snapshotText = snapshot ? JSON.stringify(snapshot) : "";
+  const total = `${profileSummary}${snapshotText}${cardText}`;
+  let cjk = 0;
+  let other = 0;
+  for (const ch of total) {
+    if (/[一-鿿぀-ヿ가-힯]/.test(ch)) cjk += 1;
+    else other += 1;
+  }
+  return Math.max(0, Math.round(cjk + other / 4));
 }
 
 // ─── Search Panel ────────────────────────────────────────────────────────────
@@ -2525,7 +2770,6 @@ function DreamReviewReasons({ items }: { items: DreamReviewResult[] }) {
 
 function SettingsPanel(props: {
   apiBase: string; setApiBase: (v: string) => void;
-  authToken: string; setAuthToken: (v: string) => void;
   source: string; setSource: (v: string) => void;
   useProvider: boolean; setUseProvider: (v: boolean) => void;
   advancedDreaming: boolean; setAdvancedDreaming: (v: boolean) => void;
@@ -2543,10 +2787,10 @@ function SettingsPanel(props: {
   };
   return (
     <section className="panel settings-panel">
-      <div className="panel-header"><div><h2>设置</h2><p>本地 API、Bearer token 和维护模型配置。</p></div><ShieldCheck size={22} /></div>
+      <div className="panel-header"><div><h2>设置</h2><p>本地 API、Source 和维护模型配置。</p></div><ShieldCheck size={22} /></div>
       <label>API Base <input value={props.apiBase} onChange={(e) => props.setApiBase(e.target.value)} /></label>
-      <label>Bearer Token <input value={props.authToken} onChange={(e) => props.setAuthToken(e.target.value)} placeholder="mnemo-memory serve --auth-token ..." /></label>
       <label>默认 Source <input value={props.source} onChange={(e) => props.setSource(e.target.value)} /></label>
+      <div className="settings-hint">HTTP API 默认绑定 127.0.0.1 且不做鉴权，请仅在可信本地网络使用，不要把端口暴露到公网。</div>
       <div className="provider-status-row">
         <StatusBadge text={providerStatusText(props.providerConfig)} />
         <code>{props.providerConfig?.save_path || "config.json"}</code>
@@ -2575,7 +2819,6 @@ function SettingsPanel(props: {
         <button className="primary-button" onClick={props.onSaveProviderConfig} disabled={props.loading}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存 Provider
         </button>
-        <button className="ghost-button" onClick={() => props.setAuthToken("")}><X size={15} /> 清除 Token</button>
       </div>
       <div className="settings-divider" />
       <div className="settings-section-header">
@@ -2588,7 +2831,11 @@ function SettingsPanel(props: {
       </div>
       <label className="checkbox-row">
         <input type="checkbox" checked={props.autoDreamForm.enabled} onChange={(e) => setAutoDreamField("enabled", e.target.checked)} />
-        <span><strong>启用自动 Dreaming</strong><small>仅在有 backlog 且 provider 已配置时调用模型维护。</small></span>
+        <span><strong>启用自动 Dreaming</strong><small>有 backlog 时自动整理；默认仅在 provider 已配置时调用模型维护。</small></span>
+      </label>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={props.autoDreamForm.localFallback} onChange={(e) => setAutoDreamField("localFallback", e.target.checked)} />
+        <span><strong>本地确定性整理（无需模型）</strong><small>未配置 provider 时也自动跑确定性维护：高置信 promote、去重、低质拒绝、自动建链；冲突等高风险动作仍留给人工或模型。</small></span>
       </label>
       <div className="provider-grid">
         <label>间隔分钟 <input type="number" min="5" step="5" value={props.autoDreamForm.intervalMinutes} onChange={(e) => setAutoDreamField("intervalMinutes", e.target.value)} /></label>

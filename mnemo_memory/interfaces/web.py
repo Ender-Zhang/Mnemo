@@ -242,6 +242,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             interval_minutes=body.get("interval_minutes"),
             limit=body.get("limit"),
             min_confidence=body.get("min_confidence"),
+            local_fallback=body.get("local_fallback"),
         )
         return record_auto_dream_config_change(client)
     if method == "tombstones":

@@ -31,11 +31,13 @@ export type AutoDreamStatusResult = {
   interval_minutes?: number | string | null;
   limit?: number | string | null;
   min_confidence?: number | string | null;
+  local_fallback?: boolean;
   save_path?: string;
   status_path?: string;
   running?: boolean;
   last_outcome?: string | null;
   last_run_source?: string | null;
+  last_run_mode?: string | null;
   last_checked_at?: number | null;
   last_config_updated_at?: number | null;
   last_started_at?: number | null;
@@ -51,6 +53,7 @@ export type AutoDreamStatusResult = {
 export type AutoDreamFormState = {
   enabled: boolean;
   intervalMinutes: string;
+  localFallback: boolean;
 };
 
 export function emptyProviderForm(): ProviderFormState {
@@ -106,14 +109,16 @@ export function providerStatusText(result: ProviderConfigResult | null) {
 export function emptyAutoDreamForm(): AutoDreamFormState {
   return {
     enabled: true,
-    intervalMinutes: "180"
+    intervalMinutes: "180",
+    localFallback: false
   };
 }
 
 export function autoDreamFormFromStatus(result: AutoDreamStatusResult | null): AutoDreamFormState {
   return {
     enabled: result?.enabled !== false,
-    intervalMinutes: String(result?.interval_minutes || "180")
+    intervalMinutes: String(result?.interval_minutes || "180"),
+    localFallback: result?.local_fallback === true
   };
 }
 
@@ -121,7 +126,8 @@ export function autoDreamSavePayload(form: AutoDreamFormState) {
   const intervalMinutes = Number(form.intervalMinutes);
   return {
     enabled: form.enabled,
-    interval_minutes: Number.isFinite(intervalMinutes) && intervalMinutes > 0 ? intervalMinutes : 180
+    interval_minutes: Number.isFinite(intervalMinutes) && intervalMinutes > 0 ? intervalMinutes : 180,
+    local_fallback: form.localFallback
   };
 }
 

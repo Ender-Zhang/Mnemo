@@ -113,6 +113,34 @@ class MemoryWebServiceTests(unittest.TestCase):
                 self.assertEqual(status["last_backlog"]["memory_candidates"], 1)
                 self.assertEqual(client.list(kind="page", status="active", limit=10)["items"], [])
 
+    def test_auto_dream_scheduler_runs_local_fallback_without_provider(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.auto_dream import AutoDreamScheduler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
+                client = MemoryClient(state_dir=tmp)
+                client.save_auto_dream_config(local_fallback=True)
+                client.update(
+                    facts=[
+                        {
+                            "claim": "User prefers concise progress updates with explicit next steps.",
+                            "dimension": "preferences",
+                            "confidence": 0.9,
+                        }
+                    ],
+                    source="unit-test",
+                )
+                scheduler = AutoDreamScheduler(tmp, startup_delay_s=0)
+
+                status = scheduler.tick_once(now=1000, force=True)
+
+                self.assertEqual(status["last_outcome"], "ran")
+                self.assertEqual(status["last_run_mode"], "local")
+                self.assertTrue(status["local_fallback"])
+                pages = client.list(kind="page", status="active", limit=10)["items"]
+                self.assertTrue(pages, "local fallback should promote the high-confidence candidate")
+
 
 class HttpResponse:
     def __init__(self, *, status: int, content_type: str, body: str) -> None:

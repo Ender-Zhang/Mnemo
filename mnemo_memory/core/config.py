@@ -15,6 +15,7 @@ DEFAULT_AUTO_DREAM_ENABLED = True
 DEFAULT_AUTO_DREAM_INTERVAL_MINUTES = 180
 DEFAULT_AUTO_DREAM_LIMIT = 20
 DEFAULT_AUTO_DREAM_MIN_CONFIDENCE = 0.7
+DEFAULT_AUTO_DREAM_LOCAL_FALLBACK = False
 ENV_FILE_KEY = "MNEMO_MEMORY_ENV_FILE"
 
 
@@ -32,6 +33,7 @@ class MemoryConfig:
     auto_dream_interval_minutes: int = DEFAULT_AUTO_DREAM_INTERVAL_MINUTES
     auto_dream_limit: int = DEFAULT_AUTO_DREAM_LIMIT
     auto_dream_min_confidence: float = DEFAULT_AUTO_DREAM_MIN_CONFIDENCE
+    auto_dream_local_fallback: bool = DEFAULT_AUTO_DREAM_LOCAL_FALLBACK
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -56,6 +58,7 @@ class ConfigOverrides:
     auto_dream_interval_minutes: int | None = None
     auto_dream_limit: int | None = None
     auto_dream_min_confidence: float | None = None
+    auto_dream_local_fallback: bool | None = None
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -140,6 +143,12 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_AUTO_DREAM_MIN_CONFIDENCE"),
         DEFAULT_AUTO_DREAM_MIN_CONFIDENCE,
     )
+    auto_dream_local_fallback = _first_bool(
+        overrides.auto_dream_local_fallback,
+        file_config.get("auto_dream_local_fallback"),
+        env.get("MNEMO_MEMORY_AUTO_DREAM_LOCAL_FALLBACK"),
+        DEFAULT_AUTO_DREAM_LOCAL_FALLBACK,
+    )
     return MemoryConfig(
         state_dir=state_dir,
         provider=provider,
@@ -153,6 +162,7 @@ def resolve_memory_config(
         auto_dream_interval_minutes=max(5, auto_dream_interval_minutes),
         auto_dream_limit=max(1, min(50, auto_dream_limit)),
         auto_dream_min_confidence=max(0.0, min(1.0, auto_dream_min_confidence)),
+        auto_dream_local_fallback=auto_dream_local_fallback,
         auth_token=auth_token,
         config_path=str(config_path) if config_path else None,
     )
