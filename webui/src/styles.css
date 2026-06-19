@@ -2229,3 +2229,139 @@ pre {
   color: #6b5320;
   font-size: 12px;
 }
+
+/* ─── Structured views (replace raw JSON) ─────────────────────────────────── */
+
+.structured-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #dce3ec;
+  border-radius: 12px;
+  background: #fbfcfe;
+}
+
+.structured-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.structured-head h3 {
+  margin: 0;
+  margin-right: auto;
+  font-size: 14px;
+  color: #253044;
+}
+
+.kv-grid {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.kv-grid-head {
+  font-weight: 600;
+  color: #36425a;
+  margin-bottom: 2px;
+}
+
+.kv-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.4fr) minmax(0, 1fr);
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.kv-key {
+  color: #7b8494;
+  overflow-wrap: anywhere;
+}
+
+.kv-val {
+  color: #253044;
+  overflow-wrap: anywhere;
+}
+
+.health-card-list {
+  display: grid;
+  gap: 6px;
+}
+
+.health-card {
+  padding: 8px 10px;
+  border: 1px solid #e3e9f2;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.health-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-card-head strong {
+  font-size: 13px;
+  color: #1d2738;
+}
+
+.health-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: #1f5edb;
+  font-weight: 600;
+}
+
+.health-card p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #36425a;
+  overflow-wrap: anywhere;
+}
+
+.snapshot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.link-list {
+  display: grid;
+  gap: 4px;
+}
+
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #36425a;
+}
+
+.link-dir {
+  width: 16px;
+  text-align: center;
+  color: #7b8494;
+}
+
+.link-weight {
+  margin-left: auto;
+  color: #7b8494;
+  font-variant-numeric: tabular-nums;
+}
+
+.dev-json > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: #7b8494;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.dev-json[open] > summary {
+  color: #36425a;
+}

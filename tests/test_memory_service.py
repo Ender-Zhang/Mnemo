@@ -8,6 +8,22 @@ from pathlib import Path
 import unittest
 
 
+def _webui_source() -> str:
+    """Concatenated WebUI source used by source-contract assertions.
+
+    Logic is split across modules (main.tsx + format.ts + components/), so these
+    checks read the whole tree rather than assuming a single file.
+    """
+    src_dir = Path(__file__).resolve().parents[1] / "webui" / "src"
+    parts = [
+        src_dir / "main.tsx",
+        src_dir / "format.ts",
+        src_dir / "components" / "shared.tsx",
+        src_dir / "components" / "structured.tsx",
+    ]
+    return "\n".join(path.read_text(encoding="utf-8") for path in parts)
+
+
 class MemoryServiceTests(unittest.TestCase):
     def test_client_update_search_and_curate_candidate(self) -> None:
         from mnemo_memory import MemoryClient
@@ -1008,8 +1024,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("DreamProposalsPanel", app)
 
     def test_webui_keeps_dream_run_feedback_after_refresh(self) -> None:
-        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
-        app = source.read_text(encoding="utf-8")
+        app = _webui_source()
 
         self.assertIn('const report = await callMemory<DreamRunReport>("dream-run"', app)
         self.assertIn("await refresh({ clearNotice: false })", app)
@@ -1042,8 +1057,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("Running ${formatDuration(props.dreamElapsedS)}", app)
 
     def test_webui_displays_dream_review_reasons(self) -> None:
-        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
-        app = source.read_text(encoding="utf-8")
+        app = _webui_source()
 
         self.assertIn("DreamReviewReasons", app)
         self.assertIn("审核原因", app)
@@ -1051,8 +1065,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("dreamRunRejectReasons", app)
 
     def test_webui_displays_memory_audit_result_column(self) -> None:
-        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
-        app = source.read_text(encoding="utf-8")
+        app = _webui_source()
 
         self.assertIn("审核结果", app)
         self.assertIn("AuditResultBadge", app)
@@ -1118,8 +1131,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("候选计划", app)
 
     def test_webui_can_filter_memories_by_uid(self) -> None:
-        source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
-        app = source.read_text(encoding="utf-8")
+        app = _webui_source()
 
         self.assertNotIn('{ key: "search"', app)
         self.assertIn('useState<TabKey>("memories")', app)
@@ -1136,7 +1148,7 @@ class MemoryServiceTests(unittest.TestCase):
 
     def test_webui_compacts_long_status_badges(self) -> None:
         root = Path(__file__).resolve().parents[1]
-        app = root.joinpath("webui", "src", "main.tsx").read_text(encoding="utf-8")
+        app = _webui_source()
         css = root.joinpath("webui", "src", "styles.css").read_text(encoding="utf-8")
 
         self.assertIn("function compactStatusText", app)
