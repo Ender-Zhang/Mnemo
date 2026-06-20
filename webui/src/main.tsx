@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   Activity,
   Archive,
+  BookOpen,
   Brain,
   Check,
   ChevronRight,
@@ -18,6 +19,7 @@ import {
   ListTodo,
   Loader2,
   MessageSquare,
+  Moon,
   Play,
   Plus,
   RefreshCcw,
@@ -25,11 +27,14 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Sun,
   Trash2,
   User,
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { GlossaryDrawer } from "./components/Glossary";
+import { OnboardingChecklist } from "./components/Onboarding";
 import { filterCandidateReviewItems, filterReviewableCandidates, isReviewableCandidate } from "./candidateFilters";
 import {
   autoDreamFormFromStatus,
@@ -153,6 +158,13 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [advancedMode, setAdvancedMode] = useState(() => localStorage.getItem("mnemo.advancedMode") === "true");
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const saved = localStorage.getItem("mnemo.theme");
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => localStorage.getItem("mnemo.onboardingDismissed") === "true");
   const [composerOpen, setComposerOpen] = useState(false);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -327,6 +339,10 @@ function App() {
     await refresh(options);
   }, [refresh]);
 
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("mnemo.theme", theme);
+  }, [theme]);
   useEffect(() => { localStorage.setItem("mnemo.apiBase", apiBase); }, [apiBase]);
   useEffect(() => { localStorage.setItem("mnemo.useProvider", useProvider ? "true" : "false"); }, [useProvider]);
   useEffect(() => { localStorage.setItem("mnemo.advancedDreaming", advancedDreaming ? "true" : "false"); }, [advancedDreaming]);
@@ -626,6 +642,10 @@ function App() {
 
   const curateSelected = async (mode: "tombstone" | "forget") => {
     if (!selected) return;
+    const confirmText = mode === "forget"
+      ? `私密擦除（不可逆）${compactId(selected.id)}？内容会被抹掉，仅保留删除痕迹。`
+      : `标记 tombstone ${compactId(selected.id)}？该记忆将不再用于召回。`;
+    if (!window.confirm(confirmText)) return;
     setLoading(true);
     try {
       if (mode === "forget") {
@@ -968,6 +988,12 @@ function App() {
           </div>
           <div className="divider" />
           <div className="endpoint">HTTP: {apiBase}</div>
+          <button className="ghost-button icon-only" title={theme === "dark" ? "切换浅色" : "切换深色"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button className="ghost-button icon-only" title="术语 / 帮助" onClick={() => setGlossaryOpen(true)}>
+            <BookOpen size={16} />
+          </button>
           <button className="ghost-button" onClick={() => refreshInventory()} disabled={loading}>
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             Refresh
@@ -995,6 +1021,16 @@ function App() {
 
         <section className={advancedMode ? "dashboard-grid advanced-layout" : "dashboard-grid workbench-layout"}>
           <div className="main-column">
+            {activeTab === "memories" && !searchMode && inventory.length === 0 && !onboardingDismissed ? (
+              <OnboardingChecklist
+                hasProvider={Boolean(providerConfig?.configured)}
+                onConfigure={() => setActiveTab("settings")}
+                onAddMemory={() => setComposerOpen(true)}
+                onRunDream={() => setActiveTab("maintenance")}
+                onPreview={() => setActiveTab("preview")}
+                onDismiss={() => { setOnboardingDismissed(true); localStorage.setItem("mnemo.onboardingDismissed", "true"); }}
+              />
+            ) : null}
             {/* L0 Profile Card */}
             {activeTab === "memories" && profile?.summary ? (
               <ProfileCard profile={profile} />
@@ -1177,6 +1213,7 @@ function App() {
           onUpdate={stableUpdate}
           onClose={() => { setEditorOpen(false); setEditorItem(null); }}
         />
+        <GlossaryDrawer open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
       </main>
     </div>
   );
