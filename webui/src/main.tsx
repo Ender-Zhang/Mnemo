@@ -189,6 +189,7 @@ function App() {
   const [selected, setSelected] = useState<MemoryItem | null>(null);
   const [links, setLinks] = useState<MemoryLinksResult | null>(null);
   const [provenance, setProvenance] = useState<MemoryProvenanceResult | null>(null);
+  const [relatedPlans, setRelatedPlans] = useState<PlanItem[]>([]);
   const [health, setHealth] = useState<MemoryHealthResult | null>(null);
   const [dreamStatus, setDreamStatus] = useState<DreamStatusResult | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotResult | null>(null);
@@ -442,6 +443,7 @@ function App() {
     setSelected(item);
     setLinks(null);
     setProvenance(null);
+    setRelatedPlans([]);
     setVersions([]);
     setShowVersions(false);
     try {
@@ -453,9 +455,26 @@ function App() {
       setSelected({ ...readResult.item, type: readResult.type });
       setLinks(linkResult);
       setProvenance(provenanceResult);
+      const scope = readResult.item.scope;
+      if (scope) {
+        try {
+          const planResult = await callMemory<PlanListResult>("plan-list", { scope, include_archived: false, limit: 100 });
+          const open = (planResult.items || []).filter((plan) =>
+            plan.scope === scope && ["open", "doing", "active", "paused"].includes(String(plan.status || "").toLowerCase()));
+          setRelatedPlans(open.slice(0, 8));
+        } catch { setRelatedPlans([]); }
+      }
     } catch (error) {
       setError(error);
     }
+  };
+
+  const viewScopeMemories = (scope?: string) => {
+    const clean = (scope || "").trim();
+    if (!clean) return;
+    setUidFilter(clean.toLowerCase().startsWith("user:") ? clean.slice("user:".length) : "");
+    setActiveTab("memories");
+    void refreshInventory({ clearNotice: false });
   };
 
   const loadVersions = async (memoryId: string) => {
@@ -1143,6 +1162,7 @@ function App() {
                 onArchive={archivePlanItem}
                 onApplyProposal={applyPlanProposal}
                 onRejectProposal={rejectPlanProposal}
+                onViewScope={viewScopeMemories}
               />
             ) : null}
             {activeTab === "candidates" ? (
@@ -1228,10 +1248,12 @@ function App() {
               setTombstoneReason={setTombstoneReason}
               versions={versions}
               showVersions={showVersions}
+              relatedPlans={relatedPlans}
               onTombstone={() => curateSelected("tombstone")}
               onForget={() => curateSelected("forget")}
               onLoadVersions={loadVersions}
               onEdit={openEditor}
+              onOpenPlans={(scope) => { const c = (scope || "").trim(); setUidFilter(c.toLowerCase().startsWith("user:") ? c.slice(5) : ""); setActiveTab("plans"); }}
             />
           </aside>
 
@@ -1623,10 +1645,12 @@ function MemoryDetail(props: {
   setTombstoneReason: (v: string) => void;
   versions: PageVersion[];
   showVersions: boolean;
+  relatedPlans: PlanItem[];
   onTombstone: () => void;
   onForget: () => void;
   onLoadVersions: (id: string) => void;
   onEdit: (item: MemoryItem) => void;
+  onOpenPlans: (scope?: string) => void;
 }) {
   const item = props.selected;
   const review = item ? reviewForItem(item, dreamReviewResultMap(props.dreamStatus)) : undefined;
@@ -1653,6 +1677,21 @@ function MemoryDetail(props: {
             <label>更新时间</label><strong>{formatDate(item.updated_at || item.created_at)}</strong>
           </div>
           <div className="content-box">{item.content || item.claim || item.title || "-"}</div>
+          {props.relatedPlans.length > 0 ? (
+            <div className="related-plans">
+              <div className="related-plans-head">
+                <h3>相关计划</h3>
+                <button className="ghost-button" onClick={() => props.onOpenPlans(item.scope)}>在计划查看<ChevronRight size={14} /></button>
+              </div>
+              {props.relatedPlans.map((plan) => (
+                <div className="related-plan-row" key={plan.id}>
+                  <StatusBadge text={plan.kind || "todo"} />
+                  <StatusBadge text={plan.status || "open"} />
+                  <span>{plan.title}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <ProvenanceTimeline provenance={props.provenance} />
           <div className="detail-actions">
             <button className="ghost-button" onClick={() => navigator.clipboard?.writeText(item.content || item.claim || item.title || item.id)}>
@@ -2206,6 +2245,7 @@ function PlanPanel(props: {
   onArchive: (id: string) => void;
   onApplyProposal: (id: string) => void;
   onRejectProposal: (id: string) => void;
+  onViewScope: (scope?: string) => void;
 }) {
   const goals = props.items.filter((item) => item.kind === "goal");
   const todos = props.items.filter((item) => item.kind === "todo");
@@ -2272,6 +2312,7 @@ function PlanPanel(props: {
           onComplete={props.onComplete}
           onCancel={props.onCancel}
           onArchive={props.onArchive}
+          onViewScope={props.onViewScope}
         />
         <PlanSection
           title="Todos"
@@ -2281,6 +2322,7 @@ function PlanPanel(props: {
           onComplete={props.onComplete}
           onCancel={props.onCancel}
           onArchive={props.onArchive}
+          onViewScope={props.onViewScope}
         />
       </div>
       <div className="plan-proposals">
@@ -2335,6 +2377,7 @@ function PlanSection(props: {
   onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onArchive: (id: string) => void;
+  onViewScope: (scope?: string) => void;
 }) {
   return (
     <div className="plan-section">
@@ -2354,7 +2397,7 @@ function PlanSection(props: {
               </div>
               {item.detail ? <p>{item.detail}</p> : null}
               <div className="plan-meta">
-                <span>{item.scope || "global"}</span>
+                <button className="link-button" onClick={() => props.onViewScope(item.scope)} title="查看该 scope 的记忆">{item.scope || "global"}</button>
                 {item.parent_id ? <span>父级：{planTitleById(props.goals || [], item.parent_id)}</span> : null}
                 {item.due_at ? <span>截止：{formatDate(item.due_at)}</span> : null}
                 <code>{item.id}</code>
