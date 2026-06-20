@@ -88,6 +88,18 @@ class MemoryWebServiceTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
+    def test_insecure_bind_warning_only_for_non_loopback(self) -> None:
+        from mnemo_memory.interfaces.web import insecure_bind_warning
+
+        self.assertIsNone(insecure_bind_warning("127.0.0.1"))
+        self.assertIsNone(insecure_bind_warning("localhost"))
+        self.assertIsNone(insecure_bind_warning("::1"))
+        for host in ("0.0.0.0", "192.168.1.5", ""):
+            message = insecure_bind_warning(host)
+            self.assertIsNotNone(message)
+            self.assertIn("UNAUTHENTICATED", message)
+            self.assertIn("state-dir", message)
+
     def test_auto_dream_scheduler_skips_backlog_without_provider(self) -> None:
         from mnemo_memory import MemoryClient
         from mnemo_memory.interfaces.auto_dream import AutoDreamScheduler

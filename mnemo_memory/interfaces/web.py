@@ -51,8 +51,32 @@ def build_http_server(config: MemoryWebConfig) -> ThreadingHTTPServer:
     return _MemoryThreadingHTTPServer((config.host, int(config.port)), handler)
 
 
+def _is_loopback_host(host: str) -> bool:
+    normalized = str(host or "").strip().lower()
+    return normalized in {"127.0.0.1", "::1", "localhost"} or normalized.startswith("127.")
+
+
+def insecure_bind_warning(host: str) -> str | None:
+    """Operator warning when the unauthenticated API binds beyond loopback.
+
+    Mnemo is single-tenant per state-dir and the HTTP API has no access control,
+    so binding to anything other than loopback exposes every memory in the store.
+    """
+    if _is_loopback_host(host):
+        return None
+    return (
+        f"mnemo-memory is serving an UNAUTHENTICATED HTTP API on host '{host or '0.0.0.0'}'. "
+        "It has no access control and is single-tenant per state-dir; expose it only on "
+        "trusted local networks, and use a separate --state-dir per user for isolation."
+    )
+
+
 def serve_http(config: MemoryWebConfig) -> None:
     configure_logging(state_dir=config.state_dir)
+    warning = insecure_bind_warning(config.host)
+    if warning:
+        print(f"WARNING: {warning}")
+        log_event(_LOG, "serve_insecure_bind", level=logging.WARNING, host=config.host)
     server = build_http_server(config)
     scheduler = AutoDreamScheduler(config.state_dir)
     scheduler.start()

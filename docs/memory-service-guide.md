@@ -103,7 +103,7 @@ flowchart LR
     └── dream-reports/        # Dream 维护报告
 ```
 
-不同用户需要强隔离时，建议每个用户一个 `state-dir`。如果多个用户共用同一个 state-dir，请把用户 ID 写进 `scope` 和可搜索文本，例如 `scope: "user:user_123"`，因为当前 `search` 是召回能力，不是权限隔离边界。
+Mnemo 是“每个 state-dir 单租户”的本地服务。不同用户需要隔离时，**每个用户一个 `state-dir` 才是真正的边界**（不同 SQLite 库，互不可见）。如果多个用户共用同一个 state-dir，请把用户 ID 写进 `scope`（如 `scope: "user:user_123"`），但要清楚 `search` / `recall` / `context` 不强制 uid、会对整库召回，所以 `scope`/`uid` 只是召回便利，不是权限隔离边界；要隔离就别共用 state-dir。HTTP API 默认无鉴权、绑定 `127.0.0.1`，不要暴露到不可信网络。
 
 ## 核心数据模型
 

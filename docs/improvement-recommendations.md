@@ -289,8 +289,10 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 | 可观测性 | `core/log.py` 结构化日志 + 全链路埋点（candidate/promote/reject/dream/auto-dream/curation/http） | `core/log.py`、`memory/learning.py`、`memory/dream.py`、`interfaces/auto_dream.py`、`memory/curation.py`、`interfaces/web.py`、`tests/test_logging.py` |
 | 易用性 | forget/tombstone 二次确认、首启引导、术语帮助抽屉、暗色模式（颜色 token 化 + 跟随系统 + 切换） | `webui/src/main.tsx`、`webui/src/styles.css`、`webui/src/components/Glossary.tsx`、`webui/src/components/Onboarding.tsx` |
 
-剩余建议里仍待办的高价值项：多用户隔离（§ 答复里 #2，需先定产品立场）、「生效配置 / 来源」视图（5.2）、provider 连通测试（5.3）、阈值可配（5.4）、事件触发 + 常驻调度（2.2/2.3）、中英文案统一（3.2）、十维/关联可视化（4.5）。
+**多用户隔离：已定为单租户（A 方案）。** Mnemo 明确是“每个 `state-dir` 单租户”的本地服务，不假装多租户：多用户用独立 `state-dir`（真隔离），共享 state-dir 的 `scope`/`uid` 只是召回便利、非权限边界（`search`/`recall`/`context` 不强制 uid）。已在 README 新增「安全与多用户隔离」专节并收紧导览/serve 文案；代码侧加了护栏——绑定非回环地址时 `serve` 打印醒目 `WARNING`（`insecure_bind_warning`，含测试）。
+
+剩余建议里仍待办的高价值项：「生效配置 / 来源」视图（5.2）、provider 连通测试（5.3）、阈值可配（5.4）、事件触发 + 常驻调度（2.2/2.3）、中英文案统一（3.2）、十维/关联可视化（4.5）。
 
 ---
 
-*P0 全部、P1/P2 中的语义检索 / 评估 / 可观测性 / 易用性已落地并通过测试。其余仍为建议；告诉我接着推进哪项即可。*
+*P0 全部、P1/P2 中的语义检索 / 评估 / 可观测性 / 易用性已落地；多用户隔离已定为单租户并加护栏。其余仍为建议；告诉我接着推进哪项即可。*
