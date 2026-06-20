@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
+from ..core.log import get_logger, log_event
 from .cards import _skip_working_note
 from .constants import DEFAULT_W0_CONFIDENCE, L1_SNAPSHOT_FILENAME, MIN_W0_CANDIDATE_CHARS, W0_MEMORY_RETENTION
 from .quality import (
@@ -32,6 +33,8 @@ from .utils import (
 )
 from .wiki import materialize_memory_page, materialize_memory_pages, memory_page_dimension, memory_page_slug, memory_page_wiki_ref
 
+
+_LOG = get_logger("learning")
 
 NEAR_DUPLICATE_JACCARD_THRESHOLD = 0.72
 NEAR_DUPLICATE_CONTAINMENT_THRESHOLD = 0.82
@@ -99,6 +102,15 @@ class MemoryLearningMixin:
         if scan.get("requires_review"):
             status = f"needs_review:{scan.get('review_reason') or 'memory_safety'}"
             self.store.update_memory_candidate_status(candidate_id, status)
+        log_event(
+            _LOG,
+            "candidate_write",
+            candidate_id=candidate_id,
+            status=status,
+            dimension=normalized_dimension,
+            quality=quality.get("weighted_avg"),
+            risk=scan.get("risk"),
+        )
         return {
             "candidate_id": candidate_id,
             "status": status,
@@ -199,7 +211,17 @@ class MemoryLearningMixin:
         return snapshot
 
     def promote_candidate(self, candidate_id: str, *, min_confidence: float = 0.7) -> dict[str, Any]:
-        return self.review_candidate_for_promotion(candidate_id, min_confidence=min_confidence)
+        result = self.review_candidate_for_promotion(candidate_id, min_confidence=min_confidence)
+        log_event(
+            _LOG,
+            "candidate_promote_review",
+            candidate_id=candidate_id,
+            decision=result.get("decision") or result.get("status"),
+            page_id=result.get("page_id"),
+            page_action=result.get("page_action"),
+            reason=result.get("reason") or result.get("gate_reason"),
+        )
+        return result
 
     def force_promote_candidate(self, candidate_id: str) -> dict[str, Any]:
         result = self._promote_candidate_unchecked(candidate_id)
@@ -267,6 +289,7 @@ class MemoryLearningMixin:
         self.store.add_memory_link(candidate_id, page_id, "promoted_to", weight=1.0)
         page = self._get_page(page_id)
         wiki = materialize_memory_page(self.store.state_dir, page) if page else None
+        log_event(_LOG, "page_write", candidate_id=candidate_id, page_id=page_id, page_action=page_action, scope=page_scope)
         return {
             "candidate_id": candidate_id,
             "page_id": page_id,
@@ -303,6 +326,7 @@ class MemoryLearningMixin:
         reason_text = _normalize_space(reason) or "unspecified"
         status = f"rejected:{_status_reason(reason_text)}"
         self.store.update_memory_candidate_status(candidate_id, status)
+        log_event(_LOG, "candidate_reject", candidate_id=candidate_id, status=status, reason=reason_text)
         result = {
             "candidate_id": candidate_id,
             "status": status,

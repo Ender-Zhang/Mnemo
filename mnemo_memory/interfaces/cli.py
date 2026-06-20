@@ -7,6 +7,7 @@ from typing import Any
 from .. import __version__
 from ..core.config import ConfigOverrides, DEFAULT_STATE_DIR
 from ..core.jsonutil import dumps
+from ..core.log import configure_logging
 from ..mcp import MemoryMcpServer, mcp_server_config
 from ..sdk import MemoryClient, memory_api_schema
 from .web import MemoryWebConfig, serve_http
@@ -15,6 +16,7 @@ from .web import MemoryWebConfig, serve_http
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    configure_logging(state_dir=getattr(args, "state_dir", None))
     try:
         if args.command == "init":
             MemoryClient(state_dir=args.state_dir)._store()

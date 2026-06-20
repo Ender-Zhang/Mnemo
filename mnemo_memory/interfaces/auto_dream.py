@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import threading
 import time
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
+from ..core.log import get_logger, log_event
 from ..sdk import MemoryClient
+
+
+_LOG = get_logger("auto_dream")
 
 
 AUTO_DREAM_STATUS_FILENAME = "auto-dream-status.json"
@@ -212,6 +217,7 @@ class AutoDreamScheduler:
                 }
             )
             _save_status(self.state_dir, status)
+            log_event(_LOG, "auto_dream_tick", level=logging.ERROR, outcome="error", error=str(exc))
             return auto_dream_status(client)
 
         finished_at = time.time()
@@ -229,6 +235,7 @@ class AutoDreamScheduler:
             }
         )
         _save_status(self.state_dir, status)
+        log_event(_LOG, "auto_dream_tick", outcome="ran", mode=run_mode, duration_s=status["last_duration_s"])
         return auto_dream_status(client)
 
     def _skip(
@@ -253,6 +260,7 @@ class AutoDreamScheduler:
         if outcome != "error":
             status["last_error"] = None
         _save_status(self.state_dir, status)
+        log_event(_LOG, "auto_dream_tick", outcome=outcome)
         return auto_dream_status(client)
 
     def _run(self) -> None:

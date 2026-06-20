@@ -4,14 +4,17 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 import mimetypes
 from pathlib import Path
 import socketserver
+import time
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from ..core.config import DEFAULT_STATE_DIR
 from ..core.jsonutil import dumps
+from ..core.log import configure_logging, get_logger, log_event
 from ..sdk import MemoryClient, memory_api_schema
 from .auto_dream import (
     AutoDreamScheduler,
@@ -23,6 +26,7 @@ from .auto_dream import (
 
 
 _WEB_ASSETS_DIR = Path(__file__).with_name("web_assets")
+_LOG = get_logger("web")
 
 
 class _MemoryThreadingHTTPServer(ThreadingHTTPServer):
@@ -48,16 +52,19 @@ def build_http_server(config: MemoryWebConfig) -> ThreadingHTTPServer:
 
 
 def serve_http(config: MemoryWebConfig) -> None:
+    configure_logging(state_dir=config.state_dir)
     server = build_http_server(config)
     scheduler = AutoDreamScheduler(config.state_dir)
     scheduler.start()
     host, port = server.server_address
+    log_event(_LOG, "serve_start", host=host, port=port, state_dir=str(config.state_dir))
     print(f"mnemo-memory API listening on http://{host}:{port}")
     try:
         server.serve_forever()
     finally:
         scheduler.stop()
         server.server_close()
+        log_event(_LOG, "serve_stop", host=host, port=port)
 
 
 def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -362,14 +369,27 @@ def _handler(config: MemoryWebConfig):
             self._dispatch(parsed.path.removeprefix(prefix), self._read_json())
 
         def _dispatch(self, method: str, body: dict[str, Any]) -> None:
+            started = time.perf_counter()
+            status = HTTPStatus.OK
             try:
                 result = dispatch_memory_api(client, method, body)
             except KeyError:
-                self._send({"error": f"unknown method: {method}"}, status=HTTPStatus.NOT_FOUND)
+                status = HTTPStatus.NOT_FOUND
+                self._send({"error": f"unknown method: {method}"}, status=status)
             except (TypeError, ValueError) as exc:
-                self._send({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                status = HTTPStatus.BAD_REQUEST
+                self._send({"error": str(exc)}, status=status)
             else:
                 self._send({"method": method, "result": result})
+            finally:
+                log_event(
+                    _LOG,
+                    "http_request",
+                    level=logging.DEBUG if status == HTTPStatus.OK else logging.WARNING,
+                    method=method,
+                    status=int(status),
+                    ms=round((time.perf_counter() - started) * 1000, 1),
+                )
 
         def _read_json(self) -> dict[str, Any]:
             length = int(self.headers.get("Content-Length") or "0")
