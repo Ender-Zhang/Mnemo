@@ -64,6 +64,7 @@ import {
   compareMemoryItems,
   datetimeLocalToUnix,
   detailedAuditReason,
+  dreamBacklogParts,
   dreamReviewResultMap,
   dreamRunMessage,
   dreamStatusReviewReasons,
@@ -122,6 +123,7 @@ import type {
   RecallPreviewResult,
   SnapshotResult,
   TabKey,
+  Toast,
   TombstonesResult,
   VersionsResult
 } from "./types";
@@ -160,7 +162,8 @@ function App() {
   const [apiBase, setApiBase] = useState(() => localStorage.getItem("mnemo.apiBase") || defaultApiBase);
   const [serviceOk, setServiceOk] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = React.useRef(0);
   const [advancedMode, setAdvancedMode] = useState(() => localStorage.getItem("mnemo.advancedMode") === "true");
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const saved = localStorage.getItem("mnemo.theme");
@@ -278,12 +281,15 @@ function App() {
     [requestJson]
   );
 
-  const setOk = (text: string) => setNotice({ tone: "ok", text });
-  const setWarn = (text: string) => setNotice({ tone: "warn", text });
-  const setError = (error: unknown) => {
-    const text = error instanceof Error ? error.message : String(error);
-    setNotice({ tone: "error", text });
-  };
+  const dismissToast = useCallback((id: number) => setToasts((prev) => prev.filter((toast) => toast.id !== id)), []);
+  const pushToast = useCallback((tone: "ok" | "warn" | "error", text: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev.slice(-4), { id, tone, text }]);
+    window.setTimeout(() => dismissToast(id), tone === "error" ? 8000 : 4000);
+  }, [dismissToast]);
+  const setOk = (text: string) => pushToast("ok", text);
+  const setWarn = (text: string) => pushToast("warn", text);
+  const setError = (error: unknown) => pushToast("error", error instanceof Error ? error.message : String(error));
 
   const refresh = useCallback(async (options: { parts?: RefreshPart[]; clearNotice?: boolean } = {}) => {
     const parts = new Set(options.parts ?? ALL_REFRESH_PARTS);
@@ -327,9 +333,6 @@ function App() {
         tasks.push(callMemory<MemoryHealthResult>("health", { limit: 20 }).then(setHealth).catch(() => setHealth(null)));
       }
       await Promise.all(tasks);
-      if (options.clearNotice !== false) {
-        setNotice(null);
-      }
     } catch (error) {
       if (parts.has("service")) {
         setServiceOk(false);
@@ -369,6 +372,16 @@ function App() {
     const timerId = window.setInterval(() => setClockNowMs(Date.now()), 500);
     return () => window.clearInterval(timerId);
   }, [dreamStartedAtMs]);
+
+  // While a Dream runs, poll its status so backlog/result reflect progress live.
+  useEffect(() => {
+    if (dreamStartedAtMs === null) return undefined;
+    const pollId = window.setInterval(() => {
+      callMemory<DreamStatusResult>("dream-status", { limit: 20 }).then(setDreamStatus).catch(() => undefined);
+      callMemory<AutoDreamStatusResult>("auto-dream-status", {}).then(setAutoDreamStatus).catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(pollId);
+  }, [dreamStartedAtMs, callMemory]);
 
   useEffect(() => {
     if (activeTab !== "memories") return;
@@ -483,7 +496,7 @@ function App() {
     const facts = factText.trim() ? [memoryFactPayload(factText.trim(), writeScope)] : [];
     const observations = observationText.trim() ? [memoryObservationPayload(observationText.trim(), writeScope)] : [];
     if (facts.length === 0 && observations.length === 0) {
-      setNotice({ tone: "warn", text: "请输入 fact 或 observation" });
+      setWarn("请输入 fact 或 observation");
       return;
     }
     setLoading(true);
@@ -1050,10 +1063,14 @@ function App() {
           </button>
         </header>
 
-        {notice ? (
-          <div className={`notice ${notice.tone}`}>
-            <span>{notice.text}</span>
-            <button onClick={() => setNotice(null)}><X size={14} /></button>
+        {toasts.length ? (
+          <div className="toast-stack">
+            {toasts.map((toast) => (
+              <div className={`notice ${toast.tone}`} key={toast.id}>
+                <span>{toast.text}</span>
+                <button onClick={() => dismissToast(toast.id)}><X size={14} /></button>
+              </div>
+            ))}
           </div>
         ) : null}
 
@@ -2463,6 +2480,15 @@ function MaintenancePanel(props: {
         </div>
       </div>
       <DreamTiming elapsedS={props.dreamElapsedS} latestDurationS={latestDurationS} />
+      {props.dreamElapsedS !== null ? (
+        <div className="dream-running-backlog">
+          <Loader2 className="spin" size={14} />
+          <span>处理中</span>
+          {dreamBacklogParts(props.dreamStatus).length === 0
+            ? <StatusBadge text="收尾中" />
+            : dreamBacklogParts(props.dreamStatus).map((part) => <StatusBadge key={part.label} text={`${part.label} ${part.count}`} />)}
+        </div>
+      ) : null}
       <div className="dream-mode-strip">
         <StatusBadge text={props.useProvider ? "模型审核开启" : "模型审核关闭"} />
         <StatusBadge text={props.advancedDreaming ? "高级 Dreaming 开启" : "普通 Dreaming"} />

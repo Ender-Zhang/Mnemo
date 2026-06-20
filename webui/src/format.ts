@@ -189,6 +189,29 @@ export function latestDreamDurationS(status: DreamStatusResult | null) {
   return typeof v === "number" && Number.isFinite(v) ? v : null;
 }
 
+export function dreamBacklogParts(status: DreamStatusResult | null): Array<{ label: string; count: number }> {
+  const backlog = status?.backlog && typeof status.backlog === "object" ? (status.backlog as Record<string, unknown>) : {};
+  const mapping: Array<[string, string]> = [
+    ["draft_candidates", "候选"],
+    ["memory_candidates", "候选"],
+    ["w0_pending", "笔记"],
+    ["changed_pages", "变更页"],
+    ["review_cards", "复核"],
+    ["tombstones", "墓碑"]
+  ];
+  const seen = new Set<string>();
+  const parts: Array<{ label: string; count: number }> = [];
+  for (const [key, label] of mapping) {
+    if (seen.has(label)) continue;
+    const count = Number(backlog[key] ?? 0);
+    if (Number.isFinite(count) && count > 0) {
+      parts.push({ label, count });
+      seen.add(label);
+    }
+  }
+  return parts;
+}
+
 export function dreamStatusReviewReasons(status: DreamStatusResult | null) {
   return normalizeDreamReviewResults(status?.latest?.execution?.review_results).filter((i) => Boolean(i.reason));
 }

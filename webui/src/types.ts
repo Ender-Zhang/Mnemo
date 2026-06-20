@@ -317,6 +317,12 @@ export type Notice = {
   text: string;
 };
 
+export type Toast = {
+  id: number;
+  tone: "ok" | "warn" | "error";
+  text: string;
+};
+
 export type EffectiveConfigRow = { field: string; value: string; source: string };
 
 export type EffectiveConfigResult = {
