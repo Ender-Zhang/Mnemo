@@ -323,6 +323,16 @@ export type Toast = {
   text: string;
 };
 
+export type MemoryGraphNode = { id: string; title: string; dimension: string; degree: number; orphan: boolean };
+export type MemoryGraphEdge = { source: string; target: string; relation?: string };
+export type MemoryGraphResult = {
+  kind?: string;
+  page_count?: number;
+  dimensions?: Array<{ dimension: string; count: number }>;
+  nodes?: MemoryGraphNode[];
+  edges?: MemoryGraphEdge[];
+};
+
 export type EffectiveConfigRow = { field: string; value: string; source: string };
 
 export type EffectiveConfigResult = {

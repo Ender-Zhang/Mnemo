@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { GlossaryDrawer } from "./components/Glossary";
+import { MemoryMap } from "./components/MemoryMap";
 import { OnboardingChecklist } from "./components/Onboarding";
 import { filterCandidateReviewItems, filterReviewableCandidates, isReviewableCandidate } from "./candidateFilters";
 import {
@@ -105,6 +106,7 @@ import type {
   DreamStatusResult,
   EffectiveConfigResult,
   L0Profile,
+  MemoryGraphResult,
   MemoryHealthResult,
   MemoryItem,
   MemoryLinksResult,
@@ -209,6 +211,7 @@ function App() {
   const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatusResult | null>(null);
   const [tuningForm, setTuningForm] = useState<TuningFormState>(() => emptyTuningForm());
   const [effectiveConfig, setEffectiveConfig] = useState<EffectiveConfigResult | null>(null);
+  const [memoryGraph, setMemoryGraph] = useState<MemoryGraphResult | null>(null);
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
@@ -311,6 +314,7 @@ function App() {
         tasks.push(callMemory<DreamStatusResult>("dream-status", { limit: 20 }).then(setDreamStatus));
         tasks.push(callMemory<SnapshotResult>("snapshot", { limit: 50 }).then(setSnapshot));
         tasks.push(callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 }).then((r) => setDreamProposals(r.proposals || [])));
+        tasks.push(callMemory<MemoryGraphResult>("memory-graph", {}).then(setMemoryGraph).catch(() => setMemoryGraph(null)));
       }
       if (parts.has("tombstones")) {
         tasks.push(callMemory<TombstonesResult>("tombstones", { limit: 500 }).then((r) => setTombstones(r.tombstones || [])));
@@ -1213,6 +1217,7 @@ function App() {
                 onRejectProposal={rejectDreamProposal}
               />
             ) : null}
+            {activeTab === "maintenance" ? <MemoryMap graph={memoryGraph} /> : null}
             {activeTab === "settings" ? (
               <SettingsPanel
                 apiBase={apiBase} setApiBase={setApiBase}

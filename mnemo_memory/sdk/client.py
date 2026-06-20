@@ -703,6 +703,59 @@ class MemoryClient:
     def profile(self, *, limit: int = 50) -> dict[str, Any]:
         return self._engine().compile_l0(limit=limit)
 
+    def memory_graph(self, *, limit: int = 200) -> dict[str, Any]:
+        """Aggregate active pages into dimension counts + an association graph."""
+        from ..memory.wiki import memory_page_dimension
+
+        store = self._store()
+        pages = store.list_memory_pages(status="active", limit=max(1, int(limit)))
+        page_ids = {str(page.get("id") or "") for page in pages if page.get("id")}
+
+        dimension_counts: dict[str, int] = {}
+        degree: dict[str, int] = {}
+        edges: list[dict[str, Any]] = []
+        seen_edges: set[tuple[str, str]] = set()
+        for page in pages:
+            pid = str(page.get("id") or "")
+            if not pid:
+                continue
+            dimension_counts[memory_page_dimension(page)] = dimension_counts.get(memory_page_dimension(page), 0) + 1
+            for link in store.list_memory_links(pid):
+                target = str(link.get("target_id") or "")
+                if target not in page_ids or target == pid:
+                    continue
+                key = tuple(sorted((pid, target)))
+                degree[pid] = degree.get(pid, 0) + 1
+                degree[target] = degree.get(target, 0) + 1
+                if key in seen_edges:
+                    continue
+                seen_edges.add(key)
+                edges.append({"source": pid, "target": target, "relation": link.get("relation")})
+
+        nodes = [
+            {
+                "id": str(page.get("id")),
+                "title": str(page.get("title") or page.get("id") or "")[:80],
+                "dimension": memory_page_dimension(page),
+                "degree": degree.get(str(page.get("id")), 0),
+                "orphan": degree.get(str(page.get("id")), 0) == 0,
+            }
+            for page in pages
+            if page.get("id")
+        ]
+        dimensions = [
+            {"dimension": dimension, "count": count}
+            for dimension, count in sorted(dimension_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        return {
+            "kind": "memory_graph",
+            "version": "mnemo_memory.memory_graph.v1",
+            "page_count": len(pages),
+            "dimensions": dimensions,
+            "nodes": nodes,
+            "edges": edges,
+        }
+
     def snapshot(self, *, compile: bool = False, limit: int = 50) -> dict[str, Any]:
         engine = self._engine()
         snapshot = engine.compile_l1_snapshot(limit=limit) if compile else engine.load_l1_snapshot()

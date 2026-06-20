@@ -387,6 +387,8 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
         )
     if method == "profile":
         return client.profile(limit=int(body.get("limit") or 50))
+    if method in {"memory-graph", "memory_graph"}:
+        return client.memory_graph(limit=int(body.get("limit") or 200))
     raise KeyError(method)
 
 
