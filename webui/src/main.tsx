@@ -46,13 +46,16 @@ import {
   emptyAutoDreamForm,
   emptyEmbeddingForm,
   emptyProviderForm,
+  emptyTuningForm,
   providerFormFromConfig,
   providerSavePayload,
-  providerStatusText
+  providerStatusText,
+  tuningFormFromConfig,
+  tuningSavePayload
 } from "./providerSettings";
 import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
-import type { AutoDreamFormState, AutoDreamStatusResult, EmbeddingConfigResult, EmbeddingFormState, EmbeddingStatusResult, ProviderConfigResult, ProviderFormState } from "./providerSettings";
+import type { AutoDreamFormState, AutoDreamStatusResult, EmbeddingConfigResult, EmbeddingFormState, EmbeddingStatusResult, ProviderConfigResult, ProviderFormState, TuningConfigResult, TuningFormState } from "./providerSettings";
 import type { PromotionReviewResult } from "./promotionMessages";
 import {
   auditResultForItem,
@@ -199,6 +202,7 @@ function App() {
   const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfigResult | null>(null);
   const [embeddingForm, setEmbeddingForm] = useState<EmbeddingFormState>(() => emptyEmbeddingForm());
   const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatusResult | null>(null);
+  const [tuningForm, setTuningForm] = useState<TuningFormState>(() => emptyTuningForm());
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
@@ -307,6 +311,7 @@ function App() {
         tasks.push(callMemory<AutoDreamStatusResult>("auto-dream-status", {}).then((r) => { setAutoDreamStatus(r); setAutoDreamForm(autoDreamFormFromStatus(r)); }));
         tasks.push(callMemory<EmbeddingConfigResult>("embedding-config", {}).then((r) => { setEmbeddingConfig(r); setEmbeddingForm(embeddingFormFromConfig(r)); }));
         tasks.push(callMemory<EmbeddingStatusResult>("embedding-status", {}).then(setEmbeddingStatus).catch(() => setEmbeddingStatus(null)));
+        tasks.push(callMemory<TuningConfigResult>("tuning-config", {}).then((r) => setTuningForm(tuningFormFromConfig(r))));
       }
       if (parts.has("plans")) {
         tasks.push(callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }).then((r) => setPlanItems(r.items || [])));
@@ -915,6 +920,16 @@ function App() {
     finally { setLoading(false); }
   };
 
+  const saveTuningConfig = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<TuningConfigResult>("save-tuning-config", tuningSavePayload(tuningForm));
+      setTuningForm(tuningFormFromConfig(result));
+      setOk("调参已保存：新写入按新阈值评分，promote 默认置信度同步更新。");
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
   const summaryStats = useMemo(() => {
     const pages = inventory.filter((item) => item.type === "page").length;
     const draft = pendingCandidates.length;
@@ -1148,10 +1163,12 @@ function App() {
                 autoDreamStatus={autoDreamStatus} autoDreamForm={autoDreamForm} setAutoDreamForm={setAutoDreamForm}
                 embeddingConfig={embeddingConfig} embeddingForm={embeddingForm} setEmbeddingForm={setEmbeddingForm}
                 embeddingStatus={embeddingStatus}
+                tuningForm={tuningForm} setTuningForm={setTuningForm}
                 onSaveProviderConfig={saveProviderConfig}
                 onSaveAutoDreamConfig={saveAutoDreamConfig}
                 onSaveEmbeddingConfig={saveEmbeddingConfig}
                 onReindexEmbeddings={reindexEmbeddings}
+                onSaveTuningConfig={saveTuningConfig}
                 loading={loading}
               />
             ) : null}
@@ -2560,9 +2577,14 @@ function SettingsPanel(props: {
   embeddingConfig: EmbeddingConfigResult | null;
   embeddingForm: EmbeddingFormState; setEmbeddingForm: (v: EmbeddingFormState) => void;
   embeddingStatus: EmbeddingStatusResult | null;
+  tuningForm: TuningFormState; setTuningForm: (v: TuningFormState) => void;
   onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void;
-  onSaveEmbeddingConfig: () => void; onReindexEmbeddings: () => void; loading: boolean;
+  onSaveEmbeddingConfig: () => void; onReindexEmbeddings: () => void;
+  onSaveTuningConfig: () => void; loading: boolean;
 }) {
+  const setTuningField = <K extends keyof TuningFormState>(field: K, value: TuningFormState[K]) => {
+    props.setTuningForm({ ...props.tuningForm, [field]: value });
+  };
   const setProviderField = <K extends keyof ProviderFormState>(field: K, value: ProviderFormState[K]) => {
     props.setProviderForm({ ...props.providerForm, [field]: value });
   };
@@ -2661,6 +2683,21 @@ function SettingsPanel(props: {
         </button>
         <button className="ghost-button" onClick={props.onReindexEmbeddings} disabled={props.loading || !props.embeddingStatus?.configured}>
           <RefreshCcw size={15} /> 重建索引
+        </button>
+      </div>
+      <div className="settings-divider" />
+      <div className="settings-section-header">
+        <div><h3>调参 / 审核阈值</h3><p>调整 promote 门的松紧；建议配合 <code>scripts/eval_model.py</code> 或 eval 测试观察影响。新写入按新阈值评分。</p></div>
+      </div>
+      <div className="provider-grid">
+        <label>质量写入阈值 <input type="number" min="0" max="1" step="0.01" value={props.tuningForm.writeThreshold} onChange={(e) => setTuningField("writeThreshold", e.target.value)} /></label>
+        <label>质量草稿阈值 <input type="number" min="0" max="1" step="0.01" value={props.tuningForm.draftThreshold} onChange={(e) => setTuningField("draftThreshold", e.target.value)} /></label>
+        <label>Promote 默认置信度 <input type="number" min="0" max="1" step="0.05" value={props.tuningForm.minConfidence} onChange={(e) => setTuningField("minConfidence", e.target.value)} /></label>
+      </div>
+      <div className="settings-hint">≥ 写入阈值推荐进稳定记忆；草稿阈值~写入阈值之间留候选复核；低于草稿阈值视为可丢弃。Promote 默认置信度是手动 promote 未显式传参时的门槛。</div>
+      <div className="settings-actions">
+        <button className="primary-button" onClick={props.onSaveTuningConfig} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存调参
         </button>
       </div>
     </section>

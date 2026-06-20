@@ -298,9 +298,18 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             limit=int(body.get("limit") or 50),
         )
     if method == "promote-candidate":
+        raw_min = body.get("min_confidence")
         return client.promote_candidate(
             _required(body, "candidate_id"),
-            min_confidence=float(body.get("min_confidence") or 0.7),
+            min_confidence=float(raw_min) if raw_min not in (None, "") else None,
+        )
+    if method in {"tuning-config", "tuning_config"}:
+        return client.tuning_config()
+    if method in {"save-tuning-config", "save_tuning_config"}:
+        return client.save_tuning_config(
+            quality_write_threshold=body.get("quality_write_threshold"),
+            quality_draft_threshold=body.get("quality_draft_threshold"),
+            promote_min_confidence=body.get("promote_min_confidence"),
         )
     if method == "force-promote-candidate":
         return client.force_promote_candidate(_required(body, "candidate_id"))

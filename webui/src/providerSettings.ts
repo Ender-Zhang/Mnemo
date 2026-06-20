@@ -195,6 +195,48 @@ export function embeddingStatusText(status: EmbeddingStatusResult | null) {
   return `${status.indexed_count ?? 0}/${status.active_count ?? 0} 已索引`;
 }
 
+export type TuningConfigResult = {
+  kind?: string;
+  quality_write_threshold?: number;
+  quality_draft_threshold?: number;
+  promote_min_confidence?: number;
+  save_path?: string;
+};
+
+export type TuningFormState = {
+  writeThreshold: string;
+  draftThreshold: string;
+  minConfidence: string;
+};
+
+export function emptyTuningForm(): TuningFormState {
+  return { writeThreshold: "0.68", draftThreshold: "0.5", minConfidence: "0.7" };
+}
+
+export function tuningFormFromConfig(result: TuningConfigResult | null): TuningFormState {
+  return {
+    writeThreshold: String(result?.quality_write_threshold ?? "0.68"),
+    draftThreshold: String(result?.quality_draft_threshold ?? "0.5"),
+    minConfidence: String(result?.promote_min_confidence ?? "0.7")
+  };
+}
+
+export function tuningSavePayload(form: TuningFormState) {
+  const payload: Record<string, unknown> = {};
+  const fields: Array<[keyof TuningFormState, string]> = [
+    ["writeThreshold", "quality_write_threshold"],
+    ["draftThreshold", "quality_draft_threshold"],
+    ["minConfidence", "promote_min_confidence"]
+  ];
+  for (const [formKey, apiKey] of fields) {
+    const value = Number(form[formKey]);
+    if (Number.isFinite(value)) {
+      payload[apiKey] = Math.max(0, Math.min(1, value));
+    }
+  }
+  return payload;
+}
+
 export function autoDreamStatusText(result: AutoDreamStatusResult | null) {
   if (!result) return "未加载";
   if (result.running) return "运行中";

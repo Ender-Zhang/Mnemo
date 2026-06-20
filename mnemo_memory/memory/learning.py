@@ -86,7 +86,12 @@ class MemoryLearningMixin:
         created_at: float | int | str | None = None,
     ) -> dict[str, Any]:
         scan = scan_memory_candidate(claim, evidence)
-        quality = score_memory_quality(claim, evidence)
+        quality = score_memory_quality(
+            claim,
+            evidence,
+            write_threshold=getattr(self, "_quality_write_threshold", None),
+            draft_threshold=getattr(self, "_quality_draft_threshold", None),
+        )
         normalized_dimension = normalize_memory_dimension(dimension, fallback="context")
         evidence_with_safety = append_safety_evidence(evidence, scan)
         candidate_id = self.store.add_memory_candidate(
@@ -365,7 +370,9 @@ class MemoryLearningMixin:
             )
         return result
 
-    def review_candidate_for_promotion(self, candidate_id: str, min_confidence: float = 0.7) -> dict[str, Any]:
+    def review_candidate_for_promotion(self, candidate_id: str, min_confidence: float | None = None) -> dict[str, Any]:
+        if min_confidence is None:
+            min_confidence = float(getattr(self, "_promote_min_confidence", None) or 0.7)
         candidate = self._get_candidate(candidate_id)
         if not candidate:
             raise ValueError(f"Memory candidate not found: {candidate_id}")

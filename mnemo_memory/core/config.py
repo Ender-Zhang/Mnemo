@@ -17,6 +17,9 @@ DEFAULT_AUTO_DREAM_LIMIT = 20
 DEFAULT_AUTO_DREAM_MIN_CONFIDENCE = 0.7
 DEFAULT_AUTO_DREAM_LOCAL_FALLBACK = False
 DEFAULT_EMBEDDINGS_ENABLED = False
+DEFAULT_QUALITY_WRITE_THRESHOLD = 0.68
+DEFAULT_QUALITY_DRAFT_THRESHOLD = 0.5
+DEFAULT_PROMOTE_MIN_CONFIDENCE = 0.7
 ENV_FILE_KEY = "MNEMO_MEMORY_ENV_FILE"
 
 
@@ -40,6 +43,9 @@ class MemoryConfig:
     auto_dream_limit: int = DEFAULT_AUTO_DREAM_LIMIT
     auto_dream_min_confidence: float = DEFAULT_AUTO_DREAM_MIN_CONFIDENCE
     auto_dream_local_fallback: bool = DEFAULT_AUTO_DREAM_LOCAL_FALLBACK
+    quality_write_threshold: float = DEFAULT_QUALITY_WRITE_THRESHOLD
+    quality_draft_threshold: float = DEFAULT_QUALITY_DRAFT_THRESHOLD
+    promote_min_confidence: float = DEFAULT_PROMOTE_MIN_CONFIDENCE
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -71,6 +77,9 @@ class ConfigOverrides:
     auto_dream_limit: int | None = None
     auto_dream_min_confidence: float | None = None
     auto_dream_local_fallback: bool | None = None
+    quality_write_threshold: float | None = None
+    quality_draft_threshold: float | None = None
+    promote_min_confidence: float | None = None
     auth_token: str | None = None
     config_path: str | None = None
 
@@ -188,6 +197,26 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_AUTO_DREAM_LOCAL_FALLBACK"),
         DEFAULT_AUTO_DREAM_LOCAL_FALLBACK,
     )
+    quality_write_threshold = _first_float(
+        overrides.quality_write_threshold,
+        file_config.get("quality_write_threshold"),
+        env.get("MNEMO_MEMORY_QUALITY_WRITE_THRESHOLD"),
+        DEFAULT_QUALITY_WRITE_THRESHOLD,
+    )
+    quality_draft_threshold = _first_float(
+        overrides.quality_draft_threshold,
+        file_config.get("quality_draft_threshold"),
+        env.get("MNEMO_MEMORY_QUALITY_DRAFT_THRESHOLD"),
+        DEFAULT_QUALITY_DRAFT_THRESHOLD,
+    )
+    promote_min_confidence = _first_float(
+        overrides.promote_min_confidence,
+        file_config.get("promote_min_confidence"),
+        env.get("MNEMO_MEMORY_PROMOTE_MIN_CONFIDENCE"),
+        DEFAULT_PROMOTE_MIN_CONFIDENCE,
+    )
+    quality_write_threshold = max(0.0, min(1.0, quality_write_threshold))
+    quality_draft_threshold = max(0.0, min(quality_write_threshold, quality_draft_threshold))
     return MemoryConfig(
         state_dir=state_dir,
         provider=provider,
@@ -207,6 +236,9 @@ def resolve_memory_config(
         auto_dream_limit=max(1, min(50, auto_dream_limit)),
         auto_dream_min_confidence=max(0.0, min(1.0, auto_dream_min_confidence)),
         auto_dream_local_fallback=auto_dream_local_fallback,
+        quality_write_threshold=quality_write_threshold,
+        quality_draft_threshold=quality_draft_threshold,
+        promote_min_confidence=max(0.0, min(1.0, promote_min_confidence)),
         auth_token=auth_token,
         config_path=str(config_path) if config_path else None,
     )

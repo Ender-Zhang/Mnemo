@@ -386,7 +386,7 @@ class MemoryClient:
         mission_id: str | None = None,
     ) -> dict[str, Any]:
         store = self._store()
-        engine = MemoryEngine(store)
+        engine = self._engine()
         effective_run_id = run_id or new_id("memrun")
         effective_mission_id = mission_id or "memory-service"
         memory_candidates: list[dict[str, Any]] = []
@@ -478,7 +478,7 @@ class MemoryClient:
             raise ValueError("event text is required")
 
         store = self._store()
-        engine = MemoryEngine(store)
+        engine = self._engine()
         effective_run_id = run_id or new_id("memrun")
         effective_mission_id = mission_id or "memory-service"
         normalized_context = _normalize_context(context)
@@ -829,6 +829,40 @@ class MemoryClient:
         status["reindexed"] = reindexed
         return status
 
+    def tuning_config(self) -> dict[str, Any]:
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        return {
+            "kind": "memory_tuning_config",
+            "version": "mnemo_memory.tuning_config.v1",
+            "quality_write_threshold": config.quality_write_threshold,
+            "quality_draft_threshold": config.quality_draft_threshold,
+            "promote_min_confidence": config.promote_min_confidence,
+            "save_path": str(default_config_path(self.state_dir)),
+        }
+
+    def save_tuning_config(
+        self,
+        *,
+        quality_write_threshold: float | int | str | None = None,
+        quality_draft_threshold: float | int | str | None = None,
+        promote_min_confidence: float | int | str | None = None,
+    ) -> dict[str, Any]:
+        path = default_config_path(self.state_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        config = _read_client_config(path)
+        for key, value in (
+            ("quality_write_threshold", quality_write_threshold),
+            ("quality_draft_threshold", quality_draft_threshold),
+            ("promote_min_confidence", promote_min_confidence),
+        ):
+            if value is not None and value != "":
+                try:
+                    config[key] = max(0.0, min(1.0, float(value)))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{key} must be a number between 0 and 1") from exc
+        path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return self.tuning_config()
+
     def auto_dream_config(self) -> dict[str, Any]:
         config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
         save_path = default_config_path(self.state_dir)
@@ -885,7 +919,7 @@ class MemoryClient:
             ),
         }
 
-    def promote_candidate(self, candidate_id: str, *, min_confidence: float = 0.7) -> dict[str, Any]:
+    def promote_candidate(self, candidate_id: str, *, min_confidence: float | None = None) -> dict[str, Any]:
         return self._engine().promote_candidate(candidate_id, min_confidence=min_confidence)
 
     def force_promote_candidate(self, candidate_id: str) -> dict[str, Any]:
@@ -989,11 +1023,20 @@ class MemoryClient:
         return store
 
     def _engine(self) -> MemoryEngine:
-        provider, model = self._embedding_runtime()
-        return MemoryEngine(self._store(), embedding_provider=provider, embedding_model=model)
-
-    def _embedding_runtime(self) -> tuple[Any | None, str | None]:
         config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        provider, model = self._embedding_runtime(config)
+        return MemoryEngine(
+            self._store(),
+            embedding_provider=provider,
+            embedding_model=model,
+            quality_write_threshold=config.quality_write_threshold,
+            quality_draft_threshold=config.quality_draft_threshold,
+            promote_min_confidence=config.promote_min_confidence,
+        )
+
+    def _embedding_runtime(self, config: Any | None = None) -> tuple[Any | None, str | None]:
+        if config is None:
+            config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
         if not config.embeddings_enabled or not config.embedding_base_url or not config.embedding_model:
             return None, None
         try:
