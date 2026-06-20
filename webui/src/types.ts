@@ -316,3 +316,11 @@ export type Notice = {
   tone: "ok" | "warn" | "error";
   text: string;
 };
+
+export type EffectiveConfigRow = { field: string; value: string; source: string };
+
+export type EffectiveConfigResult = {
+  kind?: string;
+  config_path?: string | null;
+  rows?: EffectiveConfigRow[];
+};

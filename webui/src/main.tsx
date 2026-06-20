@@ -102,6 +102,7 @@ import type {
   DreamRunReport,
   DreamReviewResult,
   DreamStatusResult,
+  EffectiveConfigResult,
   L0Profile,
   MemoryHealthResult,
   MemoryItem,
@@ -203,6 +204,7 @@ function App() {
   const [embeddingForm, setEmbeddingForm] = useState<EmbeddingFormState>(() => emptyEmbeddingForm());
   const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatusResult | null>(null);
   const [tuningForm, setTuningForm] = useState<TuningFormState>(() => emptyTuningForm());
+  const [effectiveConfig, setEffectiveConfig] = useState<EffectiveConfigResult | null>(null);
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
@@ -312,6 +314,7 @@ function App() {
         tasks.push(callMemory<EmbeddingConfigResult>("embedding-config", {}).then((r) => { setEmbeddingConfig(r); setEmbeddingForm(embeddingFormFromConfig(r)); }));
         tasks.push(callMemory<EmbeddingStatusResult>("embedding-status", {}).then(setEmbeddingStatus).catch(() => setEmbeddingStatus(null)));
         tasks.push(callMemory<TuningConfigResult>("tuning-config", {}).then((r) => setTuningForm(tuningFormFromConfig(r))));
+        tasks.push(callMemory<EffectiveConfigResult>("effective-config", {}).then(setEffectiveConfig).catch(() => setEffectiveConfig(null)));
       }
       if (parts.has("plans")) {
         tasks.push(callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }).then((r) => setPlanItems(r.items || [])));
@@ -1184,6 +1187,7 @@ function App() {
                 embeddingConfig={embeddingConfig} embeddingForm={embeddingForm} setEmbeddingForm={setEmbeddingForm}
                 embeddingStatus={embeddingStatus}
                 tuningForm={tuningForm} setTuningForm={setTuningForm}
+                effectiveConfig={effectiveConfig}
                 onSaveProviderConfig={saveProviderConfig}
                 onSaveAutoDreamConfig={saveAutoDreamConfig}
                 onSaveEmbeddingConfig={saveEmbeddingConfig}
@@ -2600,6 +2604,7 @@ function SettingsPanel(props: {
   embeddingForm: EmbeddingFormState; setEmbeddingForm: (v: EmbeddingFormState) => void;
   embeddingStatus: EmbeddingStatusResult | null;
   tuningForm: TuningFormState; setTuningForm: (v: TuningFormState) => void;
+  effectiveConfig: EffectiveConfigResult | null;
   onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void;
   onSaveEmbeddingConfig: () => void; onReindexEmbeddings: () => void;
   onSaveTuningConfig: () => void;
@@ -2623,6 +2628,21 @@ function SettingsPanel(props: {
       <label>API Base <input value={props.apiBase} onChange={(e) => props.setApiBase(e.target.value)} /></label>
       <label>默认 Source <input value={props.source} onChange={(e) => props.setSource(e.target.value)} /></label>
       <div className="settings-hint">HTTP API 默认绑定 127.0.0.1 且不做鉴权，请仅在可信本地网络使用，不要把端口暴露到公网。</div>
+      {props.effectiveConfig?.rows?.length ? (
+        <details className="effective-config">
+          <summary>生效配置 / 来源（{props.effectiveConfig.rows.length} 项）</summary>
+          <div className="eff-grid">
+            <div className="eff-head"><span>来源：config.json &gt; env/.env &gt; 默认</span><code>{props.effectiveConfig.config_path || "无 config.json"}</code></div>
+            {props.effectiveConfig.rows.map((row) => (
+              <div className="eff-row" key={row.field}>
+                <span className="kv-key">{row.field}</span>
+                <span className="kv-val">{row.value}</span>
+                <span className={`eff-source ${row.source === "config.json" ? "from-file" : row.source.includes("env") ? "from-env" : "from-default"}`}>{row.source}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
       <div className="provider-status-row">
         <StatusBadge text={providerStatusText(props.providerConfig)} />
         <code>{props.providerConfig?.save_path || "config.json"}</code>

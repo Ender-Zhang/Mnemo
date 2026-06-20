@@ -244,6 +244,71 @@ def resolve_memory_config(
     )
 
 
+_EFFECTIVE_CONFIG_FIELDS: list[tuple[str, str, Any]] = [
+    ("provider", "MNEMO_MEMORY_PROVIDER", DEFAULT_PROVIDER),
+    ("base_url", "MNEMO_MEMORY_BASE_URL", None),
+    ("model", "MNEMO_MEMORY_MODEL", DEFAULT_MODEL),
+    ("api_key_env", "MNEMO_MEMORY_API_KEY_ENV", None),
+    ("timeout_s", "MNEMO_MEMORY_TIMEOUT_S", DEFAULT_TIMEOUT_S),
+    ("thinking_enabled", "MNEMO_MEMORY_THINKING_ENABLED", False),
+    ("embeddings_enabled", "MNEMO_MEMORY_EMBEDDINGS_ENABLED", DEFAULT_EMBEDDINGS_ENABLED),
+    ("embedding_base_url", "MNEMO_MEMORY_EMBEDDING_BASE_URL", None),
+    ("embedding_model", "MNEMO_MEMORY_EMBEDDING_MODEL", None),
+    ("auto_dream_enabled", "MNEMO_MEMORY_AUTO_DREAM_ENABLED", DEFAULT_AUTO_DREAM_ENABLED),
+    ("auto_dream_interval_minutes", "MNEMO_MEMORY_AUTO_DREAM_INTERVAL_MINUTES", DEFAULT_AUTO_DREAM_INTERVAL_MINUTES),
+    ("auto_dream_local_fallback", "MNEMO_MEMORY_AUTO_DREAM_LOCAL_FALLBACK", DEFAULT_AUTO_DREAM_LOCAL_FALLBACK),
+    ("quality_write_threshold", "MNEMO_MEMORY_QUALITY_WRITE_THRESHOLD", DEFAULT_QUALITY_WRITE_THRESHOLD),
+    ("quality_draft_threshold", "MNEMO_MEMORY_QUALITY_DRAFT_THRESHOLD", DEFAULT_QUALITY_DRAFT_THRESHOLD),
+    ("promote_min_confidence", "MNEMO_MEMORY_PROMOTE_MIN_CONFIDENCE", DEFAULT_PROMOTE_MIN_CONFIDENCE),
+]
+
+
+def describe_effective_config(state_dir: str | Path = DEFAULT_STATE_DIR) -> dict[str, Any]:
+    """Report each config field's effective value and which layer it came from.
+
+    Precedence mirrors ``resolve_memory_config`` for a running service (no CLI
+    overrides): ``config.json`` > ``.env`` / process env > built-in default.
+    Secrets are reported as a configured/not-configured boolean, never echoed.
+    """
+    env = _env_with_dotenv(None, load_default=True)
+    config_path = default_config_path(state_dir)
+    config_path = config_path if config_path.exists() else None
+    file_config = _read_config_file(config_path)
+
+    rows: list[dict[str, Any]] = []
+    for field, env_key, default in _EFFECTIVE_CONFIG_FIELDS:
+        if _present(file_config.get(field)):
+            value, source = file_config.get(field), "config.json"
+        elif _present(env.get(env_key)):
+            value, source = env.get(env_key), "env / .env"
+        else:
+            value, source = default, "default"
+        rows.append({"field": field, "value": _display_config_value(value), "source": source})
+
+    resolved = resolve_memory_config(ConfigOverrides(state_dir=str(state_dir)), env=env)
+    rows.append({"field": "api_key", "value": "已配置" if resolved.api_key else "未设置", "source": "secret"})
+    rows.append({"field": "embedding_api_key", "value": "已配置" if resolved.embedding_api_key else "未设置", "source": "secret"})
+
+    return {
+        "kind": "memory_effective_config",
+        "version": "mnemo_memory.effective_config.v1",
+        "config_path": str(config_path) if config_path else None,
+        "rows": rows,
+    }
+
+
+def _present(value: Any) -> bool:
+    return value is not None and value != ""
+
+
+def _display_config_value(value: Any) -> str:
+    if value is None or value == "":
+        return "（未设置）"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
 def _config_path(overrides: ConfigOverrides, env: Mapping[str, str]) -> Path | None:
     raw_path = overrides.config_path or env.get("MNEMO_MEMORY_CONFIG")
     if raw_path:

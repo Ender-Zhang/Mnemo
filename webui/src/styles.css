@@ -2525,3 +2525,52 @@ pre {
   gap: 4px;
   flex: none;
 }
+
+/* ─── Effective config / source view ─────────────────────────────────────── */
+
+.effective-config > summary {
+  cursor: pointer;
+  color: var(--muted);
+  padding: 6px 0;
+  font-size: 12px;
+  user-select: none;
+}
+
+.eff-grid {
+  display: grid;
+  gap: 2px;
+}
+
+.eff-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.eff-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.6fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-2);
+  font-size: 12px;
+}
+
+.eff-row .kv-key { color: var(--muted); overflow-wrap: anywhere; }
+.eff-row .kv-val { color: var(--text-strong); overflow-wrap: anywhere; }
+
+.eff-source {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.eff-source.from-file { color: var(--on-green); background: var(--tint-green); }
+.eff-source.from-env { color: var(--accent); background: var(--tint-blue); }
+.eff-source.from-default { color: var(--muted); background: var(--tint-neutral); }

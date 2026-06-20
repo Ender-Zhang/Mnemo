@@ -303,6 +303,8 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             _required(body, "candidate_id"),
             min_confidence=float(raw_min) if raw_min not in (None, "") else None,
         )
+    if method in {"effective-config", "effective_config"}:
+        return client.effective_config()
     if method in {"test-provider", "test_provider"}:
         return client.test_provider()
     if method in {"test-embedding", "test_embedding"}:

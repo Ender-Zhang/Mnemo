@@ -11,6 +11,7 @@ from ..core.config import (
     DEFAULT_AUTO_DREAM_MIN_CONFIDENCE,
     DEFAULT_STATE_DIR,
     default_config_path,
+    describe_effective_config,
     resolve_memory_config,
 )
 from ..core.ids import new_id
@@ -828,6 +829,9 @@ class MemoryClient:
         status = self.embedding_status()
         status["reindexed"] = reindexed
         return status
+
+    def effective_config(self) -> dict[str, Any]:
+        return describe_effective_config(self.state_dir)
 
     def test_provider(self) -> dict[str, Any]:
         import time as _time
