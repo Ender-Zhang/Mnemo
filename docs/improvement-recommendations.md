@@ -18,9 +18,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 | --- | --- | --- |
 | 闭环性 | ✅ 改善 | 「记忆预览 / Agent 视角」面板 + **语义检索（向量召回）已接通并可配**，召回质量可见可调 |
 | 全自动化 | ✅ 改善 | 「本地确定性整理」开关：无 provider 也能自动 promote/去重/拒低质（仍有轮询/常驻等 P1 项待办） |
-| 易用性 | ✅ 改善 | **首启引导 + 术语帮助抽屉 + forget/tombstone 二次确认**已加；中英混排仍可继续统一 |
-| 好用性（UI） | ✅ 改善 | 局部刷新 + 结构化视图替代 raw JSON + `main.tsx` 拆分 + **暗色模式（颜色 token 化 + 跟随系统）** |
-| 配置便利性 | ✅ 改善 | 删误导 auth UI、独立 embeddings 配置；「生效配置」视图、连通测试、阈值可配仍待办 |
+| 易用性 | ✅ 改善 | 首启引导 + 术语帮助 + forget/tombstone 确认 + **可堆叠 toast** + **计划↔记忆互链**；中英文案仍可统一 |
+| 好用性（UI） | ✅ 改善 | 局部刷新 + 结构化视图 + 拆分 + 暗色模式 + **记忆地图（维度分布 + 关联图）** + **Dream 实时反馈** |
+| 配置便利性 | ✅ 强 | 删误导 auth、独立 embeddings、**生效配置/来源视图、连通测试、阈值可配**（连同 eval 护栏）均已落地 |
 | 可观测性 | ✅ 改善 | **全链路结构化日志**（write/promote/reject/dream/auto-dream/curation/http），此前为零 |
 | 质量保障 | ✅ 改善 | **召回 + promote 门 eval 护栏**进 CI，外加可选模型驱动评测脚本 |
 | 内核能力 | ✅ 强 | 写入/审核/检索/维护/溯源链路完整，设计有深度 |
@@ -51,7 +51,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **问题**：用户分不清自己拿到的是纯 SQLite 关键词召回还是语义召回，召回质量差时无从判断原因。
 - **建议**：在搜索面板和维护页显示 embedding 状态（已索引页数 / 未索引页数 / provider 是否配置），提供「重建向量索引」按钮；搜索结果里标出哪些命中来自 `vector` 路由。
 
-### 1.3 【P2】计划与记忆相互割裂
+### 1.3 【P2 · ✅ 已修复】计划与记忆相互割裂
+
+> **已修复**：记忆详情显示同 scope 的「相关计划」并可跳转到计划页；计划卡片的 scope 变成链接，跳到该 scope 的记忆列表。见 §10。
 
 - **现状**：plans（goal/todo）和 memories 是两个独立 Tab，虽然共享 scope/provenance，但 UI 上没有互相跳转或关联展示。
 - **建议**：在记忆详情里展示「相关计划」，在计划详情里展示「相关记忆/来源事件」，让 `source_event_id` 这条已有的链路在 UI 上闭合。
@@ -123,7 +125,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **建议**：在写入抽屉里用醒目 banner 明示「本次写入 scope：`user:xxx` / global」，或把「检索 UID」和「写入 scope」拆成两个独立输入。
 - **涉及**：`webui/src/main.tsx:654 submitMemory`、`2707 scopeFromUidFilter`。
 
-### 3.4 【P2】反馈只有单条瞬时 notice
+### 3.4 【P2 · ✅ 已修复】反馈只有单条瞬时 notice
+
+> **已修复**：改为右下角可堆叠 toast（最多 5 条、自动消失、可手动关闭、错误停留更久），连续/批量操作不再互相覆盖。
 
 - **现状**：`notice` 同时只存在一条，连续操作会互相覆盖。
 - **建议**：换成可堆叠的 toast，保留最近几条；长耗时操作（Dream）显示进度而不仅是计时。
@@ -165,7 +169,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **建议**：先把颜色抽成 CSS 变量（design tokens），再加暗色主题 + 跟随系统。先 tokens 后主题，顺序很重要。
 - **涉及**：`webui/src/styles.css:1`。
 
-### 4.5 【P2】十维本体 / 关联网络没有可视化
+### 4.5 【P2 · ✅ 已修复】十维本体 / 关联网络没有可视化
+
+> **已修复**：维护页新增「记忆地图」——十维分布条形图 + 基于 memory_links 的环形关系图（节点大小按度数、颜色按维度、孤岛页虚线高亮）。后端 `memory_graph()` 聚合。见 §10。
 
 - **现状**：dimension 只作为筛选下拉出现；`memory_links` 只在高级模式以 raw JSON 展示。
 - **建议**：加「记忆地图」——十维分布热力/计数，以及基于 links/associations 的关系图（孤岛页面高亮）。这能把系统最有特色的结构化知识变得直观，也呼应 health 里的「孤岛发现」。
@@ -175,7 +181,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **现状**：抽屉有 `role="dialog"`/`aria-modal`（好），但状态仅靠颜色区分、抽屉无 focus trap、部分 icon-only 按钮缺 `aria-label`、表格无键盘导航；响应式只有 1280/900 两个断点，稠密三栏本质上仍是桌面布局。
 - **建议**：状态加图标/文字双编码、补 focus trap 与 aria-label；移动端可作为后续目标（本地工具优先级可低）。
 
-### 4.7 【P2】运行中无实时反馈
+### 4.7 【P2 · ✅ 已修复】运行中无实时反馈
+
+> **已修复**：Dream 运行期间每 2.5s 轮询 dream-status / auto-dream-status，显示「处理中」backlog 条带（候选/笔记/变更页/复核/墓碑）+ 计时。
 
 - **现状**：auto-dream 在后台跑，但 UI 只在手动 Refresh 或操作后更新；手动 Dream 只显示计时，结果跑完才出。
 - **建议**：Dream 运行期间轮询 `dream-status`（或 SSE）流式展示进度与中间动作。
@@ -193,17 +201,23 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **建议**：二选一——① 真正实现 Bearer 校验（在 `MemoryHandler` 入口校验 `Authorization`，这是对外暴露的前提）；或 ② 移除前端 token UI 和误导文案，并在文档显著位置写明「仅限可信本地网络」。当前「半实现」状态最糟。
 - **涉及**：`mnemo_memory/interfaces/web.py:42/334`、`webui/src/main.tsx:364/1147/2548`、`cli.py:301`。
 
-### 5.2 【P1】没有「生效配置 / 来源」视图
+### 5.2 【P1 · ✅ 已修复】没有「生效配置 / 来源」视图
+
+> **已修复**：`describe_effective_config()` 报告每个字段的生效值与来源（config.json > env/.env > 默认），设置页有可折叠「生效配置 / 来源」表，秘钥只显示是否已配置。见 §10。
 
 - **现状**：配置来源有 CLI 参数 > `config.json` > `.env` > 默认，外加一堆 `MNEMO_MEMORY_*` 环境变量；优先级文档有写，但 UI 无法看出「此刻到底用的是哪个值、来自哪里」。
 - **建议**：设置页加「生效配置」只读区，显示每个关键项的当前值与来源（CLI/config.json/.env/default），排查「为什么没生效」会快很多。
 
-### 5.3 【P1】provider 无连通测试
+### 5.3 【P1 · ✅ 已修复】provider 无连通测试
+
+> **已修复**：provider/embeddings 各加 `ping()` + `test-provider`/`test-embedding` 端点，设置页「测试连接」按钮显示延迟或错误（未配置时直接报告，不发网络）。见 §10。
 
 - **现状**：保存 base_url/model/key 后没有「测试连接」，只有真正跑 Dream 失败时才暴露问题。
 - **建议**：加「测试」按钮，发一个最小请求验证 model 可达，并把结果回显在设置页。
 
-### 5.4 【P2】质量/置信度阈值写死，不可调
+### 5.4 【P2 · ✅ 已修复】质量/置信度阈值写死，不可调
+
+> **已修复**：质量写入/草稿阈值 + promote 默认置信度纳入 config（env / config.json / 设置页「调参」块），写入时按配置评分；与 §3 eval 护栏配套调参。见 §10。
 
 - **现状**：`QUALITY_WRITE_THRESHOLD=0.68`、`QUALITY_DRAFT_THRESHOLD=0.5`、五维权重（0.22/0.18/.../0.15）、`min_confidence=0.7` 都硬编码在 `quality.py`/`learning.py`。
 - **建议**：把这些纳入 `config.json` 并在设置页暴露（高级），让不同领域可以调松/调严 promote 门槛，而不必改代码。
@@ -291,8 +305,22 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 
 **多用户隔离：已定为单租户（A 方案）。** Mnemo 明确是“每个 `state-dir` 单租户”的本地服务，不假装多租户：多用户用独立 `state-dir`（真隔离），共享 state-dir 的 `scope`/`uid` 只是召回便利、非权限边界（`search`/`recall`/`context` 不强制 uid）。已在 README 新增「安全与多用户隔离」专节并收紧导览/serve 文案；代码侧加了护栏——绑定非回环地址时 `serve` 打印醒目 `WARNING`（`insecure_bind_warning`，含测试）。
 
-剩余建议里仍待办的高价值项：「生效配置 / 来源」视图（5.2）、provider 连通测试（5.3）、阈值可配（5.4）、事件触发 + 常驻调度（2.2/2.3）、中英文案统一（3.2）、十维/关联可视化（4.5）。
+## 10. 第四轮落地记录（配置 / 反馈 / 互链 / 可视化）
+
+> 2026-06-20 实现，7 项各一个独立 commit。验证：`python3 -m unittest discover -s tests` 共 82 项通过（新增 tuning / connectivity / effective-config / memory-graph 测试）；`node --test webui/tests/*.test.ts` 7 项通过；`tsc --noEmit` 通过；记忆地图与暗色主题在浏览器内核对（7 页→6 维度条 + 7 节点 + 5 边 + 孤岛虚线）。
+
+| 项 | 改动摘要 | 主要涉及 |
+| --- | --- | --- |
+| 5.4 阈值可配 | 质量写入/草稿阈值 + promote 默认置信度纳入 config，写入时按配置评分 | `core/config.py`、`memory/quality.py`、`memory/engine.py`、`memory/learning.py`、`sdk/client.py`、`interfaces/web.py`、`tests/test_tuning.py` |
+| 5.3 连通测试 | provider/embeddings `ping()` + test 端点 + 设置页「测试连接」 | `providers/openai.py`、`providers/embeddings.py`、`sdk/client.py`、`interfaces/web.py`、`tests/test_connectivity.py` |
+| 5.2 生效配置视图 | `describe_effective_config()` 报告值+来源 + 设置页表 | `core/config.py`、`sdk/client.py`、`interfaces/web.py`、`tests/test_effective_config.py` |
+| 3.4 可堆叠 toast | 单 notice → 右下角 toast 栈（自动消失/可关闭） | `webui/src/main.tsx`、`webui/src/styles.css`、`webui/src/types.ts` |
+| 4.7 Dream 实时反馈 | 运行期轮询 dream-status + 「处理中」backlog 条带 | `webui/src/main.tsx`、`webui/src/format.ts` |
+| 1.3 计划↔记忆互链 | 记忆详情「相关计划」+ 计划卡 scope 跳记忆 | `webui/src/main.tsx`、`webui/src/styles.css` |
+| 4.5 维度/关联可视化 | `memory_graph()` 聚合 + 「记忆地图」分布条 + 关系图 | `sdk/client.py`、`interfaces/web.py`、`webui/src/components/MemoryMap.tsx`、`tests/test_memory_graph.py` |
+
+剩余建议里仍待办：事件触发 + 常驻调度（2.2/2.3）、可信来源直通（2.5）、中英文案统一（3.2 文案部分）、a11y & 响应式（4.6）、provider 预设（5.5）、冲突解决一键回滚（1.4 剩余部分）。
 
 ---
 
-*P0 全部、P1/P2 中的语义检索 / 评估 / 可观测性 / 易用性已落地；多用户隔离已定为单租户并加护栏。其余仍为建议；告诉我接着推进哪项即可。*
+*P0 全部，P1/P2 中的语义检索 / 评估 / 可观测性 / 易用性 / 配置（生效视图·连通测试·阈值）/ 反馈（toast·Dream 实时）/ 计划↔记忆互链 / 维度可视化均已落地并通过测试；多用户隔离已定为单租户并加护栏。其余仍为建议；告诉我接着推进哪项即可。*
