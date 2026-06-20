@@ -313,6 +313,37 @@ export MNEMO_MEMORY_AUTO_DREAM_LIMIT=20
 export MNEMO_MEMORY_AUTO_DREAM_MIN_CONFIDENCE=0.7
 ```
 
+## 语义检索（Embeddings）
+
+默认 `search` / `recall` / `context` 只走 SQLite 关键词召回，对同义改写不敏感。配置一个**独立的 embeddings 端点**后，promote 会自动给稳定记忆页增量建索引，召回会额外融合一条向量路由（带 `vector_score`），WebUI 的「记忆预览」里语义命中会标「语义」徽标。默认关闭，保持离线零依赖。
+
+embeddings 端点与维护模型分开配置，可用环境变量、state dir 下 `config.json`，或 WebUI「设置 → 语义检索 / Embeddings」：
+
+```bash
+export MNEMO_MEMORY_EMBEDDINGS_ENABLED=true
+export MNEMO_MEMORY_EMBEDDING_BASE_URL=https://api.openai.com/v1
+export MNEMO_MEMORY_EMBEDDING_MODEL=text-embedding-3-small
+export MNEMO_MEMORY_EMBEDDING_API_KEY=replace-me
+# 或 export MNEMO_MEMORY_EMBEDDING_API_KEY_ENV=OPENAI_API_KEY
+```
+
+HTTP：
+
+```bash
+# 查看/保存 embeddings 配置
+curl -s http://127.0.0.1:8765/api/memory/embedding-config -d '{}'
+curl -s http://127.0.0.1:8765/api/memory/save-embedding-config \
+  -d '{"enabled":true,"base_url":"https://api.openai.com/v1","model":"text-embedding-3-small","api_key":"replace-me"}'
+
+# 查看索引状态（已索引 / active 总数 / 待索引）
+curl -s http://127.0.0.1:8765/api/memory/embedding-status -d '{}'
+
+# 对已有 active 页全量重建索引（启用后新 promote 会自动增量建索引）
+curl -s http://127.0.0.1:8765/api/memory/reindex-embeddings -d '{}'
+```
+
+embeddings 是可插拔能力：provider 只需实现 `embed_texts(texts) -> list[list[float]]`，向量以 little-endian float32 存进 `memory_embeddings` 表，召回用纯 Python brute-force cosine top-k。
+
 ## 对一条记忆做增删改查
 
 Mnemo 默认使用“候选优先”的写入流程。新增记忆时，用户事实会先写成 `memory_candidate`；确认它应该长期保留后，再通过 `promote` 审核门生成或合并到稳定记忆页。人工管理、迁移或调试时，也可以用 `stable` 直连接口直接增删改查稳定记忆页；这会绕过候选审核门，所以不建议给普通 agent 自动调用。

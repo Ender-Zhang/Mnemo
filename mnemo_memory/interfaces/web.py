@@ -230,6 +230,21 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
         return client.health(limit=int(body.get("limit") or 20))
     if method in {"provider-config", "provider_config"}:
         return client.provider_config()
+    if method in {"embedding-config", "embedding_config"}:
+        return client.embedding_config()
+    if method in {"save-embedding-config", "save_embedding_config"}:
+        return client.save_embedding_config(
+            enabled=body.get("enabled"),
+            base_url=_config_field(body, "base_url"),
+            model=_config_field(body, "model"),
+            api_key=body.get("api_key", ""),
+            api_key_env=_config_field(body, "api_key_env"),
+            clear_api_key=bool(body.get("clear_api_key", False)),
+        )
+    if method in {"embedding-status", "embedding_status"}:
+        return client.embedding_status()
+    if method in {"reindex-embeddings", "reindex_embeddings"}:
+        return client.reindex_embeddings(limit=int(body.get("limit") or 10000))
     if method in {"save-provider-config", "save_provider_config"}:
         return client.save_provider_config(
             provider=_config_field(body, "provider"),

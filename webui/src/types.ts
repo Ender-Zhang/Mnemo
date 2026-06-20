@@ -23,6 +23,8 @@ export type MemoryItem = {
   evidence?: unknown[];
   metadata?: Record<string, unknown>;
   conflict_card?: ConflictCard | null;
+  match_signals?: Array<Record<string, unknown>>;
+  vector_score?: number;
 };
 
 export type ConflictCard = {
@@ -211,6 +213,8 @@ export type ContextCardItem = {
   scope?: string;
   dimension?: string;
   confidence?: number;
+  match_signals?: Array<Record<string, unknown>>;
+  vector_score?: number;
   [key: string]: unknown;
 };
 

@@ -958,6 +958,12 @@ label {
   background: #f4f7ff;
 }
 
+.badge.semantic {
+  border: 1px solid #d6c2f0;
+  color: #6b3fb5;
+  background: #f7f2fd;
+}
+
 .badge.bad {
   border: 1px solid #efb2b2;
   color: #c52828;

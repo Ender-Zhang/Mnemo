@@ -35,7 +35,11 @@ import {
   autoDreamFormFromStatus,
   autoDreamSavePayload,
   autoDreamStatusText,
+  embeddingFormFromConfig,
+  embeddingSavePayload,
+  embeddingStatusText,
   emptyAutoDreamForm,
+  emptyEmbeddingForm,
   emptyProviderForm,
   providerFormFromConfig,
   providerSavePayload,
@@ -43,7 +47,7 @@ import {
 } from "./providerSettings";
 import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
-import type { AutoDreamFormState, AutoDreamStatusResult, ProviderConfigResult, ProviderFormState } from "./providerSettings";
+import type { AutoDreamFormState, AutoDreamStatusResult, EmbeddingConfigResult, EmbeddingFormState, EmbeddingStatusResult, ProviderConfigResult, ProviderFormState } from "./providerSettings";
 import type { PromotionReviewResult } from "./promotionMessages";
 import {
   auditResultForItem,
@@ -62,6 +66,7 @@ import {
   formatDuration,
   formatTime,
   isClosedPlan,
+  isSemanticHit,
   itemMatchesQuery,
   itemTitle,
   latestDreamDurationS,
@@ -179,6 +184,9 @@ function App() {
   const [providerForm, setProviderForm] = useState<ProviderFormState>(() => emptyProviderForm());
   const [autoDreamStatus, setAutoDreamStatus] = useState<AutoDreamStatusResult | null>(null);
   const [autoDreamForm, setAutoDreamForm] = useState<AutoDreamFormState>(() => emptyAutoDreamForm());
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfigResult | null>(null);
+  const [embeddingForm, setEmbeddingForm] = useState<EmbeddingFormState>(() => emptyEmbeddingForm());
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatusResult | null>(null);
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
@@ -285,6 +293,8 @@ function App() {
       if (parts.has("config")) {
         tasks.push(callMemory<ProviderConfigResult>("provider-config", {}).then((r) => { setProviderConfig(r); setProviderForm(providerFormFromConfig(r)); }));
         tasks.push(callMemory<AutoDreamStatusResult>("auto-dream-status", {}).then((r) => { setAutoDreamStatus(r); setAutoDreamForm(autoDreamFormFromStatus(r)); }));
+        tasks.push(callMemory<EmbeddingConfigResult>("embedding-config", {}).then((r) => { setEmbeddingConfig(r); setEmbeddingForm(embeddingFormFromConfig(r)); }));
+        tasks.push(callMemory<EmbeddingStatusResult>("embedding-status", {}).then(setEmbeddingStatus).catch(() => setEmbeddingStatus(null)));
       }
       if (parts.has("plans")) {
         tasks.push(callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }).then((r) => setPlanItems(r.items || [])));
@@ -863,6 +873,28 @@ function App() {
     finally { setLoading(false); }
   };
 
+  const saveEmbeddingConfig = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<EmbeddingConfigResult>("save-embedding-config", embeddingSavePayload(embeddingForm));
+      setEmbeddingConfig(result);
+      setEmbeddingForm(embeddingFormFromConfig(result));
+      await refresh({ parts: ["config"], clearNotice: false });
+      setOk("Embeddings 配置已保存。启用后 promote 会自动建索引。");
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
+  const reindexEmbeddings = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<EmbeddingStatusResult>("reindex-embeddings", {});
+      setEmbeddingStatus(result);
+      setOk(`索引已重建：本次新增 ${result.reindexed ?? 0} 条，共 ${result.indexed_count ?? 0}/${result.active_count ?? 0} 已索引。`);
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
   const summaryStats = useMemo(() => {
     const pages = inventory.filter((item) => item.type === "page").length;
     const draft = pendingCandidates.length;
@@ -1078,8 +1110,12 @@ function App() {
                 advancedDreaming={advancedDreaming} setAdvancedDreaming={setAdvancedDreaming}
                 providerConfig={providerConfig} providerForm={providerForm} setProviderForm={setProviderForm}
                 autoDreamStatus={autoDreamStatus} autoDreamForm={autoDreamForm} setAutoDreamForm={setAutoDreamForm}
+                embeddingConfig={embeddingConfig} embeddingForm={embeddingForm} setEmbeddingForm={setEmbeddingForm}
+                embeddingStatus={embeddingStatus}
                 onSaveProviderConfig={saveProviderConfig}
                 onSaveAutoDreamConfig={saveAutoDreamConfig}
+                onSaveEmbeddingConfig={saveEmbeddingConfig}
+                onReindexEmbeddings={reindexEmbeddings}
                 loading={loading}
               />
             ) : null}
@@ -1286,6 +1322,7 @@ function PreviewPanel(props: {
                   <article className="preview-card" key={card.id || i}>
                     <div className="preview-card-head">
                       <strong>{card.title || card.claim || card.id}</strong>
+                      {isSemanticHit(card) ? <span className="badge semantic" title="命中向量/语义召回">语义</span> : null}
                       <StatusBadge text={previewCardType(card)} />
                     </div>
                     <p>{card.content || card.claim || "-"}</p>
@@ -1310,6 +1347,7 @@ function PreviewPanel(props: {
                     <article className="preview-card" key={it.id || i}>
                       <div className="preview-card-head">
                         <strong>{it.title || it.claim || it.id}</strong>
+                        {isSemanticHit(it) ? <span className="badge semantic" title="命中向量/语义召回">语义</span> : null}
                         <StatusBadge text={previewCardType(it)} />
                       </div>
                       <p>{it.content || it.claim || "-"}</p>
@@ -2482,13 +2520,20 @@ function SettingsPanel(props: {
   providerForm: ProviderFormState; setProviderForm: (v: ProviderFormState) => void;
   autoDreamStatus: AutoDreamStatusResult | null;
   autoDreamForm: AutoDreamFormState; setAutoDreamForm: (v: AutoDreamFormState) => void;
-  onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void; loading: boolean;
+  embeddingConfig: EmbeddingConfigResult | null;
+  embeddingForm: EmbeddingFormState; setEmbeddingForm: (v: EmbeddingFormState) => void;
+  embeddingStatus: EmbeddingStatusResult | null;
+  onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void;
+  onSaveEmbeddingConfig: () => void; onReindexEmbeddings: () => void; loading: boolean;
 }) {
   const setProviderField = <K extends keyof ProviderFormState>(field: K, value: ProviderFormState[K]) => {
     props.setProviderForm({ ...props.providerForm, [field]: value });
   };
   const setAutoDreamField = <K extends keyof AutoDreamFormState>(field: K, value: AutoDreamFormState[K]) => {
     props.setAutoDreamForm({ ...props.autoDreamForm, [field]: value });
+  };
+  const setEmbeddingField = <K extends keyof EmbeddingFormState>(field: K, value: EmbeddingFormState[K]) => {
+    props.setEmbeddingForm({ ...props.embeddingForm, [field]: value });
   };
   return (
     <section className="panel settings-panel">
@@ -2554,6 +2599,31 @@ function SettingsPanel(props: {
       <div className="settings-actions">
         <button className="primary-button" onClick={props.onSaveAutoDreamConfig} disabled={props.loading}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存自动 Dreaming
+        </button>
+      </div>
+      <div className="settings-divider" />
+      <div className="settings-section-header">
+        <div><h3>语义检索 / Embeddings</h3><p>独立的 embeddings 端点；启用后 promote 会自动建索引，召回融合向量路由。默认关。</p></div>
+        <StatusBadge text={embeddingStatusText(props.embeddingStatus)} />
+      </div>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={props.embeddingForm.enabled} onChange={(e) => setEmbeddingField("enabled", e.target.checked)} />
+        <span><strong>启用语义检索</strong><small>关闭时只走 SQLite 关键词召回；开启需配置下方独立端点。</small></span>
+      </label>
+      <div className="provider-grid">
+        <label>Base URL <input value={props.embeddingForm.baseUrl} onChange={(e) => setEmbeddingField("baseUrl", e.target.value)} placeholder="https://api.openai.com/v1" /></label>
+        <label>Model <input value={props.embeddingForm.model} onChange={(e) => setEmbeddingField("model", e.target.value)} placeholder="text-embedding-3-small" /></label>
+        <label>API Key <input type="password" autoComplete="off" value={props.embeddingForm.apiKey} onChange={(e) => setEmbeddingField("apiKey", e.target.value)} placeholder={props.embeddingConfig?.api_key_configured ? "已保存；留空保持不变" : "sk-..."} /></label>
+        <label>API Key Env <input value={props.embeddingForm.apiKeyEnv} onChange={(e) => setEmbeddingField("apiKeyEnv", e.target.value)} placeholder="OPENAI_API_KEY" /></label>
+        <label>已索引 <input readOnly value={`${props.embeddingStatus?.indexed_count ?? 0} / ${props.embeddingStatus?.active_count ?? 0}`} /></label>
+        <label>待索引 <input readOnly value={String(props.embeddingStatus?.stale_count ?? 0)} /></label>
+      </div>
+      <div className="settings-actions">
+        <button className="primary-button" onClick={props.onSaveEmbeddingConfig} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存 Embeddings
+        </button>
+        <button className="ghost-button" onClick={props.onReindexEmbeddings} disabled={props.loading || !props.embeddingStatus?.configured}>
+          <RefreshCcw size={15} /> 重建索引
         </button>
       </div>
     </section>

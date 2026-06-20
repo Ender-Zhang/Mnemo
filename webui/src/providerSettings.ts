@@ -131,6 +131,70 @@ export function autoDreamSavePayload(form: AutoDreamFormState) {
   };
 }
 
+export type EmbeddingConfigResult = {
+  kind?: string;
+  enabled?: boolean;
+  configured?: boolean;
+  api_key_configured?: boolean;
+  base_url?: string | null;
+  model?: string | null;
+  api_key_env?: string | null;
+  save_path?: string;
+};
+
+export type EmbeddingStatusResult = {
+  kind?: string;
+  enabled?: boolean;
+  configured?: boolean;
+  active_count?: number;
+  indexed_count?: number;
+  stale_count?: number;
+  reindexed?: number;
+};
+
+export type EmbeddingFormState = {
+  enabled: boolean;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  apiKeyEnv: string;
+};
+
+export function emptyEmbeddingForm(): EmbeddingFormState {
+  return { enabled: false, baseUrl: "", model: "", apiKey: "", apiKeyEnv: "" };
+}
+
+export function embeddingFormFromConfig(result: EmbeddingConfigResult | null): EmbeddingFormState {
+  return {
+    enabled: result?.enabled === true,
+    baseUrl: String(result?.base_url || ""),
+    model: String(result?.model || ""),
+    apiKey: "",
+    apiKeyEnv: String(result?.api_key_env || "")
+  };
+}
+
+export function embeddingSavePayload(form: EmbeddingFormState) {
+  const payload: Record<string, unknown> = {
+    enabled: form.enabled,
+    base_url: form.baseUrl.trim(),
+    model: form.model.trim(),
+    api_key_env: form.apiKeyEnv.trim()
+  };
+  const cleanKey = form.apiKey.trim();
+  if (cleanKey && cleanKey !== "***") {
+    payload.api_key = cleanKey;
+  }
+  return payload;
+}
+
+export function embeddingStatusText(status: EmbeddingStatusResult | null) {
+  if (!status) return "未加载";
+  if (!status.enabled) return "未启用";
+  if (!status.configured) return "未配置";
+  return `${status.indexed_count ?? 0}/${status.active_count ?? 0} 已索引`;
+}
+
 export function autoDreamStatusText(result: AutoDreamStatusResult | null) {
   if (!result) return "未加载";
   if (result.running) return "运行中";

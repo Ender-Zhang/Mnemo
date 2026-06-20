@@ -760,6 +760,75 @@ class MemoryClient:
         path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.provider_config()
 
+    def embedding_config(self) -> dict[str, Any]:
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        return {
+            "kind": "memory_embedding_config",
+            "version": "mnemo_memory.embedding_config.v1",
+            "enabled": bool(config.embeddings_enabled),
+            "configured": bool(config.embedding_base_url and config.embedding_model),
+            "api_key_configured": bool(config.embedding_api_key),
+            "base_url": config.embedding_base_url,
+            "model": config.embedding_model,
+            "api_key_env": config.embedding_api_key_env,
+            "save_path": str(default_config_path(self.state_dir)),
+        }
+
+    def save_embedding_config(
+        self,
+        *,
+        enabled: bool | int | str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: Any = _MISSING,
+        api_key_env: str | None = None,
+        clear_api_key: bool = False,
+    ) -> dict[str, Any]:
+        path = default_config_path(self.state_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        config = _read_client_config(path)
+        _set_optional_config_bool(config, "embeddings_enabled", enabled)
+        _set_optional_config_str(config, "embedding_base_url", base_url)
+        _set_optional_config_str(config, "embedding_model", model)
+        _set_optional_config_str(config, "embedding_api_key_env", api_key_env)
+        if clear_api_key:
+            config.pop("embedding_api_key", None)
+        elif api_key is not _MISSING:
+            clean_key = str(api_key or "").strip()
+            if clean_key and clean_key != "***":
+                config["embedding_api_key"] = clean_key
+        path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return self.embedding_config()
+
+    def embedding_status(self) -> dict[str, Any]:
+        info = self.embedding_config()
+        store = self._store()
+        active = store.list_memory_pages(status="active", limit=10000)
+        indexed_ids = {str(row.get("target_id")) for row in store.list_embeddings(target_type="page", limit=10000)}
+        indexed = sum(1 for page in active if str(page.get("id")) in indexed_ids)
+        return {
+            "kind": "memory_embedding_status",
+            "version": "mnemo_memory.embedding_status.v1",
+            "enabled": info["enabled"],
+            "configured": info["configured"],
+            "active_count": len(active),
+            "indexed_count": indexed,
+            "stale_count": max(0, len(active) - indexed),
+        }
+
+    def reindex_embeddings(self, *, limit: int = 10000) -> dict[str, Any]:
+        from ..memory.embedding import ensure_page_embeddings
+
+        provider, model = self._embedding_runtime()
+        if provider is None or not model:
+            raise ValueError("embeddings are not enabled or not configured")
+        store = self._store()
+        pages = store.list_memory_pages(status="active", limit=max(1, int(limit)))
+        reindexed = ensure_page_embeddings(store, provider, pages, str(model))
+        status = self.embedding_status()
+        status["reindexed"] = reindexed
+        return status
+
     def auto_dream_config(self) -> dict[str, Any]:
         config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
         save_path = default_config_path(self.state_dir)
@@ -920,7 +989,19 @@ class MemoryClient:
         return store
 
     def _engine(self) -> MemoryEngine:
-        return MemoryEngine(self._store())
+        provider, model = self._embedding_runtime()
+        return MemoryEngine(self._store(), embedding_provider=provider, embedding_model=model)
+
+    def _embedding_runtime(self) -> tuple[Any | None, str | None]:
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        if not config.embeddings_enabled or not config.embedding_base_url or not config.embedding_model:
+            return None, None
+        try:
+            from ..providers.embeddings import OpenAICompatibleEmbeddingProvider
+
+            return OpenAICompatibleEmbeddingProvider(config), config.embedding_model
+        except (ValueError, OSError):
+            return None, None
 
 
 def _api_card(card: dict[str, Any]) -> dict[str, Any]:

@@ -235,6 +235,22 @@ class MemoryLearningMixin:
         if snapshot_fn and page and page.get("id"):
             snapshot_fn(str(page["id"]), change_reason=change_reason, changed_by=changed_by)
 
+    def _maybe_index_page_embedding(self, page: dict[str, Any] | None) -> None:
+        """Index a freshly written page when an embedding provider is wired.
+
+        Best-effort: a failing embeddings endpoint must never break promotion.
+        """
+        provider = getattr(self, "_embedding_provider", None)
+        model = getattr(self, "_embedding_model", None)
+        if provider is None or not model or not page:
+            return
+        try:
+            from .embedding import ensure_page_embeddings
+
+            ensure_page_embeddings(self.store, provider, [page], str(model))
+        except (ValueError, OSError, KeyError):
+            pass
+
     def _promote_candidate_unchecked(self, candidate_id: str) -> dict[str, Any]:
         candidate = self._get_candidate(candidate_id)
         if not candidate:
@@ -289,6 +305,7 @@ class MemoryLearningMixin:
         self.store.add_memory_link(candidate_id, page_id, "promoted_to", weight=1.0)
         page = self._get_page(page_id)
         wiki = materialize_memory_page(self.store.state_dir, page) if page else None
+        self._maybe_index_page_embedding(page)
         log_event(_LOG, "page_write", candidate_id=candidate_id, page_id=page_id, page_action=page_action, scope=page_scope)
         return {
             "candidate_id": candidate_id,

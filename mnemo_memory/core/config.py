@@ -16,6 +16,7 @@ DEFAULT_AUTO_DREAM_INTERVAL_MINUTES = 180
 DEFAULT_AUTO_DREAM_LIMIT = 20
 DEFAULT_AUTO_DREAM_MIN_CONFIDENCE = 0.7
 DEFAULT_AUTO_DREAM_LOCAL_FALLBACK = False
+DEFAULT_EMBEDDINGS_ENABLED = False
 ENV_FILE_KEY = "MNEMO_MEMORY_ENV_FILE"
 
 
@@ -29,6 +30,11 @@ class MemoryConfig:
     api_key_env: str | None = None
     timeout_s: float = DEFAULT_TIMEOUT_S
     thinking_enabled: bool = False
+    embeddings_enabled: bool = DEFAULT_EMBEDDINGS_ENABLED
+    embedding_base_url: str | None = None
+    embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    embedding_api_key_env: str | None = None
     auto_dream_enabled: bool = DEFAULT_AUTO_DREAM_ENABLED
     auto_dream_interval_minutes: int = DEFAULT_AUTO_DREAM_INTERVAL_MINUTES
     auto_dream_limit: int = DEFAULT_AUTO_DREAM_LIMIT
@@ -40,6 +46,7 @@ class MemoryConfig:
     def redacted(self) -> dict[str, Any]:
         result = asdict(self)
         result["api_key"] = "***" if self.api_key else None
+        result["embedding_api_key"] = "***" if self.embedding_api_key else None
         result["auth_token"] = "***" if self.auth_token else None
         return result
 
@@ -54,6 +61,11 @@ class ConfigOverrides:
     api_key_env: str | None = None
     timeout_s: float | None = None
     thinking_enabled: bool | None = None
+    embeddings_enabled: bool | None = None
+    embedding_base_url: str | None = None
+    embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    embedding_api_key_env: str | None = None
     auto_dream_enabled: bool | None = None
     auto_dream_interval_minutes: int | None = None
     auto_dream_limit: int | None = None
@@ -119,6 +131,33 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_THINKING_ENABLED"),
         False,
     )
+    embeddings_enabled = _first_bool(
+        overrides.embeddings_enabled,
+        file_config.get("embeddings_enabled"),
+        env.get("MNEMO_MEMORY_EMBEDDINGS_ENABLED"),
+        DEFAULT_EMBEDDINGS_ENABLED,
+    )
+    embedding_base_url = _first_optional_str(
+        overrides.embedding_base_url,
+        file_config.get("embedding_base_url"),
+        env.get("MNEMO_MEMORY_EMBEDDING_BASE_URL"),
+    )
+    embedding_model = _first_optional_str(
+        overrides.embedding_model,
+        file_config.get("embedding_model"),
+        env.get("MNEMO_MEMORY_EMBEDDING_MODEL"),
+    )
+    embedding_api_key_env = _first_optional_str(
+        overrides.embedding_api_key_env,
+        file_config.get("embedding_api_key_env"),
+        env.get("MNEMO_MEMORY_EMBEDDING_API_KEY_ENV"),
+    )
+    embedding_api_key = _first_optional_str(
+        overrides.embedding_api_key,
+        file_config.get("embedding_api_key"),
+        env.get(embedding_api_key_env) if embedding_api_key_env else None,
+        env.get("MNEMO_MEMORY_EMBEDDING_API_KEY"),
+    )
     auto_dream_enabled = _first_bool(
         overrides.auto_dream_enabled,
         file_config.get("auto_dream_enabled"),
@@ -158,6 +197,11 @@ def resolve_memory_config(
         api_key_env=api_key_env,
         timeout_s=max(0.1, timeout_s),
         thinking_enabled=thinking_enabled,
+        embeddings_enabled=embeddings_enabled,
+        embedding_base_url=embedding_base_url,
+        embedding_model=embedding_model,
+        embedding_api_key=embedding_api_key,
+        embedding_api_key_env=embedding_api_key_env,
         auto_dream_enabled=auto_dream_enabled,
         auto_dream_interval_minutes=max(5, auto_dream_interval_minutes),
         auto_dream_limit=max(1, min(50, auto_dream_limit)),

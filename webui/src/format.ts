@@ -236,6 +236,12 @@ export function dreamRunMessage(report: DreamRunReport, useProvider: boolean, ad
 
 // ─── Snapshot / token helpers (memory preview) ───────────────────────────────
 
+export function isSemanticHit(item: { match_signals?: unknown; vector_score?: unknown }): boolean {
+  if (typeof item.vector_score === "number") return true;
+  const signals = item.match_signals;
+  return Array.isArray(signals) && signals.some((signal) => signal && typeof signal === "object" && (signal as { route?: unknown }).route === "vector");
+}
+
 export function previewCardType(card: ContextCardItem) {
   const t = String(card.type || "");
   if (t.includes("candidate")) return "candidate";

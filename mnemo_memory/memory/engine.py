@@ -32,9 +32,10 @@ class MemoryEngine(
     MemoryHealthMixin,
     MemoryDreamMixin,
 ):
-    def __init__(self, store: Any, *, embedding_provider: Any | None = None):
+    def __init__(self, store: Any, *, embedding_provider: Any | None = None, embedding_model: str | None = None):
         self.store = store
         self._embedding_provider = embedding_provider
+        self._embedding_model = embedding_model
 
 
 __all__ = [
