@@ -809,3 +809,16 @@ inventory = client.list(kind="all", limit=20)
 python -m unittest discover -s tests
 npm --prefix webui run build
 ```
+
+### 质量评估（Eval）
+
+`tests/test_eval.py` 是确定性回归护栏：用 `mnemo_memory/eval/golden.json` 的标注集，跑召回 recall@k 和 promote 门决策准确率，低于阈值就失败（已包含在上面的 unittest 里）。打分逻辑在 `mnemo_memory/eval/`，可直接扩充 golden 集。
+
+需要评测模型那条路（召回是否语义命中、provider 能否从原始事件抽出记忆）时，配好 provider 再跑：
+
+```bash
+MNEMO_MEMORY_BASE_URL=... MNEMO_MEMORY_MODEL=... MNEMO_MEMORY_API_KEY=... \
+  python scripts/eval_model.py
+```
+
+它复用同一套 golden 集，额外用 `ingest-event --use-provider` 检验模型抽取，打印 JSON 报告（不进 CI，不做断言）。
