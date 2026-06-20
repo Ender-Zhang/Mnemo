@@ -16,11 +16,13 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 
 | 维度 | 评分 | 一句话结论 |
 | --- | --- | --- |
-| 闭环性 | ✅ 改善 | 已新增「记忆预览 / Agent 视角」面板（调用 `context`/`recall`），可直接看到 agent 会拿到什么 |
-| 全自动化 | ✅ 改善 | 已支持「本地确定性整理」开关：无 provider 也能自动 promote/去重/拒低质（仍有轮询/常驻等 P1 项待办） |
-| 易用性 | ⚠️ 中 | 术语门槛高、首启无引导、中英混排、危险操作确认不一致（P1/P2） |
-| 好用性（UI） | ✅ 改善 | 按需局部刷新（不再 13 请求全量）+ 结构化视图替代 raw JSON + `main.tsx` 首轮拆分；暗色模式仍待办 |
-| 配置便利性 | ✅ 改善 | 已移除误导的 auth UI 并加可信网络提示；「生效配置」视图、连通测试、阈值可配仍待办 |
+| 闭环性 | ✅ 改善 | 「记忆预览 / Agent 视角」面板 + **语义检索（向量召回）已接通并可配**，召回质量可见可调 |
+| 全自动化 | ✅ 改善 | 「本地确定性整理」开关：无 provider 也能自动 promote/去重/拒低质（仍有轮询/常驻等 P1 项待办） |
+| 易用性 | ✅ 改善 | **首启引导 + 术语帮助抽屉 + forget/tombstone 二次确认**已加；中英混排仍可继续统一 |
+| 好用性（UI） | ✅ 改善 | 局部刷新 + 结构化视图替代 raw JSON + `main.tsx` 拆分 + **暗色模式（颜色 token 化 + 跟随系统）** |
+| 配置便利性 | ✅ 改善 | 删误导 auth UI、独立 embeddings 配置；「生效配置」视图、连通测试、阈值可配仍待办 |
+| 可观测性 | ✅ 改善 | **全链路结构化日志**（write/promote/reject/dream/auto-dream/curation/http），此前为零 |
+| 质量保障 | ✅ 改善 | **召回 + promote 门 eval 护栏**进 CI，外加可选模型驱动评测脚本 |
 | 内核能力 | ✅ 强 | 写入/审核/检索/维护/溯源链路完整，设计有深度 |
 
 下面按维度展开。
@@ -41,7 +43,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
   - 与搜索 Tab 并列一个「预览」开关即可，后端 API 已经齐全，只差前端接线。
 - **涉及**：`webui/src/main.tsx`（新增面板）、`mnemo_memory/interfaces/web.py`（`context`/`recall` 已分发，无需改）。
 
-### 1.2 【P1】向量/语义检索是否生效不可见、不可配
+### 1.2 【P1 · ✅ 已修复】向量/语义检索是否生效不可见、不可配
+
+> **已修复**：接通了此前从未连上的向量检索——新增独立 embeddings 端点配置（`providers/embeddings.py` + `core/config.py` 的 `embeddings_enabled`/`embedding_*`），promote 时增量建索引，召回融合向量路由。设置页有「语义检索 / Embeddings」区（启用 / 端点 / 索引状态 / 重建索引），预览里语义命中标「语义」徽标。默认关，保持离线零依赖。见 §9。
 
 - **现状**：架构文档说 embedding 可插拔并参与 RRF 融合，但 UI 没有任何地方显示「当前是否启用了向量检索」，搜索范围下拉只有「记忆/会话/全部」，没有语义开关；也没有 provider/embedding 的接线入口。
 - **问题**：用户分不清自己拿到的是纯 SQLite 关键词召回还是语义召回，召回质量差时无从判断原因。
@@ -52,7 +56,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **现状**：plans（goal/todo）和 memories 是两个独立 Tab，虽然共享 scope/provenance，但 UI 上没有互相跳转或关联展示。
 - **建议**：在记忆详情里展示「相关计划」，在计划详情里展示「相关记忆/来源事件」，让 `source_event_id` 这条已有的链路在 UI 上闭合。
 
-### 1.4 【P2】冲突解决与不可逆删除缺少防呆/可回溯
+### 1.4 【P2 · ✅ 部分修复】冲突解决与不可逆删除缺少防呆/可回溯
+
+> **已修复（删除防呆部分）**：详情面板的 `forget`（不可逆擦除）和 `tombstone` 现在都要 `window.confirm`，与 hard-delete 对齐。冲突解决的一键回滚仍待办。
 
 - **现状**：`resolveConflict` 的 `keep_new` 会替换旧记忆；页面有版本历史（好），但冲突误判后要去 versions 里手动找。`forget`（私密擦除，不可逆）在详情面板里**直接执行、无任何二次确认**，而 `hard-delete` 反而有 `window.confirm`。
 - **问题**：最危险的操作（forget 内容擦除）防护最弱，确认逻辑不一致。
@@ -97,12 +103,16 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 
 ## 3. 易用性（Usability）
 
-### 3.1 【P1】首次启动无引导
+### 3.1 【P1 · ✅ 已修复】首次启动无引导
+
+> **已修复**：记忆库为空时显示 `OnboardingChecklist`（配置 → 写第一条 → 跑 Dream → 在预览看 agent 拿到什么），可一键跳转、可 dismiss（localStorage 记住）。
 
 - **现状**：全新启动后没有记忆、没有配 provider，UI 直接是 6 个 Tab 的稠密三栏控制台，空状态只有「暂无记忆」。
 - **建议**：加一个首启 checklist / 空状态引导：「① 配置 provider（可跳过）→ ② 写入第一条记忆 → ③ 运行一次 Dream → ④ 在预览里看看 agent 会拿到什么」。把现有的 `EmptyState` 升级成带 CTA 的引导卡。
 
-### 3.2 【P1】术语门槛高 + 中英混排
+### 3.2 【P1 · ✅ 部分修复】术语门槛高 + 中英混排
+
+> **已修复（术语帮助部分）**：顶栏「术语 / 帮助」按钮打开 `GlossaryDrawer`，一句话解释 candidate/promote/tombstone/forget/dream/snapshot/L0-L1/scope/dimension/provenance/embeddings。中英文案统一仍可继续。
 
 - **现状**：candidate / promote / tombstone / forget / dream / snapshot / L0-L1 / working note / scope / dimension / provenance 等术语无内联解释；按钮中英混排（「保存记忆」与「Add Memory」「Operations Queue」「Run Now」并存）。
 - **建议**：① 加一个「术语 / 帮助」抽屉或 hover tooltip，一句话解释每个概念；② 统一文案策略（建议中文为主，首次出现括注英文术语），消除 `Operations Queue`、`Run Now/Run Model` 这类残留英文。
@@ -146,7 +156,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 - **问题**：这是调试视图不是产品视图，信息密度高但可读性差。
 - **建议**：把 health cards、snapshot 的 pointers/hubs、links 渲染成结构化卡片/列表；raw JSON 折叠到「开发者详情」里作为兜底。
 
-### 4.4 【P1】无暗色模式，颜色未做 token 化
+### 4.4 【P1 · ✅ 已修复】无暗色模式，颜色未做 token 化
+
+> **已修复**：把手写样式里的硬编码 hex 抽成 CSS 变量（bg/surface/border/text/muted/accent + tint/on-color 令牌），新增 `[data-theme="dark"]` 覆盖与顶栏切换，默认跟随系统、持久化到 localStorage。浏览器内验证过两套主题：浅色保持原样，深色面板/导航/按钮/输入/徽标对比度可读。
 
 - **现状**：`:root { color-scheme: light }`，颜色全是硬编码十六进制（`#f6f8fb`、`#172033`、`#dce3ec`…），没有 CSS 变量主题层，也没有 `prefers-color-scheme`。
 - **问题**：开发者工具常开一整天，缺暗色模式体验差；硬编码色值导致后续做主题成本高。
@@ -266,4 +278,19 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 
 ---
 
-*P0 已落地并通过测试；P1/P2 仍为建议。如需继续推进某几项，告诉我即可。*
+## 9. 第三轮落地记录（语义检索 / 评估 / 可观测性 / 易用性）
+
+> 2026-06-20 实现，四项各一个独立 commit。验证：`python3 -m unittest discover -s tests` 共 72 项通过（含新增 embeddings / eval / logging 测试）；`node --test webui/tests/*.test.ts` 7 项通过；`tsc --noEmit` 通过；embeddings/日志经 HTTP 冒烟；暗色与浅色主题在浏览器内核对。
+
+| 项 | 改动摘要 | 主要涉及 |
+| --- | --- | --- |
+| 语义检索（接通向量召回） | 独立 embeddings 端点配置 + `embed_texts` provider；promote 增量建索引；召回融合向量路由；设置页配置 + 重建索引 + 预览「语义」徽标 | `core/config.py`、`providers/embeddings.py`、`sdk/client.py`、`memory/learning.py`、`interfaces/web.py`、`webui/src/*`、`tests/test_embeddings.py` |
+| 质量评估 eval | 召回 recall@k + promote 门决策的确定性 golden 集（进 CI）+ 可选模型驱动脚本 | `mnemo_memory/eval/`、`tests/test_eval.py`、`scripts/eval_model.py` |
+| 可观测性 | `core/log.py` 结构化日志 + 全链路埋点（candidate/promote/reject/dream/auto-dream/curation/http） | `core/log.py`、`memory/learning.py`、`memory/dream.py`、`interfaces/auto_dream.py`、`memory/curation.py`、`interfaces/web.py`、`tests/test_logging.py` |
+| 易用性 | forget/tombstone 二次确认、首启引导、术语帮助抽屉、暗色模式（颜色 token 化 + 跟随系统 + 切换） | `webui/src/main.tsx`、`webui/src/styles.css`、`webui/src/components/Glossary.tsx`、`webui/src/components/Onboarding.tsx` |
+
+剩余建议里仍待办的高价值项：多用户隔离（§ 答复里 #2，需先定产品立场）、「生效配置 / 来源」视图（5.2）、provider 连通测试（5.3）、阈值可配（5.4）、事件触发 + 常驻调度（2.2/2.3）、中英文案统一（3.2）、十维/关联可视化（4.5）。
+
+---
+
+*P0 全部、P1/P2 中的语义检索 / 评估 / 可观测性 / 易用性已落地并通过测试。其余仍为建议；告诉我接着推进哪项即可。*
