@@ -829,6 +829,36 @@ class MemoryClient:
         status["reindexed"] = reindexed
         return status
 
+    def test_provider(self) -> dict[str, Any]:
+        import time as _time
+
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        if not config.base_url or not config.model:
+            return {"kind": "memory_provider_test", "ok": False, "error": "provider not configured (base_url/model)"}
+        started = _time.perf_counter()
+        try:
+            from ..providers.openai import OpenAICompatibleMemoryMaintainer
+
+            OpenAICompatibleMemoryMaintainer(config).ping()
+            return {"kind": "memory_provider_test", "ok": True, "model": config.model, "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+        except (ValueError, OSError) as exc:
+            return {"kind": "memory_provider_test", "ok": False, "error": str(exc), "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+
+    def test_embedding(self) -> dict[str, Any]:
+        import time as _time
+
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        if not config.embedding_base_url or not config.embedding_model:
+            return {"kind": "memory_embedding_test", "ok": False, "error": "embeddings not configured (base_url/model)"}
+        started = _time.perf_counter()
+        try:
+            from ..providers.embeddings import OpenAICompatibleEmbeddingProvider
+
+            dimensions = OpenAICompatibleEmbeddingProvider(config).ping()
+            return {"kind": "memory_embedding_test", "ok": True, "model": config.embedding_model, "dimensions": dimensions, "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+        except (ValueError, OSError) as exc:
+            return {"kind": "memory_embedding_test", "ok": False, "error": str(exc), "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+
     def tuning_config(self) -> dict[str, Any]:
         config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
         return {

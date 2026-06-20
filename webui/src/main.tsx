@@ -930,6 +930,26 @@ function App() {
     finally { setLoading(false); }
   };
 
+  const testProvider = async () => {
+    setLoading(true);
+    try {
+      const r = await callMemory<{ ok?: boolean; error?: string; latency_ms?: number; model?: string }>("test-provider", {});
+      if (r.ok) { setOk(`Provider 连通正常：${r.model ?? ""}（${r.latency_ms ?? "?"}ms）`); }
+      else { setWarn(`Provider 连接失败：${r.error ?? "unknown"}`); }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
+  const testEmbedding = async () => {
+    setLoading(true);
+    try {
+      const r = await callMemory<{ ok?: boolean; error?: string; latency_ms?: number; dimensions?: number; model?: string }>("test-embedding", {});
+      if (r.ok) { setOk(`Embeddings 连通正常：${r.model ?? ""} · ${r.dimensions ?? "?"} 维（${r.latency_ms ?? "?"}ms）`); }
+      else { setWarn(`Embeddings 连接失败：${r.error ?? "unknown"}`); }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
   const summaryStats = useMemo(() => {
     const pages = inventory.filter((item) => item.type === "page").length;
     const draft = pendingCandidates.length;
@@ -1169,6 +1189,8 @@ function App() {
                 onSaveEmbeddingConfig={saveEmbeddingConfig}
                 onReindexEmbeddings={reindexEmbeddings}
                 onSaveTuningConfig={saveTuningConfig}
+                onTestProvider={testProvider}
+                onTestEmbedding={testEmbedding}
                 loading={loading}
               />
             ) : null}
@@ -2580,7 +2602,8 @@ function SettingsPanel(props: {
   tuningForm: TuningFormState; setTuningForm: (v: TuningFormState) => void;
   onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void;
   onSaveEmbeddingConfig: () => void; onReindexEmbeddings: () => void;
-  onSaveTuningConfig: () => void; loading: boolean;
+  onSaveTuningConfig: () => void;
+  onTestProvider: () => void; onTestEmbedding: () => void; loading: boolean;
 }) {
   const setTuningField = <K extends keyof TuningFormState>(field: K, value: TuningFormState[K]) => {
     props.setTuningForm({ ...props.tuningForm, [field]: value });
@@ -2627,6 +2650,9 @@ function SettingsPanel(props: {
       <div className="settings-actions">
         <button className="primary-button" onClick={props.onSaveProviderConfig} disabled={props.loading}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存 Provider
+        </button>
+        <button className="ghost-button" onClick={props.onTestProvider} disabled={props.loading}>
+          <Activity size={15} /> 测试连接
         </button>
       </div>
       <div className="settings-divider" />
@@ -2680,6 +2706,9 @@ function SettingsPanel(props: {
       <div className="settings-actions">
         <button className="primary-button" onClick={props.onSaveEmbeddingConfig} disabled={props.loading}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存 Embeddings
+        </button>
+        <button className="ghost-button" onClick={props.onTestEmbedding} disabled={props.loading}>
+          <Activity size={15} /> 测试连接
         </button>
         <button className="ghost-button" onClick={props.onReindexEmbeddings} disabled={props.loading || !props.embeddingStatus?.configured}>
           <RefreshCcw size={15} /> 重建索引

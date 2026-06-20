@@ -47,6 +47,11 @@ class OpenAICompatibleEmbeddingProvider:
         rows.sort(key=lambda row: row[0])
         return [vector for _, vector in rows]
 
+    def ping(self) -> int:
+        """Embed a tiny input to verify the endpoint; returns the vector dimension."""
+        vectors = self.embed_texts(["ping"])
+        return len(vectors[0]) if vectors and vectors[0] else 0
+
     def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         base = str(self.config.embedding_base_url or "").rstrip("/")
         key = self.config.embedding_api_key

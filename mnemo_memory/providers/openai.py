@@ -112,6 +112,12 @@ class OpenAICompatibleMemoryMaintainer:
         parsed = _parse_message_json_object(response)
         return parsed if isinstance(parsed, dict) else {}
 
+    def ping(self) -> dict[str, Any]:
+        """Minimal request to verify the chat endpoint is reachable and authorized."""
+        payload = _chat_payload(self.config, [{"role": "user", "content": "ping"}])
+        payload["max_tokens"] = 1
+        return self._post_json("/chat/completions", payload)
+
     def _post_json(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
         base = str(self.config.base_url or "").rstrip("/")
         req = request.Request(
