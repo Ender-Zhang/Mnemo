@@ -303,7 +303,9 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 | 可观测性 | `core/log.py` 结构化日志 + 全链路埋点（candidate/promote/reject/dream/auto-dream/curation/http） | `core/log.py`、`memory/learning.py`、`memory/dream.py`、`interfaces/auto_dream.py`、`memory/curation.py`、`interfaces/web.py`、`tests/test_logging.py` |
 | 易用性 | forget/tombstone 二次确认、首启引导、术语帮助抽屉、暗色模式（颜色 token 化 + 跟随系统 + 切换） | `webui/src/main.tsx`、`webui/src/styles.css`、`webui/src/components/Glossary.tsx`、`webui/src/components/Onboarding.tsx` |
 
-**多用户隔离：已定为单租户（A 方案）。** Mnemo 明确是“每个 `state-dir` 单租户”的本地服务，不假装多租户：多用户用独立 `state-dir`（真隔离），共享 state-dir 的 `scope`/`uid` 只是召回便利、非权限边界（`search`/`recall`/`context` 不强制 uid）。已在 README 新增「安全与多用户隔离」专节并收紧导览/serve 文案；代码侧加了护栏——绑定非回环地址时 `serve` 打印醒目 `WARNING`（`insecure_bind_warning`，含测试）。
+**多用户隔离：单租户 + 软多租户（A 定调 + B 落地）。**
+- **硬隔离（A）**：Mnemo 仍是“每个 `state-dir` 单租户”，互不信任的用户各用一个 `state-dir`（真隔离）。护栏：绑定非回环地址时 `serve` 打印 `WARNING`（`insecure_bind_warning`，含测试）。
+- **软多租户（B，已落地）**：共享一个库时用 `scope=user:<uid>` 区分；`search`/`recall`/`context`（含 MCP）新增可选 `uid`，**传了就把召回限定到该用户**（`scope_matches_uid`，post-filter 覆盖 pages/candidates/alias/vector/plan/associated 全部来源，不含 global）。agent 带 `uid` 即可只召回自己用户的记忆。WebUI 顶部「当前用户 (UID)」统一控制写入/搜索/预览/召回归属。仍非权限边界（无鉴权、admin 可见全部、可不传 uid）——互不信任用户仍走 A。已加 `tests/test_recall_scope.py`，README「安全与多用户隔离」专节已更新。
 
 ## 10. 第四轮落地记录（配置 / 反馈 / 互链 / 可视化）
 

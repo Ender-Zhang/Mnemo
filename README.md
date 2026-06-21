@@ -138,9 +138,9 @@ curl -X POST http://127.0.0.1:8765/api/memory/ingest-event \
 
 - **HTTP API 默认无鉴权，默认绑定 `127.0.0.1`。** 它没有访问控制，只适合在可信本地环境给本机 agent 调用。不要把端口暴露到不可信网络；如果用 `--host` 绑定到非回环地址（如 `0.0.0.0`），启动时会打印一条醒目的 `WARNING`。
 - **多用户的正确做法：每个用户一个独立 `--state-dir`。** 不同 `state-dir` 是不同的 SQLite 库，这才是真正的隔离边界，互相看不到对方的记忆。
-- **共享一个 `state-dir` + `scope`/`uid` 只是“召回便利”，不是安全边界。** `scope: "user:xxx"` 只是可搜索文本；`list(uid=...)` 会按 scope 软过滤，但 `search` / `recall` / `context`（agent 实际拿记忆注入提示词的那条路）**不强制 uid**，会对整库召回。所以多个用户共用一个 `state-dir` 时，一个用户的查询可能召回到另一个用户的记忆。**需要隔离就别共用 `state-dir`。**
+- **共享一个 `state-dir` + `scope`/`uid` 是“软多租户”，不是硬隔离边界。** 用 `scope: "user:<uid>"` 区分用户。`search` / `recall` / `context`（以及 MCP 的 `mnemo_memory_search`/`recall`/`context`）都接受可选 `uid`：**传了就把召回限定到该用户**（匹配 `user:<uid>` 及其层级，不含 `global`），agent 服务某个用户时应当带上自己的 `uid`。**但仍不是权限边界**——没有鉴权、admin WebUI 看得到全部、调用方可以不传 `uid` 而召回整库。所以：可信小范围用户用「共享库 + uid」够用；**互不信任的用户仍然要各用一个 `state-dir`**。
 
-一句话：把一个 `state-dir` 当成“一个用户 / 一个可信工作区”。要服务多个互不信任的用户，就给每人一个 `state-dir`（必要时每人一个进程/端口）。
+一句话：单库多用户靠 `uid` 软隔离（agent 召回带 `uid`）；要硬隔离就每人一个 `state-dir`。WebUI 顶部的「当前用户 (UID)」框统一控制写入 / 搜索 / 预览 / 召回的归属。
 
 ## 记忆保存与搜索流程
 
