@@ -411,22 +411,14 @@ function App() {
     if (!cleanQuery && !cleanUid) { await refreshInventory(); return; }
     if (cleanUid && !cleanQuery) {
       await refreshInventory({ clearNotice: false });
-      setOk(`UID 过滤已应用：${cleanUid}`);
+      setOk(`当前用户已应用：${cleanUid}`);
       return;
     }
     setLoading(true);
     setPage(0);
     try {
-      if (cleanUid) {
-        const result = await callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: cleanUid, limit: 200 });
-        const mapped = (result.items || []).filter((item) => itemMatchesQuery(item, cleanQuery));
-        setSearchMode(true);
-        setSearchItems(mapped);
-        setSelected(mapped[0] || null);
-        setOk(`UID 检索完成：${mapped.length} 条结果`);
-        return;
-      }
-      const result = await callMemory<MemorySearchResult>("search", { query: cleanQuery, scope: searchScope, limit: 30 });
+      // Scoped by uid via the backend recall filter (not a client-side substring hack).
+      const result = await callMemory<MemorySearchResult>("search", { query: cleanQuery, scope: searchScope, limit: 30, uid: cleanUid || undefined });
       const mapped = (result.matches || [])
         .map(searchMatchToItem)
         .filter((item): item is MemoryItem => Boolean(item))
@@ -435,7 +427,7 @@ function App() {
       setSearchMode(true);
       setSearchItems(mapped);
       setSelected(mapped[0] || null);
-      setOk(`搜索完成：${mapped.length} 条结果`);
+      setOk(cleanUid ? `搜索完成（用户 ${cleanUid}）：${mapped.length} 条` : `搜索完成：${mapped.length} 条结果`);
     } catch (error) {
       setError(error);
     } finally {
@@ -493,13 +485,14 @@ function App() {
 
   const runPreview = async () => {
     const intent = previewIntent.trim();
+    const uid = uidFilter.trim() || undefined;
     setPreviewLoading(true);
     try {
-      const ctx = await callMemory<ContextPreviewResult>("context", { intent, scope: previewScope, limit: 8 });
+      const ctx = await callMemory<ContextPreviewResult>("context", { intent, scope: previewScope, limit: 8, uid });
       setPreviewContext(ctx);
       if (intent) {
         try {
-          setPreviewRecall(await callMemory<RecallPreviewResult>("recall", { seed: intent, limit: 8 }));
+          setPreviewRecall(await callMemory<RecallPreviewResult>("recall", { seed: intent, limit: 8, uid }));
         } catch {
           setPreviewRecall(null);
         }
@@ -1147,6 +1140,7 @@ function App() {
                 context={previewContext}
                 recall={previewRecall}
                 loading={previewLoading}
+                uid={uidFilter.trim()}
                 onRun={runPreview}
               />
             ) : null}
@@ -1346,6 +1340,7 @@ function PreviewPanel(props: {
   context: ContextPreviewResult | null;
   recall: RecallPreviewResult | null;
   loading: boolean;
+  uid: string;
   onRun: () => void;
 }) {
   const profileSummary = props.context?.profile?.summary || "";
@@ -1362,6 +1357,7 @@ function PreviewPanel(props: {
           <h2>记忆预览 · Agent 视角</h2>
           <p>输入一个查询，查看 agent 实际会被注入的记忆上下文：L0 画像（每轮）+ L1 快照（默认）+ 召回卡片（按需）。</p>
         </div>
+        <StatusBadge text={props.uid ? `用户 ${props.uid}` : "全部用户"} />
       </div>
       <div className="search-line">
         <div className="input-with-icon">
@@ -1558,8 +1554,8 @@ function SearchPanel(props: {
           </select>
         </label>
         <label>
-          UID
-          <input value={props.uidFilter} onChange={(e) => props.setUidFilter(e.target.value)} placeholder="user_123 或 user:user_123" />
+          当前用户 (UID)
+          <input value={props.uidFilter} onChange={(e) => props.setUidFilter(e.target.value)} placeholder="user_123 · 限定写入/搜索/预览/召回，留空=全部" />
         </label>
       </div>
     </section>

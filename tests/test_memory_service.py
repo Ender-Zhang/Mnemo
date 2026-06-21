@@ -1143,8 +1143,10 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("memoryFactPayload(factText.trim(), writeScope)", app)
         self.assertIn("confidence: 0.9", app)
         self.assertIn('retention: "memory_candidate"', app)
-        self.assertIn("UID 检索完成", app)
-        self.assertIn("user_123 或 user:user_123", app)
+        # uid now scopes recall via the backend filter, not a client-side substring hack
+        self.assertIn("uid: cleanUid || undefined", app)
+        self.assertIn("当前用户已应用", app)
+        self.assertIn("当前用户 (UID)", app)
 
     def test_webui_compacts_long_status_badges(self) -> None:
         root = Path(__file__).resolve().parents[1]

@@ -140,3 +140,29 @@ def _truncate(value: str, limit: int = 220) -> str:
 def _status_reason(reason: str) -> str:
     normalized = re.sub(r"[^a-z0-9]+", "_", reason.casefold()).strip("_")
     return normalized or "unspecified"
+
+
+def scope_matches_uid(scope: Any, uid: str | None) -> bool:
+    """Whether a memory ``scope`` belongs to ``uid``.
+
+    Mirrors storage._uid_scope_clause: matches the bare uid, the ``user:<uid>``
+    form, and hierarchical children (``user:<uid>:...``). Empty uid matches all.
+    Does NOT match ``global`` — a uid-scoped recall returns only that user's
+    memories.
+    """
+    clean_uid = str(uid or "").strip()
+    if not clean_uid:
+        return True
+    scope_text = str(scope or "").strip()
+    if not scope_text:
+        return False
+    if clean_uid.casefold().startswith("user:"):
+        prefixed = clean_uid
+        suffix = clean_uid.split(":", 1)[1].strip()
+    else:
+        prefixed = f"user:{clean_uid}"
+        suffix = clean_uid
+    exact = {clean_uid, prefixed, suffix} - {""}
+    if scope_text in exact:
+        return True
+    return any(scope_text.startswith(f"{value}:") for value in (prefixed, suffix) if value)

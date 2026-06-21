@@ -28,29 +28,31 @@ class MemoryClient:
     def __init__(self, *, state_dir: str | Path = DEFAULT_STATE_DIR) -> None:
         self.state_dir = str(state_dir)
 
-    def context(self, intent: str = "", *, limit: int = 8, scope: str = "memory") -> dict[str, Any]:
+    def context(self, intent: str = "", *, limit: int = 8, scope: str = "memory", uid: str | None = None) -> dict[str, Any]:
         engine = self._engine()
         query = intent.strip() or "memory context"
-        cards = [_api_card(card) for card in engine.context_cards(query, limit=_limit(limit), search_scope=scope)]
+        cards = [_api_card(card) for card in engine.context_cards(query, limit=_limit(limit), search_scope=scope, uid=_optional_text(uid))]
         return {
             "kind": "memory_context",
             "version": "mnemo_memory.context.v1",
             "intent": intent,
+            "uid": _optional_text(uid),
             "cards": cards,
             "profile": engine.compile_l0(),
             "snapshot": engine.load_l1_snapshot(),
         }
 
-    def recall(self, seed: str, *, context: str = "", depth: int = 2, limit: int = 8) -> dict[str, Any]:
+    def recall(self, seed: str, *, context: str = "", depth: int = 2, limit: int = 8, uid: str | None = None) -> dict[str, Any]:
         query = " ".join(part for part in [seed.strip(), context.strip()] if part)
         if not query:
             raise ValueError("recall seed is required")
-        search = self._engine().search_with_plan(query, limit=_limit(limit), search_scope="memory")
+        search = self._engine().search_with_plan(query, limit=_limit(limit), search_scope="memory", uid=_optional_text(uid))
         return {
             "kind": "memory_recall",
             "version": "mnemo_memory.recall.v1",
             "seed": seed,
             "context": context,
+            "uid": _optional_text(uid),
             "depth": max(1, min(4, int(depth))),
             "query_plan": search["query_plan"],
             "items": search["matches"],
@@ -63,18 +65,21 @@ class MemoryClient:
         limit: int = 8,
         scope: str = "memory",
         include_tombstoned: bool = False,
+        uid: str | None = None,
     ) -> dict[str, Any]:
         result = self._engine().search_with_plan(
             query,
             limit=_limit(limit),
             search_scope=scope,
             include_tombstoned=include_tombstoned,
+            uid=_optional_text(uid),
         )
         return {
             "kind": "memory_search",
             "version": "mnemo_memory.search.v1",
             "query": query,
             "scope": scope,
+            "uid": _optional_text(uid),
             **result,
         }
 

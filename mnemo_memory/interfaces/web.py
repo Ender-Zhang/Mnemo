@@ -97,6 +97,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             str(body.get("intent") or ""),
             limit=int(body.get("limit") or 8),
             scope=str(body.get("scope") or "memory"),
+            uid=_optional(body.get("uid")),
         )
     if method == "recall":
         return client.recall(
@@ -104,6 +105,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             context=str(body.get("context") or ""),
             depth=int(body.get("depth") or 2),
             limit=int(body.get("limit") or 8),
+            uid=_optional(body.get("uid")),
         )
     if method == "search":
         return client.search(
@@ -111,6 +113,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             limit=int(body.get("limit") or 8),
             scope=str(body.get("scope") or "memory"),
             include_tombstoned=bool(body.get("include_tombstoned", False)),
+            uid=_optional(body.get("uid")),
         )
     if method == "list":
         return client.list(
