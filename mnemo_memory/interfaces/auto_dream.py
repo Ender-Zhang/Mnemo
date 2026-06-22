@@ -294,7 +294,16 @@ def _save_status(state_dir: str | Path, status: dict[str, Any]) -> None:
 
 
 def _has_backlog(counts: dict[str, Any]) -> bool:
-    for key in ("w0_pending", "memory_candidates", "draft_candidates", "changed_pages", "tombstones", "review_cards"):
+    for key in (
+        "w0_pending",
+        "memory_candidates",
+        "draft_candidates",
+        "changed_pages",
+        "tombstones",
+        "review_cards",
+        "pending_plan_proposals",
+        "changed_plan_items",
+    ):
         try:
             if int(counts.get(key) or 0) > 0:
                 return True

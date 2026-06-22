@@ -37,6 +37,7 @@ _SCHEMA: dict[str, Any] = {
         "plan_cancel": {"side_effects": "updates_plan_item_status"},
         "plan_archive": {"side_effects": "hides_plan_item_from_default_lists"},
         "plan_proposals": {"side_effects": "read_only"},
+        "user_goals": {"side_effects": "read_only"},
         "apply_plan_proposal": {"side_effects": "operator_approved_plan_write"},
         "reject_plan_proposal": {"side_effects": "rejects_pending_plan_write"},
         "update": {"side_effects": "writes_memory_candidates_and_working_notes"},

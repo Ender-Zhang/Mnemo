@@ -109,7 +109,7 @@ curl -X POST http://127.0.0.1:8765/api/memory/search \
   -d '{"query": "user_123 简洁 实现进度更新", "limit": 10}'
 ```
 
-如果上层 agent 只有原始对话事件，还没有抽好 `facts`，可以使用事件摄入口。它会先记录 source event，再把明显长期的信息整理成候选记忆；目标、待办和后续计划会进入候选计划；一次性任务槽位回答会进入 ephemeral working note，不会直接变成长期记忆。
+如果上层 agent 只有原始对话事件，还没有抽好 `facts`，可以使用事件摄入口。它会先记录 source event，再把明显长期的信息整理成候选记忆；目标和后续计划会进入候选目标；一次性任务槽位回答会进入 ephemeral working note，不会直接变成长期记忆。
 
 例如咖啡订单里用户只回答“冰美式”：
 
@@ -270,7 +270,7 @@ mnemo-memory dream run \
   --json
 ```
 
-模型只会返回维护动作建议；服务端执行 `memory_promote_candidate` 时仍会走安全、质量、置信度、重复和冲突检查。
+模型只会返回维护动作建议；服务端执行 `memory_promote_candidate` 时仍会走安全、质量、置信度、重复和冲突检查。目标维护属于全自动动作：模型可以用 `goal_apply_proposal` / `goal_reject_proposal` 处理候选目标，也可以用 `goal_create`、`goal_update`、`goal_complete`、`goal_cancel`、`goal_archive` 直接维护正式目标项；每个动作都应带原因，并且必须使用 delta 里的准确用户 scope。
 
 Thinking 默认关闭。关闭时 provider 请求不会携带 `thinking` 字段；开启后 OpenAI-compatible 请求会额外发送 `thinking: {"type": "enabled"}`。如果当前 provider 不支持这个参数，保持关闭即可。配置来源可以是 `MNEMO_MEMORY_THINKING_ENABLED=true`、state dir 下 `config.json` 的 `thinking_enabled: true`，或 CLI 的 `--thinking` / `--no-thinking`。开启 Thinking 后，如果兼容 provider 把 JSON 结果放在 `reasoning` 或 `reasoning_content` 而不是 `content`，Mnemo 会从这些字段兜底解析 JSON，但不会把 reasoning 文本写入报告或 WebUI。
 
@@ -282,7 +282,7 @@ HTTP 服务启动后会带一个进程内自动 Dreaming 调度器。默认配�
 
 自动 Dreaming 只会在同时满足下面条件时调用模型：
 
-- state dir 下有未处理 backlog，例如 draft/needs_review 候选、open working notes、review cards、tombstones 或近期变更页。
+- state dir 下有未处理 backlog，例如 draft/needs_review 候选、open working notes、review cards、tombstones、pending 候选目标、近期变更页或近期变更目标。
 - provider 已配置，即至少有 OpenAI-compatible `base_url` 和 `model`。
 - 当前没有另一个 WebUI 手动 `Run Dream` 正在运行。
 
@@ -542,16 +542,16 @@ curl -X POST http://127.0.0.1:8765/api/memory/force-promote-candidate \
   -d '{"candidate_id": "mem_xxxxxxxxxxxxxxxx"}'
 ```
 
-## 计划项：Goal 和 Todo
+## 目标项：Goal
 
-稳定记忆记录“用户是谁、偏好什么、长期事实是什么”；计划项记录“用户接下来想做什么、要跟进什么”。Mnemo 把 goal 和 todo 放在同一套 `plan_items` 里：`kind=goal` 表示更抽象的目标，`kind=todo` 表示可执行事项，todo 可以通过 `parent_id` 挂到某个 goal 下。
+稳定记忆记录“用户是谁、偏好什么、长期事实是什么”；目标项记录“用户接下来想做什么、要跟进什么”。Mnemo 的 WebUI 把这些统一展示为“目标”，新建时默认写入 `kind=goal`。
 
-手动写入计划是直接 CRUD；从 `ingest-event` 或 provider 抽取出来的计划会先进入 `plan_proposals`，需要人工或 WebUI 接受后才会进入正式计划。active/open/doing 的计划项会参与 `context` / `recall`，但已完成、取消、归档的计划不会注入提示词上下文。
+底层仍使用 `plan_items` 存储，并保留 `kind=todo` 作为 CLI/HTTP 兼容字段或历史执行项；这些旧 todo 在 WebUI 里也会显示在同一个目标列表中。WebUI 的目标页按用户聚合，先点开某个用户，再查看或新增这个用户的多个目标。手动写入目标是直接 CRUD；从 `ingest-event` 或 provider 抽取出来的目标会先进入 `plan_proposals`，需要人工、WebUI 或 Dreaming 接受后才会进入正式目标。Dreaming 也可以按模型判断直接创建、更新、完成、取消或归档目标。active/open/doing 的目标项会参与 `context` / `recall`，但已完成、取消、归档的目标不会注入提示词上下文。
 
 ### CLI
 
 ```bash
-# 增：直接创建一个 goal。
+# 增：直接创建一个目标。
 mnemo-memory plan add \
   --state-dir .mnemo-memory \
   --kind goal \
@@ -561,7 +561,7 @@ mnemo-memory plan add \
   --priority high \
   --json
 
-# 增：直接创建一个 todo，并挂到父 goal。
+# 兼容：仍可创建 todo；WebUI 会把它显示在同一个目标列表里。
 mnemo-memory plan add \
   --state-dir .mnemo-memory \
   --kind todo \
@@ -570,10 +570,14 @@ mnemo-memory plan add \
   --uid user_123 \
   --json
 
-# 查：全量计划，或按关键词 / UID / 状态查询。
+# 查：全量目标，或按关键词 / UID / 状态查询。
 mnemo-memory plan list --state-dir .mnemo-memory --uid user_123 --json
 mnemo-memory plan list "HTTP 测试" --state-dir .mnemo-memory --uid user_123 --json
 mnemo-memory plan list --state-dir .mnemo-memory --status open --status doing --json
+
+# 获取指定用户的目标视图：正式目标 + pending 候选目标。
+mnemo-memory plan user-goals --state-dir .mnemo-memory --uid user_123 --json
+mnemo-memory plan user-goals --state-dir .mnemo-memory --uid user_123 --without-proposals --json
 
 # 读 / 改 / 完成 / 取消 / 归档。
 mnemo-memory plan read plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
@@ -582,7 +586,7 @@ mnemo-memory plan complete plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --jso
 mnemo-memory plan cancel plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --reason obsolete --json
 mnemo-memory plan archive plan_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
 
-# 查看、接受或拒绝候选计划。
+# 查看、接受或拒绝候选目标。
 mnemo-memory plan proposals --state-dir .mnemo-memory --uid user_123 --json
 mnemo-memory plan apply-proposal plprop_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --json
 mnemo-memory plan reject-proposal plprop_xxxxxxxxxxxxxxxx --state-dir .mnemo-memory --reason not_a_real_plan --json
@@ -591,7 +595,7 @@ mnemo-memory plan reject-proposal plprop_xxxxxxxxxxxxxxxx --state-dir .mnemo-mem
 ### HTTP
 
 ```bash
-# 直接创建计划项。
+# 直接创建目标项。
 curl -X POST http://127.0.0.1:8765/api/memory/plan-create \
   -H 'Content-Type: application/json' \
   -d '{
@@ -610,6 +614,11 @@ curl -X POST http://127.0.0.1:8765/api/memory/plan-list \
 curl -X POST http://127.0.0.1:8765/api/memory/plan-list \
   -H 'Content-Type: application/json' \
   -d '{"query": "Mnemo 计划", "uid": "user_123", "limit": 20}'
+
+# 指定用户目标视图：正式目标 + pending 候选目标。
+curl -X POST http://127.0.0.1:8765/api/memory/user-goals \
+  -H 'Content-Type: application/json' \
+  -d '{"uid": "user_123", "limit": 100}'
 
 # 读 / 改 / 完成 / 取消 / 归档。
 curl -X POST http://127.0.0.1:8765/api/memory/plan-read \
@@ -632,7 +641,7 @@ curl -X POST http://127.0.0.1:8765/api/memory/plan-archive \
   -H 'Content-Type: application/json' \
   -d '{"plan_id": "plan_xxxxxxxxxxxxxxxx"}'
 
-# 事件摄入中的计划语言会先变成候选计划。
+# 事件摄入中的目标/计划语言会先变成候选目标。
 curl -X POST http://127.0.0.1:8765/api/memory/ingest-event \
   -H 'Content-Type: application/json' \
   -d '{"text": "我计划下周完成 Mnemo 的计划页面", "scope": "user:user_123", "source": "agent:user_123"}'
@@ -734,7 +743,7 @@ mnemo-memory serve --state-dir .mnemo-memory
 
 - 搜索和查看稳定记忆页或候选记忆
 - 在“记忆”里按关键词、UID、类型和状态检索某个用户 scope 下的记忆库存；填写 UID 后，WebUI 新写入的 fact / observation 也会写到对应 `user:<uid>` scope
-- 在“计划”里查看、创建、完成、取消、归档 goal/todo，并接受或拒绝自动抽取出的候选计划
+- 在“目标”里按用户聚合查看多个目标，点开用户后创建、完成、取消、归档目标，并接受或拒绝自动抽取出的候选目标
 - 添加 facts 和 observations
 - 通过审核门 promote 候选记忆，或 reject 候选记忆
 - tombstone 或 forget 选中的记忆项

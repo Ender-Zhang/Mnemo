@@ -10,6 +10,7 @@ from ..core.jsonutil import dumps, loads
 from .associations import discover_orphan_associations
 from .cards import _compact_candidate, _compact_page, _compact_run, _compact_tombstone, _compact_working_note
 from .constants import DREAM_LATEST_FILENAME, DREAM_REPORTS_DIRNAME
+from .plans import ACTIVE_PLAN_STATUSES
 from .utils import _bounded_confidence, _float_or_zero, _normalize_space, _truncate
 from .wiki import materialize_memory_page
 
@@ -67,6 +68,26 @@ class MemoryDreamMixin:
             if list_runs
             else []
         )
+        pending_plan_proposals = [
+            _compact_plan_proposal(proposal)
+            for proposal in self.store.list_plan_proposals(status="pending", limit=inventory_limit)
+        ][:bounded_limit]
+        changed_plan_items = [
+            _compact_plan_item(item)
+            for item in _since_filter(
+                self.store.list_plan_items(status=None, limit=inventory_limit, include_archived=True),
+                since=since,
+                field="updated_at",
+            )
+        ][:bounded_limit]
+        active_goal_context = [
+            _compact_plan_item(item)
+            for item in self.store.list_plan_items(
+                status=[*ACTIVE_PLAN_STATUSES["goal"], *ACTIVE_PLAN_STATUSES["todo"]],
+                limit=min(inventory_limit, bounded_limit * 2),
+                include_archived=False,
+            )
+        ][:bounded_limit]
         health = self.health_report(limit=min(10, bounded_limit))
         orphan_ids = [
             card["page_id"]
@@ -91,6 +112,9 @@ class MemoryDreamMixin:
                 "recent_runs": len(recent_runs),
                 "review_cards": len(health.get("review_cards", [])),
                 "association_suggestions": len(association_suggestions),
+                "pending_plan_proposals": len(pending_plan_proposals),
+                "changed_plan_items": len(changed_plan_items),
+                "active_goal_context": len(active_goal_context),
             },
             "note_ids": note_ids,
             "candidate_ids": draft_candidate_ids,
@@ -100,6 +124,9 @@ class MemoryDreamMixin:
             "tombstones": tombstones,
             "recent_runs": recent_runs,
             "association_suggestions": association_suggestions,
+            "pending_plan_proposals": pending_plan_proposals,
+            "changed_plan_items": changed_plan_items,
+            "active_goal_context": active_goal_context,
             "health": {
                 "counts": health.get("counts", {}),
                 "score": health.get("score", {}),
@@ -148,6 +175,22 @@ class MemoryDreamMixin:
             })
         if counts.get("tombstones"):
             focus.append({"kind": "respect_tombstones", "count": counts["tombstones"], "tool": "memory_search"})
+        if counts.get("pending_plan_proposals"):
+            focus.append(
+                {
+                    "kind": "review_goal_proposals",
+                    "count": counts["pending_plan_proposals"],
+                    "tool": "goal_apply_proposal",
+                }
+            )
+        if counts.get("changed_plan_items"):
+            focus.append(
+                {
+                    "kind": "maintain_changed_goals",
+                    "count": counts["changed_plan_items"],
+                    "tool": "goal_update",
+                }
+            )
         allowed_tools = [
             "memory_search",
             "memory_read",
@@ -158,6 +201,13 @@ class MemoryDreamMixin:
             "memory_promote_candidate",
             "memory_reject_candidate",
             "learning_discard",
+            "goal_apply_proposal",
+            "goal_reject_proposal",
+            "goal_create",
+            "goal_update",
+            "goal_complete",
+            "goal_cancel",
+            "goal_archive",
         ]
         if advanced_dreaming:
             allowed_tools.extend(sorted(ADVANCED_DREAM_TOOLS))
@@ -167,6 +217,9 @@ class MemoryDreamMixin:
             "Prefer evidence-backed memory candidates, user corrections, conflicts, and tombstones.",
             "User-provided private profile/contact facts may be promoted when they are stable and useful; do not reject solely because they are private.",
             "Reject or forget private content only when the user asked not to save it, asked to delete it, or the source is unsafe/untrusted.",
+            "Goal tools are full-auto: they may directly accept/reject goal proposals or create/update/complete/cancel/archive plan_items.",
+            "Use the exact user scope from the delta for goal actions; never modify one user's goals based on another user's evidence.",
+            "For every goal action include a concise reason explaining the decision.",
             "Skip low-value items with a reason instead of forcing a workflow step.",
         ]
         if advanced_dreaming:
@@ -190,6 +243,7 @@ class MemoryDreamMixin:
                 "max_pages_touched": 20,
             },
             "allowed_tools": allowed_tools,
+            "tool_argument_schemas": _dream_tool_argument_schemas(),
             "focus_candidates": focus,
             "instructions": instructions,
         }
@@ -318,6 +372,27 @@ class MemoryDreamMixin:
             tool = action.get("tool")
             arguments = action.get("arguments") if isinstance(action.get("arguments"), dict) else {}
             try:
+                if tool == "goal_apply_proposal":
+                    applied.append(self._apply_goal_apply_proposal_action(action_id, arguments))
+                    continue
+                if tool == "goal_reject_proposal":
+                    applied.append(self._apply_goal_reject_proposal_action(action_id, arguments))
+                    continue
+                if tool == "goal_create":
+                    applied.append(self._apply_goal_create_action(action_id, arguments, report_id=report_id))
+                    continue
+                if tool == "goal_update":
+                    applied.append(self._apply_goal_update_action(action_id, arguments, report_id=report_id))
+                    continue
+                if tool == "goal_complete":
+                    applied.append(self._apply_goal_complete_action(action_id, arguments))
+                    continue
+                if tool == "goal_cancel":
+                    applied.append(self._apply_goal_cancel_action(action_id, arguments))
+                    continue
+                if tool == "goal_archive":
+                    applied.append(self._apply_goal_archive_action(action_id, arguments))
+                    continue
                 if tool == "memory_tombstone":
                     applied.append(self._apply_dream_tombstone_action(action_id, arguments))
                     continue
@@ -480,6 +555,96 @@ class MemoryDreamMixin:
             raise ValueError("missing reason")
         result = self.reject_candidate(candidate_id, reason)
         return _compact_dream_reject_result(action_id, result)
+
+    def _apply_goal_apply_proposal_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        proposal_id = _goal_action_proposal_id(arguments)
+        reason = _goal_action_reason(arguments) or "accepted_by_dream"
+        result = self.apply_plan_proposal(proposal_id, reason=reason)
+        return _compact_goal_proposal_result(action_id, "goal_apply_proposal", result, decision="accepted", reason=reason)
+
+    def _apply_goal_reject_proposal_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        proposal_id = _goal_action_proposal_id(arguments)
+        reason = _goal_action_reason(arguments)
+        if not reason:
+            raise ValueError("missing reason")
+        result = self.reject_plan_proposal(proposal_id, reason=reason)
+        return _compact_goal_proposal_result(action_id, "goal_reject_proposal", result, decision="rejected", reason=reason)
+
+    def _apply_goal_create_action(
+        self,
+        action_id: str,
+        arguments: dict[str, Any],
+        *,
+        report_id: str | None,
+    ) -> dict[str, Any]:
+        title = _normalize_space(str(arguments.get("title") or arguments.get("goal") or arguments.get("task") or ""))
+        if not title:
+            raise ValueError("missing title")
+        result = self.create_plan_item(
+            kind=_goal_action_kind(arguments),
+            title=title,
+            detail=_normalize_space(str(arguments.get("detail") or arguments.get("description") or "")),
+            scope=_goal_action_scope(arguments),
+            parent_id=_optional_goal_text(arguments.get("parent_id")),
+            status=_optional_goal_text(arguments.get("status")),
+            priority=_goal_action_priority(arguments),
+            due_at=arguments.get("due_at"),
+            source="dream",
+            source_event_id=_optional_goal_text(arguments.get("source_event_id")),
+            metadata=_goal_action_metadata(action_id, arguments, report_id=report_id),
+        )
+        return _compact_goal_item_result(action_id, "goal_create", result, reason=_goal_action_reason(arguments))
+
+    def _apply_goal_update_action(
+        self,
+        action_id: str,
+        arguments: dict[str, Any],
+        *,
+        report_id: str | None,
+    ) -> dict[str, Any]:
+        item_id = _goal_action_item_id(arguments)
+        existing = self.store.get_plan_item(item_id)
+        if not existing:
+            raise ValueError(f"plan item not found: {item_id}")
+        fields: dict[str, Any] = {}
+        for arg_key, field_key in (
+            ("kind", "kind"),
+            ("parent_id", "parent_id"),
+            ("title", "title"),
+            ("detail", "detail"),
+            ("description", "detail"),
+            ("status", "status"),
+            ("priority", "priority"),
+            ("due_at", "due_at"),
+        ):
+            if arg_key in arguments:
+                fields[field_key] = arguments.get(arg_key)
+        if "uid" in arguments or "user_id" in arguments or "scope" in arguments:
+            fields["scope"] = _goal_action_scope(arguments, default=str(existing.get("scope") or "global"))
+        fields["metadata"] = _goal_action_metadata(
+            action_id,
+            arguments,
+            report_id=report_id,
+            existing=existing.get("metadata") if isinstance(existing.get("metadata"), dict) else {},
+        )
+        result = self.update_plan_item(item_id, **fields)
+        return _compact_goal_item_result(action_id, "goal_update", result, reason=_goal_action_reason(arguments))
+
+    def _apply_goal_complete_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        item_id = _goal_action_item_id(arguments)
+        result = self.complete_plan_item(item_id)
+        return _compact_goal_item_result(action_id, "goal_complete", result, reason=_goal_action_reason(arguments))
+
+    def _apply_goal_cancel_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        item_id = _goal_action_item_id(arguments)
+        reason = _goal_action_reason(arguments) or "cancelled_by_dream"
+        result = self.cancel_plan_item(item_id, reason=reason)
+        return _compact_goal_item_result(action_id, "goal_cancel", result, reason=reason)
+
+    def _apply_goal_archive_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        item_id = _goal_action_item_id(arguments)
+        result = self.archive_plan_item(item_id)
+        return _compact_goal_item_result(action_id, "goal_archive", result, reason=_goal_action_reason(arguments))
 
     def _apply_dream_link_action(self, action_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
         source_id = _normalize_space(str(arguments.get("source_id") or arguments.get("page_id") or ""))
@@ -814,6 +979,197 @@ def _proposal_title(tool: str, arguments: dict[str, Any], before: dict[str, Any]
         return "处理稳定记忆冲突"
     return tool.replace("_", " ")
 
+def _compact_plan_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": item.get("id"),
+        "kind": item.get("kind"),
+        "title": _truncate(str(item.get("title") or ""), limit=160),
+        "detail": _truncate(str(item.get("detail") or ""), limit=240),
+        "scope": item.get("scope"),
+        "status": item.get("status"),
+        "priority": item.get("priority"),
+        "due_at": item.get("due_at"),
+        "parent_id": item.get("parent_id"),
+        "created_at": item.get("created_at"),
+        "updated_at": item.get("updated_at"),
+        "completed_at": item.get("completed_at"),
+    }
+
+
+def _compact_plan_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": proposal.get("id"),
+        "kind": proposal.get("kind"),
+        "action": proposal.get("action"),
+        "target_id": proposal.get("target_id"),
+        "title": _truncate(str(proposal.get("title") or ""), limit=160),
+        "detail": _truncate(str(proposal.get("detail") or ""), limit=240),
+        "scope": proposal.get("scope"),
+        "status": proposal.get("status"),
+        "priority": proposal.get("priority"),
+        "due_at": proposal.get("due_at"),
+        "confidence": proposal.get("confidence"),
+        "reason": _truncate(str(proposal.get("reason") or ""), limit=240),
+        "source_event_id": proposal.get("source_event_id"),
+        "proposal_status": proposal.get("proposal_status"),
+        "created_at": proposal.get("created_at"),
+    }
+
+
+def _dream_tool_argument_schemas() -> dict[str, Any]:
+    return {
+        "goal_apply_proposal": {"proposal_id": "required plprop id", "reason": "required concise acceptance reason"},
+        "goal_reject_proposal": {"proposal_id": "required plprop id", "reason": "required concise rejection reason"},
+        "goal_create": {
+            "title": "required goal title",
+            "detail": "optional details",
+            "uid": "optional user id; preferred when scope is user scoped",
+            "scope": "optional exact scope from delta",
+            "status": "active|paused for goals, or open|doing for todos",
+            "priority": "low|normal|high",
+            "due_at": "optional unix timestamp",
+            "reason": "required concise creation reason",
+        },
+        "goal_update": {
+            "goal_id": "required plan item id",
+            "title": "optional replacement title",
+            "detail": "optional replacement detail",
+            "status": "optional valid goal/todo status",
+            "priority": "optional low|normal|high",
+            "due_at": "optional unix timestamp or null",
+            "reason": "required concise update reason",
+        },
+        "goal_complete": {"goal_id": "required plan item id", "reason": "required concise completion reason"},
+        "goal_cancel": {"goal_id": "required plan item id", "reason": "required concise cancellation reason"},
+        "goal_archive": {"goal_id": "required plan item id", "reason": "required concise archival reason"},
+    }
+
+
+def _goal_action_item_id(arguments: dict[str, Any]) -> str:
+    item_id = _normalize_space(
+        str(
+            arguments.get("goal_id")
+            or arguments.get("plan_id")
+            or arguments.get("item_id")
+            or arguments.get("target_id")
+            or arguments.get("id")
+            or ""
+        )
+    )
+    if not item_id:
+        raise ValueError("missing goal_id")
+    return item_id
+
+
+def _goal_action_proposal_id(arguments: dict[str, Any]) -> str:
+    proposal_id = _normalize_space(
+        str(arguments.get("proposal_id") or arguments.get("plan_proposal_id") or arguments.get("id") or "")
+    )
+    if not proposal_id:
+        raise ValueError("missing proposal_id")
+    return proposal_id
+
+
+def _goal_action_reason(arguments: dict[str, Any]) -> str:
+    return _normalize_space(str(arguments.get("reason") or arguments.get("rationale") or arguments.get("why") or ""))
+
+
+def _goal_action_kind(arguments: dict[str, Any]) -> str:
+    kind = _normalize_space(str(arguments.get("kind") or "goal")).casefold()
+    return kind if kind in {"goal", "todo"} else "goal"
+
+
+def _goal_action_priority(arguments: dict[str, Any]) -> str:
+    priority = _normalize_space(str(arguments.get("priority") or "normal")).casefold()
+    return priority if priority in {"low", "normal", "high"} else "normal"
+
+
+def _goal_action_scope(arguments: dict[str, Any], *, default: str = "global") -> str:
+    uid = _normalize_space(str(arguments.get("uid") or arguments.get("user_id") or ""))
+    if uid:
+        return uid if uid.casefold().startswith("user:") else f"user:{uid}"
+    return _normalize_space(str(arguments.get("scope") or default)) or "global"
+
+
+def _goal_action_metadata(
+    action_id: str,
+    arguments: dict[str, Any],
+    *,
+    report_id: str | None,
+    existing: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = dict(existing or {})
+    provided = arguments.get("metadata") if isinstance(arguments.get("metadata"), dict) else {}
+    metadata.update(provided)
+    metadata["dream_action_id"] = action_id
+    metadata["dream_maintained"] = True
+    if report_id:
+        metadata["dream_report_id"] = report_id
+    reason = _goal_action_reason(arguments)
+    if reason:
+        metadata["dream_reason"] = reason
+    return metadata
+
+
+def _optional_goal_text(value: Any) -> str | None:
+    text = _normalize_space(str(value or ""))
+    return text or None
+
+
+def _compact_goal_item_result(
+    action_id: str,
+    tool: str,
+    result: dict[str, Any],
+    *,
+    reason: str = "",
+) -> dict[str, Any]:
+    item = result.get("item") if isinstance(result.get("item"), dict) else {}
+    compact = {
+        "action_id": action_id,
+        "tool": tool,
+        "status": "applied",
+        "decision": tool.replace("goal_", ""),
+        "goal_id": item.get("id"),
+        "kind": item.get("kind"),
+        "title": item.get("title"),
+        "goal_status": item.get("status"),
+        "scope": item.get("scope"),
+    }
+    clean_reason = _normalize_space(str(reason or ""))
+    if clean_reason:
+        compact["reason"] = _truncate(clean_reason, limit=160)
+    return compact
+
+
+def _compact_goal_proposal_result(
+    action_id: str,
+    tool: str,
+    result: dict[str, Any],
+    *,
+    decision: str,
+    reason: str = "",
+) -> dict[str, Any]:
+    proposal = result.get("proposal") if isinstance(result.get("proposal"), dict) else {}
+    item = result.get("result", {}).get("item") if isinstance(result.get("result"), dict) else None
+    compact = {
+        "action_id": action_id,
+        "tool": tool,
+        "status": "applied",
+        "decision": decision,
+        "proposal_id": result.get("proposal_id") or proposal.get("id"),
+        "proposal_status": proposal.get("proposal_status"),
+        "title": proposal.get("title"),
+        "scope": proposal.get("scope"),
+    }
+    if isinstance(item, dict):
+        compact["goal_id"] = item.get("id")
+        compact["goal_status"] = item.get("status")
+    clean_reason = _normalize_space(str(reason or proposal.get("decision_reason") or ""))
+    if clean_reason:
+        compact["reason"] = _truncate(clean_reason, limit=160)
+    return compact
+
+
 def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | None:
     if not report:
         return None
@@ -981,6 +1337,10 @@ def _compact_dream_action_request(raw_action: dict[str, Any], index: int) -> dic
     for key in (
         "memory_id",
         "candidate_id",
+        "proposal_id",
+        "goal_id",
+        "plan_id",
+        "item_id",
         "page_id",
         "target_page_id",
         "source_id",
@@ -990,6 +1350,10 @@ def _compact_dream_action_request(raw_action: dict[str, Any], index: int) -> dic
         "target_type",
         "reason",
         "rationale",
+        "title",
+        "status",
+        "uid",
+        "scope",
         "replacement_id",
         "eval_run_id",
     ):

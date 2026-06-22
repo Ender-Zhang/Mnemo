@@ -370,8 +370,46 @@ class MemoryClient:
             limit=_limit(limit),
         )
 
-    def apply_plan_proposal(self, proposal_id: str) -> dict[str, Any]:
-        return self._engine().apply_plan_proposal(proposal_id)
+    def user_goals(
+        self,
+        uid: str,
+        *,
+        status: str | list[str] | tuple[str, ...] | None = None,
+        include_archived: bool = False,
+        include_proposals: bool = True,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        clean_uid = _clean_user_uid(uid)
+        if not clean_uid:
+            raise ValueError("uid is required")
+        bounded_limit = _plan_result_limit(limit)
+        engine = self._engine()
+        listed = engine.list_plan_items(
+            status=status,
+            uid=clean_uid,
+            limit=bounded_limit,
+            include_archived=include_archived,
+        )
+        proposals = (
+            engine.plan_proposals(status="pending", uid=clean_uid, limit=bounded_limit)["proposals"]
+            if include_proposals
+            else []
+        )
+        return {
+            "kind": "user_goals",
+            "version": "mnemo_memory.goals.v1",
+            "uid": clean_uid,
+            "scope": _scope_from_uid("global", clean_uid),
+            "status": status,
+            "include_archived": bool(include_archived),
+            "count": len(listed["items"]),
+            "goals": listed["items"],
+            "proposal_count": len(proposals),
+            "proposals": proposals,
+        }
+
+    def apply_plan_proposal(self, proposal_id: str, reason: str = "operator_accepted") -> dict[str, Any]:
+        return self._engine().apply_plan_proposal(proposal_id, reason=reason)
 
     def reject_plan_proposal(self, proposal_id: str, reason: str = "operator_rejected") -> dict[str, Any]:
         return self._engine().reject_plan_proposal(proposal_id, reason=reason)
@@ -933,6 +971,10 @@ def _limit(value: Any) -> int:
     return max(1, min(50, int(value)))
 
 
+def _plan_result_limit(value: Any) -> int:
+    return max(1, min(500, int(value or 100)))
+
+
 def _typed_item(item_type: str, item: dict[str, Any]) -> dict[str, Any]:
     return {"type": item_type, **item}
 
@@ -948,6 +990,13 @@ def _item_timestamp(item: dict[str, Any]) -> float:
 def _optional_text(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _clean_user_uid(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.casefold().startswith("user:"):
+        text = text.split(":", 1)[1].strip()
+    return text
 
 
 def _required_text(value: Any, field: str) -> str:

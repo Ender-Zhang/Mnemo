@@ -1459,6 +1459,255 @@ code {
   line-height: 1.35;
 }
 
+.plan-panel {
+  padding-bottom: 14px;
+}
+
+.goal-user-workspace {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+}
+
+.goal-user-list,
+.goal-user-detail {
+  min-width: 0;
+  border: 1px solid #dce3ec;
+  border-radius: 7px;
+  background: #fbfcfe;
+}
+
+.goal-user-list-header,
+.goal-user-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 11px;
+  border-bottom: 1px solid #e6ebf2;
+}
+
+.goal-user-list-header h3,
+.goal-user-detail-header h3 {
+  margin: 0;
+  color: #253044;
+  font-size: 14px;
+}
+
+.goal-user-detail-header p {
+  margin: 4px 0 0;
+  color: #697586;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.goal-user-detail-badges,
+.goal-user-counts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.goal-user-rows {
+  display: grid;
+  padding: 8px;
+  gap: 7px;
+}
+
+.goal-user-row {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #273449;
+  text-align: left;
+  cursor: pointer;
+}
+
+.goal-user-row:hover,
+.goal-user-row.active {
+  border-color: #c6d8f2;
+  background: #edf5ff;
+}
+
+.goal-user-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.goal-user-main strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.goal-user-main span,
+.goal-user-row small {
+  color: #667085;
+  font-size: 12px;
+}
+
+.goal-user-row small {
+  overflow-wrap: anywhere;
+}
+
+.plan-composer {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 110px 180px;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid #e8edf4;
+}
+
+.plan-composer label {
+  margin: 0;
+}
+
+.plan-composer .plan-title-field {
+  grid-column: span 2;
+}
+
+.plan-composer .plan-detail-field {
+  grid-column: 1 / -2;
+}
+
+.plan-composer button {
+  align-self: end;
+}
+
+.plan-sections {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+}
+
+.plan-section {
+  min-width: 0;
+  border: 1px solid #dce3ec;
+  border-radius: 7px;
+  background: #fbfcfe;
+}
+
+.plan-section-header,
+.plan-proposals-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 11px;
+  border-bottom: 1px solid #e6ebf2;
+}
+
+.plan-section-header h3,
+.plan-proposals-header h3 {
+  margin: 0;
+  color: #253044;
+  font-size: 14px;
+}
+
+.plan-proposals-header p {
+  margin: 4px 0 0;
+  color: #697586;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.plan-list,
+.plan-proposal-list {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+
+.plan-card,
+.plan-proposal-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 11px;
+  border: 1px solid #d5dde9;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.plan-card-main,
+.plan-proposal-card > div:first-child {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.plan-row-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.plan-row-title strong {
+  min-width: 0;
+  color: #172033;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.plan-card p,
+.plan-proposal-card p {
+  margin: 0;
+  color: #344052;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.plan-meta,
+.plan-proposal-card small {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  min-width: 0;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.plan-meta code,
+.plan-proposal-card code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.plan-actions {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.plan-proposals {
+  display: grid;
+  gap: 10px;
+  margin: 0 14px 14px;
+  border: 1px solid #dce3ec;
+  border-radius: 7px;
+  background: #fbfcfe;
+}
+
+.plan-proposals > label {
+  margin: 0 10px;
+}
+
 .tombstone-list {
   display: grid;
 }
@@ -2044,11 +2293,32 @@ pre {
   .filters,
   .table-head,
   .table-row,
+  .goal-user-workspace,
+  .plan-composer,
+  .plan-sections,
   .danger-actions,
   .composer-row,
   .dream-proposal-card,
   .tombstone-card {
     grid-template-columns: 1fr;
+  }
+
+  .plan-composer .plan-title-field,
+  .plan-composer .plan-detail-field {
+    grid-column: auto;
+  }
+
+  .goal-user-detail-header {
+    flex-direction: column;
+  }
+
+  .goal-user-detail-badges {
+    justify-content: flex-start;
+  }
+
+  .plan-actions {
+    display: flex;
+    flex-wrap: wrap;
   }
 
   .dream-proposals-header,

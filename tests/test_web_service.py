@@ -113,6 +113,26 @@ class MemoryWebServiceTests(unittest.TestCase):
                 self.assertEqual(status["last_backlog"]["memory_candidates"], 1)
                 self.assertEqual(client.list(kind="page", status="active", limit=10)["items"], [])
 
+    def test_auto_dream_scheduler_counts_pending_goal_proposals_as_backlog(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.auto_dream import AutoDreamScheduler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
+                client = MemoryClient(state_dir=tmp)
+                client.ingest_event(
+                    text="我计划下周完成自动 Dream 目标维护测试。",
+                    source="unit-test",
+                    actor="user",
+                    scope="user:auto",
+                )
+                scheduler = AutoDreamScheduler(tmp, startup_delay_s=0)
+
+                status = scheduler.tick_once(now=1000, force=True)
+
+                self.assertEqual(status["last_outcome"], "provider_required")
+                self.assertEqual(status["last_backlog"]["pending_plan_proposals"], 1)
+
 
 class HttpResponse:
     def __init__(self, *, status: int, content_type: str, body: str) -> None:

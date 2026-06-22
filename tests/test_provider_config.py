@@ -226,10 +226,15 @@ class ProviderConfigTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(maintainer.propose_actions(delta={}, plan={}), [])
+        self.assertEqual(
+            maintainer.propose_actions(delta={}, plan={"allowed_tools": ["memory_promote_candidate", "goal_apply_proposal"]}),
+            [],
+        )
         system_prompt = maintainer.last_payload["messages"][0]["content"]
         self.assertIn("Do not reject user-provided private profile/contact facts solely because they are private", system_prompt)
         self.assertIn("promote them when stable and useful", system_prompt)
+        self.assertIn("Goal tools are full-auto", system_prompt)
+        self.assertIn("goal_apply_proposal", system_prompt)
 
     def test_openai_provider_parses_actions_from_reasoning_fallback(self) -> None:
         from mnemo_memory.core.config import MemoryConfig

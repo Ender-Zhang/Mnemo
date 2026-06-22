@@ -177,6 +177,14 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             uid=_optional(body.get("uid")),
             limit=int(body.get("limit") or 50),
         )
+    if method in {"user-goals", "user_goals"}:
+        return client.user_goals(
+            _required(body, "uid"),
+            status=_status_filter(body.get("status")),
+            include_archived=bool(body.get("include_archived", False)),
+            include_proposals=body.get("include_proposals", True) is not False,
+            limit=int(body.get("limit") or 100),
+        )
     if method in {"apply-plan-proposal", "apply_plan_proposal"}:
         return client.apply_plan_proposal(_required(body, "proposal_id"))
     if method in {"reject-plan-proposal", "reject_plan_proposal"}:

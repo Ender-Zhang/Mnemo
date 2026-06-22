@@ -30,6 +30,13 @@ class OpenAICompatibleMemoryMaintainer:
             if plan.get("advanced_dreaming")
             else ""
         )
+        goal_note = (
+            " Goal tools are full-auto. Use goal_apply_proposal or goal_reject_proposal for pending goal proposals, "
+            "and goal_create, goal_update, goal_complete, goal_cancel, or goal_archive for direct plan item maintenance. "
+            "Use the exact uid/scope from the delta and include a concise reason on every goal action."
+            if any(str(tool).startswith("goal_") for tool in allowed_tools)
+            else ""
+        )
         payload = _chat_payload(
             self.config,
             [
@@ -44,6 +51,7 @@ class OpenAICompatibleMemoryMaintainer:
                         "or the source is unsafe/untrusted. "
                         "Include a concise reason on every promote or reject action."
                         f"{advanced_note}"
+                        f"{goal_note}"
                     ),
                 },
                 {

@@ -15,7 +15,6 @@ import {
   History,
   Home,
   Link2,
-  ListTodo,
   Loader2,
   Lock,
   MessageSquare,
@@ -26,6 +25,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Target,
   Trash2,
   User,
   X
@@ -320,12 +320,25 @@ type PlanProposalsResult = {
 };
 
 type PlanFormState = {
-  kind: "goal" | "todo";
   title: string;
   detail: string;
-  parentId: string;
   priority: "low" | "normal" | "high";
   dueAt: string;
+};
+
+type GoalCreateTarget = {
+  uid: string | null;
+  scope: string;
+};
+
+type GoalUserGroup = GoalCreateTarget & {
+  key: string;
+  label: string;
+  items: PlanItem[];
+  proposals: PlanProposal[];
+  openCount: number;
+  pendingCount: number;
+  latestAt: number;
 };
 
 type TabKey = "memories" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
@@ -339,7 +352,7 @@ type Notice = {
 
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "memories", label: "记忆工作台", icon: Home },
-  { key: "plans", label: "计划", icon: ListTodo },
+  { key: "plans", label: "目标", icon: Target },
   { key: "maintenance", label: "模型与维护", icon: Activity },
   { key: "settings", label: "设置", icon: Settings },
   { key: "candidates", label: "候选审核", icon: ClipboardList },
@@ -941,27 +954,29 @@ function App() {
     finally { setLoading(false); }
   };
 
-  const createPlanItem = async () => {
+  const createPlanItem = async (target?: GoalCreateTarget) => {
     const title = planForm.title.trim();
     if (!title) {
-      setWarn("请输入计划标题");
+      setWarn("请输入目标标题");
       return;
     }
+    const targetUid = target ? target.uid : uidFilter.trim() || null;
+    const targetScope = target?.scope || (targetUid ? `user:${targetUid}` : "global");
     setLoading(true);
     try {
       await callMemory("plan-create", {
-        kind: planForm.kind,
+        kind: "goal",
         title,
         detail: planForm.detail.trim(),
-        parent_id: planForm.parentId.trim() || null,
+        parent_id: null,
         priority: planForm.priority,
         due_at: datetimeLocalToUnix(planForm.dueAt),
-        uid: uidFilter.trim() || null,
-        scope: uidFilter.trim() ? undefined : "global",
+        uid: targetUid,
+        scope: targetUid ? undefined : targetScope,
         source: source.trim() || "webui"
       });
       setPlanForm(emptyPlanForm());
-      setOk("计划已创建");
+      setOk("目标已创建");
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
@@ -974,7 +989,7 @@ function App() {
     setLoading(true);
     try {
       await callMemory("plan-complete", { plan_id: planId });
-      setOk("计划已完成");
+      setOk("目标已完成");
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
@@ -987,7 +1002,7 @@ function App() {
     setLoading(true);
     try {
       await callMemory("plan-cancel", { plan_id: planId, reason: "cancelled_from_webui" });
-      setOk("计划已取消");
+      setOk("目标已取消");
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
@@ -1000,7 +1015,7 @@ function App() {
     setLoading(true);
     try {
       await callMemory("plan-archive", { plan_id: planId });
-      setOk("计划已归档");
+      setOk("目标已归档");
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
@@ -1013,7 +1028,7 @@ function App() {
     setLoading(true);
     try {
       await callMemory("apply-plan-proposal", { proposal_id: proposalId });
-      setOk("计划提案已接受");
+      setOk("候选目标已接受");
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
@@ -1029,7 +1044,7 @@ function App() {
         proposal_id: proposalId,
         reason: planRejectReason.trim() || "operator_rejected"
       });
-      setOk("计划提案已拒绝");
+      setOk("候选目标已拒绝");
       await refresh({ clearNotice: false });
     } catch (error) {
       setError(error);
@@ -2115,16 +2130,30 @@ function PlanPanel(props: {
   setRejectReason: (value: string) => void;
   uidFilter: string;
   loading: boolean;
-  onCreate: () => void;
+  onCreate: (target: GoalCreateTarget) => void;
   onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onArchive: (id: string) => void;
   onApplyProposal: (id: string) => void;
   onRejectProposal: (id: string) => void;
 }) {
-  const goals = props.items.filter((item) => item.kind === "goal");
-  const todos = props.items.filter((item) => item.kind === "todo");
-  const parentGoals = goals.filter((goal) => !["completed", "cancelled", "archived"].includes(String(goal.status || "")));
+  const userGroups = useMemo(
+    () => buildGoalUserGroups(props.items, props.proposals, props.uidFilter),
+    [props.items, props.proposals, props.uidFilter]
+  );
+  const [selectedUserKey, setSelectedUserKey] = useState("");
+  useEffect(() => {
+    if (userGroups.length === 0) {
+      if (selectedUserKey) {
+        setSelectedUserKey("");
+      }
+      return;
+    }
+    if (!userGroups.some((group) => group.key === selectedUserKey)) {
+      setSelectedUserKey(userGroups[0].key);
+    }
+  }, [selectedUserKey, userGroups]);
+  const selectedGroup = userGroups.find((group) => group.key === selectedUserKey) || userGroups[0];
   const setField = <K extends keyof PlanFormState>(field: K, value: PlanFormState[K]) => {
     props.setForm({ ...props.form, [field]: value });
   };
@@ -2132,110 +2161,125 @@ function PlanPanel(props: {
     <section className="panel plan-panel">
       <div className="panel-header">
         <div>
-          <h2>计划</h2>
-          <p>Goal 和 Todo 使用同一套计划项；自动抽取会先进入候选计划。</p>
+          <h2>目标</h2>
+          <p>以用户为主线查看接下来想完成的事情；点开用户后查看他的多个目标。</p>
         </div>
         <StatusBadge text={props.uidFilter.trim() ? `UID ${props.uidFilter.trim()}` : "global"} />
       </div>
-      <div className="plan-composer">
-        <label>
-          类型
-          <select value={props.form.kind} onChange={(event) => setField("kind", event.target.value as "goal" | "todo")}>
-            <option value="goal">Goal</option>
-            <option value="todo">Todo</option>
-          </select>
-        </label>
-        <label className="plan-title-field">
-          标题
-          <input value={props.form.title} onChange={(event) => setField("title", event.target.value)} placeholder="例如：完成 Mnemo 计划模块" />
-        </label>
-        <label>
-          优先级
-          <select value={props.form.priority} onChange={(event) => setField("priority", event.target.value as "low" | "normal" | "high")}>
-            <option value="low">low</option>
-            <option value="normal">normal</option>
-            <option value="high">high</option>
-          </select>
-        </label>
-        <label>
-          截止时间
-          <input type="datetime-local" value={props.form.dueAt} onChange={(event) => setField("dueAt", event.target.value)} />
-        </label>
-        <label>
-          父 Goal
-          <select value={props.form.parentId} onChange={(event) => setField("parentId", event.target.value)} disabled={props.form.kind === "goal"}>
-            <option value="">无</option>
-            {parentGoals.map((goal) => (
-              <option value={goal.id} key={goal.id}>{goal.title}</option>
-            ))}
-          </select>
-        </label>
-        <label className="plan-detail-field">
-          详情
-          <textarea value={props.form.detail} onChange={(event) => setField("detail", event.target.value)} placeholder="补充范围、验收点或上下文" />
-        </label>
-        <button className="primary-button" onClick={props.onCreate} disabled={props.loading}>
-          {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
-          新增计划
-        </button>
-      </div>
-      <div className="plan-sections">
-        <PlanSection
-          title="Goals"
-          items={goals}
-          emptyText="暂无 goal。"
-          onComplete={props.onComplete}
-          onCancel={props.onCancel}
-          onArchive={props.onArchive}
-        />
-        <PlanSection
-          title="Todos"
-          items={todos}
-          emptyText="暂无 todo。"
-          goals={goals}
-          onComplete={props.onComplete}
-          onCancel={props.onCancel}
-          onArchive={props.onArchive}
-        />
-      </div>
-      <div className="plan-proposals">
-        <div className="plan-proposals-header">
-          <div>
-            <h3>候选计划</h3>
-            <p>来自事件摄入或模型抽取，接受后才会进入正式计划。</p>
+      <div className="goal-user-workspace">
+        <aside className="goal-user-list">
+          <div className="goal-user-list-header">
+            <h3>用户</h3>
+            <StatusBadge text={`${userGroups.length} users`} />
           </div>
-          <StatusBadge text={`${props.proposals.length} pending`} />
-        </div>
-        <label>
-          拒绝原因
-          <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
-        </label>
-        <div className="plan-proposal-list">
-          {props.proposals.length === 0 ? <EmptyState text="暂无候选计划。" /> : null}
-          {props.proposals.map((proposal) => (
-            <article className="plan-proposal-card" key={proposal.id}>
+          <div className="goal-user-rows">
+            {userGroups.map((group) => (
+              <button
+                className={group.key === selectedGroup.key ? "goal-user-row active" : "goal-user-row"}
+                key={group.key}
+                onClick={() => setSelectedUserKey(group.key)}
+                title={group.scope}
+              >
+                <span className="goal-user-main">
+                  <strong>{group.label}</strong>
+                  <span>{group.openCount}/{group.items.length}</span>
+                </span>
+                <small>{group.scope}</small>
+                <span className="goal-user-counts">
+                  <StatusBadge text={`${group.items.length} goals`} />
+                  {group.pendingCount > 0 ? <StatusBadge text={`${group.pendingCount} pending`} /> : null}
+                </span>
+              </button>
+            ))}
+          </div>
+        </aside>
+        <div className="goal-user-detail">
+          <div className="goal-user-detail-header">
+            <div>
+              <h3>{selectedGroup.label} 的目标</h3>
+              <p>{selectedGroup.scope}</p>
+            </div>
+            <div className="goal-user-detail-badges">
+              <StatusBadge text={`${selectedGroup.items.length} goals`} />
+              <StatusBadge text={`${selectedGroup.pendingCount} pending`} />
+            </div>
+          </div>
+          <div className="plan-composer">
+            <label className="plan-title-field">
+              标题
+              <input value={props.form.title} onChange={(event) => setField("title", event.target.value)} placeholder={`例如：${selectedGroup.label} 想完成的目标`} />
+            </label>
+            <label>
+              优先级
+              <select value={props.form.priority} onChange={(event) => setField("priority", event.target.value as "low" | "normal" | "high")}>
+                <option value="low">low</option>
+                <option value="normal">normal</option>
+                <option value="high">high</option>
+              </select>
+            </label>
+            <label>
+              截止时间
+              <input type="datetime-local" value={props.form.dueAt} onChange={(event) => setField("dueAt", event.target.value)} />
+            </label>
+            <label className="plan-detail-field">
+              详情
+              <textarea value={props.form.detail} onChange={(event) => setField("detail", event.target.value)} placeholder="补充范围、验收点或上下文" />
+            </label>
+            <button className="primary-button" onClick={() => props.onCreate(selectedGroup)} disabled={props.loading}>
+              {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+              新增目标
+            </button>
+          </div>
+          <div className="plan-sections">
+            <PlanSection
+              title="目标"
+              items={selectedGroup.items}
+              emptyText="这个用户暂无目标。"
+              goalItems={selectedGroup.items}
+              onComplete={props.onComplete}
+              onCancel={props.onCancel}
+              onArchive={props.onArchive}
+            />
+          </div>
+          <div className="plan-proposals">
+            <div className="plan-proposals-header">
               <div>
-                <div className="plan-row-title">
-                  <StatusBadge text={proposal.kind || "todo"} />
-                  <StatusBadge text={proposal.priority || "normal"} />
-                  <strong>{proposal.title || proposal.id}</strong>
-                </div>
-                <p>{proposal.detail || proposal.reason || "没有附带详情。"}</p>
-                <small>{proposal.scope || "global"} · {formatConfidence(proposal.confidence)} · {formatDate(proposal.created_at)}</small>
-                <code>{proposal.id}</code>
+                <h3>候选目标</h3>
+                <p>来自事件摄入或模型抽取，接受后才会进入这个用户的目标列表。</p>
               </div>
-              <div className="plan-actions">
-                <button className="success-button" disabled={props.loading} onClick={() => props.onApplyProposal(proposal.id)}>
-                  <Check size={15} />
-                  接受
-                </button>
-                <button className="danger-button" disabled={props.loading} onClick={() => props.onRejectProposal(proposal.id)}>
-                  <X size={15} />
-                  拒绝
-                </button>
-              </div>
-            </article>
-          ))}
+              <StatusBadge text={`${selectedGroup.proposals.length} pending`} />
+            </div>
+            <label>
+              拒绝原因
+              <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
+            </label>
+            <div className="plan-proposal-list">
+              {selectedGroup.proposals.length === 0 ? <EmptyState text="这个用户暂无候选目标。" /> : null}
+              {selectedGroup.proposals.map((proposal) => (
+                <article className="plan-proposal-card" key={proposal.id}>
+                  <div>
+                    <div className="plan-row-title">
+                      <StatusBadge text={proposal.priority || "normal"} />
+                      <strong>{proposal.title || proposal.id}</strong>
+                    </div>
+                    <p>{proposal.detail || proposal.reason || "没有附带详情。"}</p>
+                    <small>{proposal.scope || "global"} · {formatConfidence(proposal.confidence)} · {formatDate(proposal.created_at)}</small>
+                    <code>{proposal.id}</code>
+                  </div>
+                  <div className="plan-actions">
+                    <button className="success-button" disabled={props.loading} onClick={() => props.onApplyProposal(proposal.id)}>
+                      <Check size={15} />
+                      接受为目标
+                    </button>
+                    <button className="danger-button" disabled={props.loading} onClick={() => props.onRejectProposal(proposal.id)}>
+                      <X size={15} />
+                      拒绝
+                    </button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -2245,7 +2289,7 @@ function PlanPanel(props: {
 function PlanSection(props: {
   title: string;
   items: PlanItem[];
-  goals?: PlanItem[];
+  goalItems?: PlanItem[];
   emptyText: string;
   onComplete: (id: string) => void;
   onCancel: (id: string) => void;
@@ -2270,7 +2314,7 @@ function PlanSection(props: {
               {item.detail ? <p>{item.detail}</p> : null}
               <div className="plan-meta">
                 <span>{item.scope || "global"}</span>
-                {item.parent_id ? <span>父级：{planTitleById(props.goals || [], item.parent_id)}</span> : null}
+                {item.parent_id ? <span>关联目标：{planTitleById(props.goalItems || [], item.parent_id)}</span> : null}
                 {item.due_at ? <span>截止：{formatDate(item.due_at)}</span> : null}
                 <code>{item.id}</code>
               </div>
@@ -2891,10 +2935,8 @@ function dreamRunMessage(report: DreamRunReport, useProvider: boolean, advancedD
 
 function emptyPlanForm(): PlanFormState {
   return {
-    kind: "todo",
     title: "",
     detail: "",
-    parentId: "",
     priority: "normal",
     dueAt: ""
   };
@@ -2912,6 +2954,93 @@ function isClosedPlan(item: PlanItem) {
 
 function planTitleById(items: PlanItem[], id: string) {
   return items.find((item) => item.id === id)?.title || compactId(id);
+}
+
+function buildGoalUserGroups(items: PlanItem[], proposals: PlanProposal[], uidFilter: string): GoalUserGroup[] {
+  const groups = new Map<string, GoalUserGroup>();
+  const ensureGroup = (rawScope: string): GoalUserGroup => {
+    const scope = normalizeGoalScope(rawScope);
+    const key = `scope:${scope}`;
+    const existing = groups.get(key);
+    if (existing) {
+      return existing;
+    }
+    const uid = uidFromGoalScope(scope);
+    const group: GoalUserGroup = {
+      key,
+      uid,
+      scope,
+      label: uid || scope,
+      items: [],
+      proposals: [],
+      openCount: 0,
+      pendingCount: 0,
+      latestAt: 0
+    };
+    groups.set(key, group);
+    return group;
+  };
+
+  const filteredUid = uidFilter.trim();
+  if (filteredUid) {
+    ensureGroup(scopeFromGoalUid(filteredUid));
+  }
+  for (const item of items) {
+    ensureGroup(String(item.scope || "global")).items.push(item);
+  }
+  for (const proposal of proposals) {
+    ensureGroup(String(proposal.scope || "global")).proposals.push(proposal);
+  }
+  if (groups.size === 0) {
+    ensureGroup("global");
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const sortedItems = [...group.items].sort((left, right) => planItemTime(right) - planItemTime(left));
+      const sortedProposals = [...group.proposals].sort((left, right) => planProposalTime(right) - planProposalTime(left));
+      return {
+        ...group,
+        items: sortedItems,
+        proposals: sortedProposals,
+        openCount: sortedItems.filter((item) => !isClosedPlan(item)).length,
+        pendingCount: sortedProposals.filter((proposal) => isPendingPlanProposal(proposal)).length,
+        latestAt: Math.max(...sortedItems.map(planItemTime), ...sortedProposals.map(planProposalTime), 0)
+      };
+    })
+    .sort((left, right) => {
+      if (left.latestAt !== right.latestAt) {
+        return right.latestAt - left.latestAt;
+      }
+      return left.label.localeCompare(right.label);
+    });
+}
+
+function normalizeGoalScope(scope: string) {
+  const clean = scope.trim();
+  return clean || "global";
+}
+
+function scopeFromGoalUid(uid: string) {
+  const clean = uid.trim();
+  return clean.toLowerCase().startsWith("user:") ? clean : `user:${clean}`;
+}
+
+function uidFromGoalScope(scope: string) {
+  const clean = normalizeGoalScope(scope);
+  return clean.toLowerCase().startsWith("user:") ? clean.slice(5) || null : null;
+}
+
+function planItemTime(item: PlanItem) {
+  return Number(item.updated_at || item.created_at || 0);
+}
+
+function planProposalTime(proposal: PlanProposal) {
+  return Number(proposal.decided_at || proposal.created_at || 0);
+}
+
+function isPendingPlanProposal(proposal: PlanProposal) {
+  return String(proposal.proposal_status || proposal.status || "pending").toLowerCase() === "pending";
 }
 
 // ─── Mount ───────────────────────────────────────────────────────────────────

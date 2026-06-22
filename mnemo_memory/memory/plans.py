@@ -169,7 +169,7 @@ class MemoryPlanMixin:
             "proposals": proposals,
         }
 
-    def apply_plan_proposal(self, proposal_id: str) -> dict[str, Any]:
+    def apply_plan_proposal(self, proposal_id: str, reason: str = "operator_accepted") -> dict[str, Any]:
         proposal = _require_pending_plan_proposal(self.store, proposal_id)
         action = str(proposal.get("action") or "create")
         if action == "create":
@@ -208,7 +208,11 @@ class MemoryPlanMixin:
             result = {"action": "update", "item": item}
         else:
             raise ValueError(f"unsupported plan proposal action: {action}")
-        updated = self.store.update_plan_proposal_status(proposal["id"], "accepted", reason="operator_accepted")
+        updated = self.store.update_plan_proposal_status(
+            proposal["id"],
+            "accepted",
+            reason=" ".join(str(reason or "operator_accepted").split()) or "operator_accepted",
+        )
         return {
             "kind": "plan_proposal_apply",
             "version": "mnemo_memory.plan.v1",

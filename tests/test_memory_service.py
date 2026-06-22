@@ -187,6 +187,15 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIn(todo["id"], ids)
             self.assertNotIn("另一个用户的计划", {item["title"] for item in listed["items"]})
 
+            user_goals = client.user_goals("user:user_123")
+            goal_ids = {item["id"] for item in user_goals["goals"]}
+            self.assertEqual(user_goals["kind"], "user_goals")
+            self.assertEqual(user_goals["uid"], "user_123")
+            self.assertEqual(user_goals["scope"], "user:user_123")
+            self.assertIn(goal["id"], goal_ids)
+            self.assertIn(todo["id"], goal_ids)
+            self.assertEqual(user_goals["proposal_count"], 0)
+
             updated = client.plan_update(todo["id"], status="doing", detail="HTTP dispatch 需要覆盖 query 和全量 list。")
             self.assertEqual(updated["item"]["status"], "doing")
 
@@ -219,6 +228,12 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(result["working_notes"], [])
             self.assertEqual(result["plan_proposals"][0]["proposal_status"], "pending")
             self.assertEqual(result["plan_proposals"][0]["scope"], "user:demo")
+
+            user_goals = client.user_goals("demo")
+            self.assertEqual(user_goals["count"], 0)
+            self.assertEqual(user_goals["proposal_count"], 1)
+            self.assertEqual(user_goals["proposals"][0]["id"], result["plan_proposals"][0]["id"])
+            self.assertEqual(client.user_goals("demo", include_proposals=False)["proposals"], [])
 
             listed = client.plan_list(uid="demo")
             self.assertEqual(listed["items"], [])
@@ -453,6 +468,7 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("plan_cancel", schema["methods"])
         self.assertIn("plan_archive", schema["methods"])
         self.assertIn("plan_proposals", schema["methods"])
+        self.assertIn("user_goals", schema["methods"])
         self.assertIn("apply_plan_proposal", schema["methods"])
         self.assertIn("reject_plan_proposal", schema["methods"])
 
@@ -578,6 +594,14 @@ class MemoryServiceTests(unittest.TestCase):
             proposal_id = ingest["plan_proposals"][0]["id"]
             proposals = dispatch_memory_api(client, "plan-proposals", {"uid": "http"})
             self.assertEqual(proposals["proposals"][0]["id"], proposal_id)
+
+            user_goals = dispatch_memory_api(client, "user-goals", {"uid": "user:http", "limit": 20})
+            self.assertEqual(user_goals["kind"], "user_goals")
+            self.assertEqual(user_goals["uid"], "http")
+            self.assertEqual(user_goals["scope"], "user:http")
+            self.assertEqual(user_goals["count"], 1)
+            self.assertEqual(user_goals["proposal_count"], 1)
+            self.assertEqual(user_goals["proposals"][0]["id"], proposal_id)
 
             rejected = dispatch_memory_api(
                 client,
@@ -713,6 +737,11 @@ class MemoryServiceTests(unittest.TestCase):
 
             listed = run_cli(["plan", "list", "CLI", "--uid", "cli", "--state-dir", tmp, "--json"])
             self.assertEqual(listed["items"][0]["id"], plan_id)
+
+            user_goals = run_cli(["plan", "user-goals", "--uid", "user:cli", "--state-dir", tmp, "--json"])
+            self.assertEqual(user_goals["kind"], "user_goals")
+            self.assertEqual(user_goals["uid"], "cli")
+            self.assertEqual(user_goals["goals"][0]["id"], plan_id)
 
             updated = run_cli(["plan", "update", plan_id, "--status", "doing", "--state-dir", tmp, "--json"])
             self.assertEqual(updated["item"]["status"], "doing")
@@ -887,6 +916,99 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(review_results[0]["decision"], "promoted")
             self.assertEqual(review_results[0]["reason"], "explicit_user_preference")
             self.assertIn("passed quality and confidence gates", review_results[0]["gate_reason"])
+
+    def test_dream_maintains_goal_proposals_and_goal_items(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            ingest = client.ingest_event(
+                text="我计划下周完成 Dream 目标维护测试。",
+                source="unit-test",
+                actor="user",
+                scope="user:demo",
+            )
+            proposal_id = ingest["plan_proposals"][0]["id"]
+
+            status = client.dream_status()
+            self.assertEqual(status["backlog"]["pending_plan_proposals"], 1)
+
+            accepted = client.dream_run(
+                actions=[
+                    {
+                        "tool": "goal_apply_proposal",
+                        "proposal_id": proposal_id,
+                        "reason": "explicit_user_goal",
+                    }
+                ],
+            )
+            applied = accepted["execution"]["result"]["actions"]["applied"][0]
+            self.assertEqual(applied["tool"], "goal_apply_proposal")
+            self.assertEqual(applied["decision"], "accepted")
+            self.assertEqual(applied["reason"], "explicit_user_goal")
+            self.assertEqual(applied["proposal_status"], "accepted")
+
+            all_proposals = client.plan_proposals(status=None, uid="demo")
+            self.assertEqual(all_proposals["proposals"][0]["decision_reason"], "explicit_user_goal")
+            user_goals = client.user_goals("demo")
+            goal_id = user_goals["goals"][0]["id"]
+            self.assertEqual(user_goals["proposal_count"], 0)
+
+            created = client.dream_run(
+                actions=[
+                    {
+                        "tool": "goal_create",
+                        "title": "维护 Dream 直接目标",
+                        "uid": "demo",
+                        "priority": "high",
+                        "reason": "follow_up_needed",
+                    }
+                ],
+            )
+            direct_goal_id = created["execution"]["result"]["actions"]["applied"][0]["goal_id"]
+            direct_goal = client.plan_read(direct_goal_id)["item"]
+            self.assertEqual(direct_goal["scope"], "user:demo")
+            self.assertEqual(direct_goal["metadata"]["dream_reason"], "follow_up_needed")
+
+            maintained = client.dream_run(
+                actions=[
+                    {"tool": "goal_update", "goal_id": goal_id, "status": "paused", "reason": "waiting_for_context"},
+                    {"tool": "goal_complete", "goal_id": goal_id, "reason": "done_by_user"},
+                    {"tool": "goal_cancel", "goal_id": direct_goal_id, "reason": "duplicate_goal"},
+                    {"tool": "goal_archive", "goal_id": direct_goal_id, "reason": "closed_out"},
+                    {"tool": "goal_update", "goal_id": "missing_goal", "reason": "bad_id"},
+                ],
+            )
+            actions = maintained["execution"]["result"]["actions"]
+            self.assertEqual(actions["counts"]["applied"], 4)
+            self.assertEqual(actions["counts"]["skipped"], 1)
+            self.assertEqual(actions["skipped"][0]["tool"], "goal_update")
+            self.assertIn("plan item not found", actions["skipped"][0]["reason"])
+            self.assertEqual(client.plan_read(goal_id)["item"]["status"], "completed")
+            archived = client.plan_read(direct_goal_id)["item"]
+            self.assertEqual(archived["status"], "archived")
+            self.assertEqual(archived["metadata"]["cancel_reason"], "duplicate_goal")
+
+            rejected_ingest = client.ingest_event(
+                text="提醒我补齐一个重复目标。",
+                source="unit-test",
+                actor="user",
+                scope="user:demo",
+            )
+            rejected_id = rejected_ingest["plan_proposals"][0]["id"]
+            rejected_report = client.dream_run(
+                actions=[
+                    {
+                        "tool": "goal_reject_proposal",
+                        "proposal_id": rejected_id,
+                        "reason": "duplicate_goal",
+                    }
+                ],
+            )
+            rejected = rejected_report["execution"]["result"]["actions"]["applied"][0]
+            self.assertEqual(rejected["decision"], "rejected")
+            self.assertEqual(rejected["proposal_status"], "rejected")
+            self.assertEqual(rejected["reason"], "duplicate_goal")
 
     def test_webui_can_enable_provider_backed_dream_run(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"
@@ -1115,7 +1237,13 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn('callMemory("plan-create"', app)
         self.assertIn('callMemory("plan-complete"', app)
         self.assertIn('callMemory("apply-plan-proposal"', app)
-        self.assertIn("候选计划", app)
+        self.assertIn("候选目标", app)
+        self.assertIn("新增目标", app)
+        self.assertIn("buildGoalUserGroups", app)
+        self.assertIn("goal-user-workspace", app)
+        self.assertIn("点开用户后查看他的多个目标", app)
+        self.assertNotIn('<option value="todo">Todo</option>', app)
+        self.assertNotIn('title="Todos"', app)
 
     def test_webui_can_filter_memories_by_uid(self) -> None:
         source = Path(__file__).resolve().parents[1] / "webui" / "src" / "main.tsx"

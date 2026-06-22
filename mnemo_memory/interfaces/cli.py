@@ -245,6 +245,13 @@ def build_parser() -> argparse.ArgumentParser:
     plan_proposals.add_argument("--scope")
     plan_proposals.add_argument("--limit", type=int, default=50)
 
+    plan_user_goals = plan_sub.add_parser("user-goals", help="List one user's goals and pending proposals")
+    plan_user_goals.add_argument("--uid", required=True)
+    plan_user_goals.add_argument("--status", action="append")
+    plan_user_goals.add_argument("--include-archived", action="store_true")
+    plan_user_goals.add_argument("--without-proposals", action="store_true")
+    plan_user_goals.add_argument("--limit", type=int, default=100)
+
     plan_apply = plan_sub.add_parser("apply-proposal", help="Accept a pending plan proposal")
     plan_apply.add_argument("proposal_id")
 
@@ -495,6 +502,20 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 status=None if args.status == "all" else args.status,
                 scope=args.scope,
                 uid=args.uid,
+                limit=args.limit,
+            ),
+            args.json,
+        )
+        return 0
+    if args.plan_command == "user-goals":
+        status: str | list[str] | None
+        status = args.status if args.status and len(args.status) > 1 else (args.status[0] if args.status else None)
+        _print(
+            client.user_goals(
+                args.uid,
+                status=status,
+                include_archived=args.include_archived,
+                include_proposals=not args.without_proposals,
                 limit=args.limit,
             ),
             args.json,
