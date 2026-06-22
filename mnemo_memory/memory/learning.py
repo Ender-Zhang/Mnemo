@@ -46,7 +46,7 @@ _DIMENSION_DEFAULT_TOPICS = {
     "goals": "目标",
     "preferences": "服务偏好",
     "relationships": "关系网络",
-    "context": "当前语境",
+    "context": "当前情境",
     "history": "经历历史",
     "patterns": "行为模式",
     "boundaries": "边界",
