@@ -3,21 +3,23 @@ import { createRoot } from "react-dom/client";
 import {
   Activity,
   Archive,
+  BookOpen,
   Brain,
   Check,
   ChevronRight,
   ClipboardList,
   Database,
   Edit3,
+  Eye,
   FileClock,
   Gauge,
   GitMerge,
   History,
   Home,
-  Link2,
+  ListTodo,
   Loader2,
-  Lock,
   MessageSquare,
+  Moon,
   Play,
   Plus,
   RefreshCcw,
@@ -25,347 +27,133 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Target,
+  Sun,
   Trash2,
   User,
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { GlossaryDrawer } from "./components/Glossary";
+import { MemoryMap } from "./components/MemoryMap";
+import { OnboardingChecklist } from "./components/Onboarding";
 import { filterCandidateReviewItems, filterReviewableCandidates, isReviewableCandidate } from "./candidateFilters";
 import {
   autoDreamFormFromStatus,
   autoDreamSavePayload,
   autoDreamStatusText,
+  embeddingFormFromConfig,
+  embeddingSavePayload,
+  embeddingStatusText,
   emptyAutoDreamForm,
+  emptyEmbeddingForm,
   emptyProviderForm,
+  emptyTuningForm,
   providerFormFromConfig,
   providerSavePayload,
-  providerStatusText
+  providerStatusText,
+  tuningFormFromConfig,
+  tuningSavePayload
 } from "./providerSettings";
 import { promotionReviewMessage } from "./promotionMessages";
 import "./styles.css";
-import type { AutoDreamFormState, AutoDreamStatusResult, ProviderConfigResult, ProviderFormState } from "./providerSettings";
+import type { AutoDreamFormState, AutoDreamStatusResult, EmbeddingConfigResult, EmbeddingFormState, EmbeddingStatusResult, ProviderConfigResult, ProviderFormState, TuningConfigResult, TuningFormState } from "./providerSettings";
 import type { PromotionReviewResult } from "./promotionMessages";
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type ApiEnvelope<T> = {
-  method?: string;
-  result?: T;
-  error?: string;
-};
-
-type MemoryItem = {
-  id: string;
-  type: "candidate" | "page";
-  status?: string;
-  claim?: string;
-  title?: string;
-  content?: string;
-  scope?: string;
-  confidence?: number;
-  dimension?: string;
-  run_id?: string;
-  source_candidate_id?: string;
-  created_at?: number;
-  updated_at?: number;
-  evidence?: unknown[];
-  metadata?: Record<string, unknown>;
-  conflict_card?: ConflictCard | null;
-};
-
-type ConflictCard = {
-  candidate_id?: string;
-  existing_page_id?: string;
-  candidate_claim?: string;
-  existing_content?: string;
-  options?: ConflictOption[];
-};
-
-type ConflictOption = {
-  resolution: string;
-  label: string;
-  description?: string;
-};
-
-type MemoryListResult = {
-  kind: "memory_list";
-  count: number;
-  uid?: string | null;
-  items: MemoryItem[];
-};
-
-type MemorySearchResult = {
-  kind: "memory_search";
-  matches?: Array<Record<string, unknown>>;
-};
-
-type MemoryReadResult = {
-  kind: "memory_item";
-  type: "candidate" | "page";
-  item: MemoryItem;
-};
-
-type MemoryLinksResult = {
-  outgoing?: Array<Record<string, unknown>>;
-  incoming?: Array<Record<string, unknown>>;
-};
-
-type MemoryEvent = {
-  id: string;
-  event_at?: number;
-  observed_at?: number;
-  source?: string;
-  agent_id?: string;
-  run_id?: string;
-  mission_id?: string;
-  conversation_id?: string;
-  message_id?: string;
-  actor?: string;
-  excerpt?: string;
-  raw_hash?: string;
-};
-
-type MemoryProvenanceResult = {
-  kind: "memory_provenance";
-  memory_id: string;
-  memory_type: "candidate" | "page";
-  page?: MemoryItem | null;
-  candidates?: MemoryItem[];
-  events?: MemoryEvent[];
-};
-
-type MemoryHealthResult = {
-  kind?: string;
-  summary?: Record<string, unknown>;
-  cards?: Array<Record<string, unknown>>;
-  [key: string]: unknown;
-};
-
-type DreamStatusResult = {
-  kind?: string;
-  latest?: DreamReportSummary | null;
-  latest_report?: Record<string, unknown> | null;
-  backlog?: Record<string, unknown>;
-  [key: string]: unknown;
-};
-
-type DreamRejectReason = {
-  action_id?: string;
-  candidate_id?: string;
-  page_id?: string;
-  page_title?: string;
-  page_action?: string;
-  tool?: string;
-  status?: string;
-  decision?: string;
-  reason?: string;
-  gate_reason?: string;
-};
-
-type DreamReviewResult = DreamRejectReason;
-
-type DreamReportSummary = {
-  duration_s?: number;
-  execution?: {
-    review_results?: DreamReviewResult[];
-    reject_reasons?: DreamRejectReason[];
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-};
-
-type DreamRunReport = {
-  id?: string;
-  duration_s?: number;
-  delta?: {
-    counts?: Record<string, number>;
-  };
-  execution?: {
-    mode?: string;
-    result?: {
-      actions?: {
-        counts?: {
-          requested?: number;
-          applied?: number;
-          skipped?: number;
-        };
-        applied?: DreamRejectReason[];
-        skipped?: DreamRejectReason[];
-        proposals?: DreamProposal[];
-      };
-    };
-  };
-};
-
-type DreamProposal = {
-  id: string;
-  report_id?: string | null;
-  tool: string;
-  title: string;
-  rationale?: string;
-  risk?: string;
-  status: "pending" | "applied" | "rejected" | string;
-  action?: Record<string, unknown>;
-  before?: Record<string, unknown>;
-  after?: Record<string, unknown>;
-  decision?: Record<string, unknown>;
-  created_at?: number;
-  decided_at?: number;
-};
-
-type DreamProposalsResult = {
-  kind: "dream_proposals";
-  status?: string | null;
-  count: number;
-  proposals: DreamProposal[];
-};
-
-type SnapshotResult = {
-  kind?: string;
-  exists?: boolean;
-  snapshot?: Record<string, unknown> | null;
-};
-
-type MemoryTombstone = {
-  id: string;
-  target_id: string;
-  target_type: "candidate" | "page";
-  target_hash?: string;
-  reason?: string;
-  summary?: string;
-  evidence_run_id?: string;
-  rule?: string;
-  metadata?: Record<string, unknown>;
-  created_at?: number;
-};
-
-type TombstonesResult = {
-  tombstones?: MemoryTombstone[];
-};
-
-type L0Profile = {
-  kind?: string;
-  summary?: string;
-  dimensions?: Record<string, unknown>;
-  page_count?: number;
-};
-
-type PageVersion = {
-  id?: string;
-  page_id?: string;
-  change_reason?: string;
-  changed_by?: string;
-  snapshot_data?: Record<string, unknown>;
-  created_at?: number;
-};
-
-type VersionsResult = {
-  kind?: string;
-  memory_id?: string;
-  versions?: PageVersion[];
-};
-
-type PlanItem = {
-  id: string;
-  kind: "goal" | "todo" | string;
-  parent_id?: string | null;
-  title: string;
-  detail?: string;
-  scope?: string;
-  status?: string;
-  priority?: "low" | "normal" | "high" | string;
-  due_at?: number | null;
-  source?: string;
-  source_event_id?: string | null;
-  metadata?: Record<string, unknown>;
-  created_at?: number;
-  updated_at?: number;
-  completed_at?: number | null;
-};
-
-type PlanListResult = {
-  kind: "plan_item_list";
-  count: number;
-  items: PlanItem[];
-};
-
-type PlanProposal = {
-  id: string;
-  kind: "goal" | "todo" | string;
-  action?: string;
-  target_id?: string | null;
-  parent_id?: string | null;
-  title: string;
-  detail?: string;
-  scope?: string;
-  status?: string | null;
-  priority?: string;
-  due_at?: number | null;
-  confidence?: number;
-  reason?: string;
-  source?: string;
-  source_event_id?: string | null;
-  metadata?: Record<string, unknown>;
-  proposal_status?: "pending" | "accepted" | "rejected" | string;
-  created_at?: number;
-  decided_at?: number | null;
-  decision_reason?: string | null;
-};
-
-type PlanProposalsResult = {
-  kind: "plan_proposals";
-  count: number;
-  proposals: PlanProposal[];
-};
-
-type PlanFormState = {
-  title: string;
-  detail: string;
-  priority: "low" | "normal" | "high";
-  dueAt: string;
-};
-
-type GoalCreateTarget = {
-  uid: string | null;
-  scope: string;
-};
-
-type GoalUserGroup = GoalCreateTarget & {
-  key: string;
-  label: string;
-  items: PlanItem[];
-  proposals: PlanProposal[];
-  openCount: number;
-  pendingCount: number;
-  latestAt: number;
-};
-
-type TabKey = "memories" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
-
-type Notice = {
-  tone: "ok" | "warn" | "error";
-  text: string;
-};
+import {
+  auditResultForItem,
+  auditReviewLabel,
+  compactId,
+  compareMemoryItems,
+  datetimeLocalToUnix,
+  detailedAuditReason,
+  dreamBacklogParts,
+  dreamReviewResultMap,
+  dreamRunMessage,
+  dreamStatusReviewReasons,
+  emptyPlanForm,
+  estimateContextTokens,
+  formatConfidence,
+  formatDate,
+  formatDuration,
+  formatTime,
+  isClosedPlan,
+  isSemanticHit,
+  itemMatchesQuery,
+  itemTitle,
+  latestDreamDurationS,
+  memoryFactPayload,
+  memoryObservationPayload,
+  planTitleById,
+  previewCardType,
+  reviewForItem,
+  scopeFromUidFilter,
+  searchMatchToItem,
+  snapshotHubs,
+  snapshotPointers,
+  tombstoneTargetItem
+} from "./format";
+import { EmptyState, JsonBlock, StatusBadge, StatusDot } from "./components/shared";
+import { DeveloperJson, HealthView, KeyValueGrid, LinksView, SnapshotView } from "./components/structured";
+import type {
+  ApiEnvelope,
+  ConflictCard,
+  ConflictOption,
+  ContextCardItem,
+  ContextPreviewResult,
+  DreamProposal,
+  DreamProposalsResult,
+  DreamRunReport,
+  DreamReviewResult,
+  DreamStatusResult,
+  EffectiveConfigResult,
+  L0Profile,
+  MemoryGraphResult,
+  MemoryHealthResult,
+  MemoryItem,
+  MemoryLinksResult,
+  MemoryListResult,
+  MemoryProvenanceResult,
+  MemoryReadResult,
+  MemorySearchResult,
+  MemoryTombstone,
+  Notice,
+  PageVersion,
+  PlanFormState,
+  PlanItem,
+  PlanListResult,
+  PlanProposal,
+  PlanProposalsResult,
+  RecallPreviewResult,
+  SnapshotResult,
+  TabKey,
+  Toast,
+  TombstonesResult,
+  VersionsResult
+} from "./types";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "memories", label: "记忆工作台", icon: Home },
-  { key: "plans", label: "目标", icon: Target },
+  { key: "preview", label: "记忆预览", icon: Eye },
+  { key: "plans", label: "计划", icon: ListTodo },
   { key: "maintenance", label: "模型与维护", icon: Activity },
   { key: "settings", label: "设置", icon: Settings },
   { key: "candidates", label: "候选审核", icon: ClipboardList },
   { key: "tombstones", label: "墓碑 / 删除", icon: Archive }
 ];
 
-const defaultNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings"]);
-const advancedNavKeys = new Set<TabKey>(["memories", "plans", "maintenance", "settings", "candidates", "tombstones"]);
+const defaultNavKeys = new Set<TabKey>(["memories", "preview", "plans", "maintenance", "settings"]);
+const advancedNavKeys = new Set<TabKey>(["memories", "preview", "plans", "maintenance", "settings", "candidates", "tombstones"]);
 
 const DIMENSIONS = [
   "identity", "cognition", "values", "goals", "preferences",
   "relationships", "context", "history", "patterns", "boundaries"
 ];
+
+// Granular refresh slices so a single mutation only refetches what it affects,
+// instead of firing every endpoint on every action.
+type RefreshPart = "service" | "inventory" | "candidates" | "maintenance" | "tombstones" | "config" | "plans" | "profile" | "health";
+const ALL_REFRESH_PARTS: RefreshPart[] = ["service", "inventory", "candidates", "maintenance", "tombstones", "config", "plans", "profile", "health"];
 
 const defaultApiBase = window.location.origin;
 
@@ -374,11 +162,18 @@ const defaultApiBase = window.location.origin;
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("memories");
   const [apiBase, setApiBase] = useState(() => localStorage.getItem("mnemo.apiBase") || defaultApiBase);
-  const [authToken, setAuthToken] = useState(() => localStorage.getItem("mnemo.authToken") || "");
   const [serviceOk, setServiceOk] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = React.useRef(0);
   const [advancedMode, setAdvancedMode] = useState(() => localStorage.getItem("mnemo.advancedMode") === "true");
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    const saved = localStorage.getItem("mnemo.theme");
+    if (saved === "light" || saved === "dark") return saved;
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => localStorage.getItem("mnemo.onboardingDismissed") === "true");
   const [composerOpen, setComposerOpen] = useState(false);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -396,6 +191,7 @@ function App() {
   const [selected, setSelected] = useState<MemoryItem | null>(null);
   const [links, setLinks] = useState<MemoryLinksResult | null>(null);
   const [provenance, setProvenance] = useState<MemoryProvenanceResult | null>(null);
+  const [relatedPlans, setRelatedPlans] = useState<PlanItem[]>([]);
   const [health, setHealth] = useState<MemoryHealthResult | null>(null);
   const [dreamStatus, setDreamStatus] = useState<DreamStatusResult | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotResult | null>(null);
@@ -410,6 +206,12 @@ function App() {
   const [providerForm, setProviderForm] = useState<ProviderFormState>(() => emptyProviderForm());
   const [autoDreamStatus, setAutoDreamStatus] = useState<AutoDreamStatusResult | null>(null);
   const [autoDreamForm, setAutoDreamForm] = useState<AutoDreamFormState>(() => emptyAutoDreamForm());
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingConfigResult | null>(null);
+  const [embeddingForm, setEmbeddingForm] = useState<EmbeddingFormState>(() => emptyEmbeddingForm());
+  const [embeddingStatus, setEmbeddingStatus] = useState<EmbeddingStatusResult | null>(null);
+  const [tuningForm, setTuningForm] = useState<TuningFormState>(() => emptyTuningForm());
+  const [effectiveConfig, setEffectiveConfig] = useState<EffectiveConfigResult | null>(null);
+  const [memoryGraph, setMemoryGraph] = useState<MemoryGraphResult | null>(null);
   const [rejectReason, setRejectReason] = useState("not_useful");
   const [planItems, setPlanItems] = useState<PlanItem[]>([]);
   const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
@@ -422,11 +224,16 @@ function App() {
   const [profile, setProfile] = useState<L0Profile | null>(null);
   const [versions, setVersions] = useState<PageVersion[]>([]);
   const [showVersions, setShowVersions] = useState(false);
+  // memory preview (agent view)
+  const [previewIntent, setPreviewIntent] = useState("");
+  const [previewScope, setPreviewScope] = useState("memory");
+  const [previewContext, setPreviewContext] = useState<ContextPreviewResult | null>(null);
+  const [previewRecall, setPreviewRecall] = useState<RecallPreviewResult | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   // pagination
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
-  const authed = authToken.trim().length > 0;
   const activeItems = useMemo(() => {
     let items = searchMode ? searchItems : [...inventory].sort(compareMemoryItems);
     if (dimensionFilter) {
@@ -455,9 +262,6 @@ function App() {
       if (options.body && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
       }
-      if (authToken.trim()) {
-        headers.set("Authorization", `Bearer ${authToken.trim()}`);
-      }
       const response = await fetch(`${apiBase.replace(/\/$/, "")}${path}`, { ...options, headers });
       const payload = (await response.json()) as ApiEnvelope<T> | T;
       if (!response.ok) {
@@ -469,7 +273,7 @@ function App() {
       }
       return payload as T;
     },
-    [apiBase, authToken]
+    [apiBase]
   );
 
   const callMemory = useCallback(
@@ -481,68 +285,63 @@ function App() {
     [requestJson]
   );
 
-  const setOk = (text: string) => setNotice({ tone: "ok", text });
-  const setWarn = (text: string) => setNotice({ tone: "warn", text });
-  const setError = (error: unknown) => {
-    const text = error instanceof Error ? error.message : String(error);
-    setNotice({ tone: "error", text });
-  };
+  const dismissToast = useCallback((id: number) => setToasts((prev) => prev.filter((toast) => toast.id !== id)), []);
+  const pushToast = useCallback((tone: "ok" | "warn" | "error", text: string) => {
+    const id = ++toastIdRef.current;
+    setToasts((prev) => [...prev.slice(-4), { id, tone, text }]);
+    window.setTimeout(() => dismissToast(id), tone === "error" ? 8000 : 4000);
+  }, [dismissToast]);
+  const setOk = (text: string) => pushToast("ok", text);
+  const setWarn = (text: string) => pushToast("warn", text);
+  const setError = (error: unknown) => pushToast("error", error instanceof Error ? error.message : String(error));
 
-  const refresh = useCallback(async (options: { clearNotice?: boolean } = {}) => {
+  const refresh = useCallback(async (options: { parts?: RefreshPart[]; clearNotice?: boolean } = {}) => {
+    const parts = new Set(options.parts ?? ALL_REFRESH_PARTS);
     setLoading(true);
     try {
       const scopedUid = uidFilter.trim() || undefined;
-      const [
-        healthResult,
-        inventoryResult,
-        candidateResult,
-        dreamResult,
-        snapshotResult,
-        tombstoneResult,
-        providerResult,
-        autoDreamResult,
-        proposalResult,
-        profileResult,
-        planResult,
-        planProposalResult
-      ] = await Promise.all([
-        requestJson<Record<string, unknown>>("/api/health"),
-        callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 200 }),
-        callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }),
-        callMemory<DreamStatusResult>("dream-status", { limit: 20 }),
-        callMemory<SnapshotResult>("snapshot", { limit: 50 }),
-        callMemory<TombstonesResult>("tombstones", { limit: 500 }),
-        callMemory<ProviderConfigResult>("provider-config", {}),
-        callMemory<AutoDreamStatusResult>("auto-dream-status", {}),
-        callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 }),
-        callMemory<L0Profile>("profile", {}).catch(() => null),
-        callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }),
-        callMemory<PlanProposalsResult>("plan-proposals", { status: "pending", uid: scopedUid, limit: 50 })
-      ]);
-      setServiceOk(Boolean(healthResult.ok));
-      setInventory(inventoryResult.items || []);
-      setCandidates(candidateResult.items || []);
-      setDreamStatus(dreamResult);
-      setSnapshot(snapshotResult);
-      setTombstones(tombstoneResult.tombstones || []);
-      setProviderConfig(providerResult);
-      setProviderForm(providerFormFromConfig(providerResult));
-      setAutoDreamStatus(autoDreamResult);
-      setAutoDreamForm(autoDreamFormFromStatus(autoDreamResult));
-      setDreamProposals(proposalResult.proposals || []);
-      setPlanItems(planResult.items || []);
-      setPlanProposals(planProposalResult.proposals || []);
-      setProfile(profileResult);
-      try {
-        setHealth(await callMemory<MemoryHealthResult>("health", { limit: 20 }));
-      } catch {
-        setHealth(null);
+      const tasks: Array<Promise<unknown>> = [];
+      if (parts.has("service")) {
+        tasks.push(requestJson<Record<string, unknown>>("/api/health").then((r) => setServiceOk(Boolean(r.ok))));
       }
-      if (options.clearNotice !== false) {
-        setNotice(null);
+      if (parts.has("inventory")) {
+        tasks.push(callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 200 }).then((r) => setInventory(r.items || [])));
       }
+      if (parts.has("candidates")) {
+        tasks.push(callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }).then((r) => setCandidates(r.items || [])));
+      }
+      if (parts.has("maintenance")) {
+        tasks.push(callMemory<DreamStatusResult>("dream-status", { limit: 20 }).then(setDreamStatus));
+        tasks.push(callMemory<SnapshotResult>("snapshot", { limit: 50 }).then(setSnapshot));
+        tasks.push(callMemory<DreamProposalsResult>("dream-proposals", { status: null, limit: 50 }).then((r) => setDreamProposals(r.proposals || [])));
+        tasks.push(callMemory<MemoryGraphResult>("memory-graph", {}).then(setMemoryGraph).catch(() => setMemoryGraph(null)));
+      }
+      if (parts.has("tombstones")) {
+        tasks.push(callMemory<TombstonesResult>("tombstones", { limit: 500 }).then((r) => setTombstones(r.tombstones || [])));
+      }
+      if (parts.has("config")) {
+        tasks.push(callMemory<ProviderConfigResult>("provider-config", {}).then((r) => { setProviderConfig(r); setProviderForm(providerFormFromConfig(r)); }));
+        tasks.push(callMemory<AutoDreamStatusResult>("auto-dream-status", {}).then((r) => { setAutoDreamStatus(r); setAutoDreamForm(autoDreamFormFromStatus(r)); }));
+        tasks.push(callMemory<EmbeddingConfigResult>("embedding-config", {}).then((r) => { setEmbeddingConfig(r); setEmbeddingForm(embeddingFormFromConfig(r)); }));
+        tasks.push(callMemory<EmbeddingStatusResult>("embedding-status", {}).then(setEmbeddingStatus).catch(() => setEmbeddingStatus(null)));
+        tasks.push(callMemory<TuningConfigResult>("tuning-config", {}).then((r) => setTuningForm(tuningFormFromConfig(r))));
+        tasks.push(callMemory<EffectiveConfigResult>("effective-config", {}).then(setEffectiveConfig).catch(() => setEffectiveConfig(null)));
+      }
+      if (parts.has("plans")) {
+        tasks.push(callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }).then((r) => setPlanItems(r.items || [])));
+        tasks.push(callMemory<PlanProposalsResult>("plan-proposals", { status: "pending", uid: scopedUid, limit: 50 }).then((r) => setPlanProposals(r.proposals || [])));
+      }
+      if (parts.has("profile")) {
+        tasks.push(callMemory<L0Profile>("profile", {}).then(setProfile).catch(() => setProfile(null)));
+      }
+      if (parts.has("health")) {
+        tasks.push(callMemory<MemoryHealthResult>("health", { limit: 20 }).then(setHealth).catch(() => setHealth(null)));
+      }
+      await Promise.all(tasks);
     } catch (error) {
-      setServiceOk(false);
+      if (parts.has("service")) {
+        setServiceOk(false);
+      }
       setError(error);
     } finally {
       setLoading(false);
@@ -556,11 +355,11 @@ function App() {
     await refresh(options);
   }, [refresh]);
 
-  useEffect(() => { localStorage.setItem("mnemo.apiBase", apiBase); }, [apiBase]);
   useEffect(() => {
-    if (authToken.trim()) { localStorage.setItem("mnemo.authToken", authToken); }
-    else { localStorage.removeItem("mnemo.authToken"); }
-  }, [authToken]);
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("mnemo.theme", theme);
+  }, [theme]);
+  useEffect(() => { localStorage.setItem("mnemo.apiBase", apiBase); }, [apiBase]);
   useEffect(() => { localStorage.setItem("mnemo.useProvider", useProvider ? "true" : "false"); }, [useProvider]);
   useEffect(() => { localStorage.setItem("mnemo.advancedDreaming", advancedDreaming ? "true" : "false"); }, [advancedDreaming]);
   useEffect(() => { localStorage.setItem("mnemo.advancedMode", advancedMode ? "true" : "false"); }, [advancedMode]);
@@ -578,6 +377,16 @@ function App() {
     const timerId = window.setInterval(() => setClockNowMs(Date.now()), 500);
     return () => window.clearInterval(timerId);
   }, [dreamStartedAtMs]);
+
+  // While a Dream runs, poll its status so backlog/result reflect progress live.
+  useEffect(() => {
+    if (dreamStartedAtMs === null) return undefined;
+    const pollId = window.setInterval(() => {
+      callMemory<DreamStatusResult>("dream-status", { limit: 20 }).then(setDreamStatus).catch(() => undefined);
+      callMemory<AutoDreamStatusResult>("auto-dream-status", {}).then(setAutoDreamStatus).catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(pollId);
+  }, [dreamStartedAtMs, callMemory]);
 
   useEffect(() => {
     if (activeTab !== "memories") return;
@@ -602,22 +411,14 @@ function App() {
     if (!cleanQuery && !cleanUid) { await refreshInventory(); return; }
     if (cleanUid && !cleanQuery) {
       await refreshInventory({ clearNotice: false });
-      setOk(`UID 过滤已应用：${cleanUid}`);
+      setOk(`当前用户已应用：${cleanUid}`);
       return;
     }
     setLoading(true);
     setPage(0);
     try {
-      if (cleanUid) {
-        const result = await callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: cleanUid, limit: 200 });
-        const mapped = (result.items || []).filter((item) => itemMatchesQuery(item, cleanQuery));
-        setSearchMode(true);
-        setSearchItems(mapped);
-        setSelected(mapped[0] || null);
-        setOk(`UID 检索完成：${mapped.length} 条结果`);
-        return;
-      }
-      const result = await callMemory<MemorySearchResult>("search", { query: cleanQuery, scope: searchScope, limit: 30 });
+      // Scoped by uid via the backend recall filter (not a client-side substring hack).
+      const result = await callMemory<MemorySearchResult>("search", { query: cleanQuery, scope: searchScope, limit: 30, uid: cleanUid || undefined });
       const mapped = (result.matches || [])
         .map(searchMatchToItem)
         .filter((item): item is MemoryItem => Boolean(item))
@@ -626,7 +427,7 @@ function App() {
       setSearchMode(true);
       setSearchItems(mapped);
       setSelected(mapped[0] || null);
-      setOk(`搜索完成：${mapped.length} 条结果`);
+      setOk(cleanUid ? `搜索完成（用户 ${cleanUid}）：${mapped.length} 条` : `搜索完成：${mapped.length} 条结果`);
     } catch (error) {
       setError(error);
     } finally {
@@ -638,6 +439,7 @@ function App() {
     setSelected(item);
     setLinks(null);
     setProvenance(null);
+    setRelatedPlans([]);
     setVersions([]);
     setShowVersions(false);
     try {
@@ -649,9 +451,26 @@ function App() {
       setSelected({ ...readResult.item, type: readResult.type });
       setLinks(linkResult);
       setProvenance(provenanceResult);
+      const scope = readResult.item.scope;
+      if (scope) {
+        try {
+          const planResult = await callMemory<PlanListResult>("plan-list", { scope, include_archived: false, limit: 100 });
+          const open = (planResult.items || []).filter((plan) =>
+            plan.scope === scope && ["open", "doing", "active", "paused"].includes(String(plan.status || "").toLowerCase()));
+          setRelatedPlans(open.slice(0, 8));
+        } catch { setRelatedPlans([]); }
+      }
     } catch (error) {
       setError(error);
     }
+  };
+
+  const viewScopeMemories = (scope?: string) => {
+    const clean = (scope || "").trim();
+    if (!clean) return;
+    setUidFilter(clean.toLowerCase().startsWith("user:") ? clean.slice("user:".length) : "");
+    setActiveTab("memories");
+    void refreshInventory({ clearNotice: false });
   };
 
   const loadVersions = async (memoryId: string) => {
@@ -664,12 +483,36 @@ function App() {
     }
   };
 
+  const runPreview = async () => {
+    const intent = previewIntent.trim();
+    const uid = uidFilter.trim() || undefined;
+    setPreviewLoading(true);
+    try {
+      const ctx = await callMemory<ContextPreviewResult>("context", { intent, scope: previewScope, limit: 8, uid });
+      setPreviewContext(ctx);
+      if (intent) {
+        try {
+          setPreviewRecall(await callMemory<RecallPreviewResult>("recall", { seed: intent, limit: 8, uid }));
+        } catch {
+          setPreviewRecall(null);
+        }
+      } else {
+        setPreviewRecall(null);
+      }
+      setOk("已生成 Agent 视角预览");
+    } catch (error) {
+      setError(error);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const submitMemory = async () => {
     const writeScope = scopeFromUidFilter(uidFilter);
     const facts = factText.trim() ? [memoryFactPayload(factText.trim(), writeScope)] : [];
     const observations = observationText.trim() ? [memoryObservationPayload(observationText.trim(), writeScope)] : [];
     if (facts.length === 0 && observations.length === 0) {
-      setNotice({ tone: "warn", text: "请输入 fact 或 observation" });
+      setWarn("请输入 fact 或 observation");
       return;
     }
     setLoading(true);
@@ -679,7 +522,7 @@ function App() {
       setObservationText("");
       setComposerOpen(false);
       setOk("已写入候选记忆");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "candidates"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -701,7 +544,7 @@ function App() {
       });
       setIngestOpen(false);
       setOk("事件已录入，已提取记忆候选");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "candidates", "plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -722,7 +565,7 @@ function App() {
       setEditorOpen(false);
       setEditorItem(null);
       setOk("稳定记忆页已创建");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "profile", "maintenance"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -744,7 +587,7 @@ function App() {
       setEditorOpen(false);
       setEditorItem(null);
       setOk("稳定记忆页已更新");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "profile", "maintenance"], clearNotice: false });
       // reload detail
       if (selected?.id === memoryId) {
         await readMemory({ ...selected, id: memoryId } as MemoryItem);
@@ -761,7 +604,7 @@ function App() {
     try {
       await callMemory("resolve-conflict", { candidate_id: candidateId, resolution });
       setOk(`冲突已解决：${resolution}`);
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "profile"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -776,7 +619,7 @@ function App() {
       const message = promotionReviewMessage(result);
       if (result.decision === "promoted" || result.status === "promoted") { setOk(message); }
       else { setWarn(message); }
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "profile", "maintenance", "tombstones"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -789,7 +632,7 @@ function App() {
     try {
       await callMemory("reject-candidate", { candidate_id: candidateId, reason: rejectReason.trim() || "not_useful" });
       setOk("候选已拒绝");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "tombstones"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -810,7 +653,7 @@ function App() {
           failed++;
         }
       }
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "profile", "maintenance", "tombstones"], clearNotice: false });
       setOk(`批量审核完成：通过 ${promoted} 条${failed ? `，失败 ${failed} 条` : ""}`);
     } finally {
       setLoading(false);
@@ -827,7 +670,7 @@ function App() {
           rejected++;
         } catch { /* skip */ }
       }
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["candidates", "tombstones"], clearNotice: false });
       setOk(`批量拒绝完成：${rejected} 条`);
     } finally {
       setLoading(false);
@@ -836,6 +679,10 @@ function App() {
 
   const curateSelected = async (mode: "tombstone" | "forget") => {
     if (!selected) return;
+    const confirmText = mode === "forget"
+      ? `私密擦除（不可逆）${compactId(selected.id)}？内容会被抹掉，仅保留删除痕迹。`
+      : `标记 tombstone ${compactId(selected.id)}？该记忆将不再用于召回。`;
+    if (!window.confirm(confirmText)) return;
     setLoading(true);
     try {
       if (mode === "forget") {
@@ -846,7 +693,7 @@ function App() {
         setOk("记忆已标记 tombstone");
       }
       setSelected(null);
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["inventory", "tombstones", "profile"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -859,7 +706,7 @@ function App() {
     try {
       await callMemory("forget", { memory_id: tombstone.target_id, target_type: tombstone.target_type, reason: "private_delete" });
       setOk("目标记忆已 Forget 擦除，删除痕迹仍会保留");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory", "profile"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -872,7 +719,7 @@ function App() {
       await callMemory("hard-delete", { tombstone_id: tombstone.id, memory_id: tombstone.target_id, target_type: tombstone.target_type, delete_related: true });
       setSelected(null);
       setOk("目标记忆和相关 tombstone 记录已彻底删除");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -911,7 +758,7 @@ function App() {
       }
       setSelected(null);
       setSelectedTombstoneIds(new Set());
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory"], clearNotice: false });
       if (failures.length > 0) {
         setWarn(`已彻底删除 ${deletedCount} 条，跳过 ${skippedCount} 条，失败 ${failures.length} 条：${failures.slice(0, 2).join("；")}`);
       } else {
@@ -939,7 +786,7 @@ function App() {
     try {
       await callMemory("apply-dream-proposal", { proposal_id: proposalId });
       setOk("整理提案已应用");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["maintenance", "inventory", "profile"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -949,35 +796,33 @@ function App() {
     try {
       await callMemory("reject-dream-proposal", { proposal_id: proposalId, reason: proposalRejectReason.trim() || "operator_rejected" });
       setOk("整理提案已拒绝");
-      await refresh({ clearNotice: false });
+      await refresh({ parts: ["maintenance"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
 
-  const createPlanItem = async (target?: GoalCreateTarget) => {
+  const createPlanItem = async () => {
     const title = planForm.title.trim();
     if (!title) {
-      setWarn("请输入目标标题");
+      setWarn("请输入计划标题");
       return;
     }
-    const targetUid = target ? target.uid : uidFilter.trim() || null;
-    const targetScope = target?.scope || (targetUid ? `user:${targetUid}` : "global");
     setLoading(true);
     try {
       await callMemory("plan-create", {
-        kind: "goal",
+        kind: planForm.kind,
         title,
         detail: planForm.detail.trim(),
-        parent_id: null,
+        parent_id: planForm.parentId.trim() || null,
         priority: planForm.priority,
         due_at: datetimeLocalToUnix(planForm.dueAt),
-        uid: targetUid,
-        scope: targetUid ? undefined : targetScope,
+        uid: uidFilter.trim() || null,
+        scope: uidFilter.trim() ? undefined : "global",
         source: source.trim() || "webui"
       });
       setPlanForm(emptyPlanForm());
-      setOk("目标已创建");
-      await refresh({ clearNotice: false });
+      setOk("计划已创建");
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -989,8 +834,8 @@ function App() {
     setLoading(true);
     try {
       await callMemory("plan-complete", { plan_id: planId });
-      setOk("目标已完成");
-      await refresh({ clearNotice: false });
+      setOk("计划已完成");
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1002,8 +847,8 @@ function App() {
     setLoading(true);
     try {
       await callMemory("plan-cancel", { plan_id: planId, reason: "cancelled_from_webui" });
-      setOk("目标已取消");
-      await refresh({ clearNotice: false });
+      setOk("计划已取消");
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1015,8 +860,8 @@ function App() {
     setLoading(true);
     try {
       await callMemory("plan-archive", { plan_id: planId });
-      setOk("目标已归档");
-      await refresh({ clearNotice: false });
+      setOk("计划已归档");
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1028,8 +873,8 @@ function App() {
     setLoading(true);
     try {
       await callMemory("apply-plan-proposal", { proposal_id: proposalId });
-      setOk("候选目标已接受");
-      await refresh({ clearNotice: false });
+      setOk("计划提案已接受");
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1044,8 +889,8 @@ function App() {
         proposal_id: proposalId,
         reason: planRejectReason.trim() || "operator_rejected"
       });
-      setOk("候选目标已拒绝");
-      await refresh({ clearNotice: false });
+      setOk("计划提案已拒绝");
+      await refresh({ parts: ["plans"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -1081,6 +926,58 @@ function App() {
       setAutoDreamStatus(result);
       setAutoDreamForm(autoDreamFormFromStatus(result));
       setOk("自动 Dreaming 配置已保存。");
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
+  const saveEmbeddingConfig = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<EmbeddingConfigResult>("save-embedding-config", embeddingSavePayload(embeddingForm));
+      setEmbeddingConfig(result);
+      setEmbeddingForm(embeddingFormFromConfig(result));
+      await refresh({ parts: ["config"], clearNotice: false });
+      setOk("Embeddings 配置已保存。启用后 promote 会自动建索引。");
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
+  const reindexEmbeddings = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<EmbeddingStatusResult>("reindex-embeddings", {});
+      setEmbeddingStatus(result);
+      setOk(`索引已重建：本次新增 ${result.reindexed ?? 0} 条，共 ${result.indexed_count ?? 0}/${result.active_count ?? 0} 已索引。`);
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
+  const saveTuningConfig = async () => {
+    setLoading(true);
+    try {
+      const result = await callMemory<TuningConfigResult>("save-tuning-config", tuningSavePayload(tuningForm));
+      setTuningForm(tuningFormFromConfig(result));
+      setOk("调参已保存：新写入按新阈值评分，promote 默认置信度同步更新。");
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
+  const testProvider = async () => {
+    setLoading(true);
+    try {
+      const r = await callMemory<{ ok?: boolean; error?: string; latency_ms?: number; model?: string }>("test-provider", {});
+      if (r.ok) { setOk(`Provider 连通正常：${r.model ?? ""}（${r.latency_ms ?? "?"}ms）`); }
+      else { setWarn(`Provider 连接失败：${r.error ?? "unknown"}`); }
+    } catch (error) { setError(error); }
+    finally { setLoading(false); }
+  };
+
+  const testEmbedding = async () => {
+    setLoading(true);
+    try {
+      const r = await callMemory<{ ok?: boolean; error?: string; latency_ms?: number; dimensions?: number; model?: string }>("test-embedding", {});
+      if (r.ok) { setOk(`Embeddings 连通正常：${r.model ?? ""} · ${r.dimensions ?? "?"} 维（${r.latency_ms ?? "?"}ms）`); }
+      else { setWarn(`Embeddings 连接失败：${r.error ?? "unknown"}`); }
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -1154,15 +1051,16 @@ function App() {
           <div className="status-row">
             <StatusDot ok={serviceOk} />
             <strong>Service:</strong>
-            <span>{serviceOk ? "Running" : "Needs token / offline"}</span>
+            <span>{serviceOk ? "Running" : "服务离线"}</span>
           </div>
           <div className="divider" />
           <div className="endpoint">HTTP: {apiBase}</div>
-          <div className="divider" />
-          <div className={authed ? "auth-pill ok" : "auth-pill"}>
-            <Lock size={14} />
-            {authed ? "Token 已设置" : "未设置 Token"}
-          </div>
+          <button className="ghost-button icon-only" title={theme === "dark" ? "切换浅色" : "切换深色"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+          <button className="ghost-button icon-only" title="术语 / 帮助" onClick={() => setGlossaryOpen(true)}>
+            <BookOpen size={16} />
+          </button>
           <button className="ghost-button" onClick={() => refreshInventory()} disabled={loading}>
             {loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             Refresh
@@ -1181,15 +1079,29 @@ function App() {
           </button>
         </header>
 
-        {notice ? (
-          <div className={`notice ${notice.tone}`}>
-            <span>{notice.text}</span>
-            <button onClick={() => setNotice(null)}><X size={14} /></button>
+        {toasts.length ? (
+          <div className="toast-stack">
+            {toasts.map((toast) => (
+              <div className={`notice ${toast.tone}`} key={toast.id}>
+                <span>{toast.text}</span>
+                <button onClick={() => dismissToast(toast.id)}><X size={14} /></button>
+              </div>
+            ))}
           </div>
         ) : null}
 
         <section className={advancedMode ? "dashboard-grid advanced-layout" : "dashboard-grid workbench-layout"}>
           <div className="main-column">
+            {activeTab === "memories" && !searchMode && inventory.length === 0 && !onboardingDismissed ? (
+              <OnboardingChecklist
+                hasProvider={Boolean(providerConfig?.configured)}
+                onConfigure={() => setActiveTab("settings")}
+                onAddMemory={() => setComposerOpen(true)}
+                onRunDream={() => setActiveTab("maintenance")}
+                onPreview={() => setActiveTab("preview")}
+                onDismiss={() => { setOnboardingDismissed(true); localStorage.setItem("mnemo.onboardingDismissed", "true"); }}
+              />
+            ) : null}
             {/* L0 Profile Card */}
             {activeTab === "memories" && profile?.summary ? (
               <ProfileCard profile={profile} />
@@ -1219,6 +1131,19 @@ function App() {
                 <Pagination page={page} totalPages={totalPages} totalItems={activeItems.length} onPageChange={setPage} />
               </>
             ) : null}
+            {activeTab === "preview" ? (
+              <PreviewPanel
+                intent={previewIntent}
+                setIntent={setPreviewIntent}
+                scope={previewScope}
+                setScope={setPreviewScope}
+                context={previewContext}
+                recall={previewRecall}
+                loading={previewLoading}
+                uid={uidFilter.trim()}
+                onRun={runPreview}
+              />
+            ) : null}
             {activeTab === "plans" ? (
               <PlanPanel
                 items={planItems}
@@ -1235,6 +1160,7 @@ function App() {
                 onArchive={archivePlanItem}
                 onApplyProposal={applyPlanProposal}
                 onRejectProposal={rejectPlanProposal}
+                onViewScope={viewScopeMemories}
               />
             ) : null}
             {activeTab === "candidates" ? (
@@ -1285,17 +1211,26 @@ function App() {
                 onRejectProposal={rejectDreamProposal}
               />
             ) : null}
+            {activeTab === "maintenance" ? <MemoryMap graph={memoryGraph} /> : null}
             {activeTab === "settings" ? (
               <SettingsPanel
                 apiBase={apiBase} setApiBase={setApiBase}
-                authToken={authToken} setAuthToken={setAuthToken}
                 source={source} setSource={setSource}
                 useProvider={useProvider} setUseProvider={setUseProvider}
                 advancedDreaming={advancedDreaming} setAdvancedDreaming={setAdvancedDreaming}
                 providerConfig={providerConfig} providerForm={providerForm} setProviderForm={setProviderForm}
                 autoDreamStatus={autoDreamStatus} autoDreamForm={autoDreamForm} setAutoDreamForm={setAutoDreamForm}
+                embeddingConfig={embeddingConfig} embeddingForm={embeddingForm} setEmbeddingForm={setEmbeddingForm}
+                embeddingStatus={embeddingStatus}
+                tuningForm={tuningForm} setTuningForm={setTuningForm}
+                effectiveConfig={effectiveConfig}
                 onSaveProviderConfig={saveProviderConfig}
                 onSaveAutoDreamConfig={saveAutoDreamConfig}
+                onSaveEmbeddingConfig={saveEmbeddingConfig}
+                onReindexEmbeddings={reindexEmbeddings}
+                onSaveTuningConfig={saveTuningConfig}
+                onTestProvider={testProvider}
+                onTestEmbedding={testEmbedding}
                 loading={loading}
               />
             ) : null}
@@ -1312,10 +1247,12 @@ function App() {
               setTombstoneReason={setTombstoneReason}
               versions={versions}
               showVersions={showVersions}
+              relatedPlans={relatedPlans}
               onTombstone={() => curateSelected("tombstone")}
               onForget={() => curateSelected("forget")}
               onLoadVersions={loadVersions}
               onEdit={openEditor}
+              onOpenPlans={(scope) => { const c = (scope || "").trim(); setUidFilter(c.toLowerCase().startsWith("user:") ? c.slice(5) : ""); setActiveTab("plans"); }}
             />
           </aside>
 
@@ -1357,6 +1294,7 @@ function App() {
           onUpdate={stableUpdate}
           onClose={() => { setEditorOpen(false); setEditorItem(null); }}
         />
+        <GlossaryDrawer open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
       </main>
     </div>
   );
@@ -1388,6 +1326,160 @@ function ProfileCard({ profile }: { profile: L0Profile }) {
           <div key={i} className="profile-line">{line}</div>
         ))}
       </div>
+    </section>
+  );
+}
+
+// ─── Memory Preview (Agent View) ─────────────────────────────────────────────
+
+function PreviewPanel(props: {
+  intent: string;
+  setIntent: (v: string) => void;
+  scope: string;
+  setScope: (v: string) => void;
+  context: ContextPreviewResult | null;
+  recall: RecallPreviewResult | null;
+  loading: boolean;
+  uid: string;
+  onRun: () => void;
+}) {
+  const profileSummary = props.context?.profile?.summary || "";
+  const snapshot = props.context?.snapshot || null;
+  const cards = props.context?.cards || [];
+  const recallItems = props.recall?.items || [];
+  const pointers = snapshotPointers(snapshot);
+  const hubs = snapshotHubs(snapshot);
+  const tokenEstimate = estimateContextTokens(profileSummary, snapshot, cards);
+  return (
+    <section className="panel preview-panel">
+      <div className="panel-header">
+        <div>
+          <h2>记忆预览 · Agent 视角</h2>
+          <p>输入一个查询，查看 agent 实际会被注入的记忆上下文：L0 画像（每轮）+ L1 快照（默认）+ 召回卡片（按需）。</p>
+        </div>
+        <StatusBadge text={props.uid ? `用户 ${props.uid}` : "全部用户"} />
+      </div>
+      <div className="search-line">
+        <div className="input-with-icon">
+          <Eye size={18} />
+          <input value={props.intent} onChange={(e) => props.setIntent(e.target.value)}
+            placeholder="例如：用户偏好怎样的进度更新？（留空查看默认上下文）"
+            onKeyDown={(e) => { if (e.key === "Enter") props.onRun(); }} />
+        </div>
+        <label className="preview-scope">
+          范围
+          <select value={props.scope} onChange={(e) => props.setScope(e.target.value)}>
+            <option value="memory">记忆</option>
+            <option value="sessions">会话</option>
+            <option value="all">全部</option>
+          </select>
+        </label>
+        <button className="primary-button" onClick={props.onRun} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Eye size={16} />}
+          预览
+        </button>
+      </div>
+
+      {!props.context ? (
+        <EmptyState text="点击预览，查看 agent 在这个查询下会拿到什么记忆。" />
+      ) : (
+        <>
+          <div className="preview-token-strip">
+            <Gauge size={16} />
+            <span>预计注入</span>
+            <strong>≈ {tokenEstimate} tokens</strong>
+            <small>粗略估算；L0 每轮注入、L1 默认注入、卡片按需召回</small>
+          </div>
+
+          <div className="preview-layer">
+            <div className="preview-layer-head">
+              <span className="badge blue">L0 · 每轮注入</span>
+              <h3>记忆画像</h3>
+              <StatusBadge text={`${props.context.profile?.page_count || 0} 页`} />
+            </div>
+            {profileSummary ? (
+              <div className="profile-summary">
+                {profileSummary.split("\n").filter(Boolean).map((line, i) => (
+                  <div className="profile-line" key={i}>{line}</div>
+                ))}
+              </div>
+            ) : <EmptyState text="暂无画像。promote 一些稳定记忆后会自动蒸馏。" />}
+          </div>
+
+          <div className="preview-layer">
+            <div className="preview-layer-head">
+              <span className="badge good">L1 · 默认注入</span>
+              <h3>快照路标</h3>
+              <StatusBadge text={`${pointers.length} pointers · ${hubs.length} hubs`} />
+            </div>
+            {pointers.length === 0 && hubs.length === 0 ? (
+              <EmptyState text="快照为空。运行一次 Dream 或刷新快照后生成。" />
+            ) : (
+              <div className="preview-pointer-list">
+                {pointers.slice(0, 12).map((p, i) => (
+                  <div className="preview-pointer" key={i}>
+                    <code>{p.trigger || "—"}</code>
+                    <ChevronRight size={13} />
+                    <span>{p.title || p.target}</span>
+                  </div>
+                ))}
+                {hubs.length > 0 ? <div className="preview-hubs">联想热点：{hubs.slice(0, 8).join("、")}</div> : null}
+              </div>
+            )}
+          </div>
+
+          <div className="preview-layer">
+            <div className="preview-layer-head">
+              <span className="badge neutral">L2 · 按需召回</span>
+              <h3>上下文卡片</h3>
+              <StatusBadge text={`${cards.length} cards`} />
+            </div>
+            {cards.length === 0 ? (
+              <EmptyState text="没有命中上下文卡片。换个查询，或先写入/promote 相关记忆。" />
+            ) : (
+              <div className="preview-card-list">
+                {cards.map((card, i) => (
+                  <article className="preview-card" key={card.id || i}>
+                    <div className="preview-card-head">
+                      <strong>{card.title || card.claim || card.id}</strong>
+                      {isSemanticHit(card) ? <span className="badge semantic" title="命中向量/语义召回">语义</span> : null}
+                      <StatusBadge text={previewCardType(card)} />
+                    </div>
+                    <p>{card.content || card.claim || "-"}</p>
+                    <small>{[card.dimension, card.scope, typeof card.confidence === "number" ? `conf ${card.confidence.toFixed(2)}` : ""].filter(Boolean).join(" · ")}</small>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {recallItems.length > 0 ? (
+            <div className="preview-layer">
+              <div className="preview-layer-head">
+                <span className="badge">recall</span>
+                <h3>联想召回</h3>
+                <StatusBadge text={`${recallItems.length} items`} />
+              </div>
+              <div className="preview-card-list">
+                {recallItems.slice(0, 8).map((item, i) => {
+                  const it = item as ContextCardItem;
+                  return (
+                    <article className="preview-card" key={it.id || i}>
+                      <div className="preview-card-head">
+                        <strong>{it.title || it.claim || it.id}</strong>
+                        {isSemanticHit(it) ? <span className="badge semantic" title="命中向量/语义召回">语义</span> : null}
+                        <StatusBadge text={previewCardType(it)} />
+                      </div>
+                      <p>{it.content || it.claim || "-"}</p>
+                      <small>{[it.dimension, it.scope].filter(Boolean).join(" · ")}</small>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
     </section>
   );
 }
@@ -1462,8 +1554,8 @@ function SearchPanel(props: {
           </select>
         </label>
         <label>
-          UID
-          <input value={props.uidFilter} onChange={(e) => props.setUidFilter(e.target.value)} placeholder="user_123 或 user:user_123" />
+          当前用户 (UID)
+          <input value={props.uidFilter} onChange={(e) => props.setUidFilter(e.target.value)} placeholder="user_123 · 限定写入/搜索/预览/召回，留空=全部" />
         </label>
       </div>
     </section>
@@ -1554,10 +1646,12 @@ function MemoryDetail(props: {
   setTombstoneReason: (v: string) => void;
   versions: PageVersion[];
   showVersions: boolean;
+  relatedPlans: PlanItem[];
   onTombstone: () => void;
   onForget: () => void;
   onLoadVersions: (id: string) => void;
   onEdit: (item: MemoryItem) => void;
+  onOpenPlans: (scope?: string) => void;
 }) {
   const item = props.selected;
   const review = item ? reviewForItem(item, dreamReviewResultMap(props.dreamStatus)) : undefined;
@@ -1584,6 +1678,21 @@ function MemoryDetail(props: {
             <label>更新时间</label><strong>{formatDate(item.updated_at || item.created_at)}</strong>
           </div>
           <div className="content-box">{item.content || item.claim || item.title || "-"}</div>
+          {props.relatedPlans.length > 0 ? (
+            <div className="related-plans">
+              <div className="related-plans-head">
+                <h3>相关计划</h3>
+                <button className="ghost-button" onClick={() => props.onOpenPlans(item.scope)}>在计划查看<ChevronRight size={14} /></button>
+              </div>
+              {props.relatedPlans.map((plan) => (
+                <div className="related-plan-row" key={plan.id}>
+                  <StatusBadge text={plan.kind || "todo"} />
+                  <StatusBadge text={plan.status || "open"} />
+                  <span>{plan.title}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <ProvenanceTimeline provenance={props.provenance} />
           <div className="detail-actions">
             <button className="ghost-button" onClick={() => navigator.clipboard?.writeText(item.content || item.claim || item.title || item.id)}>
@@ -1611,8 +1720,9 @@ function MemoryDetail(props: {
             <>
               <AuditDetail item={item} review={review} />
               <SourceIds item={item} />
-              <JsonBlock title="Metadata / Evidence" value={item.metadata || item.evidence || {}} />
-              <JsonBlock title="Links" value={props.links || { outgoing: [], incoming: [] }} />
+              <KeyValueGrid title="Metadata" value={item.metadata || {}} />
+              {Array.isArray(item.evidence) && item.evidence.length > 0 ? <DeveloperJson title="Evidence" value={item.evidence} /> : null}
+              <LinksView links={props.links} />
               <div className="danger-actions">
                 <input value={props.tombstoneReason} onChange={(e) => props.setTombstoneReason(e.target.value)} placeholder="tombstone reason" />
                 <button className="danger-button" onClick={props.onTombstone}>
@@ -2130,30 +2240,17 @@ function PlanPanel(props: {
   setRejectReason: (value: string) => void;
   uidFilter: string;
   loading: boolean;
-  onCreate: (target: GoalCreateTarget) => void;
+  onCreate: () => void;
   onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onArchive: (id: string) => void;
   onApplyProposal: (id: string) => void;
   onRejectProposal: (id: string) => void;
+  onViewScope: (scope?: string) => void;
 }) {
-  const userGroups = useMemo(
-    () => buildGoalUserGroups(props.items, props.proposals, props.uidFilter),
-    [props.items, props.proposals, props.uidFilter]
-  );
-  const [selectedUserKey, setSelectedUserKey] = useState("");
-  useEffect(() => {
-    if (userGroups.length === 0) {
-      if (selectedUserKey) {
-        setSelectedUserKey("");
-      }
-      return;
-    }
-    if (!userGroups.some((group) => group.key === selectedUserKey)) {
-      setSelectedUserKey(userGroups[0].key);
-    }
-  }, [selectedUserKey, userGroups]);
-  const selectedGroup = userGroups.find((group) => group.key === selectedUserKey) || userGroups[0];
+  const goals = props.items.filter((item) => item.kind === "goal");
+  const todos = props.items.filter((item) => item.kind === "todo");
+  const parentGoals = goals.filter((goal) => !["completed", "cancelled", "archived"].includes(String(goal.status || "")));
   const setField = <K extends keyof PlanFormState>(field: K, value: PlanFormState[K]) => {
     props.setForm({ ...props.form, [field]: value });
   };
@@ -2161,125 +2258,112 @@ function PlanPanel(props: {
     <section className="panel plan-panel">
       <div className="panel-header">
         <div>
-          <h2>目标</h2>
-          <p>以用户为主线查看接下来想完成的事情；点开用户后查看他的多个目标。</p>
+          <h2>计划</h2>
+          <p>Goal 和 Todo 使用同一套计划项；自动抽取会先进入候选计划。</p>
         </div>
         <StatusBadge text={props.uidFilter.trim() ? `UID ${props.uidFilter.trim()}` : "global"} />
       </div>
-      <div className="goal-user-workspace">
-        <aside className="goal-user-list">
-          <div className="goal-user-list-header">
-            <h3>用户</h3>
-            <StatusBadge text={`${userGroups.length} users`} />
-          </div>
-          <div className="goal-user-rows">
-            {userGroups.map((group) => (
-              <button
-                className={group.key === selectedGroup.key ? "goal-user-row active" : "goal-user-row"}
-                key={group.key}
-                onClick={() => setSelectedUserKey(group.key)}
-                title={group.scope}
-              >
-                <span className="goal-user-main">
-                  <strong>{group.label}</strong>
-                  <span>{group.openCount}/{group.items.length}</span>
-                </span>
-                <small>{group.scope}</small>
-                <span className="goal-user-counts">
-                  <StatusBadge text={`${group.items.length} goals`} />
-                  {group.pendingCount > 0 ? <StatusBadge text={`${group.pendingCount} pending`} /> : null}
-                </span>
-              </button>
+      <div className="plan-composer">
+        <label>
+          类型
+          <select value={props.form.kind} onChange={(event) => setField("kind", event.target.value as "goal" | "todo")}>
+            <option value="goal">Goal</option>
+            <option value="todo">Todo</option>
+          </select>
+        </label>
+        <label className="plan-title-field">
+          标题
+          <input value={props.form.title} onChange={(event) => setField("title", event.target.value)} placeholder="例如：完成 Mnemo 计划模块" />
+        </label>
+        <label>
+          优先级
+          <select value={props.form.priority} onChange={(event) => setField("priority", event.target.value as "low" | "normal" | "high")}>
+            <option value="low">low</option>
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+          </select>
+        </label>
+        <label>
+          截止时间
+          <input type="datetime-local" value={props.form.dueAt} onChange={(event) => setField("dueAt", event.target.value)} />
+        </label>
+        <label>
+          父 Goal
+          <select value={props.form.parentId} onChange={(event) => setField("parentId", event.target.value)} disabled={props.form.kind === "goal"}>
+            <option value="">无</option>
+            {parentGoals.map((goal) => (
+              <option value={goal.id} key={goal.id}>{goal.title}</option>
             ))}
+          </select>
+        </label>
+        <label className="plan-detail-field">
+          详情
+          <textarea value={props.form.detail} onChange={(event) => setField("detail", event.target.value)} placeholder="补充范围、验收点或上下文" />
+        </label>
+        <button className="primary-button" onClick={props.onCreate} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
+          新增计划
+        </button>
+      </div>
+      <div className="plan-sections">
+        <PlanSection
+          title="Goals"
+          items={goals}
+          emptyText="暂无 goal。"
+          onComplete={props.onComplete}
+          onCancel={props.onCancel}
+          onArchive={props.onArchive}
+          onViewScope={props.onViewScope}
+        />
+        <PlanSection
+          title="Todos"
+          items={todos}
+          emptyText="暂无 todo。"
+          goals={goals}
+          onComplete={props.onComplete}
+          onCancel={props.onCancel}
+          onArchive={props.onArchive}
+          onViewScope={props.onViewScope}
+        />
+      </div>
+      <div className="plan-proposals">
+        <div className="plan-proposals-header">
+          <div>
+            <h3>候选计划</h3>
+            <p>来自事件摄入或模型抽取，接受后才会进入正式计划。</p>
           </div>
-        </aside>
-        <div className="goal-user-detail">
-          <div className="goal-user-detail-header">
-            <div>
-              <h3>{selectedGroup.label} 的目标</h3>
-              <p>{selectedGroup.scope}</p>
-            </div>
-            <div className="goal-user-detail-badges">
-              <StatusBadge text={`${selectedGroup.items.length} goals`} />
-              <StatusBadge text={`${selectedGroup.pendingCount} pending`} />
-            </div>
-          </div>
-          <div className="plan-composer">
-            <label className="plan-title-field">
-              标题
-              <input value={props.form.title} onChange={(event) => setField("title", event.target.value)} placeholder={`例如：${selectedGroup.label} 想完成的目标`} />
-            </label>
-            <label>
-              优先级
-              <select value={props.form.priority} onChange={(event) => setField("priority", event.target.value as "low" | "normal" | "high")}>
-                <option value="low">low</option>
-                <option value="normal">normal</option>
-                <option value="high">high</option>
-              </select>
-            </label>
-            <label>
-              截止时间
-              <input type="datetime-local" value={props.form.dueAt} onChange={(event) => setField("dueAt", event.target.value)} />
-            </label>
-            <label className="plan-detail-field">
-              详情
-              <textarea value={props.form.detail} onChange={(event) => setField("detail", event.target.value)} placeholder="补充范围、验收点或上下文" />
-            </label>
-            <button className="primary-button" onClick={() => props.onCreate(selectedGroup)} disabled={props.loading}>
-              {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
-              新增目标
-            </button>
-          </div>
-          <div className="plan-sections">
-            <PlanSection
-              title="目标"
-              items={selectedGroup.items}
-              emptyText="这个用户暂无目标。"
-              goalItems={selectedGroup.items}
-              onComplete={props.onComplete}
-              onCancel={props.onCancel}
-              onArchive={props.onArchive}
-            />
-          </div>
-          <div className="plan-proposals">
-            <div className="plan-proposals-header">
+          <StatusBadge text={`${props.proposals.length} pending`} />
+        </div>
+        <label>
+          拒绝原因
+          <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
+        </label>
+        <div className="plan-proposal-list">
+          {props.proposals.length === 0 ? <EmptyState text="暂无候选计划。" /> : null}
+          {props.proposals.map((proposal) => (
+            <article className="plan-proposal-card" key={proposal.id}>
               <div>
-                <h3>候选目标</h3>
-                <p>来自事件摄入或模型抽取，接受后才会进入这个用户的目标列表。</p>
+                <div className="plan-row-title">
+                  <StatusBadge text={proposal.kind || "todo"} />
+                  <StatusBadge text={proposal.priority || "normal"} />
+                  <strong>{proposal.title || proposal.id}</strong>
+                </div>
+                <p>{proposal.detail || proposal.reason || "没有附带详情。"}</p>
+                <small>{proposal.scope || "global"} · {formatConfidence(proposal.confidence)} · {formatDate(proposal.created_at)}</small>
+                <code>{proposal.id}</code>
               </div>
-              <StatusBadge text={`${selectedGroup.proposals.length} pending`} />
-            </div>
-            <label>
-              拒绝原因
-              <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
-            </label>
-            <div className="plan-proposal-list">
-              {selectedGroup.proposals.length === 0 ? <EmptyState text="这个用户暂无候选目标。" /> : null}
-              {selectedGroup.proposals.map((proposal) => (
-                <article className="plan-proposal-card" key={proposal.id}>
-                  <div>
-                    <div className="plan-row-title">
-                      <StatusBadge text={proposal.priority || "normal"} />
-                      <strong>{proposal.title || proposal.id}</strong>
-                    </div>
-                    <p>{proposal.detail || proposal.reason || "没有附带详情。"}</p>
-                    <small>{proposal.scope || "global"} · {formatConfidence(proposal.confidence)} · {formatDate(proposal.created_at)}</small>
-                    <code>{proposal.id}</code>
-                  </div>
-                  <div className="plan-actions">
-                    <button className="success-button" disabled={props.loading} onClick={() => props.onApplyProposal(proposal.id)}>
-                      <Check size={15} />
-                      接受为目标
-                    </button>
-                    <button className="danger-button" disabled={props.loading} onClick={() => props.onRejectProposal(proposal.id)}>
-                      <X size={15} />
-                      拒绝
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
+              <div className="plan-actions">
+                <button className="success-button" disabled={props.loading} onClick={() => props.onApplyProposal(proposal.id)}>
+                  <Check size={15} />
+                  接受
+                </button>
+                <button className="danger-button" disabled={props.loading} onClick={() => props.onRejectProposal(proposal.id)}>
+                  <X size={15} />
+                  拒绝
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
     </section>
@@ -2289,11 +2373,12 @@ function PlanPanel(props: {
 function PlanSection(props: {
   title: string;
   items: PlanItem[];
-  goalItems?: PlanItem[];
+  goals?: PlanItem[];
   emptyText: string;
   onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onArchive: (id: string) => void;
+  onViewScope: (scope?: string) => void;
 }) {
   return (
     <div className="plan-section">
@@ -2313,8 +2398,8 @@ function PlanSection(props: {
               </div>
               {item.detail ? <p>{item.detail}</p> : null}
               <div className="plan-meta">
-                <span>{item.scope || "global"}</span>
-                {item.parent_id ? <span>关联目标：{planTitleById(props.goalItems || [], item.parent_id)}</span> : null}
+                <button className="link-button" onClick={() => props.onViewScope(item.scope)} title="查看该 scope 的记忆">{item.scope || "global"}</button>
+                {item.parent_id ? <span>父级：{planTitleById(props.goals || [], item.parent_id)}</span> : null}
                 {item.due_at ? <span>截止：{formatDate(item.due_at)}</span> : null}
                 <code>{item.id}</code>
               </div>
@@ -2390,7 +2475,7 @@ function TombstonePanel(props: {
                 {t.evidence_run_id ? <code>{t.evidence_run_id}</code> : null}
                 {t.rule ? <span>{t.rule}</span> : null}
               </div>
-              <JsonBlock title="Metadata" value={t.metadata || {}} />
+              <KeyValueGrid title="Metadata" value={t.metadata || {}} />
             </div>
             <div className="tombstone-actions">
               <button className="ghost-button" onClick={() => props.onSelectTarget(tombstoneTargetItem(t))} disabled={props.loading}>
@@ -2439,6 +2524,15 @@ function MaintenancePanel(props: {
         </div>
       </div>
       <DreamTiming elapsedS={props.dreamElapsedS} latestDurationS={latestDurationS} />
+      {props.dreamElapsedS !== null ? (
+        <div className="dream-running-backlog">
+          <Loader2 className="spin" size={14} />
+          <span>处理中</span>
+          {dreamBacklogParts(props.dreamStatus).length === 0
+            ? <StatusBadge text="收尾中" />
+            : dreamBacklogParts(props.dreamStatus).map((part) => <StatusBadge key={part.label} text={`${part.label} ${part.count}`} />)}
+        </div>
+      ) : null}
       <div className="dream-mode-strip">
         <StatusBadge text={props.useProvider ? "模型审核开启" : "模型审核关闭"} />
         <StatusBadge text={props.advancedDreaming ? "高级 Dreaming 开启" : "普通 Dreaming"} />
@@ -2453,10 +2547,10 @@ function MaintenancePanel(props: {
             onApply={props.onApplyProposal} onReject={props.onRejectProposal}
           />
           <div className="maintenance-grid">
-            <JsonBlock title="Health" value={props.health || {}} />
-            <JsonBlock title="Dream Status" value={props.dreamStatus || {}} />
-            <JsonBlock title="Snapshot" value={props.snapshot || {}} />
-            <JsonBlock title="Tombstones" value={props.tombstones} />
+            <HealthView health={props.health} />
+            <SnapshotView snapshot={props.snapshot} />
+            <DeveloperJson title="Dream Status" value={props.dreamStatus || {}} />
+            <DeveloperJson title="Tombstones" value={props.tombstones} />
           </div>
         </>
       ) : (
@@ -2569,7 +2663,6 @@ function DreamReviewReasons({ items }: { items: DreamReviewResult[] }) {
 
 function SettingsPanel(props: {
   apiBase: string; setApiBase: (v: string) => void;
-  authToken: string; setAuthToken: (v: string) => void;
   source: string; setSource: (v: string) => void;
   useProvider: boolean; setUseProvider: (v: boolean) => void;
   advancedDreaming: boolean; setAdvancedDreaming: (v: boolean) => void;
@@ -2577,20 +2670,49 @@ function SettingsPanel(props: {
   providerForm: ProviderFormState; setProviderForm: (v: ProviderFormState) => void;
   autoDreamStatus: AutoDreamStatusResult | null;
   autoDreamForm: AutoDreamFormState; setAutoDreamForm: (v: AutoDreamFormState) => void;
-  onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void; loading: boolean;
+  embeddingConfig: EmbeddingConfigResult | null;
+  embeddingForm: EmbeddingFormState; setEmbeddingForm: (v: EmbeddingFormState) => void;
+  embeddingStatus: EmbeddingStatusResult | null;
+  tuningForm: TuningFormState; setTuningForm: (v: TuningFormState) => void;
+  effectiveConfig: EffectiveConfigResult | null;
+  onSaveProviderConfig: () => void; onSaveAutoDreamConfig: () => void;
+  onSaveEmbeddingConfig: () => void; onReindexEmbeddings: () => void;
+  onSaveTuningConfig: () => void;
+  onTestProvider: () => void; onTestEmbedding: () => void; loading: boolean;
 }) {
+  const setTuningField = <K extends keyof TuningFormState>(field: K, value: TuningFormState[K]) => {
+    props.setTuningForm({ ...props.tuningForm, [field]: value });
+  };
   const setProviderField = <K extends keyof ProviderFormState>(field: K, value: ProviderFormState[K]) => {
     props.setProviderForm({ ...props.providerForm, [field]: value });
   };
   const setAutoDreamField = <K extends keyof AutoDreamFormState>(field: K, value: AutoDreamFormState[K]) => {
     props.setAutoDreamForm({ ...props.autoDreamForm, [field]: value });
   };
+  const setEmbeddingField = <K extends keyof EmbeddingFormState>(field: K, value: EmbeddingFormState[K]) => {
+    props.setEmbeddingForm({ ...props.embeddingForm, [field]: value });
+  };
   return (
     <section className="panel settings-panel">
-      <div className="panel-header"><div><h2>设置</h2><p>本地 API、Bearer token 和维护模型配置。</p></div><ShieldCheck size={22} /></div>
+      <div className="panel-header"><div><h2>设置</h2><p>本地 API、Source 和维护模型配置。</p></div><ShieldCheck size={22} /></div>
       <label>API Base <input value={props.apiBase} onChange={(e) => props.setApiBase(e.target.value)} /></label>
-      <label>Bearer Token <input value={props.authToken} onChange={(e) => props.setAuthToken(e.target.value)} placeholder="mnemo-memory serve --auth-token ..." /></label>
       <label>默认 Source <input value={props.source} onChange={(e) => props.setSource(e.target.value)} /></label>
+      <div className="settings-hint">HTTP API 默认绑定 127.0.0.1 且不做鉴权，请仅在可信本地网络使用，不要把端口暴露到公网。</div>
+      {props.effectiveConfig?.rows?.length ? (
+        <details className="effective-config">
+          <summary>生效配置 / 来源（{props.effectiveConfig.rows.length} 项）</summary>
+          <div className="eff-grid">
+            <div className="eff-head"><span>来源：config.json &gt; env/.env &gt; 默认</span><code>{props.effectiveConfig.config_path || "无 config.json"}</code></div>
+            {props.effectiveConfig.rows.map((row) => (
+              <div className="eff-row" key={row.field}>
+                <span className="kv-key">{row.field}</span>
+                <span className="kv-val">{row.value}</span>
+                <span className={`eff-source ${row.source === "config.json" ? "from-file" : row.source.includes("env") ? "from-env" : "from-default"}`}>{row.source}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
       <div className="provider-status-row">
         <StatusBadge text={providerStatusText(props.providerConfig)} />
         <code>{props.providerConfig?.save_path || "config.json"}</code>
@@ -2619,7 +2741,9 @@ function SettingsPanel(props: {
         <button className="primary-button" onClick={props.onSaveProviderConfig} disabled={props.loading}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存 Provider
         </button>
-        <button className="ghost-button" onClick={() => props.setAuthToken("")}><X size={15} /> 清除 Token</button>
+        <button className="ghost-button" onClick={props.onTestProvider} disabled={props.loading}>
+          <Activity size={15} /> 测试连接
+        </button>
       </div>
       <div className="settings-divider" />
       <div className="settings-section-header">
@@ -2632,7 +2756,11 @@ function SettingsPanel(props: {
       </div>
       <label className="checkbox-row">
         <input type="checkbox" checked={props.autoDreamForm.enabled} onChange={(e) => setAutoDreamField("enabled", e.target.checked)} />
-        <span><strong>启用自动 Dreaming</strong><small>仅在有 backlog 且 provider 已配置时调用模型维护。</small></span>
+        <span><strong>启用自动 Dreaming</strong><small>有 backlog 时自动整理；默认仅在 provider 已配置时调用模型维护。</small></span>
+      </label>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={props.autoDreamForm.localFallback} onChange={(e) => setAutoDreamField("localFallback", e.target.checked)} />
+        <span><strong>本地确定性整理（无需模型）</strong><small>未配置 provider 时也自动跑确定性维护：高置信 promote、去重、低质拒绝、自动建链；冲突等高风险动作仍留给人工或模型。</small></span>
       </label>
       <div className="provider-grid">
         <label>间隔分钟 <input type="number" min="5" step="5" value={props.autoDreamForm.intervalMinutes} onChange={(e) => setAutoDreamField("intervalMinutes", e.target.value)} /></label>
@@ -2646,6 +2774,49 @@ function SettingsPanel(props: {
       <div className="settings-actions">
         <button className="primary-button" onClick={props.onSaveAutoDreamConfig} disabled={props.loading}>
           {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存自动 Dreaming
+        </button>
+      </div>
+      <div className="settings-divider" />
+      <div className="settings-section-header">
+        <div><h3>语义检索 / Embeddings</h3><p>独立的 embeddings 端点；启用后 promote 会自动建索引，召回融合向量路由。默认关。</p></div>
+        <StatusBadge text={embeddingStatusText(props.embeddingStatus)} />
+      </div>
+      <label className="checkbox-row">
+        <input type="checkbox" checked={props.embeddingForm.enabled} onChange={(e) => setEmbeddingField("enabled", e.target.checked)} />
+        <span><strong>启用语义检索</strong><small>关闭时只走 SQLite 关键词召回；开启需配置下方独立端点。</small></span>
+      </label>
+      <div className="provider-grid">
+        <label>Base URL <input value={props.embeddingForm.baseUrl} onChange={(e) => setEmbeddingField("baseUrl", e.target.value)} placeholder="https://api.openai.com/v1" /></label>
+        <label>Model <input value={props.embeddingForm.model} onChange={(e) => setEmbeddingField("model", e.target.value)} placeholder="text-embedding-3-small" /></label>
+        <label>API Key <input type="password" autoComplete="off" value={props.embeddingForm.apiKey} onChange={(e) => setEmbeddingField("apiKey", e.target.value)} placeholder={props.embeddingConfig?.api_key_configured ? "已保存；留空保持不变" : "sk-..."} /></label>
+        <label>API Key Env <input value={props.embeddingForm.apiKeyEnv} onChange={(e) => setEmbeddingField("apiKeyEnv", e.target.value)} placeholder="OPENAI_API_KEY" /></label>
+        <label>已索引 <input readOnly value={`${props.embeddingStatus?.indexed_count ?? 0} / ${props.embeddingStatus?.active_count ?? 0}`} /></label>
+        <label>待索引 <input readOnly value={String(props.embeddingStatus?.stale_count ?? 0)} /></label>
+      </div>
+      <div className="settings-actions">
+        <button className="primary-button" onClick={props.onSaveEmbeddingConfig} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存 Embeddings
+        </button>
+        <button className="ghost-button" onClick={props.onTestEmbedding} disabled={props.loading}>
+          <Activity size={15} /> 测试连接
+        </button>
+        <button className="ghost-button" onClick={props.onReindexEmbeddings} disabled={props.loading || !props.embeddingStatus?.configured}>
+          <RefreshCcw size={15} /> 重建索引
+        </button>
+      </div>
+      <div className="settings-divider" />
+      <div className="settings-section-header">
+        <div><h3>调参 / 审核阈值</h3><p>调整 promote 门的松紧；建议配合 <code>scripts/eval_model.py</code> 或 eval 测试观察影响。新写入按新阈值评分。</p></div>
+      </div>
+      <div className="provider-grid">
+        <label>质量写入阈值 <input type="number" min="0" max="1" step="0.01" value={props.tuningForm.writeThreshold} onChange={(e) => setTuningField("writeThreshold", e.target.value)} /></label>
+        <label>质量草稿阈值 <input type="number" min="0" max="1" step="0.01" value={props.tuningForm.draftThreshold} onChange={(e) => setTuningField("draftThreshold", e.target.value)} /></label>
+        <label>Promote 默认置信度 <input type="number" min="0" max="1" step="0.05" value={props.tuningForm.minConfidence} onChange={(e) => setTuningField("minConfidence", e.target.value)} /></label>
+      </div>
+      <div className="settings-hint">≥ 写入阈值推荐进稳定记忆；草稿阈值~写入阈值之间留候选复核；低于草稿阈值视为可丢弃。Promote 默认置信度是手动 promote 未显式传参时的门槛。</div>
+      <div className="settings-actions">
+        <button className="primary-button" onClick={props.onSaveTuningConfig} disabled={props.loading}>
+          {props.loading ? <Loader2 className="spin" size={16} /> : <Check size={16} />} 保存调参
         </button>
       </div>
     </section>
@@ -2679,7 +2850,7 @@ function OperationsQueue(props: {
       </section>
       <section className="panel ops-panel">
         <div className="panel-header compact"><h2>Dream Run</h2><Sparkles size={18} /></div>
-        <JsonBlock title="Status" value={props.dreamStatus || {}} />
+        <DeveloperJson title="Status" value={props.dreamStatus || {}} />
         <button className="primary-button full" onClick={props.onRunDream} disabled={props.loading}>
           {props.dreamElapsedS !== null ? <Loader2 className="spin" size={16} /> : <Play size={16} />}
           {props.dreamElapsedS !== null ? `Running ${formatDuration(props.dreamElapsedS)}` : props.useProvider ? "Run Model" : "Run Now"}
@@ -2687,360 +2858,10 @@ function OperationsQueue(props: {
       </section>
       <section className="panel ops-panel">
         <div className="panel-header compact"><h2>Snapshot</h2><StatusBadge text={props.snapshot?.exists ? "OK" : "Missing"} /></div>
-        <JsonBlock title="Latest" value={props.snapshot || { exists: false }} />
+        <SnapshotView snapshot={props.snapshot} />
       </section>
     </div>
   );
-}
-
-// ─── Shared Components ───────────────────────────────────────────────────────
-
-function JsonBlock({ title, value }: { title: string; value: unknown }) {
-  return (
-    <div className="json-block">
-      <div><span>{title}</span><button onClick={() => navigator.clipboard?.writeText(JSON.stringify(value, null, 2))}><Link2 size={13} /></button></div>
-      <pre>{JSON.stringify(value, null, 2)}</pre>
-    </div>
-  );
-}
-
-function StatusBadge({ text }: { text: string }) {
-  const n = text.toLowerCase();
-  const tone = n.includes("active") || n.includes("ok") || n.includes("page") ? "good"
-    : n.includes("draft") || n.includes("candidate") ? "blue"
-    : n.includes("reject") || n.includes("tomb") || n.includes("delete") ? "bad"
-    : n.includes("conflict") ? "warn"
-    : "neutral";
-  return <span className={`badge ${tone}`} title={text}>{compactStatusText(text)}</span>;
-}
-
-function compactStatusText(text: string) {
-  const clean = text.trim();
-  const sep = clean.indexOf(":");
-  return sep > 0 ? clean.slice(0, sep) : clean;
-}
-
-function StatusDot({ ok }: { ok: boolean }) { return <span className={ok ? "dot ok" : "dot"} />; }
-function EmptyState({ text }: { text: string }) { return <div className="empty-state">{text}</div>; }
-
-// ─── Utilities ───────────────────────────────────────────────────────────────
-
-function searchMatchToItem(match: Record<string, unknown>): MemoryItem | null {
-  const rawType = String(match.type || match.item_type || "page");
-  if (rawType.includes("plan")) {
-    return null;
-  }
-  const type = rawType.includes("candidate") ? "candidate" : "page";
-  return { ...(match as MemoryItem), type, id: String(match.id || match.memory_id || ""), title: String(match.title || match.claim || ""), content: String(match.content || match.claim || match.summary || "") };
-}
-
-function itemMatchesQuery(item: MemoryItem, query: string) {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return true;
-  const haystack = [item.id, item.type, item.status, item.claim, item.title, item.content, item.scope, item.dimension, item.run_id, item.source_candidate_id].filter(Boolean).join(" ").toLowerCase();
-  return terms.every((t) => haystack.includes(t));
-}
-
-function compareMemoryItems(left: MemoryItem, right: MemoryItem) {
-  const typeRank = (item: MemoryItem) => (item.type === "page" ? 0 : 1);
-  const lr = typeRank(left), rr = typeRank(right);
-  if (lr !== rr) return lr - rr;
-  return (right.updated_at || right.created_at || 0) - (left.updated_at || left.created_at || 0);
-}
-
-function scopeFromUidFilter(uid: string) {
-  const clean = uid.trim();
-  if (!clean) return "";
-  return clean.toLowerCase().startsWith("user:") ? clean : `user:${clean}`;
-}
-
-function memoryFactPayload(claim: string, scope: string) {
-  return scope ? { claim, scope, confidence: 0.9 } : { claim, confidence: 0.9 };
-}
-
-function memoryObservationPayload(content: string, scope: string) {
-  return scope ? { content, retention: "memory_candidate", scope } : content;
-}
-
-function tombstoneTargetItem(t: MemoryTombstone): MemoryItem {
-  return { id: t.target_id, type: t.target_type, status: `tombstoned:${t.reason || "unknown"}`, title: t.summary || t.reason || t.target_id, content: t.summary || "", updated_at: t.created_at };
-}
-
-function itemTitle(item: MemoryItem) { return item.title || item.claim || item.content || item.id; }
-function formatConfidence(value?: number) { if (typeof value !== "number") return "-"; return value.toFixed(2); }
-
-function formatTime(value?: number) {
-  if (!value) return "-";
-  const diff = Date.now() - value * 1000;
-  const minute = 60 * 1000, hour = 60 * minute, day = 24 * hour;
-  if (diff < hour) return `${Math.max(1, Math.round(diff / minute))}m`;
-  if (diff < day) return `${Math.round(diff / hour)}h`;
-  return `${Math.round(diff / day)}d`;
-}
-
-function formatDate(value?: number) {
-  if (!value) return "-";
-  return new Date(value * 1000).toLocaleString("zh-CN");
-}
-
-function compactId(value?: string) {
-  if (!value) return "";
-  return value.length > 24 ? `${value.slice(0, 21)}...` : value;
-}
-
-function dreamReviewResultMap(status: DreamStatusResult | null) {
-  const map = new Map<string, DreamReviewResult>();
-  for (const result of normalizeDreamReviewResults(status?.latest?.execution?.review_results)) {
-    for (const key of [result.candidate_id, result.page_id]) {
-      if (key && !map.has(key)) map.set(key, result);
-    }
-  }
-  return map;
-}
-
-function normalizeDreamReviewResults(items: unknown) {
-  if (!Array.isArray(items)) return [];
-  return items.filter((item): item is DreamReviewResult => {
-    if (!item || typeof item !== "object") return false;
-    const r = item as DreamReviewResult;
-    return Boolean(r.candidate_id || r.page_id) && Boolean(r.decision || r.status || r.reason);
-  }).slice(0, 20);
-}
-
-function reviewForItem(item: MemoryItem, results: Map<string, DreamReviewResult>) {
-  return results.get(item.id) || (item.source_candidate_id ? results.get(item.source_candidate_id) : undefined);
-}
-
-function auditResultForItem(item: MemoryItem, review?: DreamReviewResult) {
-  if (review) return auditResultFromDreamReview(review);
-  const status = String(item.status || "").trim();
-  const n = status.toLowerCase();
-  if (n === "promoted") return auditResult("审核通过", "候选已进入稳定记忆", "good");
-  if (n === "draft") return auditResult("待审核", "等待模型或人工审核", "blue");
-  if (n.startsWith("rejected")) return auditResult("审核拒绝", statusReason(status), "bad");
-  if (n.startsWith("needs_review")) return auditResult("待复核", statusReason(status), "warn");
-  if (n.startsWith("skipped")) return auditResult("已跳过", statusReason(status), "neutral");
-  if (item.type === "page" && n === "active") return auditResult("稳定记忆", stableMemoryFallbackReason(item), "good");
-  if (n.includes("tombstone") || n.includes("delete")) return auditResult("已删除", statusReason(status), "bad");
-  if (n.includes("conflict")) return auditResult("冲突", statusReason(status), "warn");
-  return auditResult("未审核", status || "unknown", "neutral");
-}
-
-function auditResultFromDreamReview(review: DreamReviewResult) {
-  const decision = String(review.decision || "").toLowerCase();
-  const status = String(review.status || "");
-  const n = status.toLowerCase();
-  if (decision === "promoted" || n === "promoted") return auditResult("模型通过", review.reason || promotedReviewFallbackReason(review), "good");
-  if (decision === "rejected" || n.startsWith("rejected")) return auditResult("模型拒绝", review.reason || statusReason(status), "bad");
-  if (decision === "skipped") return auditResult("模型跳过", review.reason || statusReason(status), "neutral");
-  if (decision === "conflict" || n.includes("conflict")) return auditResult("需复核", review.reason || "conflict", "warn");
-  return auditResult("模型已审", review.reason || status || decision, "blue");
-}
-
-function detailedAuditReason(item: MemoryItem, review: DreamReviewResult | undefined, fallback: string) {
-  if (review) {
-    if (review.reason) return review.reason;
-    if (String(review.decision || "").toLowerCase() === "promoted" || String(review.status || "").toLowerCase() === "promoted") return promotedReviewFallbackReason(review);
-    return fallback || review.status || review.decision || "审核结果没有附带详细原因。";
-  }
-  if (item.type === "page" && String(item.status || "").toLowerCase() === "active") return stableMemoryFallbackReason(item);
-  return fallback || statusReason(String(item.status || "")) || "暂无详细审核原因。";
-}
-
-function promotedReviewFallbackReason(review: DreamReviewResult) {
-  const actionText = review.page_action === "merged" ? "已合并到已有稳定记忆页" : review.page_action === "created" ? "已新建稳定记忆页" : "已进入稳定记忆";
-  const pageText = review.page_title ? `「${review.page_title}」` : review.page_id ? compactId(review.page_id) : "";
-  const sourceText = review.candidate_id ? `；来源候选 ${compactId(review.candidate_id)}` : "";
-  return `${actionText}${pageText ? ` ${pageText}` : ""}${sourceText}`;
-}
-
-function stableMemoryFallbackReason(item: MemoryItem) {
-  const parts = ["已进入稳定记忆，可用于后续检索和上下文召回"];
-  if (item.source_candidate_id) parts.push(`来源候选 ${compactId(item.source_candidate_id)}`);
-  if (typeof item.confidence === "number") parts.push(`置信度 ${formatConfidence(item.confidence)}`);
-  return parts.join("；");
-}
-
-function auditReviewLabel(review: DreamReviewResult) { return auditResultFromDreamReview(review).label; }
-
-function auditResult(label: string, detail: string, tone: "good" | "bad" | "warn" | "blue" | "neutral") {
-  return { label, detail, tone, title: detail ? `${label}: ${detail}` : label };
-}
-
-function statusReason(status: string) {
-  const sep = status.indexOf(":");
-  if (sep < 0) return "";
-  return status.slice(sep + 1).replace(/[_-]+/g, " ");
-}
-
-function latestDreamDurationS(status: DreamStatusResult | null) {
-  const v = status?.latest?.duration_s;
-  return typeof v === "number" && Number.isFinite(v) ? v : null;
-}
-
-function formatDuration(value: number) {
-  if (!Number.isFinite(value) || value < 0) return "0.0s";
-  if (value < 10) return `${value.toFixed(1)}s`;
-  if (value < 60) return `${Math.round(value)}s`;
-  const m = Math.floor(value / 60), s = Math.round(value % 60);
-  return `${m}m ${s.toString().padStart(2, "0")}s`;
-}
-
-function dreamStatusReviewReasons(status: DreamStatusResult | null) {
-  return normalizeDreamReviewResults(status?.latest?.execution?.review_results).filter((i) => Boolean(i.reason));
-}
-
-function dreamRunRejectReasons(report: DreamRunReport) {
-  return normalizeDreamRejectReasons(report.execution?.result?.actions?.applied);
-}
-
-function normalizeDreamRejectReasons(items: unknown) {
-  if (!Array.isArray(items)) return [];
-  return items.filter((item): item is DreamRejectReason => {
-    if (!item || typeof item !== "object") return false;
-    const a = item as DreamRejectReason;
-    const tool = String(a.tool || ""), decision = String(a.decision || ""), status = String(a.status || "");
-    return Boolean(a.reason) && (tool === "memory_reject_candidate" || decision === "rejected" || status.startsWith("rejected"));
-  }).slice(0, 10);
-}
-
-function dreamRejectReasonText(items: DreamRejectReason[]) {
-  if (items.length === 0) return "";
-  const details = items.slice(0, 3).map((i) => `${compactId(i.candidate_id || i.action_id)}: ${i.reason || "unspecified"}`).join("；");
-  const more = items.length > 3 ? `；另有 ${items.length - 3} 条` : "";
-  return ` Reject 原因：${details}${more}`;
-}
-
-function dreamDurationText(report: DreamRunReport) {
-  return typeof report.duration_s === "number" && Number.isFinite(report.duration_s) ? `用时 ${formatDuration(report.duration_s)}。` : "";
-}
-
-function dreamRunMessage(report: DreamRunReport, useProvider: boolean, advancedDreaming = false) {
-  const counts = report.execution?.result?.actions?.counts || {};
-  const deltaCounts = report.delta?.counts || {};
-  const requested = Number(counts.requested || 0), applied = Number(counts.applied || 0), skipped = Number(counts.skipped || 0);
-  const proposals = report.execution?.result?.actions?.proposals || [];
-  const pendingProposals = proposals.filter((p) => p.status === "pending").length;
-  const draftCandidates = Number(deltaCounts.draft_candidates || deltaCounts.memory_candidates || 0);
-  const rejectReasonText = dreamRejectReasonText(dreamRunRejectReasons(report));
-  const durationText = dreamDurationText(report);
-  const proposalText = advancedDreaming ? `整理提案 ${pendingProposals} 条。` : "";
-  if (!useProvider && requested === 0) {
-    return `Dream 已运行：已生成报告和快照；未开启模型审核，所以没有维护动作。待审候选 ${draftCandidates} 条。${proposalText}${durationText}`;
-  }
-  return `Dream 已运行：请求 ${requested} 个动作，应用 ${applied} 个，跳过 ${skipped} 个。${proposalText}${durationText}${rejectReasonText}`;
-}
-
-// ─── Plan Helpers ───────────────────────────────────────────────────────────
-
-function emptyPlanForm(): PlanFormState {
-  return {
-    title: "",
-    detail: "",
-    priority: "normal",
-    dueAt: ""
-  };
-}
-
-function datetimeLocalToUnix(value: string) {
-  if (!value) return null;
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? Math.round(ms / 1000) : null;
-}
-
-function isClosedPlan(item: PlanItem) {
-  return ["completed", "done", "cancelled", "archived"].includes(String(item.status || "").toLowerCase());
-}
-
-function planTitleById(items: PlanItem[], id: string) {
-  return items.find((item) => item.id === id)?.title || compactId(id);
-}
-
-function buildGoalUserGroups(items: PlanItem[], proposals: PlanProposal[], uidFilter: string): GoalUserGroup[] {
-  const groups = new Map<string, GoalUserGroup>();
-  const ensureGroup = (rawScope: string): GoalUserGroup => {
-    const scope = normalizeGoalScope(rawScope);
-    const key = `scope:${scope}`;
-    const existing = groups.get(key);
-    if (existing) {
-      return existing;
-    }
-    const uid = uidFromGoalScope(scope);
-    const group: GoalUserGroup = {
-      key,
-      uid,
-      scope,
-      label: uid || scope,
-      items: [],
-      proposals: [],
-      openCount: 0,
-      pendingCount: 0,
-      latestAt: 0
-    };
-    groups.set(key, group);
-    return group;
-  };
-
-  const filteredUid = uidFilter.trim();
-  if (filteredUid) {
-    ensureGroup(scopeFromGoalUid(filteredUid));
-  }
-  for (const item of items) {
-    ensureGroup(String(item.scope || "global")).items.push(item);
-  }
-  for (const proposal of proposals) {
-    ensureGroup(String(proposal.scope || "global")).proposals.push(proposal);
-  }
-  if (groups.size === 0) {
-    ensureGroup("global");
-  }
-
-  return [...groups.values()]
-    .map((group) => {
-      const sortedItems = [...group.items].sort((left, right) => planItemTime(right) - planItemTime(left));
-      const sortedProposals = [...group.proposals].sort((left, right) => planProposalTime(right) - planProposalTime(left));
-      return {
-        ...group,
-        items: sortedItems,
-        proposals: sortedProposals,
-        openCount: sortedItems.filter((item) => !isClosedPlan(item)).length,
-        pendingCount: sortedProposals.filter((proposal) => isPendingPlanProposal(proposal)).length,
-        latestAt: Math.max(...sortedItems.map(planItemTime), ...sortedProposals.map(planProposalTime), 0)
-      };
-    })
-    .sort((left, right) => {
-      if (left.latestAt !== right.latestAt) {
-        return right.latestAt - left.latestAt;
-      }
-      return left.label.localeCompare(right.label);
-    });
-}
-
-function normalizeGoalScope(scope: string) {
-  const clean = scope.trim();
-  return clean || "global";
-}
-
-function scopeFromGoalUid(uid: string) {
-  const clean = uid.trim();
-  return clean.toLowerCase().startsWith("user:") ? clean : `user:${clean}`;
-}
-
-function uidFromGoalScope(scope: string) {
-  const clean = normalizeGoalScope(scope);
-  return clean.toLowerCase().startsWith("user:") ? clean.slice(5) || null : null;
-}
-
-function planItemTime(item: PlanItem) {
-  return Number(item.updated_at || item.created_at || 0);
-}
-
-function planProposalTime(proposal: PlanProposal) {
-  return Number(proposal.decided_at || proposal.created_at || 0);
-}
-
-function isPendingPlanProposal(proposal: PlanProposal) {
-  return String(proposal.proposal_status || proposal.status || "pending").toLowerCase() === "pending";
 }
 
 // ─── Mount ───────────────────────────────────────────────────────────────────

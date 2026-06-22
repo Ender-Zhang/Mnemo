@@ -22,6 +22,7 @@ exclude = ["tests*", "design*"]
 mnemo_memory = [
   "interfaces/web_assets/index.html",
   "interfaces/web_assets/assets/*",
+  "eval/golden.json",
 ]
 
 [tool.pytest.ini_options]

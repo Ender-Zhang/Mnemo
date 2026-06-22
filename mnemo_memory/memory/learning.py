@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
+from ..core.log import get_logger, log_event
 from .cards import _skip_working_note
 from .constants import DEFAULT_W0_CONFIDENCE, L1_SNAPSHOT_FILENAME, MIN_W0_CANDIDATE_CHARS, W0_MEMORY_RETENTION
 from .quality import (
@@ -32,6 +33,8 @@ from .utils import (
 )
 from .wiki import materialize_memory_page, materialize_memory_pages, memory_page_dimension, memory_page_slug, memory_page_wiki_ref
 
+
+_LOG = get_logger("learning")
 
 NEAR_DUPLICATE_JACCARD_THRESHOLD = 0.72
 NEAR_DUPLICATE_CONTAINMENT_THRESHOLD = 0.82
@@ -83,7 +86,12 @@ class MemoryLearningMixin:
         created_at: float | int | str | None = None,
     ) -> dict[str, Any]:
         scan = scan_memory_candidate(claim, evidence)
-        quality = score_memory_quality(claim, evidence)
+        quality = score_memory_quality(
+            claim,
+            evidence,
+            write_threshold=getattr(self, "_quality_write_threshold", None),
+            draft_threshold=getattr(self, "_quality_draft_threshold", None),
+        )
         normalized_dimension = normalize_memory_dimension(dimension, fallback="context")
         evidence_with_safety = append_safety_evidence(evidence, scan)
         candidate_id = self.store.add_memory_candidate(
@@ -99,6 +107,15 @@ class MemoryLearningMixin:
         if scan.get("requires_review"):
             status = f"needs_review:{scan.get('review_reason') or 'memory_safety'}"
             self.store.update_memory_candidate_status(candidate_id, status)
+        log_event(
+            _LOG,
+            "candidate_write",
+            candidate_id=candidate_id,
+            status=status,
+            dimension=normalized_dimension,
+            quality=quality.get("weighted_avg"),
+            risk=scan.get("risk"),
+        )
         return {
             "candidate_id": candidate_id,
             "status": status,
@@ -199,7 +216,17 @@ class MemoryLearningMixin:
         return snapshot
 
     def promote_candidate(self, candidate_id: str, *, min_confidence: float = 0.7) -> dict[str, Any]:
-        return self.review_candidate_for_promotion(candidate_id, min_confidence=min_confidence)
+        result = self.review_candidate_for_promotion(candidate_id, min_confidence=min_confidence)
+        log_event(
+            _LOG,
+            "candidate_promote_review",
+            candidate_id=candidate_id,
+            decision=result.get("decision") or result.get("status"),
+            page_id=result.get("page_id"),
+            page_action=result.get("page_action"),
+            reason=result.get("reason") or result.get("gate_reason"),
+        )
+        return result
 
     def force_promote_candidate(self, candidate_id: str) -> dict[str, Any]:
         result = self._promote_candidate_unchecked(candidate_id)
@@ -212,6 +239,22 @@ class MemoryLearningMixin:
         snapshot_fn = getattr(self.store, "snapshot_page_version", None)
         if snapshot_fn and page and page.get("id"):
             snapshot_fn(str(page["id"]), change_reason=change_reason, changed_by=changed_by)
+
+    def _maybe_index_page_embedding(self, page: dict[str, Any] | None) -> None:
+        """Index a freshly written page when an embedding provider is wired.
+
+        Best-effort: a failing embeddings endpoint must never break promotion.
+        """
+        provider = getattr(self, "_embedding_provider", None)
+        model = getattr(self, "_embedding_model", None)
+        if provider is None or not model or not page:
+            return
+        try:
+            from .embedding import ensure_page_embeddings
+
+            ensure_page_embeddings(self.store, provider, [page], str(model))
+        except (ValueError, OSError, KeyError):
+            pass
 
     def _promote_candidate_unchecked(self, candidate_id: str) -> dict[str, Any]:
         candidate = self._get_candidate(candidate_id)
@@ -267,6 +310,8 @@ class MemoryLearningMixin:
         self.store.add_memory_link(candidate_id, page_id, "promoted_to", weight=1.0)
         page = self._get_page(page_id)
         wiki = materialize_memory_page(self.store.state_dir, page) if page else None
+        self._maybe_index_page_embedding(page)
+        log_event(_LOG, "page_write", candidate_id=candidate_id, page_id=page_id, page_action=page_action, scope=page_scope)
         return {
             "candidate_id": candidate_id,
             "page_id": page_id,
@@ -303,6 +348,7 @@ class MemoryLearningMixin:
         reason_text = _normalize_space(reason) or "unspecified"
         status = f"rejected:{_status_reason(reason_text)}"
         self.store.update_memory_candidate_status(candidate_id, status)
+        log_event(_LOG, "candidate_reject", candidate_id=candidate_id, status=status, reason=reason_text)
         result = {
             "candidate_id": candidate_id,
             "status": status,
@@ -324,7 +370,9 @@ class MemoryLearningMixin:
             )
         return result
 
-    def review_candidate_for_promotion(self, candidate_id: str, min_confidence: float = 0.7) -> dict[str, Any]:
+    def review_candidate_for_promotion(self, candidate_id: str, min_confidence: float | None = None) -> dict[str, Any]:
+        if min_confidence is None:
+            min_confidence = float(getattr(self, "_promote_min_confidence", None) or 0.7)
         candidate = self._get_candidate(candidate_id)
         if not candidate:
             raise ValueError(f"Memory candidate not found: {candidate_id}")

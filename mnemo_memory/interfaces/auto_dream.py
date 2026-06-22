@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import threading
 import time
 from typing import Any
 
 from ..core.jsonutil import dumps, loads
+from ..core.log import get_logger, log_event
 from ..sdk import MemoryClient
+
+
+_LOG = get_logger("auto_dream")
 
 
 AUTO_DREAM_STATUS_FILENAME = "auto-dream-status.json"
@@ -59,11 +64,13 @@ def auto_dream_status(client: MemoryClient, *, running: bool | None = None) -> d
         "interval_minutes": int(config["interval_minutes"]),
         "limit": int(config["limit"]),
         "min_confidence": float(config["min_confidence"]),
+        "local_fallback": bool(config.get("local_fallback", False)),
         "save_path": config["save_path"],
         "status_path": str(_status_path(client.state_dir)),
         "running": bool(_DREAM_RUN_LOCK.locked() if running is None else running),
         "last_outcome": _optional_str(status.get("last_outcome")),
         "last_run_source": _optional_str(status.get("last_run_source")),
+        "last_run_mode": _optional_str(status.get("last_run_mode")),
         "last_checked_at": _optional_float(status.get("last_checked_at")),
         "last_config_updated_at": _optional_float(status.get("last_config_updated_at")),
         "last_started_at": _optional_float(status.get("last_started_at")),
@@ -169,13 +176,20 @@ class AutoDreamScheduler:
             return self._skip(client, status, config, timestamp, "no_backlog")
 
         provider = client.provider_config()
-        if not provider.get("configured"):
+        use_provider = bool(provider.get("configured"))
+        # Without a provider we can still run the deterministic Dream fallback
+        # (high-confidence promote, dedupe, low-quality reject, W0 ingest,
+        # auto-linking) when the operator opts into local_fallback. Otherwise we
+        # keep the safe "wait for a provider" behaviour.
+        if not use_provider and not config.get("local_fallback"):
             return self._skip(client, status, config, timestamp, "provider_required")
 
+        run_mode = "model" if use_provider else "local"
         status.update(
             {
                 "last_outcome": "running",
                 "last_run_source": "auto",
+                "last_run_mode": run_mode,
                 "last_started_at": timestamp,
                 "last_error": None,
             }
@@ -186,7 +200,7 @@ class AutoDreamScheduler:
                 client,
                 limit=int(config["limit"]),
                 min_confidence=float(config["min_confidence"]),
-                use_provider=True,
+                use_provider=use_provider,
                 blocking=False,
             )
         except DreamRunBusyError:
@@ -203,6 +217,7 @@ class AutoDreamScheduler:
                 }
             )
             _save_status(self.state_dir, status)
+            log_event(_LOG, "auto_dream_tick", level=logging.ERROR, outcome="error", error=str(exc))
             return auto_dream_status(client)
 
         finished_at = time.time()
@@ -210,6 +225,7 @@ class AutoDreamScheduler:
             {
                 "last_outcome": "ran",
                 "last_run_source": "auto",
+                "last_run_mode": run_mode,
                 "last_run_at": timestamp,
                 "last_finished_at": finished_at,
                 "last_duration_s": _report_duration(report) or max(0.0, finished_at - timestamp),
@@ -219,6 +235,7 @@ class AutoDreamScheduler:
             }
         )
         _save_status(self.state_dir, status)
+        log_event(_LOG, "auto_dream_tick", outcome="ran", mode=run_mode, duration_s=status["last_duration_s"])
         return auto_dream_status(client)
 
     def _skip(
@@ -243,6 +260,7 @@ class AutoDreamScheduler:
         if outcome != "error":
             status["last_error"] = None
         _save_status(self.state_dir, status)
+        log_event(_LOG, "auto_dream_tick", outcome=outcome)
         return auto_dream_status(client)
 
     def _run(self) -> None:

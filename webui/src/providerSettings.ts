@@ -31,11 +31,13 @@ export type AutoDreamStatusResult = {
   interval_minutes?: number | string | null;
   limit?: number | string | null;
   min_confidence?: number | string | null;
+  local_fallback?: boolean;
   save_path?: string;
   status_path?: string;
   running?: boolean;
   last_outcome?: string | null;
   last_run_source?: string | null;
+  last_run_mode?: string | null;
   last_checked_at?: number | null;
   last_config_updated_at?: number | null;
   last_started_at?: number | null;
@@ -51,6 +53,7 @@ export type AutoDreamStatusResult = {
 export type AutoDreamFormState = {
   enabled: boolean;
   intervalMinutes: string;
+  localFallback: boolean;
 };
 
 export function emptyProviderForm(): ProviderFormState {
@@ -106,14 +109,16 @@ export function providerStatusText(result: ProviderConfigResult | null) {
 export function emptyAutoDreamForm(): AutoDreamFormState {
   return {
     enabled: true,
-    intervalMinutes: "180"
+    intervalMinutes: "180",
+    localFallback: false
   };
 }
 
 export function autoDreamFormFromStatus(result: AutoDreamStatusResult | null): AutoDreamFormState {
   return {
     enabled: result?.enabled !== false,
-    intervalMinutes: String(result?.interval_minutes || "180")
+    intervalMinutes: String(result?.interval_minutes || "180"),
+    localFallback: result?.local_fallback === true
   };
 }
 
@@ -121,8 +126,115 @@ export function autoDreamSavePayload(form: AutoDreamFormState) {
   const intervalMinutes = Number(form.intervalMinutes);
   return {
     enabled: form.enabled,
-    interval_minutes: Number.isFinite(intervalMinutes) && intervalMinutes > 0 ? intervalMinutes : 180
+    interval_minutes: Number.isFinite(intervalMinutes) && intervalMinutes > 0 ? intervalMinutes : 180,
+    local_fallback: form.localFallback
   };
+}
+
+export type EmbeddingConfigResult = {
+  kind?: string;
+  enabled?: boolean;
+  configured?: boolean;
+  api_key_configured?: boolean;
+  base_url?: string | null;
+  model?: string | null;
+  api_key_env?: string | null;
+  save_path?: string;
+};
+
+export type EmbeddingStatusResult = {
+  kind?: string;
+  enabled?: boolean;
+  configured?: boolean;
+  active_count?: number;
+  indexed_count?: number;
+  stale_count?: number;
+  reindexed?: number;
+};
+
+export type EmbeddingFormState = {
+  enabled: boolean;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  apiKeyEnv: string;
+};
+
+export function emptyEmbeddingForm(): EmbeddingFormState {
+  return { enabled: false, baseUrl: "", model: "", apiKey: "", apiKeyEnv: "" };
+}
+
+export function embeddingFormFromConfig(result: EmbeddingConfigResult | null): EmbeddingFormState {
+  return {
+    enabled: result?.enabled === true,
+    baseUrl: String(result?.base_url || ""),
+    model: String(result?.model || ""),
+    apiKey: "",
+    apiKeyEnv: String(result?.api_key_env || "")
+  };
+}
+
+export function embeddingSavePayload(form: EmbeddingFormState) {
+  const payload: Record<string, unknown> = {
+    enabled: form.enabled,
+    base_url: form.baseUrl.trim(),
+    model: form.model.trim(),
+    api_key_env: form.apiKeyEnv.trim()
+  };
+  const cleanKey = form.apiKey.trim();
+  if (cleanKey && cleanKey !== "***") {
+    payload.api_key = cleanKey;
+  }
+  return payload;
+}
+
+export function embeddingStatusText(status: EmbeddingStatusResult | null) {
+  if (!status) return "未加载";
+  if (!status.enabled) return "未启用";
+  if (!status.configured) return "未配置";
+  return `${status.indexed_count ?? 0}/${status.active_count ?? 0} 已索引`;
+}
+
+export type TuningConfigResult = {
+  kind?: string;
+  quality_write_threshold?: number;
+  quality_draft_threshold?: number;
+  promote_min_confidence?: number;
+  save_path?: string;
+};
+
+export type TuningFormState = {
+  writeThreshold: string;
+  draftThreshold: string;
+  minConfidence: string;
+};
+
+export function emptyTuningForm(): TuningFormState {
+  return { writeThreshold: "0.68", draftThreshold: "0.5", minConfidence: "0.7" };
+}
+
+export function tuningFormFromConfig(result: TuningConfigResult | null): TuningFormState {
+  return {
+    writeThreshold: String(result?.quality_write_threshold ?? "0.68"),
+    draftThreshold: String(result?.quality_draft_threshold ?? "0.5"),
+    minConfidence: String(result?.promote_min_confidence ?? "0.7")
+  };
+}
+
+export function tuningSavePayload(form: TuningFormState) {
+  const payload: Record<string, unknown> = {};
+  const fields: Array<[keyof TuningFormState, string]> = [
+    ["writeThreshold", "quality_write_threshold"],
+    ["draftThreshold", "quality_draft_threshold"],
+    ["minConfidence", "promote_min_confidence"]
+  ];
+  for (const [formKey, apiKey] of fields) {
+    const value = Number(form[formKey]);
+    if (Number.isFinite(value)) {
+      payload[apiKey] = Math.max(0, Math.min(1, value));
+    }
+  }
+  return payload;
 }
 
 export function autoDreamStatusText(result: AutoDreamStatusResult | null) {

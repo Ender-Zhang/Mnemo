@@ -29,18 +29,21 @@ class MemoryMcpServer:
                 _string(args.get("intent")),
                 limit=_int(args.get("limit"), 8),
                 scope=_string(args.get("scope"), "memory"),
+                uid=_optional(args.get("uid")),
             ),
             "mnemo_memory_recall": lambda: self.client.recall(
                 _required(args.get("seed"), "seed"),
                 context=_string(args.get("context")),
                 depth=_int(args.get("depth"), 2),
                 limit=_int(args.get("limit"), 8),
+                uid=_optional(args.get("uid")),
             ),
             "mnemo_memory_search": lambda: self.client.search(
                 _required(args.get("query"), "query"),
                 limit=_int(args.get("limit"), 8),
                 scope=_string(args.get("scope"), "memory"),
                 include_tombstoned=bool(args.get("include_tombstoned", False)),
+                uid=_optional(args.get("uid")),
             ),
             "mnemo_memory_update": lambda: self.client.update(
                 facts=_list(args.get("facts")),
@@ -190,9 +193,9 @@ def mcp_server_config(*, client: str = "generic", command: str = "mnemo-memory",
 
 def mcp_tool_descriptors() -> list[dict[str, Any]]:
     return [
-        _descriptor("mnemo_memory_context", "Return compact prompt-facing memory context.", {"intent": {"type": "string"}, "limit": {"type": "integer"}, "scope": {"type": "string"}}, read_only=True),
-        _descriptor("mnemo_memory_recall", "Return associative memory recall cards.", {"seed": {"type": "string"}, "context": {"type": "string"}, "depth": {"type": "integer"}, "limit": {"type": "integer"}}, required=["seed"], read_only=True),
-        _descriptor("mnemo_memory_search", "Search memory with query-plan metadata.", {"query": {"type": "string"}, "scope": {"type": "string"}, "limit": {"type": "integer"}, "include_tombstoned": {"type": "boolean"}}, required=["query"], read_only=True),
+        _descriptor("mnemo_memory_context", "Return compact prompt-facing memory context. Pass uid to scope recall to one user.", {"intent": {"type": "string"}, "limit": {"type": "integer"}, "scope": {"type": "string"}, "uid": {"type": ["string", "null"]}}, read_only=True),
+        _descriptor("mnemo_memory_recall", "Return associative memory recall cards. Pass uid to scope recall to one user.", {"seed": {"type": "string"}, "context": {"type": "string"}, "depth": {"type": "integer"}, "limit": {"type": "integer"}, "uid": {"type": ["string", "null"]}}, required=["seed"], read_only=True),
+        _descriptor("mnemo_memory_search", "Search memory with query-plan metadata. Pass uid to scope results to one user.", {"query": {"type": "string"}, "scope": {"type": "string"}, "limit": {"type": "integer"}, "include_tombstoned": {"type": "boolean"}, "uid": {"type": ["string", "null"]}}, required=["query"], read_only=True),
         _descriptor("mnemo_memory_update", "Write memory candidates and working notes.", {"facts": {"type": "array"}, "observations": {"type": "array"}, "source": {"type": "string"}, "run_id": {"type": ["string", "null"]}, "mission_id": {"type": ["string", "null"]}}, read_only=False),
         _descriptor("mnemo_memory_ingest_event", "Ingest one raw conversation event and split it into candidates or task-local notes.", {"text": {"type": "string"}, "context": {"type": "array"}, "source": {"type": "string"}, "actor": {"type": ["string", "null"]}, "event_type": {"type": "string"}, "run_id": {"type": ["string", "null"]}, "mission_id": {"type": ["string", "null"]}, "conversation_id": {"type": ["string", "null"]}, "message_id": {"type": ["string", "null"]}, "agent_id": {"type": ["string", "null"]}, "scope": {"type": ["string", "null"]}, "auto_promote": {"type": "boolean"}, "min_confidence": {"type": "number"}, "use_provider": {"type": "boolean"}}, required=["text"], read_only=False),
         _descriptor("mnemo_memory_read", "Read one candidate or stable page.", {"memory_id": {"type": "string"}}, required=["memory_id"], read_only=True),

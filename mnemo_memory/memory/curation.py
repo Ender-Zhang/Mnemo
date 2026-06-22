@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 from typing import Any
 
 from ..core.jsonutil import dumps
+from ..core.log import get_logger, log_event
 from .constants import PRIVATE_DELETE_RULE, PRIVATE_DELETE_SUMMARY, PRIVATE_DELETE_TOMBSTONE_REASON
 from .utils import (
     _curation_status,
@@ -16,6 +18,9 @@ from .utils import (
     _truncate,
 )
 from .wiki import materialize_memory_page, remove_memory_page_wiki_files
+
+
+_LOG = get_logger("curation")
 
 
 class MemoryCurationMixin:
@@ -32,6 +37,7 @@ class MemoryCurationMixin:
         reason_text = _normalize_space(reason) or "unspecified"
         reason_slug = _status_reason(reason_text)
         status = _curation_status(reason_text)
+        log_event(_LOG, "tombstone", memory_id=memory_id, target_type=normalized_target_type, reason=reason_text)
         replacement = self._resolve_replacement(replacement_id)
         if replacement and str(replacement["id"]) == str(memory_id):
             raise ValueError(f"Replacement memory item must differ from curated item: {memory_id}")
@@ -144,6 +150,7 @@ class MemoryCurationMixin:
     ) -> dict[str, Any]:
         normalized_target_type = _normalize_tombstone_target_type(target_type)
         reason_text = _normalize_space(reason) or PRIVATE_DELETE_TOMBSTONE_REASON
+        log_event(_LOG, "private_delete", level=logging.WARNING, memory_id=memory_id, target_type=normalized_target_type, reason=reason_text)
         if normalized_target_type in {"auto", "page"}:
             page = self._get_page(memory_id)
             if page:

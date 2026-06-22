@@ -43,7 +43,7 @@ mnemo-memory serve \
 - 健康检查：`http://127.0.0.1:8765/api/health`
 - API Schema：`http://127.0.0.1:8765/api/schema`
 
-当前 HTTP API 不做 bearer token 校验，方便本地多个 agent 直接调用。默认仍绑定 `127.0.0.1`，不要在不可信网络里暴露这个端口。
+当前 HTTP API 不做 bearer token 校验，方便本地多个 agent 直接调用。默认仍绑定 `127.0.0.1`，不要在不可信网络里暴露这个端口。Mnemo 是“每个 state-dir 单租户”的本地服务，部署前请看[安全与多用户隔离](#安全与多用户隔离)。
 
 也可以直接用启动脚本。脚本会读取项目根目录的 `.env`，初始化状态目录，然后启动 HTTP API 和 WebUI。如果要配置模型，在 `.env` 里放：
 
@@ -131,6 +131,16 @@ curl -X POST http://127.0.0.1:8765/api/memory/ingest-event \
 ```
 
 如果用户明确说“我以后默认都喝冰美式”，事件摄入口会生成候选记忆。需要自动尝试提升时可传 `auto_promote: true`，服务端仍会走审核门。
+
+## 安全与多用户隔离
+
+**Mnemo 是“每个 `state-dir` 单租户”的本地服务，不是多租户后端。** 请按这个前提部署：
+
+- **HTTP API 默认无鉴权，默认绑定 `127.0.0.1`。** 它没有访问控制，只适合在可信本地环境给本机 agent 调用。不要把端口暴露到不可信网络；如果用 `--host` 绑定到非回环地址（如 `0.0.0.0`），启动时会打印一条醒目的 `WARNING`。
+- **多用户的正确做法：每个用户一个独立 `--state-dir`。** 不同 `state-dir` 是不同的 SQLite 库，这才是真正的隔离边界，互相看不到对方的记忆。
+- **共享一个 `state-dir` + `scope`/`uid` 是“软多租户”，不是硬隔离边界。** 用 `scope: "user:<uid>"` 区分用户。`search` / `recall` / `context`（以及 MCP 的 `mnemo_memory_search`/`recall`/`context`）都接受可选 `uid`：**传了就把召回限定到该用户**（匹配 `user:<uid>` 及其层级，不含 `global`），agent 服务某个用户时应当带上自己的 `uid`。**但仍不是权限边界**——没有鉴权、admin WebUI 看得到全部、调用方可以不传 `uid` 而召回整库。所以：可信小范围用户用「共享库 + uid」够用；**互不信任的用户仍然要各用一个 `state-dir`**。
+
+一句话：单库多用户靠 `uid` 软隔离（agent 召回带 `uid`）；要硬隔离就每人一个 `state-dir`。WebUI 顶部的「当前用户 (UID)」框统一控制写入 / 搜索 / 预览 / 召回的归属。
 
 ## 记忆保存与搜索流程
 
@@ -312,6 +322,37 @@ export MNEMO_MEMORY_AUTO_DREAM_INTERVAL_MINUTES=180
 export MNEMO_MEMORY_AUTO_DREAM_LIMIT=20
 export MNEMO_MEMORY_AUTO_DREAM_MIN_CONFIDENCE=0.7
 ```
+
+## 语义检索（Embeddings）
+
+默认 `search` / `recall` / `context` 只走 SQLite 关键词召回，对同义改写不敏感。配置一个**独立的 embeddings 端点**后，promote 会自动给稳定记忆页增量建索引，召回会额外融合一条向量路由（带 `vector_score`），WebUI 的「记忆预览」里语义命中会标「语义」徽标。默认关闭，保持离线零依赖。
+
+embeddings 端点与维护模型分开配置，可用环境变量、state dir 下 `config.json`，或 WebUI「设置 → 语义检索 / Embeddings」：
+
+```bash
+export MNEMO_MEMORY_EMBEDDINGS_ENABLED=true
+export MNEMO_MEMORY_EMBEDDING_BASE_URL=https://api.openai.com/v1
+export MNEMO_MEMORY_EMBEDDING_MODEL=text-embedding-3-small
+export MNEMO_MEMORY_EMBEDDING_API_KEY=replace-me
+# 或 export MNEMO_MEMORY_EMBEDDING_API_KEY_ENV=OPENAI_API_KEY
+```
+
+HTTP：
+
+```bash
+# 查看/保存 embeddings 配置
+curl -s http://127.0.0.1:8765/api/memory/embedding-config -d '{}'
+curl -s http://127.0.0.1:8765/api/memory/save-embedding-config \
+  -d '{"enabled":true,"base_url":"https://api.openai.com/v1","model":"text-embedding-3-small","api_key":"replace-me"}'
+
+# 查看索引状态（已索引 / active 总数 / 待索引）
+curl -s http://127.0.0.1:8765/api/memory/embedding-status -d '{}'
+
+# 对已有 active 页全量重建索引（启用后新 promote 会自动增量建索引）
+curl -s http://127.0.0.1:8765/api/memory/reindex-embeddings -d '{}'
+```
+
+embeddings 是可插拔能力：provider 只需实现 `embed_texts(texts) -> list[list[float]]`，向量以 little-endian float32 存进 `memory_embeddings` 表，召回用纯 Python brute-force cosine top-k。
 
 ## 对一条记忆做增删改查
 
@@ -716,7 +757,7 @@ client.stable_update(stable_id, content="user_123 偏好简洁、包含测试结
 
 每条 fact 会生成一个轻量 `memory_event`。`event_at` 表示原始事件发生时间，`observed_at` 表示 Mnemo 记录到这件事的时间；如果调用方不传 `event_at`，系统会用记录时间兜底。搜索或选中记忆后，可以通过 `provenance` 看到 `事件 -> 候选记忆 -> 稳定记忆` 的来源链。WebUI 的“记忆详情”里也会显示“来源时间线”。
 
-多用户场景下，如果你需要更强隔离，建议每个用户使用独立的 `--state-dir`。如果多个用户共用同一个状态目录，请像上面示例一样，把用户标识写进 `scope`，然后用 `list(uid="user_123")` 或 WebUI 的 UID 输入框按用户库存检索；不传 `uid` 表示查看这个状态目录里的全局库存，多个用户会混在一起。也可以把用户标识写进可搜索文本，供 `search` 文本召回使用。当前 `search` / `list(uid=...)` 都是本地检索能力，不是权限隔离边界。
+多用户场景下，**每个用户用独立的 `--state-dir` 才是真正的隔离边界**——详见[安全与多用户隔离](#安全与多用户隔离)。如果多个用户共用同一个状态目录，请把用户标识写进 `scope`，然后用 `list(uid="user_123")` 或 WebUI 的 UID 输入框按用户库存检索；但要注意 `scope`/`uid` 只是召回便利，不是权限隔离：`search` / `recall` / `context` 不强制 uid，会对整库召回，共用 state-dir 时可能跨用户串记忆。不传 `uid` 表示查看这个状态目录里的全局库存，多个用户会混在一起。
 
 ## HTTP API
 
@@ -729,7 +770,7 @@ curl -X POST http://127.0.0.1:8765/api/memory/search \
   -d '{"query":"实现进度更新"}'
 ```
 
-HTTP 默认绑定到 `127.0.0.1`，API 当前不要求 bearer token，方便本地多个 agent 直接调用。同一个命令也会在 `http://127.0.0.1:8765/` 提供本地 WebUI。
+HTTP 默认绑定到 `127.0.0.1`，API 当前不要求 bearer token，方便本地多个 agent 直接调用；绑定到非回环地址会在启动时打印 `WARNING`。Mnemo 是“每个 state-dir 单租户”的本地服务，部署前请看[安全与多用户隔离](#安全与多用户隔离)。同一个命令也会在 `http://127.0.0.1:8765/` 提供本地 WebUI。
 
 ## WebUI
 
@@ -787,3 +828,16 @@ inventory = client.list(kind="all", limit=20)
 python -m unittest discover -s tests
 npm --prefix webui run build
 ```
+
+### 质量评估（Eval）
+
+`tests/test_eval.py` 是确定性回归护栏：用 `mnemo_memory/eval/golden.json` 的标注集，跑召回 recall@k 和 promote 门决策准确率，低于阈值就失败（已包含在上面的 unittest 里）。打分逻辑在 `mnemo_memory/eval/`，可直接扩充 golden 集。
+
+需要评测模型那条路（召回是否语义命中、provider 能否从原始事件抽出记忆）时，配好 provider 再跑：
+
+```bash
+MNEMO_MEMORY_BASE_URL=... MNEMO_MEMORY_MODEL=... MNEMO_MEMORY_API_KEY=... \
+  python scripts/eval_model.py
+```
+
+它复用同一套 golden 集，额外用 `ingest-event --use-provider` 检验模型抽取，打印 JSON 报告（不进 CI，不做断言）。

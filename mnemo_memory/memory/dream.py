@@ -9,11 +9,14 @@ from ..core.ids import new_id
 from ..core.jsonutil import dumps, loads
 from .associations import discover_orphan_associations
 from .cards import _compact_candidate, _compact_page, _compact_run, _compact_tombstone, _compact_working_note
+from ..core.log import get_logger, log_event
 from .constants import DREAM_LATEST_FILENAME, DREAM_REPORTS_DIRNAME
 from .plans import ACTIVE_PLAN_STATUSES
 from .utils import _bounded_confidence, _float_or_zero, _normalize_space, _truncate
 from .wiki import materialize_memory_page
 
+
+_LOG = get_logger("dream")
 
 ADVANCED_DREAM_LOW_RISK_TOOLS = {"memory_link_pages"}
 ADVANCED_DREAM_PROPOSAL_TOOLS = {
@@ -343,6 +346,17 @@ class MemoryDreamMixin:
         }
         if persist:
             self.save_dream_report(report)
+        action_counts = execution["actions"].get("counts", {}) if isinstance(execution.get("actions"), dict) else {}
+        log_event(
+            _LOG,
+            "dream_run",
+            report_id=report_id,
+            mode=execution_mode,
+            requested=action_counts.get("requested"),
+            applied=action_counts.get("applied"),
+            skipped=action_counts.get("skipped"),
+            duration_s=report["duration_s"],
+        )
         return report
 
     def apply_dream_actions(

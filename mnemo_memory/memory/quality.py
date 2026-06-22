@@ -10,7 +10,13 @@ QUALITY_WRITE_THRESHOLD = 0.68
 QUALITY_DRAFT_THRESHOLD = 0.5
 
 
-def score_memory_quality(claim: str, evidence: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def score_memory_quality(
+    claim: str,
+    evidence: list[dict[str, Any]] | None = None,
+    *,
+    write_threshold: float | None = None,
+    draft_threshold: float | None = None,
+) -> dict[str, Any]:
     text = _normalize_space(claim)
     evidence_items = [item for item in evidence or [] if isinstance(item, dict)]
     scores = {
@@ -34,7 +40,7 @@ def score_memory_quality(claim: str, evidence: list[dict[str, Any]] | None = Non
         "kind": "memory_quality",
         "scores": {key: round(value, 3) for key, value in scores.items()},
         "weighted_avg": weighted_avg,
-        "recommendation": _quality_recommendation(weighted_avg),
+        "recommendation": _quality_recommendation(weighted_avg, write_threshold, draft_threshold),
         "reason": _quality_reason(scores, weighted_avg),
     }
 
@@ -75,10 +81,16 @@ def low_quality_status(quality: dict[str, Any] | None) -> str | None:
     return None
 
 
-def _quality_recommendation(weighted_avg: float) -> str:
-    if weighted_avg >= QUALITY_WRITE_THRESHOLD:
+def _quality_recommendation(
+    weighted_avg: float,
+    write_threshold: float | None = None,
+    draft_threshold: float | None = None,
+) -> str:
+    write_at = QUALITY_WRITE_THRESHOLD if write_threshold is None else write_threshold
+    draft_at = QUALITY_DRAFT_THRESHOLD if draft_threshold is None else draft_threshold
+    if weighted_avg >= write_at:
         return "write"
-    if weighted_avg >= QUALITY_DRAFT_THRESHOLD:
+    if weighted_avg >= draft_at:
         return "draft"
     return "discard"
 

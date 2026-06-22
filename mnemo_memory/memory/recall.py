@@ -7,7 +7,7 @@ from .cards import _candidate_result, _context_card, _is_prompt_context_item, _p
 from .constants import PRIVATE_DELETE_TOMBSTONE_REASON
 from .embedding import vector_search_pages
 from .query import MemoryQueryPlan, annotate_memory_match, build_memory_query_plan, fuse_ranked_batches
-from .utils import _is_tombstone_status, _keywords, _normalize_search_scope, _normalize_space
+from .utils import _is_tombstone_status, _keywords, _normalize_search_scope, _normalize_space, scope_matches_uid
 
 
 class MemoryRecallMixin:
@@ -21,6 +21,7 @@ class MemoryRecallMixin:
         *,
         search_scope: str = "memory",
         include_tombstoned: bool = False,
+        uid: str | None = None,
     ) -> dict[str, Any]:
         plan = self.plan_query(query)
         if not plan.original:
@@ -30,6 +31,7 @@ class MemoryRecallMixin:
             limit=limit,
             search_scope=search_scope,
             include_tombstoned=include_tombstoned,
+            uid=uid,
         )
         return {
             "query_plan": plan.metadata(),
@@ -44,12 +46,14 @@ class MemoryRecallMixin:
         *,
         search_scope: str = "memory",
         include_tombstoned: bool = False,
+        uid: str | None = None,
     ) -> list[dict[str, Any]]:
         return self.search_with_plan(
             query,
             limit=limit,
             search_scope=search_scope,
             include_tombstoned=include_tombstoned,
+            uid=uid,
         )["matches"]
 
     def _search_from_plan(
@@ -59,6 +63,7 @@ class MemoryRecallMixin:
         limit: int,
         search_scope: str,
         include_tombstoned: bool,
+        uid: str | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         normalized_scope = _normalize_search_scope(search_scope)
         bounded_limit = max(1, int(limit))
@@ -66,17 +71,24 @@ class MemoryRecallMixin:
         results: list[dict[str, Any]] = []
         recall_policy: dict[str, Any] = {}
         if normalized_scope in {"memory", "all"}:
-            memory_results = self._search_memory_routes(plan, limit=bounded_limit)
-            results.extend(memory_results)
+            # Fetch a wider window when scoping by uid so the post-filter still fills the limit.
+            route_limit = bounded_limit * 3 if uid else bounded_limit
+            memory_results = self._search_memory_routes(plan, limit=route_limit)
+            if uid:
+                memory_results = [item for item in memory_results if scope_matches_uid(item.get("scope"), uid)]
             page_seeds = [item for item in memory_results if item["type"] == "page"]
-            results.extend(
-                self._associated_pages(
-                    page_seeds,
-                    seen_ids={item["id"] for item in results},
-                    limit=bounded_limit,
-                    plan=plan,
-                )
+            associated = self._associated_pages(
+                page_seeds,
+                seen_ids={item["id"] for item in memory_results},
+                limit=bounded_limit,
+                plan=plan,
             )
+            if uid:
+                associated = [item for item in associated if scope_matches_uid(item.get("scope"), uid)]
+            results.extend(memory_results)
+            results.extend(associated)
+            if uid:
+                recall_policy["uid"] = uid
 
         if normalized_scope in {"sessions", "all"}:
             session_results, session_policy = self._search_session_routes(
@@ -169,6 +181,7 @@ class MemoryRecallMixin:
         *,
         search_scope: str = "memory",
         include_tombstoned: bool = False,
+        uid: str | None = None,
     ) -> list[dict[str, Any]]:
         return [
             _context_card(item)
@@ -177,6 +190,7 @@ class MemoryRecallMixin:
                 limit=limit,
                 search_scope=search_scope,
                 include_tombstoned=include_tombstoned,
+                uid=uid,
             )
             if _is_prompt_context_item(item)
         ]

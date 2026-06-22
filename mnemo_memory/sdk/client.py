@@ -11,6 +11,7 @@ from ..core.config import (
     DEFAULT_AUTO_DREAM_MIN_CONFIDENCE,
     DEFAULT_STATE_DIR,
     default_config_path,
+    describe_effective_config,
     resolve_memory_config,
 )
 from ..core.ids import new_id
@@ -27,29 +28,31 @@ class MemoryClient:
     def __init__(self, *, state_dir: str | Path = DEFAULT_STATE_DIR) -> None:
         self.state_dir = str(state_dir)
 
-    def context(self, intent: str = "", *, limit: int = 8, scope: str = "memory") -> dict[str, Any]:
+    def context(self, intent: str = "", *, limit: int = 8, scope: str = "memory", uid: str | None = None) -> dict[str, Any]:
         engine = self._engine()
         query = intent.strip() or "memory context"
-        cards = [_api_card(card) for card in engine.context_cards(query, limit=_limit(limit), search_scope=scope)]
+        cards = [_api_card(card) for card in engine.context_cards(query, limit=_limit(limit), search_scope=scope, uid=_optional_text(uid))]
         return {
             "kind": "memory_context",
             "version": "mnemo_memory.context.v1",
             "intent": intent,
+            "uid": _optional_text(uid),
             "cards": cards,
             "profile": engine.compile_l0(),
             "snapshot": engine.load_l1_snapshot(),
         }
 
-    def recall(self, seed: str, *, context: str = "", depth: int = 2, limit: int = 8) -> dict[str, Any]:
+    def recall(self, seed: str, *, context: str = "", depth: int = 2, limit: int = 8, uid: str | None = None) -> dict[str, Any]:
         query = " ".join(part for part in [seed.strip(), context.strip()] if part)
         if not query:
             raise ValueError("recall seed is required")
-        search = self._engine().search_with_plan(query, limit=_limit(limit), search_scope="memory")
+        search = self._engine().search_with_plan(query, limit=_limit(limit), search_scope="memory", uid=_optional_text(uid))
         return {
             "kind": "memory_recall",
             "version": "mnemo_memory.recall.v1",
             "seed": seed,
             "context": context,
+            "uid": _optional_text(uid),
             "depth": max(1, min(4, int(depth))),
             "query_plan": search["query_plan"],
             "items": search["matches"],
@@ -62,18 +65,21 @@ class MemoryClient:
         limit: int = 8,
         scope: str = "memory",
         include_tombstoned: bool = False,
+        uid: str | None = None,
     ) -> dict[str, Any]:
         result = self._engine().search_with_plan(
             query,
             limit=_limit(limit),
             search_scope=scope,
             include_tombstoned=include_tombstoned,
+            uid=_optional_text(uid),
         )
         return {
             "kind": "memory_search",
             "version": "mnemo_memory.search.v1",
             "query": query,
             "scope": scope,
+            "uid": _optional_text(uid),
             **result,
         }
 
@@ -424,7 +430,7 @@ class MemoryClient:
         mission_id: str | None = None,
     ) -> dict[str, Any]:
         store = self._store()
-        engine = MemoryEngine(store)
+        engine = self._engine()
         effective_run_id = run_id or new_id("memrun")
         effective_mission_id = mission_id or "memory-service"
         memory_candidates: list[dict[str, Any]] = []
@@ -516,7 +522,7 @@ class MemoryClient:
             raise ValueError("event text is required")
 
         store = self._store()
-        engine = MemoryEngine(store)
+        engine = self._engine()
         effective_run_id = run_id or new_id("memrun")
         effective_mission_id = mission_id or "memory-service"
         normalized_context = _normalize_context(context)
@@ -740,6 +746,59 @@ class MemoryClient:
     def profile(self, *, limit: int = 50) -> dict[str, Any]:
         return self._engine().compile_l0(limit=limit)
 
+    def memory_graph(self, *, limit: int = 200) -> dict[str, Any]:
+        """Aggregate active pages into dimension counts + an association graph."""
+        from ..memory.wiki import memory_page_dimension
+
+        store = self._store()
+        pages = store.list_memory_pages(status="active", limit=max(1, int(limit)))
+        page_ids = {str(page.get("id") or "") for page in pages if page.get("id")}
+
+        dimension_counts: dict[str, int] = {}
+        degree: dict[str, int] = {}
+        edges: list[dict[str, Any]] = []
+        seen_edges: set[tuple[str, str]] = set()
+        for page in pages:
+            pid = str(page.get("id") or "")
+            if not pid:
+                continue
+            dimension_counts[memory_page_dimension(page)] = dimension_counts.get(memory_page_dimension(page), 0) + 1
+            for link in store.list_memory_links(pid):
+                target = str(link.get("target_id") or "")
+                if target not in page_ids or target == pid:
+                    continue
+                key = tuple(sorted((pid, target)))
+                degree[pid] = degree.get(pid, 0) + 1
+                degree[target] = degree.get(target, 0) + 1
+                if key in seen_edges:
+                    continue
+                seen_edges.add(key)
+                edges.append({"source": pid, "target": target, "relation": link.get("relation")})
+
+        nodes = [
+            {
+                "id": str(page.get("id")),
+                "title": str(page.get("title") or page.get("id") or "")[:80],
+                "dimension": memory_page_dimension(page),
+                "degree": degree.get(str(page.get("id")), 0),
+                "orphan": degree.get(str(page.get("id")), 0) == 0,
+            }
+            for page in pages
+            if page.get("id")
+        ]
+        dimensions = [
+            {"dimension": dimension, "count": count}
+            for dimension, count in sorted(dimension_counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+        return {
+            "kind": "memory_graph",
+            "version": "mnemo_memory.memory_graph.v1",
+            "page_count": len(pages),
+            "dimensions": dimensions,
+            "nodes": nodes,
+            "edges": edges,
+        }
+
     def snapshot(self, *, compile: bool = False, limit: int = 50) -> dict[str, Any]:
         engine = self._engine()
         snapshot = engine.compile_l1_snapshot(limit=limit) if compile else engine.load_l1_snapshot()
@@ -798,6 +857,142 @@ class MemoryClient:
         path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.provider_config()
 
+    def embedding_config(self) -> dict[str, Any]:
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        return {
+            "kind": "memory_embedding_config",
+            "version": "mnemo_memory.embedding_config.v1",
+            "enabled": bool(config.embeddings_enabled),
+            "configured": bool(config.embedding_base_url and config.embedding_model),
+            "api_key_configured": bool(config.embedding_api_key),
+            "base_url": config.embedding_base_url,
+            "model": config.embedding_model,
+            "api_key_env": config.embedding_api_key_env,
+            "save_path": str(default_config_path(self.state_dir)),
+        }
+
+    def save_embedding_config(
+        self,
+        *,
+        enabled: bool | int | str | None = None,
+        base_url: str | None = None,
+        model: str | None = None,
+        api_key: Any = _MISSING,
+        api_key_env: str | None = None,
+        clear_api_key: bool = False,
+    ) -> dict[str, Any]:
+        path = default_config_path(self.state_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        config = _read_client_config(path)
+        _set_optional_config_bool(config, "embeddings_enabled", enabled)
+        _set_optional_config_str(config, "embedding_base_url", base_url)
+        _set_optional_config_str(config, "embedding_model", model)
+        _set_optional_config_str(config, "embedding_api_key_env", api_key_env)
+        if clear_api_key:
+            config.pop("embedding_api_key", None)
+        elif api_key is not _MISSING:
+            clean_key = str(api_key or "").strip()
+            if clean_key and clean_key != "***":
+                config["embedding_api_key"] = clean_key
+        path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return self.embedding_config()
+
+    def embedding_status(self) -> dict[str, Any]:
+        info = self.embedding_config()
+        store = self._store()
+        active = store.list_memory_pages(status="active", limit=10000)
+        indexed_ids = {str(row.get("target_id")) for row in store.list_embeddings(target_type="page", limit=10000)}
+        indexed = sum(1 for page in active if str(page.get("id")) in indexed_ids)
+        return {
+            "kind": "memory_embedding_status",
+            "version": "mnemo_memory.embedding_status.v1",
+            "enabled": info["enabled"],
+            "configured": info["configured"],
+            "active_count": len(active),
+            "indexed_count": indexed,
+            "stale_count": max(0, len(active) - indexed),
+        }
+
+    def reindex_embeddings(self, *, limit: int = 10000) -> dict[str, Any]:
+        from ..memory.embedding import ensure_page_embeddings
+
+        provider, model = self._embedding_runtime()
+        if provider is None or not model:
+            raise ValueError("embeddings are not enabled or not configured")
+        store = self._store()
+        pages = store.list_memory_pages(status="active", limit=max(1, int(limit)))
+        reindexed = ensure_page_embeddings(store, provider, pages, str(model))
+        status = self.embedding_status()
+        status["reindexed"] = reindexed
+        return status
+
+    def effective_config(self) -> dict[str, Any]:
+        return describe_effective_config(self.state_dir)
+
+    def test_provider(self) -> dict[str, Any]:
+        import time as _time
+
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        if not config.base_url or not config.model:
+            return {"kind": "memory_provider_test", "ok": False, "error": "provider not configured (base_url/model)"}
+        started = _time.perf_counter()
+        try:
+            from ..providers.openai import OpenAICompatibleMemoryMaintainer
+
+            OpenAICompatibleMemoryMaintainer(config).ping()
+            return {"kind": "memory_provider_test", "ok": True, "model": config.model, "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+        except (ValueError, OSError) as exc:
+            return {"kind": "memory_provider_test", "ok": False, "error": str(exc), "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+
+    def test_embedding(self) -> dict[str, Any]:
+        import time as _time
+
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        if not config.embedding_base_url or not config.embedding_model:
+            return {"kind": "memory_embedding_test", "ok": False, "error": "embeddings not configured (base_url/model)"}
+        started = _time.perf_counter()
+        try:
+            from ..providers.embeddings import OpenAICompatibleEmbeddingProvider
+
+            dimensions = OpenAICompatibleEmbeddingProvider(config).ping()
+            return {"kind": "memory_embedding_test", "ok": True, "model": config.embedding_model, "dimensions": dimensions, "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+        except (ValueError, OSError) as exc:
+            return {"kind": "memory_embedding_test", "ok": False, "error": str(exc), "latency_ms": round((_time.perf_counter() - started) * 1000, 1)}
+
+    def tuning_config(self) -> dict[str, Any]:
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        return {
+            "kind": "memory_tuning_config",
+            "version": "mnemo_memory.tuning_config.v1",
+            "quality_write_threshold": config.quality_write_threshold,
+            "quality_draft_threshold": config.quality_draft_threshold,
+            "promote_min_confidence": config.promote_min_confidence,
+            "save_path": str(default_config_path(self.state_dir)),
+        }
+
+    def save_tuning_config(
+        self,
+        *,
+        quality_write_threshold: float | int | str | None = None,
+        quality_draft_threshold: float | int | str | None = None,
+        promote_min_confidence: float | int | str | None = None,
+    ) -> dict[str, Any]:
+        path = default_config_path(self.state_dir)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        config = _read_client_config(path)
+        for key, value in (
+            ("quality_write_threshold", quality_write_threshold),
+            ("quality_draft_threshold", quality_draft_threshold),
+            ("promote_min_confidence", promote_min_confidence),
+        ):
+            if value is not None and value != "":
+                try:
+                    config[key] = max(0.0, min(1.0, float(value)))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"{key} must be a number between 0 and 1") from exc
+        path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        return self.tuning_config()
+
     def auto_dream_config(self) -> dict[str, Any]:
         config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
         save_path = default_config_path(self.state_dir)
@@ -808,6 +1003,7 @@ class MemoryClient:
             "interval_minutes": int(config.auto_dream_interval_minutes),
             "limit": int(config.auto_dream_limit),
             "min_confidence": float(config.auto_dream_min_confidence),
+            "local_fallback": bool(config.auto_dream_local_fallback),
             "save_path": str(save_path),
         }
 
@@ -818,11 +1014,13 @@ class MemoryClient:
         interval_minutes: int | str | None = None,
         limit: int | str | None = None,
         min_confidence: float | int | str | None = None,
+        local_fallback: bool | int | str | None = None,
     ) -> dict[str, Any]:
         path = default_config_path(self.state_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
         config = _read_client_config(path)
         _set_optional_config_bool(config, "auto_dream_enabled", enabled)
+        _set_optional_config_bool(config, "auto_dream_local_fallback", local_fallback)
         if interval_minutes is not None and interval_minutes != "":
             config["auto_dream_interval_minutes"] = max(5, int(interval_minutes))
         if limit is not None and limit != "":
@@ -851,7 +1049,7 @@ class MemoryClient:
             ),
         }
 
-    def promote_candidate(self, candidate_id: str, *, min_confidence: float = 0.7) -> dict[str, Any]:
+    def promote_candidate(self, candidate_id: str, *, min_confidence: float | None = None) -> dict[str, Any]:
         return self._engine().promote_candidate(candidate_id, min_confidence=min_confidence)
 
     def force_promote_candidate(self, candidate_id: str) -> dict[str, Any]:
@@ -955,7 +1153,28 @@ class MemoryClient:
         return store
 
     def _engine(self) -> MemoryEngine:
-        return MemoryEngine(self._store())
+        config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        provider, model = self._embedding_runtime(config)
+        return MemoryEngine(
+            self._store(),
+            embedding_provider=provider,
+            embedding_model=model,
+            quality_write_threshold=config.quality_write_threshold,
+            quality_draft_threshold=config.quality_draft_threshold,
+            promote_min_confidence=config.promote_min_confidence,
+        )
+
+    def _embedding_runtime(self, config: Any | None = None) -> tuple[Any | None, str | None]:
+        if config is None:
+            config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
+        if not config.embeddings_enabled or not config.embedding_base_url or not config.embedding_model:
+            return None, None
+        try:
+            from ..providers.embeddings import OpenAICompatibleEmbeddingProvider
+
+            return OpenAICompatibleEmbeddingProvider(config), config.embedding_model
+        except (ValueError, OSError):
+            return None, None
 
 
 def _api_card(card: dict[str, Any]) -> dict[str, Any]:

@@ -1,0 +1,47 @@
+{
+  "version": "mnemo_memory.eval.golden.v1",
+  "recall_cases": {
+    "k": 5,
+    "corpus": [
+      {"claim": "User codes primarily in Python and uses pytest for testing.", "dimension": "cognition", "confidence": 0.9},
+      {"claim": "User prefers concise progress updates that state what is done and the next step.", "dimension": "preferences", "confidence": 0.9},
+      {"claim": "User is based in Shanghai and works in the GMT+8 timezone.", "dimension": "identity", "confidence": 0.9},
+      {"claim": "User's main project is Mnemo, a personal memory service for agents.", "dimension": "context", "confidence": 0.9},
+      {"claim": "User dislikes over-engineered abstractions and deep nesting.", "dimension": "preferences", "confidence": 0.9}
+    ],
+    "queries": [
+      {"query": "Python pytest testing", "expect_contains": "pytest"},
+      {"query": "concise progress updates", "expect_contains": "concise progress"},
+      {"query": "Shanghai timezone", "expect_contains": "Shanghai"},
+      {"query": "Mnemo memory service project", "expect_contains": "Mnemo"}
+    ]
+  },
+  "event_cases": [
+    "By the way, going forward please keep my code reviews short — just the blocking issues.",
+    "I just moved to Berlin, so my timezone is now CET.",
+    "Remember that I always deploy on Fridays only after the staging smoke test passes."
+  ],
+  "promotion_cases": [
+    {
+      "name": "high_quality_specific",
+      "fact": {"claim": "User codes primarily in Python and uses pytest for testing.", "dimension": "cognition", "confidence": 0.9},
+      "expect": "accepted"
+    },
+    {
+      "name": "low_quality_vague",
+      "fact": {"claim": "ok", "dimension": "context", "confidence": 0.9},
+      "expect": "rejected"
+    },
+    {
+      "name": "high_quality_low_confidence",
+      "fact": {"claim": "User's direct manager is Alex Chen, who leads the infrastructure team.", "dimension": "relationships", "confidence": 0.4},
+      "expect": "deferred"
+    },
+    {
+      "name": "duplicate_of_existing",
+      "seed": [{"claim": "User codes primarily in Python and uses pytest for testing.", "dimension": "cognition", "confidence": 0.9}],
+      "fact": {"claim": "User codes primarily in Python and uses pytest for testing.", "dimension": "cognition", "confidence": 0.9},
+      "expect": "rejected"
+    }
+  ]
+}

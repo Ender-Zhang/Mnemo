@@ -4,14 +4,17 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 import mimetypes
 from pathlib import Path
 import socketserver
+import time
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from ..core.config import DEFAULT_STATE_DIR
 from ..core.jsonutil import dumps
+from ..core.log import configure_logging, get_logger, log_event
 from ..sdk import MemoryClient, memory_api_schema
 from .auto_dream import (
     AutoDreamScheduler,
@@ -23,6 +26,7 @@ from .auto_dream import (
 
 
 _WEB_ASSETS_DIR = Path(__file__).with_name("web_assets")
+_LOG = get_logger("web")
 
 
 class _MemoryThreadingHTTPServer(ThreadingHTTPServer):
@@ -47,17 +51,44 @@ def build_http_server(config: MemoryWebConfig) -> ThreadingHTTPServer:
     return _MemoryThreadingHTTPServer((config.host, int(config.port)), handler)
 
 
+def _is_loopback_host(host: str) -> bool:
+    normalized = str(host or "").strip().lower()
+    return normalized in {"127.0.0.1", "::1", "localhost"} or normalized.startswith("127.")
+
+
+def insecure_bind_warning(host: str) -> str | None:
+    """Operator warning when the unauthenticated API binds beyond loopback.
+
+    Mnemo is single-tenant per state-dir and the HTTP API has no access control,
+    so binding to anything other than loopback exposes every memory in the store.
+    """
+    if _is_loopback_host(host):
+        return None
+    return (
+        f"mnemo-memory is serving an UNAUTHENTICATED HTTP API on host '{host or '0.0.0.0'}'. "
+        "It has no access control and is single-tenant per state-dir; expose it only on "
+        "trusted local networks, and use a separate --state-dir per user for isolation."
+    )
+
+
 def serve_http(config: MemoryWebConfig) -> None:
+    configure_logging(state_dir=config.state_dir)
+    warning = insecure_bind_warning(config.host)
+    if warning:
+        print(f"WARNING: {warning}")
+        log_event(_LOG, "serve_insecure_bind", level=logging.WARNING, host=config.host)
     server = build_http_server(config)
     scheduler = AutoDreamScheduler(config.state_dir)
     scheduler.start()
     host, port = server.server_address
+    log_event(_LOG, "serve_start", host=host, port=port, state_dir=str(config.state_dir))
     print(f"mnemo-memory API listening on http://{host}:{port}")
     try:
         server.serve_forever()
     finally:
         scheduler.stop()
         server.server_close()
+        log_event(_LOG, "serve_stop", host=host, port=port)
 
 
 def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -66,6 +97,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             str(body.get("intent") or ""),
             limit=int(body.get("limit") or 8),
             scope=str(body.get("scope") or "memory"),
+            uid=_optional(body.get("uid")),
         )
     if method == "recall":
         return client.recall(
@@ -73,6 +105,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             context=str(body.get("context") or ""),
             depth=int(body.get("depth") or 2),
             limit=int(body.get("limit") or 8),
+            uid=_optional(body.get("uid")),
         )
     if method == "search":
         return client.search(
@@ -80,6 +113,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             limit=int(body.get("limit") or 8),
             scope=str(body.get("scope") or "memory"),
             include_tombstoned=bool(body.get("include_tombstoned", False)),
+            uid=_optional(body.get("uid")),
         )
     if method == "list":
         return client.list(
@@ -231,6 +265,21 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
         return client.health(limit=int(body.get("limit") or 20))
     if method in {"provider-config", "provider_config"}:
         return client.provider_config()
+    if method in {"embedding-config", "embedding_config"}:
+        return client.embedding_config()
+    if method in {"save-embedding-config", "save_embedding_config"}:
+        return client.save_embedding_config(
+            enabled=body.get("enabled"),
+            base_url=_config_field(body, "base_url"),
+            model=_config_field(body, "model"),
+            api_key=body.get("api_key", ""),
+            api_key_env=_config_field(body, "api_key_env"),
+            clear_api_key=bool(body.get("clear_api_key", False)),
+        )
+    if method in {"embedding-status", "embedding_status"}:
+        return client.embedding_status()
+    if method in {"reindex-embeddings", "reindex_embeddings"}:
+        return client.reindex_embeddings(limit=int(body.get("limit") or 10000))
     if method in {"save-provider-config", "save_provider_config"}:
         return client.save_provider_config(
             provider=_config_field(body, "provider"),
@@ -250,6 +299,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             interval_minutes=body.get("interval_minutes"),
             limit=body.get("limit"),
             min_confidence=body.get("min_confidence"),
+            local_fallback=body.get("local_fallback"),
         )
         return record_auto_dream_config_change(client)
     if method == "tombstones":
@@ -259,9 +309,24 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             limit=int(body.get("limit") or 50),
         )
     if method == "promote-candidate":
+        raw_min = body.get("min_confidence")
         return client.promote_candidate(
             _required(body, "candidate_id"),
-            min_confidence=float(body.get("min_confidence") or 0.7),
+            min_confidence=float(raw_min) if raw_min not in (None, "") else None,
+        )
+    if method in {"effective-config", "effective_config"}:
+        return client.effective_config()
+    if method in {"test-provider", "test_provider"}:
+        return client.test_provider()
+    if method in {"test-embedding", "test_embedding"}:
+        return client.test_embedding()
+    if method in {"tuning-config", "tuning_config"}:
+        return client.tuning_config()
+    if method in {"save-tuning-config", "save_tuning_config"}:
+        return client.save_tuning_config(
+            quality_write_threshold=body.get("quality_write_threshold"),
+            quality_draft_threshold=body.get("quality_draft_threshold"),
+            promote_min_confidence=body.get("promote_min_confidence"),
         )
     if method == "force-promote-candidate":
         return client.force_promote_candidate(_required(body, "candidate_id"))
@@ -333,6 +398,8 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
         )
     if method == "profile":
         return client.profile(limit=int(body.get("limit") or 50))
+    if method in {"memory-graph", "memory_graph"}:
+        return client.memory_graph(limit=int(body.get("limit") or 200))
     raise KeyError(method)
 
 
@@ -369,14 +436,27 @@ def _handler(config: MemoryWebConfig):
             self._dispatch(parsed.path.removeprefix(prefix), self._read_json())
 
         def _dispatch(self, method: str, body: dict[str, Any]) -> None:
+            started = time.perf_counter()
+            status = HTTPStatus.OK
             try:
                 result = dispatch_memory_api(client, method, body)
             except KeyError:
-                self._send({"error": f"unknown method: {method}"}, status=HTTPStatus.NOT_FOUND)
+                status = HTTPStatus.NOT_FOUND
+                self._send({"error": f"unknown method: {method}"}, status=status)
             except (TypeError, ValueError) as exc:
-                self._send({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                status = HTTPStatus.BAD_REQUEST
+                self._send({"error": str(exc)}, status=status)
             else:
                 self._send({"method": method, "result": result})
+            finally:
+                log_event(
+                    _LOG,
+                    "http_request",
+                    level=logging.DEBUG if status == HTTPStatus.OK else logging.WARNING,
+                    method=method,
+                    status=int(status),
+                    ms=round((time.perf_counter() - started) * 1000, 1),
+                )
 
         def _read_json(self) -> dict[str, Any]:
             length = int(self.headers.get("Content-Length") or "0")

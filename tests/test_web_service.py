@@ -88,6 +88,18 @@ class MemoryWebServiceTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=2)
 
+    def test_insecure_bind_warning_only_for_non_loopback(self) -> None:
+        from mnemo_memory.interfaces.web import insecure_bind_warning
+
+        self.assertIsNone(insecure_bind_warning("127.0.0.1"))
+        self.assertIsNone(insecure_bind_warning("localhost"))
+        self.assertIsNone(insecure_bind_warning("::1"))
+        for host in ("0.0.0.0", "192.168.1.5", ""):
+            message = insecure_bind_warning(host)
+            self.assertIsNotNone(message)
+            self.assertIn("UNAUTHENTICATED", message)
+            self.assertIn("state-dir", message)
+
     def test_auto_dream_scheduler_skips_backlog_without_provider(self) -> None:
         from mnemo_memory import MemoryClient
         from mnemo_memory.interfaces.auto_dream import AutoDreamScheduler
@@ -132,6 +144,34 @@ class MemoryWebServiceTests(unittest.TestCase):
 
                 self.assertEqual(status["last_outcome"], "provider_required")
                 self.assertEqual(status["last_backlog"]["pending_plan_proposals"], 1)
+
+    def test_auto_dream_scheduler_runs_local_fallback_without_provider(self) -> None:
+        from mnemo_memory import MemoryClient
+        from mnemo_memory.interfaces.auto_dream import AutoDreamScheduler
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
+                client = MemoryClient(state_dir=tmp)
+                client.save_auto_dream_config(local_fallback=True)
+                client.update(
+                    facts=[
+                        {
+                            "claim": "User prefers concise progress updates with explicit next steps.",
+                            "dimension": "preferences",
+                            "confidence": 0.9,
+                        }
+                    ],
+                    source="unit-test",
+                )
+                scheduler = AutoDreamScheduler(tmp, startup_delay_s=0)
+
+                status = scheduler.tick_once(now=1000, force=True)
+
+                self.assertEqual(status["last_outcome"], "ran")
+                self.assertEqual(status["last_run_mode"], "local")
+                self.assertTrue(status["local_fallback"])
+                pages = client.list(kind="page", status="active", limit=10)["items"]
+                self.assertTrue(pages, "local fallback should promote the high-confidence candidate")
 
 
 class HttpResponse:
