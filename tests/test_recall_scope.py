@@ -51,6 +51,31 @@ class RecallScopeTests(unittest.TestCase):
                 # the page_id must be traceable back to an event via provenance
                 self.assertTrue(client.provenance(entry["page_id"])["events"])
 
+    def test_event_flow_scoped_by_uid(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            _seed_two_users(client)
+
+            everyone = client.event_flow()["flows"]
+            self.assertGreaterEqual(len(everyone), 2)
+
+            alice = client.event_flow(uid="alice")
+            self.assertTrue(alice["flows"])
+            scopes = {flow["event"]["scope"] for flow in alice["flows"]}
+            for flow in alice["flows"]:
+                scopes.update(candidate.get("scope") for candidate in flow["candidates"])
+            self.assertIn("user:alice", scopes)
+            self.assertNotIn("user:bob", scopes)
+
+            # the chain is event -> promoted candidate -> page (traceable downstream)
+            chained = [
+                flow for flow in alice["flows"]
+                if any(candidate.get("page_ids") for candidate in flow["candidates"])
+            ]
+            self.assertTrue(chained, "expected at least one event linked through to a page")
+
     def test_recall_and_context_scoped_by_uid(self) -> None:
         from mnemo_memory import MemoryClient
 

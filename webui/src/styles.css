@@ -2894,3 +2894,114 @@ pre {
     position: static;
   }
 }
+
+/* ─── Event flow (event → memory) ─────────────────────────────────────────── */
+.event-flow-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.event-flow-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.event-flow-item {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto minmax(260px, 1.4fr);
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.event-flow-event {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.event-flow-event-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.event-flow-excerpt {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.event-flow-arrow {
+  align-self: center;
+  color: var(--muted-2);
+  font-size: 20px;
+  font-weight: 600;
+}
+.event-flow-derived {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.event-flow-empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+.event-flow-candidate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.event-flow-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 16px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.chip:hover {
+  border-color: var(--accent);
+  background: var(--tint-blue);
+}
+.chip .chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+.chip-dim {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--tint-neutral);
+}
+.chip-page { background: var(--tint-purple); }
+.chip-plan { background: var(--tint-amber); }
+
+@media (max-width: 720px) {
+  .event-flow-item { grid-template-columns: 1fr; }
+  .event-flow-arrow { transform: rotate(90deg); justify-self: start; }
+}

@@ -325,7 +325,47 @@ export type PlanFormState = {
   dueAt: string;
 };
 
-export type TabKey = "memories" | "preview" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
+export type TabKey = "memories" | "preview" | "events" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
+
+export type EventFlowCandidate = {
+  id: string;
+  status?: string;
+  claim?: string;
+  scope?: string;
+  dimension?: string;
+  page_ids: string[];
+};
+
+export type EventFlowPlan = {
+  id?: string;
+  title?: string;
+  kind?: string;
+  status?: string;
+  scope?: string;
+  type: "plan" | "plan_proposal";
+};
+
+export type EventFlowEvent = {
+  id: string;
+  excerpt?: string;
+  source?: string;
+  actor?: string;
+  event_at?: number;
+  observed_at?: number;
+  scope?: string;
+};
+
+export type EventFlowEntry = {
+  event: EventFlowEvent;
+  candidates: EventFlowCandidate[];
+  plans: EventFlowPlan[];
+};
+
+export type EventFlowResult = {
+  kind: "memory_event_flow";
+  uid: string | null;
+  flows: EventFlowEntry[];
+};
 
 export type Notice = {
   tone: "ok" | "warn" | "error";

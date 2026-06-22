@@ -759,6 +759,82 @@ class MemoryClient:
         )
         return {"kind": "memory_known_uids", "uids": uids}
 
+    def event_flow(self, *, uid: str | None = None, limit: int = 50) -> dict[str, Any]:
+        """Per-event flow: event -> derived candidates -> promoted pages (+ plans).
+
+        Scoped by uid (matches derived items or the event's scope). Lets the UI
+        show a user's event -> memory pipeline end to end.
+        """
+        from ..memory.utils import scope_matches_uid
+
+        store = self._store()
+        uid_clean = _optional_text(uid)
+        bounded = max(1, int(limit))
+
+        events_by_candidate: dict[str, list[dict[str, Any]]] = {}
+        for candidate in store.list_memory_candidates(status=None, limit=2000):
+            for event_id in _candidate_event_ids([candidate]):
+                events_by_candidate.setdefault(event_id, []).append(candidate)
+
+        pages_by_candidate: dict[str, list[dict[str, Any]]] = {}
+        for page in store.list_memory_pages(status=None, limit=2000):
+            for candidate_id in _page_source_candidate_ids(store, page):
+                pages_by_candidate.setdefault(candidate_id, []).append(page)
+
+        plans_by_event: dict[str, list[dict[str, Any]]] = {}
+        for item in store.list_plan_items(status=None, limit=1000, include_archived=True):
+            event_id = str(item.get("source_event_id") or "")
+            if event_id:
+                plans_by_event.setdefault(event_id, []).append(
+                    {"id": item.get("id"), "title": item.get("title"), "kind": item.get("kind"),
+                     "status": item.get("status"), "scope": item.get("scope"), "type": "plan"}
+                )
+        for proposal in store.list_plan_proposals(status=None, limit=1000):
+            event_id = str(proposal.get("source_event_id") or "")
+            if event_id:
+                plans_by_event.setdefault(event_id, []).append(
+                    {"id": proposal.get("id"), "title": proposal.get("title"), "kind": proposal.get("kind"),
+                     "status": proposal.get("proposal_status"), "scope": proposal.get("scope"), "type": "plan_proposal"}
+                )
+
+        flows: list[dict[str, Any]] = []
+        for event in store.list_recent_events(limit=bounded * 5):
+            event_id = str(event.get("id") or "")
+            event_scope = str((event.get("metadata") or {}).get("scope") or "")
+            candidates = []
+            scopes: list[str] = [event_scope]
+            for candidate in events_by_candidate.get(event_id, []):
+                candidate_id = str(candidate.get("id") or "")
+                page_ids = [str(p.get("id")) for p in pages_by_candidate.get(candidate_id, [])]
+                scopes.append(str(candidate.get("scope") or ""))
+                scopes.extend(str(p.get("scope") or "") for p in pages_by_candidate.get(candidate_id, []))
+                candidates.append(
+                    {"id": candidate_id, "status": candidate.get("status"), "claim": candidate.get("claim"),
+                     "scope": candidate.get("scope"), "dimension": candidate.get("dimension"), "page_ids": page_ids}
+                )
+            plans = plans_by_event.get(event_id, [])
+            scopes.extend(str(p.get("scope") or "") for p in plans)
+            if uid_clean and not any(scope_matches_uid(scope, uid_clean) for scope in scopes):
+                continue
+            flows.append(
+                {
+                    "event": {
+                        "id": event_id,
+                        "excerpt": event.get("excerpt"),
+                        "source": event.get("source"),
+                        "actor": event.get("actor"),
+                        "event_at": event.get("event_at"),
+                        "observed_at": event.get("observed_at"),
+                        "scope": event_scope,
+                    },
+                    "candidates": candidates,
+                    "plans": plans,
+                }
+            )
+            if len(flows) >= bounded:
+                break
+        return {"kind": "memory_event_flow", "uid": uid_clean, "flows": flows}
+
     def memory_graph(self, *, limit: int = 200) -> dict[str, Any]:
         """Aggregate active pages into dimension counts + an association graph."""
         from ..memory.wiki import memory_page_dimension

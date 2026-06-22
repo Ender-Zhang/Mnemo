@@ -323,6 +323,19 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 
 剩余建议里仍待办：事件触发 + 常驻调度（2.2/2.3）、可信来源直通（2.5）、中英文案统一（3.2 文案部分）、a11y & 响应式（4.6）、provider 预设（5.5）、冲突解决一键回滚（1.4 剩余部分）。
 
+## 11. 第五轮落地记录（事件→记忆全流程可视化）
+
+> 2026-06-22 实现。验证：`python3 -m unittest discover -s tests` 共 90 项通过（新增 `test_l0_entries_carry_page_id`、`test_event_flow_scoped_by_uid`、`test_webui_exposes_event_flow_tab`）；`node --test webui/tests/*.test.ts` 7 项通过；`tsc --noEmit && vite build` 通过。
+
+围绕「一个用户的事件 → 记忆全流程」做了两件事：
+
+| 项 | 改动摘要 | 主要涉及 |
+| --- | --- | --- |
+| L0 画像可溯源 | `compile_l0_profile` 额外返回 `entries:[{dimension,text,page_id,title}]`，WebUI 画像卡每行可点击直达来源页（再经页面→候选→事件链路溯源） | `memory/profile.py`、`webui/src/types.ts`、`webui/src/main.tsx`、`webui/src/styles.css`、`tests/test_recall_scope.py` |
+| 事件流 tab | 新增 `event_flow(uid,limit)`：以事件为锚点反查派生候选（evidence event_ids）→ 已固化页（source_candidate_ids）→ 计划（source_event_id），按 `scope_matches_uid` 受当前用户过滤；新增「事件流」导航 tab，逐条展示 事件 → 候选（状态徽标）→ 页面 → 计划，候选/页面可点开详情与溯源 | `storage/sqlite.py`(`list_recent_events`)、`sdk/client.py`(`event_flow`)、`interfaces/web.py`(`event-flow`)、`webui/src/{types.ts,main.tsx,styles.css}`、`tests/{test_recall_scope.py,test_memory_service.py}` |
+
+至此 WebUI 形成「写入 → 候选审核 → Dream 固化 → L0/L1/L2 预览 → 事件流回看」的闭环：既能正向看 agent 拿到什么上下文（记忆预览），也能反向看任一条记忆从哪个事件来（事件流 + 画像行级溯源），且全部受顶部「当前用户 (UID)」统一约束。
+
 ---
 
-*P0 全部，P1/P2 中的语义检索 / 评估 / 可观测性 / 易用性 / 配置（生效视图·连通测试·阈值）/ 反馈（toast·Dream 实时）/ 计划↔记忆互链 / 维度可视化均已落地并通过测试；多用户隔离已定为单租户并加护栏。其余仍为建议；告诉我接着推进哪项即可。*
+*P0 全部，P1/P2 中的语义检索 / 评估 / 可观测性 / 易用性 / 配置（生效视图·连通测试·阈值）/ 反馈（toast·Dream 实时）/ 计划↔记忆互链 / 维度可视化 / 事件→记忆全流程可视化均已落地并通过测试；多用户隔离已定为单租户并加护栏。其余仍为建议；告诉我接着推进哪项即可。*

@@ -106,6 +106,8 @@ import type {
   DreamReviewResult,
   DreamStatusResult,
   EffectiveConfigResult,
+  EventFlowEntry,
+  EventFlowResult,
   L0Profile,
   MemoryGraphResult,
   MemoryHealthResult,
@@ -137,6 +139,7 @@ import type {
 const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "memories", label: "记忆工作台", icon: Home },
   { key: "preview", label: "记忆预览", icon: Eye },
+  { key: "events", label: "事件流", icon: FileClock },
   { key: "plans", label: "计划", icon: ListTodo },
   { key: "maintenance", label: "模型与维护", icon: Activity },
   { key: "settings", label: "设置", icon: Settings },
@@ -144,8 +147,8 @@ const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "tombstones", label: "墓碑 / 删除", icon: Archive }
 ];
 
-const defaultNavKeys = new Set<TabKey>(["memories", "preview", "plans", "maintenance", "settings"]);
-const advancedNavKeys = new Set<TabKey>(["memories", "preview", "plans", "maintenance", "settings", "candidates", "tombstones"]);
+const defaultNavKeys = new Set<TabKey>(["memories", "preview", "events", "plans", "maintenance", "settings"]);
+const advancedNavKeys = new Set<TabKey>(["memories", "preview", "events", "plans", "maintenance", "settings", "candidates", "tombstones"]);
 
 const DIMENSIONS = [
   "identity", "cognition", "values", "goals", "preferences",
@@ -189,6 +192,8 @@ function App() {
   const [searchMode, setSearchMode] = useState(false);
   const [inventory, setInventory] = useState<MemoryItem[]>([]);
   const [knownUids, setKnownUids] = useState<string[]>([]);
+  const [eventFlow, setEventFlow] = useState<EventFlowEntry[]>([]);
+  const [eventFlowLoading, setEventFlowLoading] = useState(false);
   const [searchItems, setSearchItems] = useState<MemoryItem[]>([]);
   const [candidates, setCandidates] = useState<MemoryItem[]>([]);
   const [selected, setSelected] = useState<MemoryItem | null>(null);
@@ -359,6 +364,22 @@ function App() {
     await refresh(options);
   }, [refresh]);
 
+  const loadEventFlow = useCallback(async () => {
+    setEventFlowLoading(true);
+    try {
+      const cleanUid = uidFilter.trim();
+      const result = await callMemory<EventFlowResult>("event-flow", { uid: cleanUid || undefined, limit: 80 });
+      setEventFlow(result.flows || []);
+    } catch (error) {
+      setError(error);
+    } finally {
+      setEventFlowLoading(false);
+    }
+  }, [callMemory, uidFilter]);
+
+  useEffect(() => {
+    if (activeTab === "events") void loadEventFlow();
+  }, [activeTab, loadEventFlow]);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("mnemo.theme", theme);
@@ -1150,6 +1171,17 @@ function App() {
                 onRun={runPreview}
               />
             ) : null}
+            {activeTab === "events" ? (
+              <EventFlowPanel
+                flows={eventFlow}
+                loading={eventFlowLoading}
+                uid={uidFilter.trim()}
+                onRefresh={loadEventFlow}
+                onSelectCandidate={(id) => readMemory({ id, type: "candidate" } as MemoryItem)}
+                onSelectPage={(id) => readMemory({ id, type: "page" } as MemoryItem)}
+                onOpenPlans={() => setActiveTab("plans")}
+              />
+            ) : null}
             {activeTab === "plans" ? (
               <PlanPanel
                 items={planItems}
@@ -1346,6 +1378,114 @@ function ProfileCard({ profile, onSelectPage }: { profile: L0Profile; onSelectPa
             <div key={i} className="profile-line">{line}</div>
           ))}
         </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Event Flow (Event → Memory) ─────────────────────────────────────────────
+
+function candidateStatusTone(status?: string): string {
+  const s = (status || "").toLowerCase();
+  if (s === "promoted") return "good";
+  if (s.startsWith("reject")) return "bad";
+  return "neutral";
+}
+
+function candidateStatusLabel(status?: string): string {
+  const s = (status || "").toLowerCase();
+  const map: Record<string, string> = {
+    promoted: "已固化", rejected: "已拒绝", pending: "待审核",
+    needs_review: "待复核", draft: "草稿", superseded: "已替换"
+  };
+  return map[s] || status || "候选";
+}
+
+function EventFlowPanel(props: {
+  flows: EventFlowEntry[];
+  loading: boolean;
+  uid: string;
+  onRefresh: () => void;
+  onSelectCandidate: (id: string) => void;
+  onSelectPage: (id: string) => void;
+  onOpenPlans: () => void;
+}) {
+  return (
+    <section className="panel event-flow-panel">
+      <div className="panel-header">
+        <div>
+          <h2>事件流 · 事件 → 记忆</h2>
+          <p>按时间倒序展示原始事件，以及它们沿管线派生出的候选、已固化页面与计划。点击候选或页面查看详情与溯源。</p>
+        </div>
+        <div className="event-flow-actions">
+          <StatusBadge text={props.uid ? `用户 ${props.uid}` : "全部用户"} />
+          <button className="ghost-button" onClick={props.onRefresh} disabled={props.loading}>
+            {props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
+            刷新
+          </button>
+        </div>
+      </div>
+
+      {props.flows.length === 0 ? (
+        <EmptyState text={props.loading ? "加载中…" : "暂无事件。写入一条记忆或摄取一个事件后，这里会显示它的完整流转。"} />
+      ) : (
+        <ol className="event-flow-list">
+          {props.flows.map((flow) => {
+            const ev = flow.event;
+            return (
+              <li className="event-flow-item" key={ev.id}>
+                <div className="event-flow-event">
+                  <div className="event-flow-event-head">
+                    <span className="badge blue">事件</span>
+                    {ev.source ? <span className="badge neutral">{ev.source}</span> : null}
+                    {ev.scope ? <span className="badge">{ev.scope}</span> : null}
+                    <span className="time">{formatTime(ev.observed_at || ev.event_at)}</span>
+                  </div>
+                  <p className="event-flow-excerpt">{ev.excerpt || "(无摘要)"}</p>
+                </div>
+
+                <div className="event-flow-arrow" aria-hidden>→</div>
+
+                <div className="event-flow-derived">
+                  {flow.candidates.length === 0 && flow.plans.length === 0 ? (
+                    <span className="event-flow-empty">未派生记忆（可能被规则过滤或仍在草稿）</span>
+                  ) : null}
+
+                  {flow.candidates.map((candidate) => (
+                    <div className="event-flow-candidate" key={candidate.id}>
+                      <button
+                        className="chip chip-candidate"
+                        onClick={() => props.onSelectCandidate(candidate.id)}
+                        title={candidate.claim || candidate.id}
+                      >
+                        <span className={`badge ${candidateStatusTone(candidate.status)}`}>{candidateStatusLabel(candidate.status)}</span>
+                        <span className="chip-text">{candidate.claim || candidate.id}</span>
+                        {candidate.dimension ? <span className="chip-dim">{candidate.dimension}</span> : null}
+                      </button>
+                      {candidate.page_ids.length > 0 ? (
+                        <div className="event-flow-pages">
+                          {candidate.page_ids.map((pageId) => (
+                            <button className="chip chip-page" key={pageId} onClick={() => props.onSelectPage(pageId)} title={pageId}>
+                              <BookOpen size={13} /> 页面 {pageId}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+
+                  {flow.plans.map((plan, index) => (
+                    <button className="chip chip-plan" key={`${plan.id || "plan"}-${index}`} onClick={props.onOpenPlans} title={plan.title || plan.id}>
+                      <ListTodo size={13} />
+                      <span className="chip-text">{plan.kind === "goal" ? "目标" : plan.kind === "todo" ? "待办" : "计划"} · {plan.title || plan.id}</span>
+                      {plan.type === "plan_proposal" ? <span className="badge neutral">提案</span> : null}
+                    </button>
+                  ))}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
       )}
     </section>
   );

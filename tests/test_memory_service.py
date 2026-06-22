@@ -1273,6 +1273,20 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("当前用户已应用", app)
         self.assertIn("当前用户 (UID)", app)
 
+    def test_webui_exposes_event_flow_tab(self) -> None:
+        app = _webui_source()
+
+        # a dedicated nav tab and panel for the event -> memory pipeline
+        self.assertIn('{ key: "events"', app)
+        self.assertIn("function EventFlowPanel", app)
+        self.assertIn('activeTab === "events"', app)
+        # the flow is fetched from the backend and scoped to the current uid
+        self.assertIn('callMemory<EventFlowResult>("event-flow"', app)
+        self.assertIn("uid: cleanUid || undefined", app)
+        # each event chains to its derived candidate and promoted page (clickable -> detail)
+        self.assertIn("onSelectCandidate", app)
+        self.assertIn("onSelectPage", app)
+
     def test_webui_compacts_long_status_badges(self) -> None:
         root = Path(__file__).resolve().parents[1]
         app = _webui_source()

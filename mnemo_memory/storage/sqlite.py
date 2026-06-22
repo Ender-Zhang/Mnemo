@@ -348,6 +348,16 @@ class StateStore:
                 events.append(event)
         return events
 
+    def list_recent_events(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT id, event_at, observed_at, source, agent_id, run_id, mission_id, "
+                "conversation_id, message_id, actor, excerpt, raw_hash, metadata_json, created_at "
+                "FROM memory_events ORDER BY observed_at DESC LIMIT ?",
+                (max(1, int(limit)),),
+            ).fetchall()
+        return [_memory_event_from_row(row) for row in rows]
+
     def add_memory_candidate(
         self,
         run_id: str,
