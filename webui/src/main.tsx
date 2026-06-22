@@ -1338,6 +1338,7 @@ function App() {
           open={ingestOpen}
           loading={loading}
           useProvider={useProvider}
+          uidFilter={uidFilter}
           onSubmit={ingestEvent}
           onClose={() => setIngestOpen(false)}
         />
@@ -1345,6 +1346,7 @@ function App() {
           open={editorOpen}
           item={editorItem}
           loading={loading}
+          uidFilter={uidFilter}
           onCreate={stableCreate}
           onUpdate={stableUpdate}
           onClose={() => { setEditorOpen(false); setEditorItem(null); }}
@@ -1966,10 +1968,11 @@ type IngestEventForm = {
   useProvider: boolean;
 };
 
-function IngestEventDrawer({ open, loading, useProvider, onSubmit, onClose }: {
+function IngestEventDrawer({ open, loading, useProvider, uidFilter, onSubmit, onClose }: {
   open: boolean;
   loading: boolean;
   useProvider: boolean;
+  uidFilter: string;
   onSubmit: (form: IngestEventForm) => void;
   onClose: () => void;
 }) {
@@ -1978,6 +1981,11 @@ function IngestEventDrawer({ open, loading, useProvider, onSubmit, onClose }: {
     autoPromote: false, useProvider: false
   });
   const set = <K extends keyof IngestEventForm>(k: K, v: IngestEventForm[K]) => setForm({ ...form, [k]: v });
+
+  // default the event's scope to the top-bar current user (still editable)
+  useEffect(() => {
+    if (open) setForm((f) => ({ ...f, scope: scopeFromUidFilter(uidFilter) }));
+  }, [open, uidFilter]);
 
   if (!open) return null;
   return (
@@ -2008,7 +2016,7 @@ function IngestEventDrawer({ open, loading, useProvider, onSubmit, onClose }: {
           </label>
           <label>来源 <input value={form.source} onChange={(e) => set("source", e.target.value)} /></label>
           <label>Actor <input value={form.actor} onChange={(e) => set("actor", e.target.value)} placeholder="user / assistant" /></label>
-          <label>Scope <input value={form.scope} onChange={(e) => set("scope", e.target.value)} placeholder="user:xxx 或留空" /></label>
+          <label>Scope <input value={form.scope} onChange={(e) => set("scope", e.target.value)} placeholder="跟随当前用户 · 留空=全局" /></label>
         </div>
         <label className="checkbox-row">
           <input type="checkbox" checked={form.autoPromote} onChange={(e) => set("autoPromote", e.target.checked)} />
@@ -2039,10 +2047,11 @@ type PageEditorForm = {
   dimension: string;
 };
 
-function PageEditorDrawer({ open, item, loading, onCreate, onUpdate, onClose }: {
+function PageEditorDrawer({ open, item, loading, uidFilter, onCreate, onUpdate, onClose }: {
   open: boolean;
   item: MemoryItem | null;
   loading: boolean;
+  uidFilter: string;
   onCreate: (form: PageEditorForm) => void;
   onUpdate: (id: string, form: PageEditorForm) => void;
   onClose: () => void;
@@ -2063,9 +2072,9 @@ function PageEditorDrawer({ open, item, loading, onCreate, onUpdate, onClose }: 
         dimension: item.dimension || ""
       });
     } else {
-      setForm({ title: "", content: "", scope: "global", confidence: "0.7", dimension: "" });
+      setForm({ title: "", content: "", scope: scopeFromUidFilter(uidFilter) || "global", confidence: "0.7", dimension: "" });
     }
-  }, [item, open]);
+  }, [item, open, uidFilter]);
 
   if (!open) return null;
   return (
@@ -2082,7 +2091,7 @@ function PageEditorDrawer({ open, item, loading, onCreate, onUpdate, onClose }: 
         <label>标题 * <input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="记忆标题" /></label>
         <label>内容 * <textarea value={form.content} onChange={(e) => set("content", e.target.value)} placeholder="记忆内容" rows={5} /></label>
         <div className="provider-grid">
-          <label>Scope <input value={form.scope} onChange={(e) => set("scope", e.target.value)} placeholder="global" /></label>
+          <label>Scope <input value={form.scope} onChange={(e) => set("scope", e.target.value)} placeholder="跟随当前用户 · 留空=全局" /></label>
           <label>置信度 <input type="number" min="0" max="1" step="0.1" value={form.confidence} onChange={(e) => set("confidence", e.target.value)} /></label>
           <label>
             维度

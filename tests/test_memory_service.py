@@ -1277,6 +1277,18 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("topbar-uid", app)
         self.assertIn('list="global-uid-options"', app)
 
+    def test_webui_write_flows_follow_current_user(self) -> None:
+        app = _webui_source()
+
+        # all three write entry points derive scope from the top-bar current user
+        # (save-memory composer, ingest-event drawer, new stable-memory editor),
+        # so a memory/event added while a user is selected lands under that user.
+        self.assertIn("scope: scopeFromUidFilter(uidFilter)", app)        # ingest drawer prefill
+        self.assertIn('scopeFromUidFilter(uidFilter) || "global"', app)   # new-page editor default
+        self.assertIn("uidFilter={uidFilter}", app)
+        # the editor/ingest scope fields advertise that they follow the current user
+        self.assertIn("跟随当前用户", app)
+
     def test_webui_exposes_event_flow_tab(self) -> None:
         app = _webui_source()
 
