@@ -2747,3 +2747,100 @@ pre {
 .map-graph-empty {
   padding: 8px 14px;
 }
+
+/* ─── Plan: per-user workspace ───────────────────────────────────────────── */
+.plan-user-workspace {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.plan-user-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.plan-user-list {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 12px;
+  position: sticky;
+  top: 12px;
+}
+
+.plan-user-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.plan-user-list-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.plan-user-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted, #6b7686);
+  line-height: 1.4;
+}
+
+.plan-user-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-user-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+  color: inherit;
+}
+
+.plan-user-row:hover {
+  border-color: var(--border-3);
+}
+
+.plan-user-row.active {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
+
+.plan-user-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-user-counts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 900px) {
+  .plan-user-workspace {
+    grid-template-columns: 1fr;
+  }
+  .plan-user-list {
+    position: static;
+  }
+}

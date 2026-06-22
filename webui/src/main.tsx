@@ -63,6 +63,7 @@ import {
   auditReviewLabel,
   compactId,
   compareMemoryItems,
+  buildPlanUserGroups,
   datetimeLocalToUnix,
   detailedAuditReason,
   dreamBacklogParts,
@@ -122,6 +123,7 @@ import type {
   PlanListResult,
   PlanProposal,
   PlanProposalsResult,
+  PlanUserGroup,
   RecallPreviewResult,
   SnapshotResult,
   TabKey,
@@ -2248,8 +2250,27 @@ function PlanPanel(props: {
   onRejectProposal: (id: string) => void;
   onViewScope: (scope?: string) => void;
 }) {
-  const goals = props.items.filter((item) => item.kind === "goal");
-  const todos = props.items.filter((item) => item.kind === "todo");
+  const userGroups = useMemo(
+    () => buildPlanUserGroups(props.items, props.proposals, props.uidFilter),
+    [props.items, props.proposals, props.uidFilter]
+  );
+  const multiUser = userGroups.length > 1;
+  const [selectedScope, setSelectedScope] = useState("");
+  useEffect(() => {
+    if (userGroups.length === 0) {
+      if (selectedScope) setSelectedScope("");
+      return;
+    }
+    if (!userGroups.some((group) => group.scope === selectedScope)) {
+      setSelectedScope(userGroups[0].scope);
+    }
+  }, [selectedScope, userGroups]);
+  const selectedGroup: PlanUserGroup | undefined =
+    userGroups.find((group) => group.scope === selectedScope) || userGroups[0];
+  const visibleItems = multiUser ? selectedGroup?.items ?? [] : props.items;
+  const visibleProposals = multiUser ? selectedGroup?.proposals ?? [] : props.proposals;
+  const goals = visibleItems.filter((item) => item.kind === "goal");
+  const todos = visibleItems.filter((item) => item.kind === "todo");
   const parentGoals = goals.filter((goal) => !["completed", "cancelled", "archived"].includes(String(goal.status || "")));
   const setField = <K extends keyof PlanFormState>(field: K, value: PlanFormState[K]) => {
     props.setForm({ ...props.form, [field]: value });
@@ -2263,6 +2284,32 @@ function PlanPanel(props: {
         </div>
         <StatusBadge text={props.uidFilter.trim() ? `UID ${props.uidFilter.trim()}` : "global"} />
       </div>
+      <div className={multiUser ? "plan-user-workspace" : "plan-stack"}>
+      {multiUser ? (
+        <aside className="plan-user-list">
+          <div className="plan-user-list-header">
+            <h3>用户</h3>
+            <StatusBadge text={`${userGroups.length} users`} />
+          </div>
+          <p className="plan-user-hint">以用户为主线查看各自的目标；点开用户后查看他的 Goal 与 Todo。</p>
+          <div className="plan-user-rows">
+            {userGroups.map((group) => (
+              <button
+                className={group.scope === selectedGroup?.scope ? "plan-user-row active" : "plan-user-row"}
+                key={group.key}
+                onClick={() => setSelectedScope(group.scope)}
+              >
+                <span className="plan-user-name">{group.label}</span>
+                <span className="plan-user-counts">
+                  <StatusBadge text={`${group.openCount} open`} />
+                  {group.pendingCount > 0 ? <StatusBadge text={`${group.pendingCount} 待审`} /> : null}
+                </span>
+              </button>
+            ))}
+          </div>
+        </aside>
+      ) : null}
+      <div className="plan-user-detail">
       <div className="plan-composer">
         <label>
           类型
@@ -2332,15 +2379,15 @@ function PlanPanel(props: {
             <h3>候选计划</h3>
             <p>来自事件摄入或模型抽取，接受后才会进入正式计划。</p>
           </div>
-          <StatusBadge text={`${props.proposals.length} pending`} />
+          <StatusBadge text={`${visibleProposals.length} pending`} />
         </div>
         <label>
           拒绝原因
           <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
         </label>
         <div className="plan-proposal-list">
-          {props.proposals.length === 0 ? <EmptyState text="暂无候选计划。" /> : null}
-          {props.proposals.map((proposal) => (
+          {visibleProposals.length === 0 ? <EmptyState text="暂无候选计划。" /> : null}
+          {visibleProposals.map((proposal) => (
             <article className="plan-proposal-card" key={proposal.id}>
               <div>
                 <div className="plan-row-title">
@@ -2365,6 +2412,8 @@ function PlanPanel(props: {
             </article>
           ))}
         </div>
+      </div>
+      </div>
       </div>
     </section>
   );

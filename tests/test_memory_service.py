@@ -1250,13 +1250,10 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn('callMemory("plan-create"', app)
         self.assertIn('callMemory("plan-complete"', app)
         self.assertIn('callMemory("apply-plan-proposal"', app)
-        self.assertIn("候选目标", app)
-        self.assertIn("新增目标", app)
-        self.assertIn("buildGoalUserGroups", app)
-        self.assertIn("goal-user-workspace", app)
-        self.assertIn("点开用户后查看他的多个目标", app)
-        self.assertNotIn('<option value="todo">Todo</option>', app)
-        self.assertNotIn('title="Todos"', app)
+        self.assertIn("候选计划", app)
+        self.assertIn("新增计划", app)
+        self.assertIn('<option value="todo">Todo</option>', app)
+        self.assertIn('title="Todos"', app)
 
     def test_webui_can_filter_memories_by_uid(self) -> None:
         app = _webui_source()

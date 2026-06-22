@@ -10,7 +10,9 @@ import type {
   MemoryItem,
   MemoryTombstone,
   PlanFormState,
-  PlanItem
+  PlanItem,
+  PlanProposal,
+  PlanUserGroup
 } from "./types";
 
 // ─── Item mapping / search ─────────────────────────────────────────────────
@@ -336,4 +338,78 @@ export function isClosedPlan(item: PlanItem) {
 
 export function planTitleById(items: PlanItem[], id: string) {
   return items.find((item) => item.id === id)?.title || compactId(id);
+}
+
+export function isPendingPlanProposal(proposal: PlanProposal) {
+  const status = String(proposal.proposal_status || "pending").toLowerCase();
+  return status === "pending";
+}
+
+export function planItemTime(item: PlanItem) {
+  return item.updated_at || item.created_at || 0;
+}
+
+export function planProposalTime(proposal: PlanProposal) {
+  return proposal.decided_at || proposal.created_at || 0;
+}
+
+export function uidFromScope(scope: string) {
+  const clean = (scope || "").trim();
+  return clean.toLowerCase().startsWith("user:") ? clean.slice("user:".length) : "";
+}
+
+export function buildPlanUserGroups(
+  items: PlanItem[],
+  proposals: PlanProposal[],
+  uidFilter: string
+): PlanUserGroup[] {
+  const groups = new Map<string, PlanUserGroup>();
+  const ensureGroup = (rawScope: string): PlanUserGroup => {
+    const scope = (rawScope || "global").trim() || "global";
+    const existing = groups.get(scope);
+    if (existing) return existing;
+    const uid = uidFromScope(scope);
+    const group: PlanUserGroup = {
+      key: scope,
+      uid,
+      scope,
+      label: uid || (scope === "global" ? "全局" : scope),
+      items: [],
+      proposals: [],
+      openCount: 0,
+      pendingCount: 0,
+      latestAt: 0
+    };
+    groups.set(scope, group);
+    return group;
+  };
+
+  const filteredUid = uidFilter.trim();
+  if (filteredUid) {
+    ensureGroup(scopeFromUidFilter(filteredUid));
+  }
+  for (const item of items) {
+    ensureGroup(String(item.scope || "global")).items.push(item);
+  }
+  for (const proposal of proposals) {
+    ensureGroup(String(proposal.scope || "global")).proposals.push(proposal);
+  }
+  if (groups.size === 0) {
+    ensureGroup("global");
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const sortedItems = [...group.items].sort((left, right) => planItemTime(right) - planItemTime(left));
+      const sortedProposals = [...group.proposals].sort((left, right) => planProposalTime(right) - planProposalTime(left));
+      return {
+        ...group,
+        items: sortedItems,
+        proposals: sortedProposals,
+        openCount: sortedItems.filter((item) => !isClosedPlan(item)).length,
+        pendingCount: sortedProposals.filter((proposal) => isPendingPlanProposal(proposal)).length,
+        latestAt: Math.max(...sortedItems.map(planItemTime), ...sortedProposals.map(planProposalTime), 0)
+      };
+    })
+    .sort((left, right) => right.latestAt - left.latestAt);
 }

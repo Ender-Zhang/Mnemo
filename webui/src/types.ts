@@ -301,6 +301,18 @@ export type PlanProposalsResult = {
   proposals: PlanProposal[];
 };
 
+export type PlanUserGroup = {
+  key: string;
+  uid: string;
+  scope: string;
+  label: string;
+  items: PlanItem[];
+  proposals: PlanProposal[];
+  openCount: number;
+  pendingCount: number;
+  latestAt: number;
+};
+
 export type PlanFormState = {
   kind: "goal" | "todo";
   title: string;
