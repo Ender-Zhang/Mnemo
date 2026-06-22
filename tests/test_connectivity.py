@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 
 class ConnectivityTestTests(unittest.TestCase):
@@ -9,32 +12,33 @@ class ConnectivityTestTests(unittest.TestCase):
         from mnemo_memory import MemoryClient
 
         with tempfile.TemporaryDirectory() as tmp:
-            client = MemoryClient(state_dir=tmp)
-            result = client.test_provider()
-            self.assertFalse(result["ok"])
-            self.assertIn("not configured", result["error"])
+            with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
+                result = MemoryClient(state_dir=tmp).test_provider()
+                self.assertFalse(result["ok"])
+                self.assertIn("not configured", result["error"])
 
     def test_embedding_test_reports_not_configured(self) -> None:
         from mnemo_memory import MemoryClient
 
         with tempfile.TemporaryDirectory() as tmp:
-            client = MemoryClient(state_dir=tmp)
-            result = client.test_embedding()
-            self.assertFalse(result["ok"])
-            self.assertIn("not configured", result["error"])
+            with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
+                result = MemoryClient(state_dir=tmp).test_embedding()
+                self.assertFalse(result["ok"])
+                self.assertIn("not configured", result["error"])
 
     def test_http_dispatch_test_endpoints(self) -> None:
         from mnemo_memory import MemoryClient
         from mnemo_memory.interfaces.web import dispatch_memory_api
 
         with tempfile.TemporaryDirectory() as tmp:
-            client = MemoryClient(state_dir=tmp)
-            provider = dispatch_memory_api(client, "test-provider", {})
-            embedding = dispatch_memory_api(client, "test-embedding", {})
-            self.assertEqual(provider["kind"], "memory_provider_test")
-            self.assertFalse(provider["ok"])
-            self.assertEqual(embedding["kind"], "memory_embedding_test")
-            self.assertFalse(embedding["ok"])
+            with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
+                client = MemoryClient(state_dir=tmp)
+                provider = dispatch_memory_api(client, "test-provider", {})
+                embedding = dispatch_memory_api(client, "test-embedding", {})
+                self.assertEqual(provider["kind"], "memory_provider_test")
+                self.assertFalse(provider["ok"])
+                self.assertEqual(embedding["kind"], "memory_embedding_test")
+                self.assertFalse(embedding["ok"])
 
 
 if __name__ == "__main__":
