@@ -30,6 +30,14 @@ class RecallScopeTests(unittest.TestCase):
             self.assertIn("user:alice", everyone)
             self.assertIn("user:bob", everyone)
 
+    def test_known_uids_lists_distinct_users(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            _seed_two_users(client)
+            self.assertEqual(client.known_uids()["uids"], ["alice", "bob"])
+
     def test_recall_and_context_scoped_by_uid(self) -> None:
         from mnemo_memory import MemoryClient
 

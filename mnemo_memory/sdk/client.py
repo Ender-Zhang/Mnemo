@@ -746,6 +746,19 @@ class MemoryClient:
     def profile(self, *, limit: int = 50) -> dict[str, Any]:
         return self._engine().compile_l0(limit=limit)
 
+    def known_uids(self, *, limit: int = 2000) -> dict[str, Any]:
+        """Distinct uids seen across stored pages/candidates (scope=user:<uid>)."""
+        store = self._store()
+        scopes: set[str] = set()
+        for page in store.list_memory_pages(status=None, limit=limit):
+            scopes.add(str(page.get("scope") or ""))
+        for candidate in store.list_memory_candidates(status=None, limit=limit):
+            scopes.add(str(candidate.get("scope") or ""))
+        uids = sorted(
+            {scope[len("user:"):] for scope in scopes if scope.lower().startswith("user:") and scope[len("user:"):].strip()}
+        )
+        return {"kind": "memory_known_uids", "uids": uids}
+
     def memory_graph(self, *, limit: int = 200) -> dict[str, Any]:
         """Aggregate active pages into dimension counts + an association graph."""
         from ..memory.wiki import memory_page_dimension

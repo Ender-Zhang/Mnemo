@@ -188,6 +188,7 @@ function App() {
   const [dimensionFilter, setDimensionFilter] = useState("");
   const [searchMode, setSearchMode] = useState(false);
   const [inventory, setInventory] = useState<MemoryItem[]>([]);
+  const [knownUids, setKnownUids] = useState<string[]>([]);
   const [searchItems, setSearchItems] = useState<MemoryItem[]>([]);
   const [candidates, setCandidates] = useState<MemoryItem[]>([]);
   const [selected, setSelected] = useState<MemoryItem | null>(null);
@@ -308,6 +309,7 @@ function App() {
       }
       if (parts.has("inventory")) {
         tasks.push(callMemory<MemoryListResult>("list", { kind: kindFilter, status: statusFilter || null, uid: scopedUid, limit: 200 }).then((r) => setInventory(r.items || [])));
+        tasks.push(callMemory<{ uids?: string[] }>("known-uids", {}).then((r) => setKnownUids(r.uids || [])).catch(() => undefined));
       }
       if (parts.has("candidates")) {
         tasks.push(callMemory<MemoryListResult>("list", { kind: "candidate", status: null, uid: scopedUid, limit: 50 }).then((r) => setCandidates(r.items || [])));
@@ -1116,6 +1118,7 @@ function App() {
                 setQuery={setQuery}
                 uidFilter={uidFilter}
                 setUidFilter={setUidFilter}
+                knownUids={knownUids}
                 kindFilter={kindFilter}
                 setKindFilter={setKindFilter}
                 statusFilter={statusFilter}
@@ -1494,6 +1497,7 @@ function SearchPanel(props: {
   setQuery: (v: string) => void;
   uidFilter: string;
   setUidFilter: (v: string) => void;
+  knownUids: string[];
   kindFilter: "all" | "candidate" | "page";
   setKindFilter: (v: "all" | "candidate" | "page") => void;
   statusFilter: string;
@@ -1558,7 +1562,10 @@ function SearchPanel(props: {
         </label>
         <label>
           当前用户 (UID)
-          <input value={props.uidFilter} onChange={(e) => props.setUidFilter(e.target.value)} placeholder="user_123 · 限定写入/搜索/预览/召回，留空=全部" />
+          <input list="known-uid-options" value={props.uidFilter} onChange={(e) => props.setUidFilter(e.target.value)} placeholder="user_123 · 限定写入/搜索/预览/召回，留空=全部" />
+          <datalist id="known-uid-options">
+            {props.knownUids.map((uid) => <option value={uid} key={uid} />)}
+          </datalist>
         </label>
       </div>
     </section>
