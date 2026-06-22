@@ -28,6 +28,7 @@ def compile_l0_profile(
     by_dim = _group_by_dimension(active)
 
     dimensions: dict[str, list[str]] = {}
+    entries: list[dict[str, Any]] = []
     total = 0
     bounded = max(1, int(max_items))
 
@@ -44,6 +45,14 @@ def compile_l0_profile(
             statement = _page_statement(page)
             if statement:
                 statements.append(statement)
+                entries.append(
+                    {
+                        "dimension": dim,
+                        "text": statement,
+                        "page_id": str(page.get("id") or ""),
+                        "title": _normalize_space(str(page.get("title") or "")),
+                    }
+                )
                 total += 1
         if statements:
             dimensions[dim] = statements
@@ -53,6 +62,7 @@ def compile_l0_profile(
         "kind": "l0_profile",
         "summary": summary,
         "dimensions": dimensions,
+        "entries": entries,
         "page_count": len(active),
     }
 

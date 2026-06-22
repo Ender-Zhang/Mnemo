@@ -1109,7 +1109,7 @@ function App() {
             ) : null}
             {/* L0 Profile Card */}
             {activeTab === "memories" && profile?.summary ? (
-              <ProfileCard profile={profile} />
+              <ProfileCard profile={profile} onSelectPage={(pageId) => readMemory({ id: pageId, type: "page" } as MemoryItem)} />
             ) : null}
 
             {activeTab === "memories" ? (
@@ -1308,11 +1308,14 @@ function App() {
 
 // ─── Profile Card ────────────────────────────────────────────────────────────
 
-function ProfileCard({ profile }: { profile: L0Profile }) {
+function ProfileCard({ profile, onSelectPage }: { profile: L0Profile; onSelectPage: (pageId: string) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const lines = (profile.summary || "").split("\n").filter(Boolean);
-  const preview = lines.slice(0, 4);
-  const hasMore = lines.length > 4;
+  const entries = profile.entries || [];
+  const summaryLines = (profile.summary || "").split("\n").filter(Boolean);
+  const hasEntries = entries.length > 0;
+  const shownEntries = expanded ? entries : entries.slice(0, 6);
+  const shownLines = expanded ? summaryLines : summaryLines.slice(0, 4);
+  const hasMore = hasEntries ? entries.length > 6 : summaryLines.length > 4;
   return (
     <section className="panel profile-card">
       <div className="panel-header compact">
@@ -1327,11 +1330,23 @@ function ProfileCard({ profile }: { profile: L0Profile }) {
           </button>
         ) : null}
       </div>
-      <div className="profile-summary">
-        {(expanded ? lines : preview).map((line, i) => (
-          <div key={i} className="profile-line">{line}</div>
-        ))}
-      </div>
+      {hasEntries ? (
+        <div className="profile-entries">
+          {shownEntries.map((entry) => (
+            <button className="profile-entry" key={`${entry.page_id}:${entry.text}`} onClick={() => entry.page_id && onSelectPage(entry.page_id)} title="查看来源：事件 → 候选 → 稳定页">
+              <span className="profile-entry-dim">{entry.dimension}</span>
+              <span className="profile-entry-text">{entry.text}</span>
+              <ChevronRight size={13} />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="profile-summary">
+          {shownLines.map((line, i) => (
+            <div key={i} className="profile-line">{line}</div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }

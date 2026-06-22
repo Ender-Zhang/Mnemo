@@ -197,10 +197,13 @@ export type TombstonesResult = {
   tombstones?: MemoryTombstone[];
 };
 
+export type L0ProfileEntry = { dimension: string; text: string; page_id: string; title: string };
+
 export type L0Profile = {
   kind?: string;
   summary?: string;
   dimensions?: Record<string, unknown>;
+  entries?: L0ProfileEntry[];
   page_count?: number;
 };
 

@@ -38,6 +38,19 @@ class RecallScopeTests(unittest.TestCase):
             _seed_two_users(client)
             self.assertEqual(client.known_uids()["uids"], ["alice", "bob"])
 
+    def test_l0_entries_carry_page_id(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            _seed_two_users(client)
+            entries = client.profile()["entries"]
+            self.assertTrue(entries)
+            for entry in entries:
+                self.assertTrue(entry["page_id"].startswith("mempg_"))
+                # the page_id must be traceable back to an event via provenance
+                self.assertTrue(client.provenance(entry["page_id"])["events"])
+
     def test_recall_and_context_scoped_by_uid(self) -> None:
         from mnemo_memory import MemoryClient
 
