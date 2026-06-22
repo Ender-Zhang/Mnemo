@@ -803,12 +803,13 @@ function App() {
     finally { setLoading(false); }
   };
 
-  const createPlanItem = async () => {
+  const createPlanItem = async (uidOverride?: string) => {
     const title = planForm.title.trim();
     if (!title) {
       setWarn("请输入计划标题");
       return;
     }
+    const effectiveUid = (uidOverride !== undefined ? uidOverride : uidFilter).trim();
     setLoading(true);
     try {
       await callMemory("plan-create", {
@@ -818,8 +819,8 @@ function App() {
         parent_id: planForm.parentId.trim() || null,
         priority: planForm.priority,
         due_at: datetimeLocalToUnix(planForm.dueAt),
-        uid: uidFilter.trim() || null,
-        scope: uidFilter.trim() ? undefined : "global",
+        uid: effectiveUid || null,
+        scope: effectiveUid ? undefined : "global",
         source: source.trim() || "webui"
       });
       setPlanForm(emptyPlanForm());
@@ -2242,7 +2243,7 @@ function PlanPanel(props: {
   setRejectReason: (value: string) => void;
   uidFilter: string;
   loading: boolean;
-  onCreate: () => void;
+  onCreate: (uidOverride?: string) => void;
   onComplete: (id: string) => void;
   onCancel: (id: string) => void;
   onArchive: (id: string) => void;
@@ -2347,7 +2348,14 @@ function PlanPanel(props: {
           详情
           <textarea value={props.form.detail} onChange={(event) => setField("detail", event.target.value)} placeholder="补充范围、验收点或上下文" />
         </label>
-        <button className="primary-button" onClick={props.onCreate} disabled={props.loading}>
+        {multiUser ? (
+          <p className="plan-compose-target">将新建到用户：<strong>{selectedGroup?.label || "全局"}</strong></p>
+        ) : null}
+        <button
+          className="primary-button"
+          onClick={() => props.onCreate(multiUser ? (selectedGroup?.uid ?? "") : undefined)}
+          disabled={props.loading}
+        >
           {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
           新增计划
         </button>
