@@ -2573,6 +2573,19 @@ pre {
   line-height: 1.5;
 }
 
+.glossary-subhead {
+  margin: 18px 0 2px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
+.glossary-subnote {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .onboarding-intro {
   margin: 0 14px 8px;
   color: var(--muted);

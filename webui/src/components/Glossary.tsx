@@ -17,6 +17,21 @@ const TERMS: Array<{ term: string; desc: string }> = [
   { term: "语义检索 Embeddings", desc: "可选向量召回；配独立 embeddings 端点后对同义改写更敏感。" }
 ];
 
+// The ten-dimension ontology used to organize and route memories.
+// Labels mirror the backend (mnemo_memory/memory/learning.py).
+const DIMENSIONS: Array<{ key: string; label: string; desc: string }> = [
+  { key: "identity", label: "个人资料", desc: "你是谁：身份、角色等长期不变的基本信息。" },
+  { key: "cognition", label: "知识与技能", desc: "你会什么：掌握的知识、技能、专长。" },
+  { key: "values", label: "价值观", desc: "你在乎什么：原则、信念、判断取向。" },
+  { key: "goals", label: "目标", desc: "你想达成什么：长短期目标与意图。" },
+  { key: "preferences", label: "服务偏好", desc: "你希望被怎样对待：风格、格式、协作方式。" },
+  { key: "relationships", label: "关系网络", desc: "你和谁有关：人、团队、组织的关系。" },
+  { key: "context", label: "当前情境", desc: "你此刻所处的情况：在做的项目、环境、时区（会变化）。" },
+  { key: "history", label: "经历历史", desc: "你过去发生过什么：已成事实的经历。" },
+  { key: "patterns", label: "行为模式", desc: "你习惯怎么做：重复出现的行为与节奏。" },
+  { key: "boundaries", label: "边界", desc: "不能碰的红线：禁忌、限制、硬约束。" }
+];
+
 export function GlossaryDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
   return (
@@ -31,6 +46,16 @@ export function GlossaryDrawer({ open, onClose }: { open: boolean; onClose: () =
           {TERMS.map((item) => (
             <div className="glossary-item" key={item.term}>
               <strong>{item.term}</strong>
+              <p>{item.desc}</p>
+            </div>
+          ))}
+        </div>
+        <h3 className="glossary-subhead">十维本体 · 维度对照</h3>
+        <p className="glossary-subnote">每条记忆按下面十个维度归类与路由（事件流 / 维度筛选里看到的标签）。</p>
+        <div className="glossary-list">
+          {DIMENSIONS.map((item) => (
+            <div className="glossary-item" key={item.key}>
+              <strong>{item.key} · {item.label}</strong>
               <p>{item.desc}</p>
             </div>
           ))}
