@@ -1272,6 +1272,10 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("uid: cleanUid || undefined", app)
         self.assertIn("当前用户已应用", app)
         self.assertIn("当前用户 (UID)", app)
+        # the current-user picker is also in the persistent top header (visible on every tab,
+        # not just the memories workbench), bound to the same uidFilter state
+        self.assertIn("topbar-uid", app)
+        self.assertIn('list="global-uid-options"', app)
 
     def test_webui_exposes_event_flow_tab(self) -> None:
         app = _webui_source()

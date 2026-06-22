@@ -1081,6 +1081,23 @@ function App() {
           </div>
           <div className="divider" />
           <div className="endpoint">HTTP: {apiBase}</div>
+          <div className="divider" />
+          <div className="topbar-uid" title="当前用户：限定写入 / 搜索 / 预览 / 召回 / 事件流；留空=全部">
+            <User size={15} />
+            <input
+              list="global-uid-options"
+              value={uidFilter}
+              onChange={(e) => setUidFilter(e.target.value)}
+              placeholder="当前用户 UID（留空=全部）"
+              aria-label="当前用户 UID"
+            />
+            <datalist id="global-uid-options">
+              {knownUids.map((uid) => <option value={uid} key={uid} />)}
+            </datalist>
+            {uidFilter.trim() ? (
+              <button className="topbar-uid-clear" title="清除当前用户" onClick={() => setUidFilter("")}><X size={13} /></button>
+            ) : null}
+          </div>
           <button className="ghost-button icon-only" title={theme === "dark" ? "切换浅色" : "切换深色"} onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
