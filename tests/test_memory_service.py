@@ -1253,7 +1253,8 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("候选计划", app)
         self.assertIn("新增计划", app)
         self.assertIn('<option value="todo">Todo</option>', app)
-        self.assertIn('title="Todos"', app)
+        # goals + todos are merged into one list (no separate Goals/Todos columns)
+        self.assertIn('title="计划清单"', app)
 
     def test_webui_can_filter_memories_by_uid(self) -> None:
         app = _webui_source()

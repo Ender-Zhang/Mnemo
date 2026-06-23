@@ -2506,8 +2506,9 @@ function PlanPanel(props: {
     userGroups.find((group) => group.scope === selectedScope) || userGroups[0];
   const visibleItems = multiUser ? selectedGroup?.items ?? [] : props.items;
   const visibleProposals = multiUser ? selectedGroup?.proposals ?? [] : props.proposals;
+  // goals/todos share one merged list in the UI; `goals` is still needed for the
+  // parent-goal lookup and the composer's parent dropdown.
   const goals = visibleItems.filter((item) => item.kind === "goal");
-  const todos = visibleItems.filter((item) => item.kind === "todo");
   const parentGoals = goals.filter((goal) => !["completed", "cancelled", "archived"].includes(String(goal.status || "")));
   const pendingProposals = visibleProposals.filter(isPendingPlanProposal);
   const closedProposals = visibleProposals.filter((proposal) => !isPendingPlanProposal(proposal));
@@ -2656,27 +2657,16 @@ function PlanPanel(props: {
           ))}
         </div>
       </div>
-      <div className="plan-sections">
-        <PlanSection
-          title="Goals"
-          items={goals}
-          emptyText="暂无 goal。"
-          onComplete={props.onComplete}
-          onCancel={props.onCancel}
-          onArchive={props.onArchive}
-          onViewScope={props.onViewScope}
-        />
-        <PlanSection
-          title="Todos"
-          items={todos}
-          emptyText="暂无 todo。"
-          goals={goals}
-          onComplete={props.onComplete}
-          onCancel={props.onCancel}
-          onArchive={props.onArchive}
-          onViewScope={props.onViewScope}
-        />
-      </div>
+      <PlanSection
+        title="计划清单"
+        items={visibleItems}
+        emptyText="暂无计划。"
+        goals={goals}
+        onComplete={props.onComplete}
+        onCancel={props.onCancel}
+        onArchive={props.onArchive}
+        onViewScope={props.onViewScope}
+      />
       </div>
       </div>
     </section>
@@ -2705,6 +2695,7 @@ function PlanSection(props: {
           <article className="plan-card" key={item.id}>
             <div className="plan-card-main">
               <div className="plan-row-title">
+                <StatusBadge text={item.kind || "todo"} />
                 <StatusBadge text={item.status || "open"} />
                 <StatusBadge text={item.priority || "normal"} />
                 <strong>{item.title}</strong>
