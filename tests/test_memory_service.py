@@ -1289,6 +1289,19 @@ class MemoryServiceTests(unittest.TestCase):
         # the editor/ingest scope fields advertise that they follow the current user
         self.assertIn("跟随当前用户", app)
 
+    def test_webui_keeps_rejected_plan_proposals_visible(self) -> None:
+        app = _webui_source()
+
+        # proposals are fetched across all statuses (not just pending) so a rejected
+        # one isn't lost, and the panel splits them into a pending inbox + a history.
+        self.assertIn('"plan-proposals", { status: null', app)
+        self.assertIn("pendingProposals", app)
+        self.assertIn("closedProposals", app)
+        self.assertIn("已处理的提案", app)
+        # nav badges still count only pending, not the whole (now larger) list
+        self.assertIn("pendingProposalCount", app)
+        self.assertIn("filter(isPendingPlanProposal)", app)
+
     def test_webui_groups_per_user_views_in_workspace(self) -> None:
         app = _webui_source()
 

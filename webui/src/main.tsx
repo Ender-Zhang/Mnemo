@@ -77,6 +77,7 @@ import {
   formatDuration,
   formatTime,
   isClosedPlan,
+  isPendingPlanProposal,
   isSemanticHit,
   itemMatchesQuery,
   itemTitle,
@@ -266,6 +267,8 @@ function App() {
   const pendingCandidates = useMemo(() => filterReviewableCandidates(candidates), [candidates]);
   const candidateReviewItems = useMemo(() => filterCandidateReviewItems(candidates), [candidates]);
   const conflictCandidates = useMemo(() => candidates.filter((c) => String(c.status || "").includes("conflict")), [candidates]);
+  // planProposals now holds all statuses (so rejected ones stay visible); badges count only pending.
+  const pendingProposalCount = useMemo(() => planProposals.filter(isPendingPlanProposal).length, [planProposals]);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
   const [dreamProposals, setDreamProposals] = useState<DreamProposal[]>([]);
   const dreamElapsedS = dreamStartedAtMs === null ? null : Math.max(0, (clockNowMs - dreamStartedAtMs) / 1000);
@@ -350,7 +353,7 @@ function App() {
       }
       if (parts.has("plans")) {
         tasks.push(callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }).then((r) => setPlanItems(r.items || [])));
-        tasks.push(callMemory<PlanProposalsResult>("plan-proposals", { status: "pending", uid: scopedUid, limit: 50 }).then((r) => setPlanProposals(r.proposals || [])));
+        tasks.push(callMemory<PlanProposalsResult>("plan-proposals", { status: null, uid: scopedUid, limit: 100 }).then((r) => setPlanProposals(r.proposals || [])));
       }
       if (parts.has("profile")) {
         tasks.push(callMemory<L0Profile>("profile", {}).then(setProfile).catch(() => setProfile(null)));
@@ -1065,7 +1068,7 @@ function App() {
             <button className={navItemClass(item.key)} key={item.key} onClick={() => setActiveTab(item.key === "workspace" ? workspaceSub : (item.key as TabKey))}>
               <item.icon size={18} />
               <span>{item.label}</span>
-              {item.key === "workspace" && planProposals.length > 0 ? <b>{planProposals.length}</b> : null}
+              {item.key === "workspace" && pendingProposalCount > 0 ? <b>{pendingProposalCount}</b> : null}
               {item.key === "candidates" && pendingCandidates.length > 0 ? <b>{pendingCandidates.length}</b> : null}
               {item.key === "candidates" && conflictCandidates.length > 0 ? <span className="badge bad" style={{marginLeft: 4, fontSize: 11}}>{conflictCandidates.length} 冲突</span> : null}
               {item.key === "tombstones" && tombstones.length > 0 ? <b>{tombstones.length}</b> : null}
@@ -1164,7 +1167,7 @@ function App() {
                   >
                     <tab.icon size={15} />
                     <span>{tab.label}</span>
-                    {tab.key === "plans" && planProposals.length > 0 ? <b>{planProposals.length}</b> : null}
+                    {tab.key === "plans" && pendingProposalCount > 0 ? <b>{pendingProposalCount}</b> : null}
                   </button>
                 ))}
               </div>
@@ -2495,6 +2498,8 @@ function PlanPanel(props: {
   const goals = visibleItems.filter((item) => item.kind === "goal");
   const todos = visibleItems.filter((item) => item.kind === "todo");
   const parentGoals = goals.filter((goal) => !["completed", "cancelled", "archived"].includes(String(goal.status || "")));
+  const pendingProposals = visibleProposals.filter(isPendingPlanProposal);
+  const closedProposals = visibleProposals.filter((proposal) => !isPendingPlanProposal(proposal));
   const setField = <K extends keyof PlanFormState>(field: K, value: PlanFormState[K]) => {
     props.setForm({ ...props.form, [field]: value });
   };
@@ -2503,7 +2508,7 @@ function PlanPanel(props: {
       <div className="panel-header">
         <div>
           <h2>计划</h2>
-          <p>Goal 和 Todo 使用同一套计划项；自动抽取会先进入候选计划。</p>
+          <p>流程：事件抽取 / 模型先生成<strong>候选计划</strong>（待你确认）→ 接受后成为正式的 <strong>Goal / Todo</strong>。拒绝的候选不会消失，收进下方「已处理」里可随时回看。</p>
         </div>
         <StatusBadge text={props.uidFilter.trim() ? `UID ${props.uidFilter.trim()}` : "global"} />
       </div>
@@ -2582,42 +2587,23 @@ function PlanPanel(props: {
           新增计划
         </button>
       </div>
-      <div className="plan-sections">
-        <PlanSection
-          title="Goals"
-          items={goals}
-          emptyText="暂无 goal。"
-          onComplete={props.onComplete}
-          onCancel={props.onCancel}
-          onArchive={props.onArchive}
-          onViewScope={props.onViewScope}
-        />
-        <PlanSection
-          title="Todos"
-          items={todos}
-          emptyText="暂无 todo。"
-          goals={goals}
-          onComplete={props.onComplete}
-          onCancel={props.onCancel}
-          onArchive={props.onArchive}
-          onViewScope={props.onViewScope}
-        />
-      </div>
       <div className="plan-proposals">
         <div className="plan-proposals-header">
           <div>
-            <h3>候选计划</h3>
-            <p>来自事件摄入或模型抽取，接受后才会进入正式计划。</p>
+            <h3>候选计划 · 待确认</h3>
+            <p>来自事件摄入或模型抽取，接受后才会成为正式 Goal / Todo。</p>
           </div>
-          <StatusBadge text={`${visibleProposals.length} pending`} />
+          <StatusBadge text={`${pendingProposals.length} 待确认`} />
         </div>
-        <label>
-          拒绝原因
-          <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} />
-        </label>
+        {pendingProposals.length > 0 ? (
+          <label>
+            拒绝原因（可选）
+            <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} placeholder="留一句话说明为什么拒绝，会记到「已处理」里" />
+          </label>
+        ) : null}
         <div className="plan-proposal-list">
-          {visibleProposals.length === 0 ? <EmptyState text="暂无候选计划。" /> : null}
-          {visibleProposals.map((proposal) => (
+          {pendingProposals.length === 0 ? <EmptyState text="没有待确认的候选计划。" /> : null}
+          {pendingProposals.map((proposal) => (
             <article className="plan-proposal-card" key={proposal.id}>
               <div>
                 <div className="plan-row-title">
@@ -2642,6 +2628,44 @@ function PlanPanel(props: {
             </article>
           ))}
         </div>
+        {closedProposals.length > 0 ? (
+          <details className="plan-history">
+            <summary>已处理的提案（{closedProposals.length}）</summary>
+            <div className="plan-history-list">
+              {closedProposals.map((proposal) => (
+                <div className="plan-history-row" key={proposal.id}>
+                  <StatusBadge text={proposal.proposal_status === "rejected" ? "已拒绝" : proposal.proposal_status === "accepted" ? "已接受" : String(proposal.proposal_status || "已处理")} />
+                  <StatusBadge text={proposal.kind || "todo"} />
+                  <div className="plan-history-body">
+                    <strong>{proposal.title || proposal.id}</strong>
+                    <small>{proposal.decision_reason || proposal.reason || "（无原因）"} · {formatDate(proposal.decided_at || proposal.created_at)}</small>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </div>
+      <div className="plan-sections">
+        <PlanSection
+          title="Goals"
+          items={goals}
+          emptyText="暂无 goal。"
+          onComplete={props.onComplete}
+          onCancel={props.onCancel}
+          onArchive={props.onArchive}
+          onViewScope={props.onViewScope}
+        />
+        <PlanSection
+          title="Todos"
+          items={todos}
+          emptyText="暂无 todo。"
+          goals={goals}
+          onComplete={props.onComplete}
+          onCancel={props.onCancel}
+          onArchive={props.onArchive}
+          onViewScope={props.onViewScope}
+        />
       </div>
       </div>
       </div>

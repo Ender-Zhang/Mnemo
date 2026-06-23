@@ -2892,6 +2892,50 @@ pre {
   min-width: 0;
 }
 
+.plan-history {
+  margin-top: 10px;
+  border-top: 1px dashed var(--border);
+  padding-top: 8px;
+}
+.plan-history > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  user-select: none;
+}
+.plan-history > summary:hover {
+  color: var(--text-2);
+}
+.plan-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.plan-history-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.plan-history-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.plan-history-body strong {
+  font-size: 13px;
+  color: var(--text-2);
+}
+.plan-history-body small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .plan-user-list {
   border: 1px solid var(--border);
   border-radius: 10px;
