@@ -107,6 +107,7 @@ class MemoryWebServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
                 client = MemoryClient(state_dir=tmp)
+                client.save_auto_dream_config(local_fallback=False)  # exercise the provider-required skip path
                 client.update(
                     facts=[
                         {
@@ -132,6 +133,7 @@ class MemoryWebServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(os.environ, {"MNEMO_MEMORY_ENV_FILE": str(Path(tmp) / "missing.env")}, clear=True):
                 client = MemoryClient(state_dir=tmp)
+                client.save_auto_dream_config(local_fallback=False)  # exercise the provider-required skip path
                 client.ingest_event(
                     text="我计划下周完成自动 Dream 目标维护测试。",
                     source="unit-test",

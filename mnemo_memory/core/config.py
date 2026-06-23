@@ -12,10 +12,13 @@ DEFAULT_PROVIDER = "openai-compatible"
 DEFAULT_TIMEOUT_S = 30.0
 DEFAULT_MODEL = "memory-maintainer"
 DEFAULT_AUTO_DREAM_ENABLED = True
-DEFAULT_AUTO_DREAM_INTERVAL_MINUTES = 180
+DEFAULT_AUTO_DREAM_INTERVAL_MINUTES = 15
 DEFAULT_AUTO_DREAM_LIMIT = 20
 DEFAULT_AUTO_DREAM_MIN_CONFIDENCE = 0.7
-DEFAULT_AUTO_DREAM_LOCAL_FALLBACK = False
+# Full-auto by default: when no provider is configured the scheduler still runs
+# the deterministic consolidation (promote / dedupe / reject / auto-link) instead
+# of skipping, so memory candidates don't pile up waiting for manual review.
+DEFAULT_AUTO_DREAM_LOCAL_FALLBACK = True
 DEFAULT_EMBEDDINGS_ENABLED = False
 DEFAULT_QUALITY_WRITE_THRESHOLD = 0.68
 DEFAULT_QUALITY_DRAFT_THRESHOLD = 0.5

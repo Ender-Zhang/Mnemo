@@ -151,7 +151,9 @@ class ProviderConfigTests(unittest.TestCase):
 
             default_config = client.auto_dream_config()
             self.assertTrue(default_config["enabled"])
-            self.assertEqual(default_config["interval_minutes"], 180)
+            self.assertEqual(default_config["interval_minutes"], 15)
+            # full-auto by default: deterministic consolidation runs without a provider
+            self.assertTrue(default_config["local_fallback"])
 
             saved = client.save_auto_dream_config(enabled=False, interval_minutes=60)
             self.assertFalse(saved["enabled"])
