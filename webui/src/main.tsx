@@ -2538,7 +2538,9 @@ function PlanPanel(props: {
         </aside>
       ) : null}
       <div className="plan-user-detail">
-      <div className="plan-composer">
+      <details className="plan-composer-collapsible">
+        <summary><Plus size={14} />手动新建计划</summary>
+        <div className="plan-composer">
         <label>
           类型
           <select value={props.form.kind} onChange={(event) => setField("kind", event.target.value as "goal" | "todo")}>
@@ -2586,7 +2588,8 @@ function PlanPanel(props: {
           {props.loading ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
           新增计划
         </button>
-      </div>
+        </div>
+      </details>
       <div className="plan-proposals">
         <div className="plan-proposals-header">
           <div>
