@@ -160,6 +160,8 @@ const WORKSPACE_TABS: Array<{ key: TabKey; label: string; icon: LucideIcon }> = 
   { key: "events", label: "事件流", icon: FileClock }
 ];
 const WORKSPACE_KEYS = new Set<TabKey>(["memories", "plans", "events"]);
+// Tabs whose right-hand 记忆详情 pane is useful (you pick an item → see its detail).
+const DETAIL_TABS = new Set<TabKey>(["memories", "candidates", "tombstones", "maintenance"]);
 
 const DIMENSIONS = [
   "identity", "cognition", "values", "goals", "preferences",
@@ -269,6 +271,9 @@ function App() {
   const conflictCandidates = useMemo(() => candidates.filter((c) => String(c.status || "").includes("conflict")), [candidates]);
   // planProposals now holds all statuses (so rejected ones stay visible); badges count only pending.
   const pendingProposalCount = useMemo(() => planProposals.filter(isPendingPlanProposal).length, [planProposals]);
+  // The 记忆详情 side pane only matters for tabs where you select a memory item;
+  // on plans/preview/events/settings it's dead space, so let the main column go full-width there.
+  const showDetailColumn = DETAIL_TABS.has(activeTab);
   const healthCards = Array.isArray(health?.cards) ? health.cards : [];
   const [dreamProposals, setDreamProposals] = useState<DreamProposal[]>([]);
   const dreamElapsedS = dreamStartedAtMs === null ? null : Math.max(0, (clockNowMs - dreamStartedAtMs) / 1000);
@@ -1155,7 +1160,11 @@ function App() {
           </div>
         ) : null}
 
-        <section className={advancedMode ? "dashboard-grid advanced-layout" : "dashboard-grid workbench-layout"}>
+        <section className={
+          advancedMode
+            ? "dashboard-grid advanced-layout"
+            : `dashboard-grid workbench-layout${showDetailColumn ? "" : " single-column"}`
+        }>
           <div className="main-column">
             {WORKSPACE_KEYS.has(activeTab) ? (
               <div className="subnav">
@@ -1328,6 +1337,7 @@ function App() {
             ) : null}
           </div>
 
+          {showDetailColumn ? (
           <aside className="detail-column">
             <MemoryDetail
               selected={selected}
@@ -1347,6 +1357,7 @@ function App() {
               onOpenPlans={(scope) => { const c = (scope || "").trim(); setUidFilter(c.toLowerCase().startsWith("user:") ? c.slice(5) : ""); setActiveTab("plans"); }}
             />
           </aside>
+          ) : null}
 
           {advancedMode ? <aside className="ops-column">
             <OperationsQueue
