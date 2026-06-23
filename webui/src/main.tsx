@@ -136,19 +136,29 @@ import type {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const navItems: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
-  { key: "memories", label: "记忆工作台", icon: Home },
+// Top-level nav. "workspace" groups the three per-user views (记忆 / 计划 / 事件流)
+// behind one entry; the rest stay independent.
+type NavKey = TabKey | "workspace";
+
+const navItems: Array<{ key: NavKey; label: string; icon: LucideIcon }> = [
+  { key: "workspace", label: "工作台", icon: Home },
   { key: "preview", label: "记忆预览", icon: Eye },
-  { key: "events", label: "事件流", icon: FileClock },
-  { key: "plans", label: "计划", icon: ListTodo },
   { key: "maintenance", label: "模型与维护", icon: Activity },
   { key: "settings", label: "设置", icon: Settings },
   { key: "candidates", label: "候选审核", icon: ClipboardList },
   { key: "tombstones", label: "墓碑 / 删除", icon: Archive }
 ];
 
-const defaultNavKeys = new Set<TabKey>(["memories", "preview", "events", "plans", "maintenance", "settings"]);
-const advancedNavKeys = new Set<TabKey>(["memories", "preview", "events", "plans", "maintenance", "settings", "candidates", "tombstones"]);
+const defaultNavKeys = new Set<NavKey>(["workspace", "preview", "maintenance", "settings"]);
+const advancedNavKeys = new Set<NavKey>(["workspace", "preview", "maintenance", "settings", "candidates", "tombstones"]);
+
+// Sub-views shown inside the workspace tab; activeTab stays the single source of truth.
+const WORKSPACE_TABS: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
+  { key: "memories", label: "记忆", icon: Home },
+  { key: "plans", label: "计划", icon: ListTodo },
+  { key: "events", label: "事件流", icon: FileClock }
+];
+const WORKSPACE_KEYS = new Set<TabKey>(["memories", "plans", "events"]);
 
 const DIMENSIONS = [
   "identity", "cognition", "values", "goals", "preferences",
@@ -166,6 +176,8 @@ const defaultApiBase = window.location.origin;
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabKey>("memories");
+  // Remembers which workspace sub-view to restore when the 工作台 tab is re-selected.
+  const [workspaceSub, setWorkspaceSub] = useState<TabKey>("memories");
   const [apiBase, setApiBase] = useState(() => localStorage.getItem("mnemo.apiBase") || defaultApiBase);
   const [serviceOk, setServiceOk] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -378,6 +390,9 @@ function App() {
   }, [callMemory, uidFilter]);
 
   useEffect(() => {
+    if (WORKSPACE_KEYS.has(activeTab)) setWorkspaceSub(activeTab);
+  }, [activeTab]);
+  useEffect(() => {
     if (activeTab === "events") void loadEventFlow();
   }, [activeTab, loadEventFlow]);
   useEffect(() => {
@@ -390,8 +405,11 @@ function App() {
   useEffect(() => { localStorage.setItem("mnemo.advancedMode", advancedMode ? "true" : "false"); }, [advancedMode]);
 
   useEffect(() => {
+    // Workspace sub-tabs (记忆/计划/事件流) are always reachable via the 工作台 tab;
+    // otherwise fall back home when the current tab isn't in the visible top nav
+    // (e.g. an advanced-only tab after leaving advanced mode).
     const allowedTabs = advancedMode ? advancedNavKeys : defaultNavKeys;
-    if (!allowedTabs.has(activeTab)) { setActiveTab("memories"); }
+    if (!WORKSPACE_KEYS.has(activeTab) && !allowedTabs.has(activeTab)) { setActiveTab("memories"); }
   }, [activeTab, advancedMode]);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -1020,9 +1038,10 @@ function App() {
     ];
   }, [healthCards.length, inventory, pendingCandidates.length, tombstones.length]);
 
-  const navItemClass = (key: TabKey) => {
+  const navItemClass = (key: NavKey) => {
     const classes = ["nav-item"];
-    if (activeTab === key) classes.push("active");
+    const active = key === "workspace" ? WORKSPACE_KEYS.has(activeTab) : key === activeTab;
+    if (active) classes.push("active");
     return classes.join(" ");
   };
 
@@ -1043,10 +1062,10 @@ function App() {
         </div>
         <nav className="nav-list">
           {visibleNavItems.map((item) => (
-            <button className={navItemClass(item.key)} key={item.key} onClick={() => setActiveTab(item.key)}>
+            <button className={navItemClass(item.key)} key={item.key} onClick={() => setActiveTab(item.key === "workspace" ? workspaceSub : (item.key as TabKey))}>
               <item.icon size={18} />
               <span>{item.label}</span>
-              {item.key === "plans" && planProposals.length > 0 ? <b>{planProposals.length}</b> : null}
+              {item.key === "workspace" && planProposals.length > 0 ? <b>{planProposals.length}</b> : null}
               {item.key === "candidates" && pendingCandidates.length > 0 ? <b>{pendingCandidates.length}</b> : null}
               {item.key === "candidates" && conflictCandidates.length > 0 ? <span className="badge bad" style={{marginLeft: 4, fontSize: 11}}>{conflictCandidates.length} 冲突</span> : null}
               {item.key === "tombstones" && tombstones.length > 0 ? <b>{tombstones.length}</b> : null}
@@ -1135,6 +1154,21 @@ function App() {
 
         <section className={advancedMode ? "dashboard-grid advanced-layout" : "dashboard-grid workbench-layout"}>
           <div className="main-column">
+            {WORKSPACE_KEYS.has(activeTab) ? (
+              <div className="subnav">
+                {WORKSPACE_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    className={`subnav-item${activeTab === tab.key ? " active" : ""}`}
+                    onClick={() => setActiveTab(tab.key)}
+                  >
+                    <tab.icon size={15} />
+                    <span>{tab.label}</span>
+                    {tab.key === "plans" && planProposals.length > 0 ? <b>{planProposals.length}</b> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {activeTab === "memories" && !searchMode && inventory.length === 0 && !onboardingDismissed ? (
               <OnboardingChecklist
                 hasProvider={Boolean(providerConfig?.configured)}

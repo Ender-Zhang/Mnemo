@@ -1289,10 +1289,23 @@ class MemoryServiceTests(unittest.TestCase):
         # the editor/ingest scope fields advertise that they follow the current user
         self.assertIn("跟随当前用户", app)
 
+    def test_webui_groups_per_user_views_in_workspace(self) -> None:
+        app = _webui_source()
+
+        # 记忆 / 计划 / 事件流 are grouped under one top-level 工作台 tab + a sub-nav,
+        # instead of three separate top-level tabs.
+        self.assertIn('{ key: "workspace"', app)
+        self.assertIn("工作台", app)
+        self.assertIn("WORKSPACE_TABS", app)
+        self.assertIn("WORKSPACE_KEYS.has(activeTab)", app)
+        self.assertIn('className="subnav"', app)
+        # activeTab is still the single source of truth (one of the leaf views)
+        self.assertIn('useState<TabKey>("memories")', app)
+
     def test_webui_exposes_event_flow_tab(self) -> None:
         app = _webui_source()
 
-        # a dedicated nav tab and panel for the event -> memory pipeline
+        # a dedicated view + panel for the event -> memory pipeline (now a workspace sub-tab)
         self.assertIn('{ key: "events"', app)
         self.assertIn("function EventFlowPanel", app)
         self.assertIn('activeTab === "events"', app)
