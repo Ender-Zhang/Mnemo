@@ -1293,11 +1293,13 @@ class MemoryServiceTests(unittest.TestCase):
         app = _webui_source()
 
         # proposals are fetched across all statuses (not just pending) so a rejected
-        # one isn't lost, and the panel splits them into a pending inbox + a history.
+        # one remains visible (as a dimmed card), not hidden or deleted.
         self.assertIn('"plan-proposals", { status: null', app)
         self.assertIn("pendingProposals", app)
         self.assertIn("closedProposals", app)
-        self.assertIn("已处理的提案", app)
+        # closed proposals render inline as dimmed cards, not inside a <details>
+        self.assertIn('plan-proposal-card" key', app)  # pending cards
+        self.assertIn('plan-proposal-card closed', app)  # dimmed closed cards
         # nav badges still count only pending, not the whole (now larger) list
         self.assertIn("pendingProposalCount", app)
         self.assertIn("filter(isPendingPlanProposal)", app)

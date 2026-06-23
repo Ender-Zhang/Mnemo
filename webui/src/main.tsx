@@ -2590,19 +2590,19 @@ function PlanPanel(props: {
       <div className="plan-proposals">
         <div className="plan-proposals-header">
           <div>
-            <h3>候选计划 · 待确认</h3>
-            <p>来自事件摄入或模型抽取，接受后才会成为正式 Goal / Todo。</p>
+            <h3>候选计划</h3>
+            <p>来自事件摄入或模型抽取，接受后才会成为正式 Goal / Todo。拒绝的候选仍留在这里，可随时查看。</p>
           </div>
           <StatusBadge text={`${pendingProposals.length} 待确认`} />
         </div>
         {pendingProposals.length > 0 ? (
           <label>
             拒绝原因（可选）
-            <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} placeholder="留一句话说明为什么拒绝，会记到「已处理」里" />
+            <input value={props.rejectReason} onChange={(event) => props.setRejectReason(event.target.value)} placeholder="留一句话说明为什么拒绝" />
           </label>
         ) : null}
         <div className="plan-proposal-list">
-          {pendingProposals.length === 0 ? <EmptyState text="没有待确认的候选计划。" /> : null}
+          {pendingProposals.length === 0 && closedProposals.length === 0 ? <EmptyState text="没有候选计划。" /> : null}
           {pendingProposals.map((proposal) => (
             <article className="plan-proposal-card" key={proposal.id}>
               <div>
@@ -2627,24 +2627,20 @@ function PlanPanel(props: {
               </div>
             </article>
           ))}
-        </div>
-        {closedProposals.length > 0 ? (
-          <details className="plan-history">
-            <summary>已处理的提案（{closedProposals.length}）</summary>
-            <div className="plan-history-list">
-              {closedProposals.map((proposal) => (
-                <div className="plan-history-row" key={proposal.id}>
+          {closedProposals.map((proposal) => (
+            <article className="plan-proposal-card closed" key={proposal.id}>
+              <div>
+                <div className="plan-row-title">
                   <StatusBadge text={proposal.proposal_status === "rejected" ? "已拒绝" : proposal.proposal_status === "accepted" ? "已接受" : String(proposal.proposal_status || "已处理")} />
                   <StatusBadge text={proposal.kind || "todo"} />
-                  <div className="plan-history-body">
-                    <strong>{proposal.title || proposal.id}</strong>
-                    <small>{proposal.decision_reason || proposal.reason || "（无原因）"} · {formatDate(proposal.decided_at || proposal.created_at)}</small>
-                  </div>
+                  <strong>{proposal.title || proposal.id}</strong>
                 </div>
-              ))}
-            </div>
-          </details>
-        ) : null}
+                <p>{proposal.decision_reason || proposal.detail || proposal.reason || "没有附带详情。"}</p>
+                <small>{proposal.scope || "global"} · {formatDate(proposal.decided_at || proposal.created_at)}</small>
+              </div>
+            </article>
+          ))}
+        </div>
       </div>
       <div className="plan-sections">
         <PlanSection
