@@ -264,6 +264,7 @@ class MemoryDreamMixin:
         execution_policy: str = "semi_auto",
         deterministic_fallback: bool = False,
         model_calls: int | None = None,
+        conflict_resolver: Any | None = None,
     ) -> dict[str, Any]:
         started_at = time.time()
         if since is None:
@@ -290,9 +291,10 @@ class MemoryDreamMixin:
                 execution_policy=execution_policy,
             )
             execution_mode = "model_actions"
-            # Model-first + deterministic fallback: sweep up any conflict the model
-            # left parked in needs_review so full-auto never stalls for a human.
-            conflict_resolved = self._auto_resolve_pending_conflicts(limit)
+            # Model-first + deterministic fallback: let the model reconcile each
+            # parked conflict (disambiguate / merge); anything it can't handle
+            # falls back to the deterministic rule so nothing stalls for a human.
+            conflict_resolved = self._auto_resolve_pending_conflicts(limit, resolver=conflict_resolver)
             if conflict_resolved:
                 action_execution = _merge_conflict_resolutions(action_execution, conflict_resolved)
         elif deterministic_fallback:

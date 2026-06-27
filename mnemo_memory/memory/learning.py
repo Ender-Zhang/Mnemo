@@ -453,6 +453,7 @@ class MemoryLearningMixin:
         candidate_ids: list[str] | set[str] | None = None,
         note_ids: list[str] | set[str] | None = None,
         auto_resolve_conflicts: bool = True,
+        conflict_resolver: Any | None = None,
     ) -> dict[str, Any]:
         w0 = self.ingest_working_notes(limit=limit, note_ids=note_ids)
         selected_candidate_ids = set(candidate_ids or [])
@@ -499,7 +500,7 @@ class MemoryLearningMixin:
         # stalls in needs_review.
         resolved: list[dict[str, Any]] = []
         if auto_resolve_conflicts:
-            resolved = self._auto_resolve_pending_conflicts(limit)
+            resolved = self._auto_resolve_pending_conflicts(limit, resolver=conflict_resolver)
             for result in resolved:
                 (rejected if result.get("resolution") == "keep_old" else promoted).append(result)
 
@@ -513,13 +514,13 @@ class MemoryLearningMixin:
             "snapshot": self.compile_l1_snapshot(limit=50),
         }
 
-    def _auto_resolve_pending_conflicts(self, limit: int) -> list[dict[str, Any]]:
-        """Deterministically resolve every parked conflict (model-free fallback).
+    def _auto_resolve_pending_conflicts(self, limit: int, *, resolver: Any | None = None) -> list[dict[str, Any]]:
+        """Resolve every parked conflict so nothing stalls in needs_review.
 
-        A clear confidence winner supersedes (keep_new) or is rejected (keep_old);
-        a tie keeps both (the new claim is appended to the existing page) so no
-        information is silently lost. Used by both the deterministic consolidation
-        and the model path (as the "deterministic fallback" after model actions).
+        When ``resolver`` (the model) is given it decides the resolution per pair
+        — including a ``merge`` that rewrites the page with a disambiguated /
+        supplemented statement. Anything the model can't handle falls back to the
+        deterministic rule (confidence winner supersedes; a tie keeps both).
         """
         conflict_candidates = [
             c for c in self.store.list_memory_candidates(status=None, limit=max(1, int(limit)) * 2)
@@ -530,9 +531,9 @@ class MemoryLearningMixin:
             conflict_page = self._conflict_page_for_candidate(candidate)
             if not conflict_page:
                 continue
-            resolution, reason = _deterministic_conflict_resolution(candidate, conflict_page)
+            resolution, reason, merged_content = self._decide_conflict_resolution(candidate, conflict_page, resolver)
             try:
-                result = self.resolve_conflict(candidate["id"], resolution=resolution)
+                result = self.resolve_conflict(candidate["id"], resolution=resolution, merged_content=merged_content)
             except ValueError:
                 continue
             result["decision"] = "conflict_resolved"
@@ -549,6 +550,29 @@ class MemoryLearningMixin:
                 reason=reason,
             )
         return resolved
+
+    def _decide_conflict_resolution(
+        self,
+        candidate: dict[str, Any],
+        page: dict[str, Any],
+        resolver: Any | None,
+    ) -> tuple[str, str, str | None]:
+        """Return (resolution, reason, merged_content). Model-first, rule fallback."""
+        if resolver is not None:
+            try:
+                decision = resolver(candidate, page)
+            except Exception:  # a flaky model must never break consolidation
+                decision = None
+            if isinstance(decision, dict):
+                resolution = str(decision.get("resolution") or "").strip().casefold().replace("-", "_")
+                if resolution in {"keep_new", "keep_old", "keep_both", "merge"}:
+                    merged = decision.get("merged_content")
+                    merged_text = _normalize_space(str(merged)) if merged else None
+                    if resolution == "merge" and not merged_text:
+                        resolution = "keep_both"  # model picked merge but gave no text
+                    return resolution, "model_reconciled", merged_text
+        resolution, reason = _deterministic_conflict_resolution(candidate, page)
+        return resolution, reason, None
 
     def _review_draft_candidate_for_promotion(
         self,
@@ -737,6 +761,7 @@ class MemoryLearningMixin:
         candidate_id: str,
         *,
         resolution: str,
+        merged_content: str | None = None,
     ) -> dict[str, Any]:
         candidate = self._get_candidate(candidate_id)
         if not candidate:
@@ -746,6 +771,43 @@ class MemoryLearningMixin:
 
         conflict_page = self._conflict_page_for_candidate(candidate)
         resolution = resolution.strip().casefold().replace("-", "_")
+
+        if resolution == "merge":
+            # Model-reconciled: rewrite the existing page with a single
+            # disambiguated/supplemented statement, then mark the candidate merged.
+            if not conflict_page or not _normalize_space(merged_content or ""):
+                resolution = "keep_both"  # nothing to merge into / no text → preserve both
+            else:
+                page_id = str(conflict_page["id"])
+                self._snapshot_page_before_mutation(
+                    conflict_page, change_reason=f"conflict_merge:{candidate_id}", changed_by="dream_reconcile"
+                )
+                update_page = getattr(self.store, "update_memory_page", None)
+                merged_text = _normalize_space(merged_content or "")
+                if update_page:
+                    update_page(
+                        page_id,
+                        title=str(conflict_page.get("title") or ""),
+                        content=merged_text,
+                        scope=str(conflict_page.get("scope") or "global"),
+                        confidence=_merged_page_confidence(conflict_page, candidate),
+                        status="active",
+                        metadata=conflict_page.get("metadata") if isinstance(conflict_page.get("metadata"), dict) else None,
+                    )
+                self.store.update_memory_candidate_status(candidate_id, "promoted")
+                self.store.add_memory_link(candidate_id, page_id, "promoted_to", weight=1.0)
+                page = self._get_page(page_id)
+                self._maybe_index_page_embedding(page)
+                log_event(_LOG, "conflict_merge", candidate_id=candidate_id, page_id=page_id)
+                return {
+                    "kind": "conflict_resolution",
+                    "resolution": "merge",
+                    "candidate_id": candidate_id,
+                    "page_id": page_id,
+                    "page_action": "merged",
+                    "status": "promoted",
+                    "page": page,
+                }
 
         if resolution == "keep_new":
             if conflict_page:
@@ -787,7 +849,7 @@ class MemoryLearningMixin:
                 **promoted,
             }
         else:
-            raise ValueError(f"invalid conflict resolution: {resolution} (expected keep_new, keep_old, keep_both)")
+            raise ValueError(f"invalid conflict resolution: {resolution} (expected keep_new, keep_old, keep_both, merge)")
 
     def _conflict_page_for_candidate(self, candidate: dict[str, Any]) -> dict[str, Any] | None:
         list_links = getattr(self.store, "list_memory_links", None)

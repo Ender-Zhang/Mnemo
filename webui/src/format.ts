@@ -134,6 +134,7 @@ const DECISION_REASON_LABELS: Array<[RegExp, string]> = [
   [/^conflict_resolved:keep_old/, "冲突自动消解：保留旧记忆，拒绝此候选。"],
   [/^conflict_resolved:keep_new/, "冲突自动消解：用新记忆替换旧记忆。"],
   [/^conflict_resolved:keep_both/, "冲突自动消解：同时保留新旧两条记忆（已补充到同一页）。"],
+  [/^conflict_resolved:merge/, "冲突由模型消解：合并为一条消歧后的记忆。"],
   [/^conflict_resolved/, "冲突已自动消解。"],
   [/^conflict/, "与现有记忆冲突，需要复核。"],
   [/^deterministic_fallback/, "本地自动整理规则处理（未调用模型）。"],

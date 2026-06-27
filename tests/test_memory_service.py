@@ -1492,6 +1492,77 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIn("in_l1", pages[0])
             self.assertEqual(flow["l0_count"], 1)
 
+    def test_model_reconciler_merges_conflict(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.stable_create(
+                title="preferences: editor theme",
+                content="User prefers dark mode in the editor.",
+                scope="user:alice",
+                dimension="preferences",
+                confidence=0.8,
+            )
+            client.update(
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.8}],
+                source="unit-test",
+            )
+
+            seen: dict[str, str] = {}
+
+            def resolver(candidate, page):
+                seen["candidate"] = candidate.get("claim", "")
+                seen["page"] = page.get("content", "")
+                return {
+                    "resolution": "merge",
+                    "merged_content": "User used to prefer dark mode but now prefers light mode in the editor.",
+                    "rationale": "preference changed over time",
+                }
+
+            engine = client._engine()
+            result = engine.dream_consolidate(limit=10, conflict_resolver=resolver)
+
+            # the model drove the resolution (overriding the deterministic tie), and saw both sides
+            self.assertTrue(result["resolved"])
+            self.assertEqual(result["resolved"][0]["resolution"], "merge")
+            self.assertEqual(result["resolved"][0]["auto_reason"], "model_reconciled")
+            self.assertIn("dark mode", seen["candidate"])
+            self.assertIn("dark mode", seen["page"])
+
+            # the conflicting page now holds the model's single reconciled statement
+            pages = client.list(kind="page", status="active", limit=50)["items"]
+            contents = " ".join(p.get("content", "") for p in pages)
+            self.assertIn("now prefers light mode", contents)
+
+    def test_model_reconciler_falls_back_to_rule_on_failure(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.stable_create(
+                title="preferences: editor theme",
+                content="User prefers dark mode in the editor.",
+                scope="user:alice",
+                dimension="preferences",
+                confidence=0.6,
+            )
+            client.update(
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.9}],
+                source="unit-test",
+            )
+
+            def broken_resolver(candidate, page):
+                raise RuntimeError("model unavailable")
+
+            engine = client._engine()
+            result = engine.dream_consolidate(limit=10, conflict_resolver=broken_resolver)
+
+            # a flaky model never stalls the pipeline — deterministic rule applies (keep_new here)
+            self.assertTrue(result["resolved"])
+            self.assertEqual(result["resolved"][0]["resolution"], "keep_new")
+            self.assertEqual(result["resolved"][0]["auto_reason"], "candidate_confidence_advantage")
+
     def test_webui_preview_has_inline_uid_selector(self) -> None:
         app = _webui_source()
 

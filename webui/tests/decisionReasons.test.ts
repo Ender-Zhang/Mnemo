@@ -19,6 +19,7 @@ describe("decision reason humanizer", () => {
     assert.match(humanizeDecisionReason("conflict_resolved:keep_new"), /用新记忆替换/);
     assert.match(humanizeDecisionReason("conflict_resolved:keep_old"), /保留旧记忆/);
     assert.match(humanizeDecisionReason("conflict_resolved:keep_both"), /同时保留/);
+    assert.match(humanizeDecisionReason("conflict_resolved:merge"), /模型消解/);
   });
 
   it("translates the backend promote-gate phrasing with confidence numbers", () => {

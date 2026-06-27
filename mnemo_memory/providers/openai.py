@@ -124,6 +124,51 @@ class OpenAICompatibleMemoryMaintainer:
         parsed = _parse_message_json_object(response)
         return parsed if isinstance(parsed, dict) else {}
 
+    def reconcile_conflict(self, *, candidate: dict[str, Any], page: dict[str, Any]) -> dict[str, Any]:
+        """Decide how a new claim and a conflicting stable memory should reconcile.
+
+        Returns JSON: {resolution: keep_new|keep_old|keep_both|merge,
+        merged_content?, rationale?}. ``merge`` lets the model rewrite the page
+        with a single disambiguated / supplemented statement.
+        """
+        payload = _chat_payload(
+            self.config,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You reconcile a new memory claim against an existing, conflicting stable memory. "
+                        "Return JSON only: {\"resolution\": one of keep_new|keep_old|keep_both|merge, "
+                        "\"merged_content\": string (required when resolution is merge), \"rationale\": short string}. "
+                        "Choose keep_new when the new claim supersedes the old (e.g. a changed preference); "
+                        "keep_old when the new claim is wrong or weaker; keep_both when both are independently true; "
+                        "merge when one disambiguated or time-qualified statement captures both — then write that "
+                        "statement in merged_content (concise, first person about the user)."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": dumps({
+                        "new_claim": {
+                            "claim": candidate.get("claim"),
+                            "dimension": candidate.get("dimension"),
+                            "confidence": candidate.get("confidence"),
+                            "scope": candidate.get("scope"),
+                        },
+                        "existing_memory": {
+                            "title": page.get("title"),
+                            "content": page.get("content"),
+                            "confidence": page.get("confidence"),
+                            "scope": page.get("scope"),
+                        },
+                    }),
+                },
+            ],
+        )
+        response = self._post_json("/chat/completions", payload)
+        parsed = _parse_message_json_object(response)
+        return parsed if isinstance(parsed, dict) else {}
+
     def ping(self) -> dict[str, Any]:
         """Minimal request to verify the chat endpoint is reachable and authorized."""
         payload = _chat_payload(self.config, [{"role": "user", "content": "ping"}])

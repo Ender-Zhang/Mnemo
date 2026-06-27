@@ -1247,6 +1247,7 @@ class MemoryClient:
         engine = self._engine()
         deterministic_fallback = False
         model_calls: int | None = None
+        conflict_resolver = None
         if use_provider and actions is None:
             try:
                 from ..providers.openai import OpenAICompatibleMemoryMaintainer
@@ -1263,6 +1264,7 @@ class MemoryClient:
                     batch_size=resolved.dream_batch_size,
                     max_batches=resolved.dream_max_batches,
                 )
+                conflict_resolver = _make_conflict_resolver(maintainer)
             except (ValueError, OSError):
                 deterministic_fallback = True
         elif not use_provider and actions is None:
@@ -1275,6 +1277,7 @@ class MemoryClient:
             execution_policy=execution_policy,
             deterministic_fallback=deterministic_fallback,
             model_calls=model_calls,
+            conflict_resolver=conflict_resolver,
         )
 
     def dream_status(self, *, limit: int = 20) -> dict[str, Any]:
@@ -1419,6 +1422,23 @@ def _scope_l1_snapshot(snapshot: dict[str, Any], uid: str) -> dict[str, Any]:
     if isinstance(hubs, list):
         scoped["association_hubs"] = [h for h in hubs if isinstance(h, dict) and str(h.get("page_id")) in allowed_ids]
     return scoped
+
+
+def _make_conflict_resolver(maintainer: Any) -> Any:
+    """Adapt a maintenance provider into a (candidate, page) -> resolution dict
+    callback for the engine's conflict sweep. Returns None if the provider can't
+    reconcile, so the engine falls back to the deterministic rule."""
+    reconcile = getattr(maintainer, "reconcile_conflict", None)
+    if not callable(reconcile):
+        return None
+
+    def _resolver(candidate: dict[str, Any], page: dict[str, Any]) -> dict[str, Any] | None:
+        try:
+            return reconcile(candidate=candidate, page=page)
+        except (ValueError, OSError, KeyError):
+            return None
+
+    return _resolver
 
 
 def _propose_dream_actions_batched(
