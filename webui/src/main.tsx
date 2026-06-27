@@ -560,6 +560,21 @@ function App() {
     }
   };
 
+  // Keep the latest runPreview in a ref so the auto-refresh effect below always
+  // calls the current closure without re-subscribing on every render.
+  const runPreviewRef = React.useRef(runPreview);
+  runPreviewRef.current = runPreview;
+
+  // Once a preview has been generated, re-run it automatically when the selected
+  // user (or scope) changes — otherwise switching the UID looked like a no-op.
+  useEffect(() => {
+    if (activeTab !== "preview") return;
+    if (!previewContext) return;
+    const handle = window.setTimeout(() => { void runPreviewRef.current(); }, 400);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uidFilter, previewScope, activeTab]);
+
   const submitMemory = async () => {
     const writeScope = scopeFromUidFilter(uidFilter);
     const facts = factText.trim() ? [memoryFactPayload(factText.trim(), writeScope)] : [];
