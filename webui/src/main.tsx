@@ -683,10 +683,10 @@ function App() {
   const promoteCandidate = async (candidateId: string) => {
     setLoading(true);
     try {
-      const result = await callMemory<PromotionReviewResult>("promote-candidate", { candidate_id: candidateId, min_confidence: 0.7 });
-      const message = promotionReviewMessage(result);
-      if (result.decision === "promoted" || result.status === "promoted") { setOk(message); }
-      else { setWarn(message); }
+      // Manual promote is an explicit owner decision: force it through the
+      // quality/confidence/conflict gates (no "low_quality" rejection).
+      const result = await callMemory<PromotionReviewResult>("force-promote-candidate", { candidate_id: candidateId });
+      setOk(promotionReviewMessage(result));
       await refresh({ parts: ["candidates", "inventory", "profile", "maintenance", "tombstones"], clearNotice: false });
     } catch (error) {
       setError(error);
@@ -715,7 +715,7 @@ function App() {
     try {
       for (const id of ids) {
         try {
-          await callMemory("promote-candidate", { candidate_id: id, min_confidence: 0.7 });
+          await callMemory("force-promote-candidate", { candidate_id: id });
           promoted++;
         } catch {
           failed++;

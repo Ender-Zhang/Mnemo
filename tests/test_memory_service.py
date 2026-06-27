@@ -1199,6 +1199,15 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("advanced_dreaming: advancedDreaming", app)
         self.assertIn("DreamProposalsPanel", app)
 
+    def test_webui_manual_promote_uses_force_override(self) -> None:
+        app = _webui_source()
+
+        # the manual promote button must bypass the quality/conflict gates so the
+        # owner never gets a "low_quality" rejection on an explicit promote
+        self.assertIn('callMemory<PromotionReviewResult>("force-promote-candidate"', app)
+        self.assertIn('await callMemory("force-promote-candidate"', app)
+        self.assertNotIn('callMemory<PromotionReviewResult>("promote-candidate"', app)
+
     def test_webui_keeps_dream_run_feedback_after_refresh(self) -> None:
         app = _webui_source()
 
