@@ -766,8 +766,17 @@ class MemoryLearningMixin:
         candidate = self._get_candidate(candidate_id)
         if not candidate:
             raise ValueError(f"candidate not found: {candidate_id}")
-        if not str(candidate.get("status") or "").startswith("needs_review:conflict"):
-            raise ValueError(f"candidate {candidate_id} is not in conflict status")
+        current_status = str(candidate.get("status") or "")
+        if not current_status.startswith("needs_review:conflict"):
+            # Already resolved (by dream, auto-release, or a prior manual action).
+            # Return a no-op success so the caller can treat this as idempotent.
+            return {
+                "kind": "conflict_resolution",
+                "resolution": "already_resolved",
+                "candidate_id": candidate_id,
+                "status": current_status,
+                "page_action": "none",
+            }
 
         conflict_page = self._conflict_page_for_candidate(candidate)
         resolution = resolution.strip().casefold().replace("-", "_")
