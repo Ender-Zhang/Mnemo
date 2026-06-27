@@ -760,6 +760,13 @@ class StateStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def delete_memory_link(self, link_id: str) -> int:
+        clean_id = str(link_id or "").strip()
+        if not clean_id:
+            return 0
+        with self.connect() as conn:
+            return int(conn.execute("DELETE FROM memory_links WHERE id = ?", (clean_id,)).rowcount)
+
     def add_memory_tombstone(
         self,
         target_id: str,

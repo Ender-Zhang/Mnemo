@@ -764,7 +764,9 @@ function App() {
         setOk("记忆已标记 tombstone");
       }
       setSelected(null);
-      await refresh({ parts: ["inventory", "tombstones", "profile"], clearNotice: false });
+      // deleting a page also releases any candidate parked in conflict against
+      // it, so refresh candidates too — otherwise a stale conflict lingers.
+      await refresh({ parts: ["inventory", "tombstones", "profile", "candidates"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -777,7 +779,7 @@ function App() {
     try {
       await callMemory("forget", { memory_id: tombstone.target_id, target_type: tombstone.target_type, reason: "private_delete" });
       setOk("目标记忆已 Forget 擦除，删除痕迹仍会保留");
-      await refresh({ parts: ["tombstones", "inventory", "profile"], clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory", "profile", "candidates"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -790,7 +792,7 @@ function App() {
       await callMemory("hard-delete", { tombstone_id: tombstone.id, memory_id: tombstone.target_id, target_type: tombstone.target_type, delete_related: true });
       setSelected(null);
       setOk("目标记忆和相关 tombstone 记录已彻底删除");
-      await refresh({ parts: ["tombstones", "inventory"], clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory", "candidates"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -829,7 +831,7 @@ function App() {
       }
       setSelected(null);
       setSelectedTombstoneIds(new Set());
-      await refresh({ parts: ["tombstones", "inventory"], clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory", "candidates"], clearNotice: false });
       if (failures.length > 0) {
         setWarn(`已彻底删除 ${deletedCount} 条，跳过 ${skippedCount} 条，失败 ${failures.length} 条：${failures.slice(0, 2).join("；")}`);
       } else {

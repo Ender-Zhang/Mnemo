@@ -50,6 +50,7 @@ class MemoryCurationMixin:
                 if not update_page_status:
                     raise ValueError("memory page tombstone is not supported by this store")
                 update_page_status(memory_id, status)
+                released_conflicts = self._release_conflicting_candidates(memory_id)
                 replacement_link_id = self._link_replacement(memory_id, replacement)
                 tombstone_id = self.store.add_memory_tombstone(
                     memory_id,
@@ -87,6 +88,7 @@ class MemoryCurationMixin:
                     "tombstone_id": tombstone_id,
                     "replacement": replacement,
                     "replacement_link_id": replacement_link_id,
+                    "released_conflicts": released_conflicts,
                     "eval_case": eval_case,
                     "memory": updated_page,
                     "wiki": wiki,
@@ -226,7 +228,12 @@ class MemoryCurationMixin:
 
         counts = {"candidates": 0, "pages": 0, "links": 0, "tombstones": 0}
         removed_wiki: list[str] = []
+        released_conflicts: list[str] = []
         for page_id in sorted(pages):
+            # Release conflict candidates *before* the page (and its links) are
+            # deleted, otherwise the conflicts_with backlink is already gone and
+            # the candidate is stranded in needs_review:conflict.
+            released_conflicts.extend(self._release_conflicting_candidates(page_id))
             removed_wiki.extend(remove_memory_page_wiki_files(self.store.state_dir, page_id))
             _add_counts(counts, self.store.delete_memory_page(page_id))
         for candidate_id in sorted(candidates):
@@ -244,8 +251,42 @@ class MemoryCurationMixin:
             "counts": counts,
             "deleted_pages": sorted(pages),
             "deleted_candidates": sorted(candidates),
+            "released_conflicts": sorted(set(released_conflicts)),
             "removed_wiki": removed_wiki,
         }
+
+    def _release_conflicting_candidates(self, page_id: str) -> list[str]:
+        """Free any candidate parked in ``needs_review:conflict`` against a page
+        that is being curated away (tombstone / forget / hard delete).
+
+        The conflict only exists *relative to* that page; once the page is gone,
+        the candidate would otherwise be stranded forever — it can never be
+        auto-resolved (``_conflict_page_for_candidate`` requires an active page)
+        and keeps showing up as an unresolvable conflict. Reset it to ``draft``
+        so the normal pipeline re-evaluates it, and drop the stale link.
+        """
+        clean_page_id = _normalize_space(str(page_id or ""))
+        if not clean_page_id:
+            return []
+        list_backlinks = getattr(self.store, "list_memory_backlinks", None)
+        if not callable(list_backlinks):
+            return []
+        delete_link = getattr(self.store, "delete_memory_link", None)
+        released: list[str] = []
+        for link in list_backlinks(clean_page_id):
+            if link.get("relation") != "conflicts_with":
+                continue
+            candidate_id = _normalize_space(str(link.get("source_id") or ""))
+            if candidate_id:
+                candidate = self._get_candidate(candidate_id)
+                if candidate and str(candidate.get("status") or "").startswith("needs_review:conflict"):
+                    self.store.update_memory_candidate_status(candidate_id, "draft")
+                    released.append(candidate_id)
+            if callable(delete_link) and link.get("id"):
+                delete_link(str(link.get("id")))
+        if released:
+            log_event(_LOG, "conflict_released", page_id=clean_page_id, candidates=released)
+        return released
 
     def _resolve_replacement(self, replacement_id: str | None) -> dict[str, Any] | None:
         replacement_value = _normalize_space(str(replacement_id or ""))
@@ -375,6 +416,8 @@ class MemoryCurationMixin:
             ),
         )
 
+        released_conflicts = self._release_conflicting_candidates(page_id)
+
         related_redactions: list[dict[str, Any]] = []
         if redact_source_candidate and source_candidate and not _is_private_delete_status(source_candidate.get("status")):
             related_redactions.append(
@@ -397,6 +440,7 @@ class MemoryCurationMixin:
             "tombstone_id": tombstone_id,
             "target_hash": target_hash,
             "redacted": True,
+            "released_conflicts": released_conflicts,
             "memory": updated_page,
             "wiki": wiki,
             "related_redactions": _compact_private_redactions(related_redactions),

@@ -1410,6 +1410,100 @@ class MemoryServiceTests(unittest.TestCase):
             plain_candidate = next(c for c in plain_items if c["id"] == plain_id)
             self.assertNotIn("conflict_card", plain_candidate)
 
+    def _seed_conflict(self, client: Any) -> tuple[str, str]:
+        """Create an active page plus a candidate parked in needs_review:conflict
+        against it. Returns ``(page_id, candidate_id)``."""
+        created = client.stable_create(
+            title="preferences: editor theme",
+            content="User prefers dark mode in the editor.",
+            scope="user:alice",
+            dimension="preferences",
+        )
+        page_id = created["memory_id"]
+        update = client.update(
+            facts=[
+                {
+                    "claim": "User does not like dark mode in the editor.",
+                    "dimension": "preferences",
+                    "scope": "user:alice",
+                    "confidence": 0.8,
+                }
+            ],
+            source="unit-test",
+        )
+        candidate_id = update["memory_candidates"][0]["candidate_id"]
+        review = client.promote_candidate(candidate_id)
+        self.assertEqual(review.get("decision"), "conflict")
+        return page_id, candidate_id
+
+    def test_tombstoning_conflict_page_releases_stranded_candidate(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            page_id, candidate_id = self._seed_conflict(client)
+
+            result = client.tombstone(page_id, "outdated", target_type="page")
+            self.assertEqual(result.get("released_conflicts"), [candidate_id])
+
+            # the candidate is no longer stranded in conflict; it re-enters the
+            # normal pipeline as a draft instead of haunting the conflict list.
+            candidate = client.read(candidate_id)["item"]
+            self.assertEqual(candidate["status"], "draft")
+            items = client.list(kind="candidate", status=None, limit=50)["items"]
+            self.assertFalse(
+                any(str(c.get("status", "")).startswith("needs_review:conflict") for c in items)
+            )
+
+    def test_forgetting_conflict_page_releases_stranded_candidate(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            page_id, candidate_id = self._seed_conflict(client)
+
+            result = client.forget(page_id, target_type="page")
+            self.assertEqual(result.get("released_conflicts"), [candidate_id])
+            candidate = client.read(candidate_id)["item"]
+            self.assertEqual(candidate["status"], "draft")
+
+    def test_hard_deleting_conflict_page_releases_stranded_candidate(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            page_id, candidate_id = self._seed_conflict(client)
+
+            deleted = client.hard_delete(memory_id=page_id, target_type="page")
+            self.assertIn(candidate_id, deleted.get("released_conflicts", []))
+            # the conflicting candidate itself is preserved (only the page is gone),
+            # reset to draft so the next dream re-evaluates it without the dead page.
+            candidate = client.read(candidate_id)["item"]
+            self.assertEqual(candidate["status"], "draft")
+            with self.assertRaises(ValueError):
+                client.read(page_id)
+
+    def test_released_conflict_candidate_promotes_after_page_removed(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.save_auto_dream_config(local_fallback=True)
+            page_id, candidate_id = self._seed_conflict(client)
+
+            # Remove the memory the candidate clashed with, then run maintenance:
+            # with the conflict gone the released draft should promote cleanly.
+            client.tombstone(page_id, "outdated", target_type="page")
+            client.dream_run(use_provider=False)
+
+            candidates = client.list(kind="candidate", status=None, limit=50)["items"]
+            self.assertFalse(
+                any(str(c.get("status", "")).startswith("needs_review:conflict") for c in candidates)
+            )
+            pages = client.list(kind="page", status="active", limit=50)["items"]
+            joined = " ".join(p.get("content", "") for p in pages)
+            self.assertIn("does not like dark mode", joined)
+
     def test_full_auto_resolves_conflicts_without_human(self) -> None:
         from mnemo_memory import MemoryClient
 
