@@ -452,6 +452,7 @@ class MemoryLearningMixin:
         *,
         candidate_ids: list[str] | set[str] | None = None,
         note_ids: list[str] | set[str] | None = None,
+        auto_resolve_conflicts: bool = True,
     ) -> dict[str, Any]:
         w0 = self.ingest_working_notes(limit=limit, note_ids=note_ids)
         selected_candidate_ids = set(candidate_ids or [])
@@ -494,24 +495,13 @@ class MemoryLearningMixin:
             else:
                 skipped.append(result)
 
-        # Auto-resolve conflict candidates with high confidence advantage
-        conflict_candidates = [
-            c for c in self.store.list_memory_candidates(status=None, limit=limit * 2)
-            if str(c.get("status") or "").startswith("needs_review:conflict")
-        ]
+        # Full-auto: resolve every pending conflict deterministically so nothing
+        # stalls in needs_review.
         resolved: list[dict[str, Any]] = []
-        for candidate in conflict_candidates[:limit]:
-            conflict_page = self._conflict_page_for_candidate(candidate)
-            if not conflict_page:
-                continue
-            candidate_conf = float(candidate.get("confidence") or 0.0)
-            page_conf = float(conflict_page.get("confidence") or 0.0)
-            if candidate_conf >= min_confidence and candidate_conf - page_conf >= 0.2:
-                result = self.resolve_conflict(candidate["id"], resolution="keep_new")
-                result["decision"] = "conflict_resolved"
-                result["auto_reason"] = "candidate_confidence_advantage"
-                resolved.append(result)
-                promoted.append(result)
+        if auto_resolve_conflicts:
+            resolved = self._auto_resolve_pending_conflicts(limit)
+            for result in resolved:
+                (rejected if result.get("resolution") == "keep_old" else promoted).append(result)
 
         return {
             "w0": w0,
@@ -522,6 +512,43 @@ class MemoryLearningMixin:
             "resolved": resolved,
             "snapshot": self.compile_l1_snapshot(limit=50),
         }
+
+    def _auto_resolve_pending_conflicts(self, limit: int) -> list[dict[str, Any]]:
+        """Deterministically resolve every parked conflict (model-free fallback).
+
+        A clear confidence winner supersedes (keep_new) or is rejected (keep_old);
+        a tie keeps both (the new claim is appended to the existing page) so no
+        information is silently lost. Used by both the deterministic consolidation
+        and the model path (as the "deterministic fallback" after model actions).
+        """
+        conflict_candidates = [
+            c for c in self.store.list_memory_candidates(status=None, limit=max(1, int(limit)) * 2)
+            if str(c.get("status") or "").startswith("needs_review:conflict")
+        ]
+        resolved: list[dict[str, Any]] = []
+        for candidate in conflict_candidates[: max(1, int(limit))]:
+            conflict_page = self._conflict_page_for_candidate(candidate)
+            if not conflict_page:
+                continue
+            resolution, reason = _deterministic_conflict_resolution(candidate, conflict_page)
+            try:
+                result = self.resolve_conflict(candidate["id"], resolution=resolution)
+            except ValueError:
+                continue
+            result["decision"] = "conflict_resolved"
+            result["resolution"] = resolution
+            result["auto_reason"] = reason
+            result.setdefault("reason", f"conflict_resolved:{resolution}")
+            resolved.append(result)
+            log_event(
+                _LOG,
+                "conflict_auto_resolved",
+                candidate_id=candidate["id"],
+                page_id=conflict_page.get("id"),
+                resolution=resolution,
+                reason=reason,
+            )
+        return resolved
 
     def _review_draft_candidate_for_promotion(
         self,
@@ -871,6 +898,26 @@ def _page_topic_keys(page: dict[str, Any], *, state_dir: str | Path) -> set[str]
 
 def _topic_key(value: str) -> str:
     return "".join(ch for ch in _normalize_space(value).casefold() if ch.isalnum())
+
+
+def _deterministic_conflict_resolution(
+    candidate: dict[str, Any],
+    page: dict[str, Any],
+    *,
+    margin: float = 0.15,
+) -> tuple[str, str]:
+    """Pick a conflict resolution from confidence alone (model-free fallback).
+
+    Clear winner by confidence supersedes; within ``margin`` it is a tie and we
+    keep both so no claim is dropped without a model to disambiguate.
+    """
+    candidate_conf = float(candidate.get("confidence") or 0.0)
+    page_conf = float(page.get("confidence") or 0.0)
+    if candidate_conf - page_conf >= margin:
+        return "keep_new", "candidate_confidence_advantage"
+    if page_conf - candidate_conf >= margin:
+        return "keep_old", "existing_confidence_advantage"
+    return "keep_both", "confidence_tie_keep_both"
 
 
 def _merged_page_content(existing_content: str, claim: str) -> str:

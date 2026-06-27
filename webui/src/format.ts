@@ -131,8 +131,10 @@ const DECISION_REASON_LABELS: Array<[RegExp, string]> = [
   [/^duplicate/, "与已有稳定记忆重复，已并入原记忆、不重复保存。"],
   [/^empty/, "内容为空，无法形成记忆。"],
   [/^conflicts?_with_active_memory/, "与一条现有记忆冲突，需要裁决保留哪条。"],
-  [/^conflict_resolved:keep_old/, "冲突裁决：保留旧记忆，拒绝此候选。"],
-  [/^conflict_resolved:keep_new/, "冲突裁决：用新记忆替换旧记忆。"],
+  [/^conflict_resolved:keep_old/, "冲突自动消解：保留旧记忆，拒绝此候选。"],
+  [/^conflict_resolved:keep_new/, "冲突自动消解：用新记忆替换旧记忆。"],
+  [/^conflict_resolved:keep_both/, "冲突自动消解：同时保留新旧两条记忆（已补充到同一页）。"],
+  [/^conflict_resolved/, "冲突已自动消解。"],
   [/^conflict/, "与现有记忆冲突，需要复核。"],
   [/^deterministic_fallback/, "本地自动整理规则处理（未调用模型）。"],
   [/^operator_/, "人工操作。"]

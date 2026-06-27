@@ -290,6 +290,11 @@ class MemoryDreamMixin:
                 execution_policy=execution_policy,
             )
             execution_mode = "model_actions"
+            # Model-first + deterministic fallback: sweep up any conflict the model
+            # left parked in needs_review so full-auto never stalls for a human.
+            conflict_resolved = self._auto_resolve_pending_conflicts(limit)
+            if conflict_resolved:
+                action_execution = _merge_conflict_resolutions(action_execution, conflict_resolved)
         elif deterministic_fallback:
             consolidation = self.dream_consolidate(
                 limit=limit,
@@ -1508,6 +1513,32 @@ def _report_completed_at(report: dict[str, Any] | None) -> float | None:
 def _safe_report_id(report_id: str) -> str:
     normalized = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(report_id or "")).strip("._-")
     return normalized or new_id("dream")
+
+
+def _merge_conflict_resolutions(
+    action_execution: dict[str, Any] | None,
+    resolved: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Fold deterministic conflict resolutions into a model action result so they
+    show up in the report (and decision log) alongside the model's own actions."""
+    base = dict(action_execution or {"kind": "dream_memory_action_result", "applied": [], "skipped": [], "counts": {}})
+    applied = list(base.get("applied") or [])
+    for item in resolved:
+        keep_old = item.get("resolution") == "keep_old"
+        applied.append({
+            "action_id": f"auto_conflict_{item.get('candidate_id', '')}",
+            "tool": "memory_reject_candidate" if keep_old else "memory_promote_candidate",
+            "candidate_id": item.get("candidate_id"),
+            "page_id": item.get("page_id"),
+            "status": item.get("status") if keep_old else "promoted",
+            "decision": "conflict_resolved",
+            "reason": item.get("reason") or f"conflict_resolved:{item.get('resolution')}",
+        })
+    counts = dict(base.get("counts") or {})
+    counts["applied"] = len(applied)
+    base["applied"] = applied
+    base["counts"] = counts
+    return base
 
 
 def _consolidation_as_action_result(

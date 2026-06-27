@@ -15,6 +15,12 @@ describe("decision reason humanizer", () => {
     assert.match(humanizeDecisionReason("conflicts_with_active_memory"), /冲突/);
   });
 
+  it("explains auto-resolved conflicts (full-auto)", () => {
+    assert.match(humanizeDecisionReason("conflict_resolved:keep_new"), /用新记忆替换/);
+    assert.match(humanizeDecisionReason("conflict_resolved:keep_old"), /保留旧记忆/);
+    assert.match(humanizeDecisionReason("conflict_resolved:keep_both"), /同时保留/);
+  });
+
   it("translates the backend promote-gate phrasing with confidence numbers", () => {
     const reason = "passed quality and confidence gates; confidence 0.82 >= 0.70; created a stable page (preferences)";
     const text = humanizeDecisionReason(reason);

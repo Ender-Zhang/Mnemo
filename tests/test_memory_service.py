@@ -1410,6 +1410,66 @@ class MemoryServiceTests(unittest.TestCase):
             plain_candidate = next(c for c in plain_items if c["id"] == plain_id)
             self.assertNotIn("conflict_card", plain_candidate)
 
+    def test_full_auto_resolves_conflicts_without_human(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.save_auto_dream_config(local_fallback=True)
+            # existing stable memory with lower confidence
+            client.stable_create(
+                title="preferences: editor theme",
+                content="User prefers dark mode in the editor.",
+                scope="user:alice",
+                dimension="preferences",
+                confidence=0.6,
+            )
+            # a directly conflicting candidate with a clear confidence advantage
+            client.update(
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.9}],
+                source="unit-test",
+            )
+
+            client.dream_run(use_provider=False)
+
+            # nothing is left parked for a human in needs_review:conflict
+            candidates = client.list(kind="candidate", status=None, limit=50)["items"]
+            self.assertFalse(
+                any(str(c.get("status", "")).startswith("needs_review:conflict") for c in candidates),
+                "full-auto dream should resolve conflicts, not park them",
+            )
+            # the higher-confidence claim superseded the old page
+            pages = client.list(kind="page", status="active", limit=50)["items"]
+            joined = " ".join(p.get("content", "") for p in pages)
+            self.assertIn("does not like dark mode", joined)
+
+    def test_dream_consolidate_keeps_both_on_confidence_tie(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.stable_create(
+                title="preferences: editor theme",
+                content="User prefers dark mode in the editor.",
+                scope="user:alice",
+                dimension="preferences",
+                confidence=0.8,
+            )
+            client.update(
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.8}],
+                source="unit-test",
+            )
+            engine = client._engine()
+            result = engine.dream_consolidate(limit=10)
+
+            # a tie keeps both claims rather than dropping either
+            self.assertTrue(result["resolved"])
+            self.assertEqual(result["resolved"][0]["resolution"], "keep_both")
+            pages = client.list(kind="page", status="active", limit=50)["items"]
+            joined = " ".join(p.get("content", "") for p in pages)
+            self.assertIn("prefers dark mode", joined)
+            self.assertIn("does not like dark mode", joined)
+
     def test_webui_preview_has_inline_uid_selector(self) -> None:
         app = _webui_source()
 
