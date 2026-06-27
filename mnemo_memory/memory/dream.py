@@ -263,6 +263,7 @@ class MemoryDreamMixin:
         advanced_dreaming: bool = False,
         execution_policy: str = "semi_auto",
         deterministic_fallback: bool = False,
+        model_calls: int | None = None,
     ) -> dict[str, Any]:
         started_at = time.time()
         if since is None:
@@ -336,6 +337,7 @@ class MemoryDreamMixin:
             "duration_s": round(completed_at - started_at, 3),
             "advanced_dreaming": bool(advanced_dreaming),
             "execution_policy": _normalize_execution_policy(execution_policy),
+            "model_calls": int(model_calls) if model_calls is not None else None,
             "delta": delta,
             "plan": dream_plan,
             "execution": {
@@ -1204,9 +1206,11 @@ def _compact_dream_report(report: dict[str, Any] | None) -> dict[str, Any] | Non
         "duration_s": report.get("duration_s"),
         "advanced_dreaming": bool(report.get("advanced_dreaming")),
         "execution_policy": report.get("execution_policy"),
+        "model_calls": report.get("model_calls"),
         "delta_counts": delta.get("counts", {}),
         "execution": {
             "mode": execution.get("mode"),
+            "model_calls": report.get("model_calls"),
             "w0_created": len((result.get("w0") or {}).get("created", [])),
             "promoted": len(result.get("promoted", [])),
             "rejected": len(result.get("rejected", [])) or len(reject_reasons),

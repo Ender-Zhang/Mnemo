@@ -2858,6 +2858,9 @@ function MaintenancePanel(props: {
       <div className="dream-mode-strip">
         <StatusBadge text={props.useProvider ? "模型审核开启" : "模型审核关闭"} />
         <StatusBadge text={props.advancedDreaming ? "高级 Dreaming 开启" : "普通 Dreaming"} />
+        {typeof props.dreamStatus?.latest?.model_calls === "number" && props.dreamStatus.latest.model_calls > 0
+          ? <StatusBadge text={`上轮模型调用 ${props.dreamStatus.latest.model_calls} 次`} />
+          : null}
         {pendingProposals.length > 0 ? <StatusBadge text={`${pendingProposals.length} 条待确认提案`} /> : null}
       </div>
       {props.advancedMode ? <DreamReviewReasons items={dreamStatusReviewReasons(props.dreamStatus)} /> : null}

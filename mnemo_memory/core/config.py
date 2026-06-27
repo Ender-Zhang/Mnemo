@@ -20,6 +20,10 @@ DEFAULT_AUTO_DREAM_MIN_CONFIDENCE = 0.7
 # of skipping, so memory candidates don't pile up waiting for manual review.
 DEFAULT_AUTO_DREAM_LOCAL_FALLBACK = True
 DEFAULT_EMBEDDINGS_ENABLED = False
+# Model-driven Dream batches candidates into smaller model calls for precision
+# instead of dumping the whole inventory into a single request.
+DEFAULT_DREAM_BATCH_SIZE = 8
+DEFAULT_DREAM_MAX_BATCHES = 6
 DEFAULT_QUALITY_WRITE_THRESHOLD = 0.68
 DEFAULT_QUALITY_DRAFT_THRESHOLD = 0.5
 DEFAULT_PROMOTE_MIN_CONFIDENCE = 0.7
@@ -46,6 +50,8 @@ class MemoryConfig:
     auto_dream_limit: int = DEFAULT_AUTO_DREAM_LIMIT
     auto_dream_min_confidence: float = DEFAULT_AUTO_DREAM_MIN_CONFIDENCE
     auto_dream_local_fallback: bool = DEFAULT_AUTO_DREAM_LOCAL_FALLBACK
+    dream_batch_size: int = DEFAULT_DREAM_BATCH_SIZE
+    dream_max_batches: int = DEFAULT_DREAM_MAX_BATCHES
     quality_write_threshold: float = DEFAULT_QUALITY_WRITE_THRESHOLD
     quality_draft_threshold: float = DEFAULT_QUALITY_DRAFT_THRESHOLD
     promote_min_confidence: float = DEFAULT_PROMOTE_MIN_CONFIDENCE
@@ -80,6 +86,8 @@ class ConfigOverrides:
     auto_dream_limit: int | None = None
     auto_dream_min_confidence: float | None = None
     auto_dream_local_fallback: bool | None = None
+    dream_batch_size: int | None = None
+    dream_max_batches: int | None = None
     quality_write_threshold: float | None = None
     quality_draft_threshold: float | None = None
     promote_min_confidence: float | None = None
@@ -218,6 +226,18 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_PROMOTE_MIN_CONFIDENCE"),
         DEFAULT_PROMOTE_MIN_CONFIDENCE,
     )
+    dream_batch_size = _first_int(
+        overrides.dream_batch_size,
+        file_config.get("dream_batch_size"),
+        env.get("MNEMO_MEMORY_DREAM_BATCH_SIZE"),
+        DEFAULT_DREAM_BATCH_SIZE,
+    )
+    dream_max_batches = _first_int(
+        overrides.dream_max_batches,
+        file_config.get("dream_max_batches"),
+        env.get("MNEMO_MEMORY_DREAM_MAX_BATCHES"),
+        DEFAULT_DREAM_MAX_BATCHES,
+    )
     quality_write_threshold = max(0.0, min(1.0, quality_write_threshold))
     quality_draft_threshold = max(0.0, min(quality_write_threshold, quality_draft_threshold))
     return MemoryConfig(
@@ -239,6 +259,8 @@ def resolve_memory_config(
         auto_dream_limit=max(1, min(50, auto_dream_limit)),
         auto_dream_min_confidence=max(0.0, min(1.0, auto_dream_min_confidence)),
         auto_dream_local_fallback=auto_dream_local_fallback,
+        dream_batch_size=max(1, min(50, dream_batch_size)),
+        dream_max_batches=max(1, min(20, dream_max_batches)),
         quality_write_threshold=quality_write_threshold,
         quality_draft_threshold=quality_draft_threshold,
         promote_min_confidence=max(0.0, min(1.0, promote_min_confidence)),

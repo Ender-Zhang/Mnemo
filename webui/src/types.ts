@@ -129,6 +129,7 @@ export type DreamReviewResult = DreamRejectReason;
 
 export type DreamReportSummary = {
   duration_s?: number;
+  model_calls?: number | null;
   execution?: {
     review_results?: DreamReviewResult[];
     reject_reasons?: DreamRejectReason[];

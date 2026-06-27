@@ -1196,6 +1196,7 @@ class MemoryClient:
     ) -> dict[str, Any]:
         engine = self._engine()
         deterministic_fallback = False
+        model_calls: int | None = None
         if use_provider and actions is None:
             try:
                 from ..providers.openai import OpenAICompatibleMemoryMaintainer
@@ -1203,8 +1204,15 @@ class MemoryClient:
                 resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
                 maintainer = OpenAICompatibleMemoryMaintainer(resolved)
                 delta = engine.collect_dream_delta(limit=limit)
-                plan = engine.build_dream_plan(delta, limit=limit, advanced_dreaming=advanced_dreaming)
-                actions = maintainer.propose_actions(delta=delta, plan=plan)
+                actions, model_calls = _propose_dream_actions_batched(
+                    engine,
+                    maintainer,
+                    delta,
+                    limit=limit,
+                    advanced_dreaming=advanced_dreaming,
+                    batch_size=resolved.dream_batch_size,
+                    max_batches=resolved.dream_max_batches,
+                )
             except (ValueError, OSError):
                 deterministic_fallback = True
         elif not use_provider and actions is None:
@@ -1216,6 +1224,7 @@ class MemoryClient:
             advanced_dreaming=advanced_dreaming,
             execution_policy=execution_policy,
             deterministic_fallback=deterministic_fallback,
+            model_calls=model_calls,
         )
 
     def dream_status(self, *, limit: int = 20) -> dict[str, Any]:
@@ -1323,6 +1332,85 @@ def _attach_conflict_context(store: Any, candidate: dict[str, Any]) -> dict[str,
         "page_status": page.get("status"),
     }
     return candidate
+
+
+def _propose_dream_actions_batched(
+    engine: Any,
+    maintainer: Any,
+    delta: dict[str, Any],
+    *,
+    limit: int,
+    advanced_dreaming: bool,
+    batch_size: int,
+    max_batches: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """Drive model-based Dream in batches for precision.
+
+    Instead of dumping the whole inventory into one model call, the unresolved
+    memory candidates are split into batches of ``batch_size``. Each batch is
+    proposed against the full shared context (pages / goals / health) so the
+    model can still merge and dedupe, but only reasons over a handful of
+    candidates at a time. Actions are merged and de-duplicated by identity, and
+    the number of model calls is returned for observability.
+    """
+    candidates = delta.get("memory_candidates")
+    candidates = candidates if isinstance(candidates, list) else []
+    bounded_batch = max(1, int(batch_size))
+    # Small backlog (or a single batch) → keep the original single-call behaviour.
+    if len(candidates) <= bounded_batch:
+        plan = engine.build_dream_plan(delta, limit=limit, advanced_dreaming=advanced_dreaming)
+        return list(maintainer.propose_actions(delta=delta, plan=plan) or []), 1
+
+    batches = [candidates[i : i + bounded_batch] for i in range(0, len(candidates), bounded_batch)]
+    batches = batches[: max(1, int(max_batches))]
+    merged: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    calls = 0
+    for index, batch in enumerate(batches):
+        sub_delta = dict(delta)
+        sub_delta["memory_candidates"] = batch
+        sub_delta["candidate_ids"] = [
+            str(item.get("id")) for item in batch if item.get("status") == "draft"
+        ]
+        counts = dict(delta.get("counts") or {})
+        counts["memory_candidates"] = len(batch)
+        counts["draft_candidates"] = len(sub_delta["candidate_ids"])
+        # Non-candidate work (plan proposals, associations, pending notes) only
+        # needs proposing once; keep it on the first batch so the model does not
+        # re-propose the same page/plan actions for every chunk.
+        if index > 0:
+            for key in ("pending_plan_proposals", "association_suggestions", "w0_pending", "changed_plan_items"):
+                sub_delta[key] = []
+                if key in counts:
+                    counts[key] = 0
+        sub_delta["counts"] = counts
+        plan = engine.build_dream_plan(sub_delta, limit=limit, advanced_dreaming=advanced_dreaming)
+        proposed = maintainer.propose_actions(delta=sub_delta, plan=plan) or []
+        calls += 1
+        for action in proposed:
+            key = _dream_action_identity(action)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged.append(action)
+    return merged, calls
+
+
+def _dream_action_identity(action: dict[str, Any]) -> str:
+    if not isinstance(action, dict):
+        return repr(action)
+    tool = str(action.get("tool") or "")
+    for field in ("candidate_id", "page_id", "proposal_id", "plan_proposal_id", "memory_id", "id"):
+        value = action.get(field)
+        if value:
+            return f"{tool}:{field}:{value}"
+    source, target = action.get("source_id"), action.get("target_id")
+    if source or target:
+        return f"{tool}:link:{source}->{target}"
+    title = action.get("title") or action.get("claim")
+    if title:
+        return f"{tool}:title:{' '.join(str(title).split()).casefold()}"
+    return f"{tool}:{sorted((str(k), str(v)) for k, v in action.items() if k != 'tool')}"
 
 
 def _item_timestamp(item: dict[str, Any]) -> float:
