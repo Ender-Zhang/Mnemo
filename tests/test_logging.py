@@ -52,6 +52,26 @@ class LoggingTests(unittest.TestCase):
 
             self.assertIn("candidate_reject", "\n".join(captured.output))
 
+    def test_provider_request_failure_is_logged(self) -> None:
+        from mnemo_memory.core.config import MemoryConfig
+        from mnemo_memory.providers.openai import OpenAICompatibleMemoryMaintainer
+
+        # an unroutable base_url forces an OSError inside _post_json
+        config = MemoryConfig(
+            provider="openai-compatible",
+            base_url="http://127.0.0.1:1/v1",
+            model="test-model",
+            timeout_s=1,
+        )
+        maintainer = OpenAICompatibleMemoryMaintainer(config)
+        with self.assertLogs("mnemo_memory.provider", level="WARNING") as captured:
+            with self.assertRaises(ValueError):
+                maintainer.ping()
+
+        joined = "\n".join(captured.output)
+        self.assertIn("provider_error", joined)
+        self.assertIn("model=test-model", joined)
+
 
 if __name__ == "__main__":
     unittest.main()

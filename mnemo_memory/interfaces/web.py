@@ -497,7 +497,10 @@ def _handler(config: MemoryWebConfig):
             self.wfile.write(body)
 
         def log_message(self, format: str, *args: Any) -> None:
-            return
+            # Route the stdlib handler's access log through our structured logger
+            # (DEBUG) instead of printing to stderr. API calls also get a richer
+            # http_request event in _dispatch; this captures static + raw requests.
+            log_event(_LOG, "http_access", level=logging.DEBUG, line=(format % args) if args else format)
 
     return MemoryHandler
 

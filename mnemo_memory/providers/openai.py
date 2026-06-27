@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from urllib import error, request
 
 from ..core.config import MemoryConfig
 from ..core.jsonutil import dumps
+from ..core.log import get_logger, log_event
+
+_LOG = get_logger("provider")
 
 
 class OpenAICompatibleMemoryMaintainer:
@@ -142,8 +146,10 @@ class OpenAICompatibleMemoryMaintainer:
                 body = resp.read().decode("utf-8")
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
+            log_event(_LOG, "provider_error", level=logging.WARNING, path=path, model=self.config.model, status=exc.code, detail=detail[:240])
             raise ValueError(f"maintenance provider error {exc.code}: {detail[:240]}") from exc
         except OSError as exc:
+            log_event(_LOG, "provider_error", level=logging.WARNING, path=path, model=self.config.model, error=str(exc))
             raise ValueError(f"maintenance provider request failed: {exc}") from exc
         parsed = json.loads(body)
         if not isinstance(parsed, dict):

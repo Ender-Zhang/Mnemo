@@ -21,7 +21,7 @@ Mnemo 的**内核已经很扎实**：候选优先的写入管线、五维质量�
 | 易用性 | ✅ 改善 | 首启引导 + 术语帮助 + forget/tombstone 确认 + **可堆叠 toast** + **计划↔记忆互链**；中英文案仍可统一 |
 | 好用性（UI） | ✅ 改善 | 局部刷新 + 结构化视图 + 拆分 + 暗色模式 + **记忆地图（维度分布 + 关联图）** + **Dream 实时反馈** |
 | 配置便利性 | ✅ 强 | 删误导 auth、独立 embeddings、**生效配置/来源视图、连通测试、阈值可配**（连同 eval 护栏）均已落地 |
-| 可观测性 | ✅ 改善 | **全链路结构化日志**（write/promote/reject/dream/auto-dream/curation/http），此前为零 |
+| 可观测性 | ✅ 改善 | **全链路结构化日志**（write/promote/reject/dream/auto-dream/curation/provider/http；含 HTTP access 行与 provider 请求错误），此前为零（`web.py` 的 `log_message` 直接 return） |
 | 质量保障 | ✅ 改善 | **召回 + promote 门 eval 护栏**进 CI，外加可选模型驱动评测脚本 |
 | 内核能力 | ✅ 强 | 写入/审核/检索/维护/溯源链路完整，设计有深度 |
 
