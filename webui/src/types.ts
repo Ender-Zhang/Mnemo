@@ -29,15 +29,24 @@ export type MemoryItem = {
 
 export type ConflictCard = {
   candidate_id?: string;
-  existing_page_id?: string;
   candidate_claim?: string;
+  candidate_dimension?: string;
+  candidate_confidence?: number;
+  // The existing memory the candidate conflicts with (hydrated server-side).
+  page_id?: string;
+  page_title?: string;
+  page_content?: string;
+  page_confidence?: number;
+  page_status?: string;
+  // Legacy field names kept for backward compatibility with older payloads.
+  existing_page_id?: string;
   existing_content?: string;
   options?: ConflictOption[];
 };
 
 export type ConflictOption = {
   resolution: string;
-  label: string;
+  label?: string;
   description?: string;
 };
 

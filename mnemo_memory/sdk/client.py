@@ -103,7 +103,7 @@ class MemoryClient:
 
         if normalized_kind in {"all", "candidate"}:
             candidates = store.list_memory_candidates(status=normalized_status, limit=bounded_limit, uid=normalized_uid)
-            items.extend(_typed_item("candidate", item) for item in candidates)
+            items.extend(_typed_item("candidate", _attach_conflict_context(store, item)) for item in candidates)
         if normalized_kind in {"all", "page"}:
             pages = store.list_memory_pages(status=normalized_status, limit=bounded_limit, uid=normalized_uid)
             items.extend(_typed_item("page", item) for item in pages)
@@ -1285,6 +1285,44 @@ def _plan_result_limit(value: Any) -> int:
 
 def _typed_item(item_type: str, item: dict[str, Any]) -> dict[str, Any]:
     return {"type": item_type, **item}
+
+
+def _attach_conflict_context(store: Any, candidate: dict[str, Any]) -> dict[str, Any]:
+    """For a candidate in conflict status, attach the existing page it conflicts with.
+
+    The conflict relationship is stored as a ``conflicts_with`` memory link; the
+    candidate row itself does not carry it, so we hydrate it on the read path so
+    the UI can show *which* memory the candidate clashes with.
+    """
+    status = str(candidate.get("status") or "")
+    if not status.startswith("needs_review:conflict"):
+        return candidate
+    list_links = getattr(store, "list_memory_links", None)
+    get_page = getattr(store, "get_memory_page", None)
+    if not callable(list_links) or not callable(get_page):
+        return candidate
+    page: dict[str, Any] | None = None
+    for link in list_links(candidate.get("id")):
+        if link.get("relation") == "conflicts_with":
+            page = get_page(str(link.get("target_id") or ""))
+            if page:
+                break
+    if not page:
+        return candidate
+    candidate["conflict_page_id"] = page.get("id")
+    candidate["conflict_card"] = {
+        "kind": "conflict_decision_card",
+        "candidate_id": candidate.get("id"),
+        "candidate_claim": candidate.get("claim"),
+        "candidate_dimension": candidate.get("dimension"),
+        "candidate_confidence": candidate.get("confidence"),
+        "page_id": page.get("id"),
+        "page_title": page.get("title"),
+        "page_content": page.get("content"),
+        "page_confidence": page.get("confidence"),
+        "page_status": page.get("status"),
+    }
+    return candidate
 
 
 def _item_timestamp(item: dict[str, Any]) -> float:

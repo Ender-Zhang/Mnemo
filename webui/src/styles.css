@@ -1962,6 +1962,20 @@ pre {
   overflow-wrap: anywhere;
 }
 
+.conflict-side small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.conflict-page-link {
+  margin-top: 6px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
 .conflict-actions {
   display: flex;
   flex-wrap: wrap;

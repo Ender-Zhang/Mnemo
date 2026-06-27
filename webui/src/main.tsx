@@ -1274,6 +1274,7 @@ function App() {
                 onPromote={promoteCandidate}
                 onReject={rejectCandidate}
                 onSelect={readMemory}
+                onSelectPage={(id) => readMemory({ id, type: "page" } as MemoryItem)}
                 onResolveConflict={resolveConflict}
                 onBatchPromote={batchPromoteCandidates}
                 onBatchReject={batchRejectCandidates}
@@ -2171,6 +2172,7 @@ function CandidateReview(props: {
   onPromote: (id: string) => void;
   onReject: (id: string) => void;
   onSelect: (item: MemoryItem) => void;
+  onSelectPage: (pageId: string) => void;
   onResolveConflict: (candidateId: string, resolution: string) => void;
   onBatchPromote: (ids: string[]) => void;
   onBatchReject: (ids: string[]) => void;
@@ -2215,6 +2217,7 @@ function CandidateReview(props: {
               loading={props.loading}
               onResolve={props.onResolveConflict}
               onSelect={() => props.onSelect(candidate)}
+              onSelectPage={props.onSelectPage}
             />
           ))}
         </div>
@@ -2282,18 +2285,28 @@ function CandidateReview(props: {
 
 // ─── Conflict Card ───────────────────────────────────────────────────────────
 
-function ConflictCard({ candidate, loading, onResolve, onSelect }: {
+const CONFLICT_RESOLUTION_LABELS: Record<string, string> = {
+  keep_new: "保留新记忆",
+  keep_old: "保留旧记忆",
+  keep_both: "都保留"
+};
+
+function ConflictCard({ candidate, loading, onResolve, onSelect, onSelectPage }: {
   candidate: MemoryItem;
   loading: boolean;
   onResolve: (candidateId: string, resolution: string) => void;
   onSelect: () => void;
+  onSelectPage: (pageId: string) => void;
 }) {
   const card = candidate.conflict_card || candidate.metadata?.conflict_card as ConflictCard | undefined;
-  const options: ConflictOption[] = card?.options || [
-    { resolution: "keep_new", label: "保留新记忆", description: "用候选替换现有记忆" },
-    { resolution: "keep_old", label: "保留旧记忆", description: "拒绝此候选" },
-    { resolution: "keep_both", label: "都保留", description: "两条记忆都保留" }
+  const options: ConflictOption[] = card?.options?.length ? card.options : [
+    { resolution: "keep_new", description: "用候选替换现有记忆" },
+    { resolution: "keep_old", description: "拒绝此候选" },
+    { resolution: "keep_both", description: "两条记忆都保留" }
   ];
+  const newClaim = card?.candidate_claim || candidate.claim || candidate.title;
+  const existingContent = card?.page_content || card?.existing_content;
+  const existingPageId = card?.page_id || card?.existing_page_id;
   return (
     <div className="conflict-card">
       <div className="conflict-card-header">
@@ -2302,31 +2315,36 @@ function ConflictCard({ candidate, loading, onResolve, onSelect }: {
         </button>
         <StatusBadge text="conflict" />
       </div>
-      {card ? (
-        <div className="conflict-comparison">
-          {card.candidate_claim ? (
-            <div className="conflict-side">
-              <span className="badge blue">新候选</span>
-              <p>{card.candidate_claim}</p>
-            </div>
-          ) : null}
-          {card.existing_content ? (
-            <div className="conflict-side">
-              <span className="badge good">现有记忆</span>
-              <p>{card.existing_content}</p>
-            </div>
+      <div className="conflict-comparison">
+        <div className="conflict-side">
+          <span className="badge blue">新记忆（候选）</span>
+          <p>{newClaim || "（无内容）"}</p>
+          <small>
+            {card?.candidate_dimension || candidate.dimension || "—"}
+            {(card?.candidate_confidence ?? candidate.confidence) != null
+              ? ` · 置信 ${formatConfidence(card?.candidate_confidence ?? candidate.confidence)}`
+              : ""}
+          </small>
+        </div>
+        <div className="conflict-side">
+          <span className="badge good">现有记忆</span>
+          <p>{existingContent || "（无法读取冲突记忆内容，可能已被处理）"}</p>
+          {existingPageId ? (
+            <button className="link-button conflict-page-link" onClick={() => onSelectPage(existingPageId)} title="打开冲突的现有记忆">
+              {card?.page_title || "查看冲突记忆"} ({compactId(existingPageId)})
+            </button>
           ) : null}
         </div>
-      ) : null}
+      </div>
       <div className="conflict-actions">
         {options.map((opt) => (
           <button key={opt.resolution}
-            className={opt.resolution === "keep_new" ? "success-button" : opt.resolution === "keep_old" ? "ghost-button" : "ghost-button"}
+            className={opt.resolution === "keep_new" ? "success-button" : "ghost-button"}
             onClick={() => onResolve(candidate.id, opt.resolution)}
             disabled={loading}
             title={opt.description}
           >
-            {opt.label}
+            {opt.label || CONFLICT_RESOLUTION_LABELS[opt.resolution] || opt.resolution}
           </button>
         ))}
       </div>

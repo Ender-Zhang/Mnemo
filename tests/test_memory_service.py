@@ -1290,6 +1290,73 @@ class MemoryServiceTests(unittest.TestCase):
         # the editor/ingest scope fields advertise that they follow the current user
         self.assertIn("跟随当前用户", app)
 
+    def test_list_hydrates_conflict_page_for_conflicting_candidate(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            created = client.stable_create(
+                title="preferences: editor theme",
+                content="User prefers dark mode in the editor.",
+                scope="user:alice",
+                dimension="preferences",
+            )
+            page_id = created["memory_id"]
+            update = client.update(
+                facts=[
+                    {
+                        "claim": "User does not like dark mode in the editor.",
+                        "dimension": "preferences",
+                        "scope": "user:alice",
+                        "confidence": 0.8,
+                    }
+                ],
+                source="unit-test",
+            )
+            candidate_id = update["memory_candidates"][0]["candidate_id"]
+
+            review = client.promote_candidate(candidate_id)
+            self.assertEqual(review.get("decision"), "conflict")
+
+            # list() hydrates *which* existing memory the candidate conflicts with,
+            # so the UI can show both sides.
+            items = client.list(kind="candidate", status=None, limit=50)["items"]
+            conflicted = next(c for c in items if c["id"] == candidate_id)
+            self.assertTrue(str(conflicted.get("status", "")).startswith("needs_review:conflict"))
+            self.assertEqual(conflicted.get("conflict_page_id"), page_id)
+            card = conflicted.get("conflict_card")
+            self.assertIsNotNone(card)
+            self.assertEqual(card["page_id"], page_id)
+            self.assertIn("dark mode", card["page_content"])
+            self.assertIn("dark mode", card["candidate_claim"])
+
+            # A non-conflicting candidate is left untouched (no conflict_card noise).
+            plain = client.update(
+                facts=[
+                    {
+                        "claim": "User lives in Berlin.",
+                        "dimension": "identity",
+                        "scope": "user:alice",
+                        "confidence": 0.8,
+                    }
+                ],
+                source="unit-test",
+            )
+            plain_id = plain["memory_candidates"][0]["candidate_id"]
+            plain_items = client.list(kind="candidate", status=None, limit=50)["items"]
+            plain_candidate = next(c for c in plain_items if c["id"] == plain_id)
+            self.assertNotIn("conflict_card", plain_candidate)
+
+    def test_webui_conflict_card_shows_existing_memory_side(self) -> None:
+        app = _webui_source()
+
+        # The conflict card renders the existing conflicting memory (page_content)
+        # and a click-through to open that page, not just the new candidate.
+        self.assertIn("现有记忆", app)
+        self.assertIn("card?.page_content", app)
+        self.assertIn("onSelectPage", app)
+        self.assertIn("CONFLICT_RESOLUTION_LABELS", app)
+
     def test_webui_keeps_rejected_plan_proposals_visible(self) -> None:
         app = _webui_source()
 
