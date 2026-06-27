@@ -1347,6 +1347,16 @@ class MemoryServiceTests(unittest.TestCase):
             plain_candidate = next(c for c in plain_items if c["id"] == plain_id)
             self.assertNotIn("conflict_card", plain_candidate)
 
+    def test_webui_shows_detailed_decision_reasons(self) -> None:
+        app = _webui_source()
+
+        # Full-auto decisions are explained per-memory in plain Chinese.
+        self.assertIn("humanizeDecisionReason", app)
+        self.assertIn("DreamDecisionLog", app)
+        self.assertIn("本轮整理决策", app)
+        # the audit reason badge shows in the memory table in both modes (no advancedMode gate)
+        self.assertIn("<AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} />", app)
+
     def test_webui_conflict_card_shows_existing_memory_side(self) -> None:
         app = _webui_source()
 

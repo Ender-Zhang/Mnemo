@@ -122,18 +122,51 @@ export function reviewForItem(item: MemoryItem, results: Map<string, DreamReview
   return results.get(item.id) || (item.source_candidate_id ? results.get(item.source_candidate_id) : undefined);
 }
 
+// Maps terse decision codes (low_quality / duplicate / ...) to a detailed,
+// human-readable Chinese explanation of why a memory was kept or dropped.
+const DECISION_REASON_LABELS: Array<[RegExp, string]> = [
+  [/^low_quality/, "质量分过低：内容太笼统或缺乏具体信息，被判为低价值，未融入。"],
+  [/^below_quality_threshold/, "质量分低于阈值，暂缓融入、留待复核。"],
+  [/^below_confidence_threshold/, "置信度低于融入门槛，暂不固化为稳定记忆。"],
+  [/^duplicate/, "与已有稳定记忆重复，已并入原记忆、不重复保存。"],
+  [/^empty/, "内容为空，无法形成记忆。"],
+  [/^conflicts?_with_active_memory/, "与一条现有记忆冲突，需要裁决保留哪条。"],
+  [/^conflict_resolved:keep_old/, "冲突裁决：保留旧记忆，拒绝此候选。"],
+  [/^conflict_resolved:keep_new/, "冲突裁决：用新记忆替换旧记忆。"],
+  [/^conflict/, "与现有记忆冲突，需要复核。"],
+  [/^deterministic_fallback/, "本地自动整理规则处理（未调用模型）。"],
+  [/^operator_/, "人工操作。"]
+];
+
+export function humanizeDecisionReason(reason?: string): string {
+  const raw = String(reason || "").trim();
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  for (const [pattern, label] of DECISION_REASON_LABELS) {
+    if (pattern.test(lower)) return label;
+  }
+  // Backend promote reasons are descriptive English; translate the common phrasing.
+  if (/passed quality and confidence gates/i.test(raw)) {
+    const merged = /merged into an existing/i.test(raw);
+    const conf = raw.match(/confidence\s+([0-9.]+)\s*>=\s*([0-9.]+)/i);
+    const confText = conf ? `（置信度 ${conf[1]} ≥ 门槛 ${conf[2]}）` : "";
+    return `${merged ? "通过质量与置信门槛，已合并到已有稳定记忆" : "通过质量与置信门槛，已新建稳定记忆"}${confText}。`;
+  }
+  return raw;
+}
+
 export function auditResultForItem(item: MemoryItem, review?: DreamReviewResult) {
   if (review) return auditResultFromDreamReview(review);
   const status = String(item.status || "").trim();
   const n = status.toLowerCase();
   if (n === "promoted") return auditResult("审核通过", "候选已进入稳定记忆", "good");
   if (n === "draft") return auditResult("待审核", "等待模型或人工审核", "blue");
-  if (n.startsWith("rejected")) return auditResult("审核拒绝", statusReason(status), "bad");
-  if (n.startsWith("needs_review")) return auditResult("待复核", statusReason(status), "warn");
-  if (n.startsWith("skipped")) return auditResult("已跳过", statusReason(status), "neutral");
+  if (n.startsWith("rejected")) return auditResult("审核拒绝", reasonFromStatus(status), "bad");
+  if (n.startsWith("needs_review")) return auditResult("待复核", reasonFromStatus(status), "warn");
+  if (n.startsWith("skipped")) return auditResult("已跳过", reasonFromStatus(status), "neutral");
   if (item.type === "page" && n === "active") return auditResult("稳定记忆", stableMemoryFallbackReason(item), "good");
-  if (n.includes("tombstone") || n.includes("delete")) return auditResult("已删除", statusReason(status), "bad");
-  if (n.includes("conflict")) return auditResult("冲突", statusReason(status), "warn");
+  if (n.includes("tombstone") || n.includes("delete")) return auditResult("已删除", reasonFromStatus(status), "bad");
+  if (n.includes("conflict")) return auditResult("冲突", reasonFromStatus(status), "warn");
   return auditResult("未审核", status || "unknown", "neutral");
 }
 
@@ -141,21 +174,21 @@ export function auditResultFromDreamReview(review: DreamReviewResult) {
   const decision = String(review.decision || "").toLowerCase();
   const status = String(review.status || "");
   const n = status.toLowerCase();
-  if (decision === "promoted" || n === "promoted") return auditResult("模型通过", review.reason || promotedReviewFallbackReason(review), "good");
-  if (decision === "rejected" || n.startsWith("rejected")) return auditResult("模型拒绝", review.reason || statusReason(status), "bad");
-  if (decision === "skipped") return auditResult("模型跳过", review.reason || statusReason(status), "neutral");
-  if (decision === "conflict" || n.includes("conflict")) return auditResult("需复核", review.reason || "conflict", "warn");
-  return auditResult("模型已审", review.reason || status || decision, "blue");
+  if (decision === "promoted" || n === "promoted") return auditResult("已融入", humanizeDecisionReason(review.reason) || promotedReviewFallbackReason(review), "good");
+  if (decision === "rejected" || n.startsWith("rejected")) return auditResult("已拒绝", humanizeDecisionReason(review.reason) || reasonFromStatus(status), "bad");
+  if (decision === "skipped") return auditResult("已跳过", humanizeDecisionReason(review.reason) || reasonFromStatus(status), "neutral");
+  if (decision === "conflict" || n.includes("conflict")) return auditResult("需复核", humanizeDecisionReason(review.reason) || "与现有记忆冲突，需要复核。", "warn");
+  return auditResult("已处理", humanizeDecisionReason(review.reason) || status || decision, "blue");
 }
 
 export function detailedAuditReason(item: MemoryItem, review: DreamReviewResult | undefined, fallback: string) {
   if (review) {
-    if (review.reason) return review.reason;
+    if (review.reason) return humanizeDecisionReason(review.reason);
     if (String(review.decision || "").toLowerCase() === "promoted" || String(review.status || "").toLowerCase() === "promoted") return promotedReviewFallbackReason(review);
-    return fallback || review.status || review.decision || "审核结果没有附带详细原因。";
+    return fallback || reasonFromStatus(review.status || "") || review.decision || "审核结果没有附带详细原因。";
   }
   if (item.type === "page" && String(item.status || "").toLowerCase() === "active") return stableMemoryFallbackReason(item);
-  return fallback || statusReason(String(item.status || "")) || "暂无详细审核原因。";
+  return fallback || reasonFromStatus(String(item.status || "")) || "暂无详细审核原因。";
 }
 
 export function promotedReviewFallbackReason(review: DreamReviewResult) {
@@ -182,6 +215,40 @@ export function statusReason(status: string) {
   const sep = status.indexOf(":");
   if (sep < 0) return "";
   return status.slice(sep + 1).replace(/[_-]+/g, " ");
+}
+
+// Like statusReason but returns a detailed Chinese explanation when the status
+// suffix is a known decision code (rejected:duplicate → "与已有稳定记忆重复…").
+export function reasonFromStatus(status: string) {
+  const suffix = statusReason(status);
+  if (!suffix) return "";
+  return humanizeDecisionReason(suffix.replace(/\s+/g, "_")) || suffix;
+}
+
+export type DreamDecisionEntry = {
+  id: string;
+  decision: string;
+  label: string;
+  tone: "good" | "bad" | "warn" | "blue" | "neutral";
+  reason: string;
+  pageTitle?: string;
+};
+
+// Unified, human-readable log of why each candidate was promoted or rejected in
+// the latest Dream run — the "为什么融入/为什么拒绝" view.
+export function dreamDecisionLog(status: DreamStatusResult | null): DreamDecisionEntry[] {
+  const results = normalizeDreamReviewResults(status?.latest?.execution?.review_results);
+  return results.map((r) => {
+    const audit = auditResultFromDreamReview(r);
+    return {
+      id: compactId(r.candidate_id || r.page_id || r.action_id || ""),
+      decision: String(r.decision || r.status || ""),
+      label: audit.label,
+      tone: audit.tone,
+      reason: humanizeDecisionReason(r.reason) || audit.detail,
+      pageTitle: r.page_title
+    };
+  });
 }
 
 // ─── Dream report summaries ──────────────────────────────────────────────────

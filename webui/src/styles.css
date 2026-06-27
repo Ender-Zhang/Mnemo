@@ -886,6 +886,78 @@ button {
   word-break: break-word;
 }
 
+/* ─── Dream decision log (why each memory was kept / dropped) ──────────────── */
+.decision-log {
+  margin: 12px 14px 0;
+  border: 1px solid var(--border-2);
+  border-radius: 9px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.decision-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px 0;
+}
+.decision-log-header h3 {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-strong);
+}
+.decision-log-counts {
+  display: flex;
+  gap: 6px;
+}
+.decision-log-hint {
+  margin: 2px 12px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.decision-log-list {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px 12px;
+}
+.decision-log-row {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--border-3);
+  border-radius: 7px;
+  background: var(--surface);
+  min-width: 0;
+}
+.decision-log-row.good { border-left-color: var(--on-green); }
+.decision-log-row.bad { border-left-color: var(--on-red); }
+.decision-log-row.warn { border-left-color: var(--on-amber); }
+.decision-log-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.decision-log-title {
+  font-size: 13px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.decision-log-top code {
+  font-size: 11px;
+  color: var(--muted-3);
+  overflow-wrap: anywhere;
+}
+.decision-log-row p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
 .maintenance-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1015,10 +1087,6 @@ label {
 .table-row {
   border-bottom: 1px solid var(--border-2);
   background: var(--surface);
-}
-
-.memory-table.simple .table-head {
-  grid-template-columns: 58px minmax(180px, 1fr) 82px 96px 70px 20px;
 }
 
 .table-head {
@@ -2079,10 +2147,6 @@ pre {
   border: 0;
   background: transparent;
   text-align: left;
-}
-
-.memory-table.simple .table-row-main {
-  grid-template-columns: 58px minmax(180px, 1fr) 82px 96px 70px 20px;
 }
 
 .table-row-edit {

@@ -55,6 +55,7 @@ import {
   tuningSavePayload
 } from "./providerSettings";
 import { promotionReviewMessage } from "./promotionMessages";
+import type { DreamDecisionEntry } from "./format";
 import "./styles.css";
 import type { AutoDreamFormState, AutoDreamStatusResult, EmbeddingConfigResult, EmbeddingFormState, EmbeddingStatusResult, ProviderConfigResult, ProviderFormState, TuningConfigResult, TuningFormState } from "./providerSettings";
 import type { PromotionReviewResult } from "./promotionMessages";
@@ -67,6 +68,7 @@ import {
   datetimeLocalToUnix,
   detailedAuditReason,
   dreamBacklogParts,
+  dreamDecisionLog,
   dreamReviewResultMap,
   dreamRunMessage,
   dreamStatusReviewReasons,
@@ -1836,7 +1838,7 @@ function MemoryTable({
           <span>Score</span>
           <span>Memory</span>
           <span>Type</span>
-          {advancedMode ? <span>审核结果</span> : null}
+          <span>审核结果</span>
           <span>Status</span>
           <span>Time</span>
         </div>
@@ -1850,7 +1852,7 @@ function MemoryTable({
                 <small>{item.dimension ? `[${item.dimension}] ` : ""}{item.scope || item.id}</small>
               </span>
               <StatusBadge text={item.type} />
-              {advancedMode ? <AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} /> : null}
+              <AuditResultBadge item={item} review={reviewForItem(item, reviewResults)} />
               <StatusBadge text={item.status || "unknown"} />
               <span className="time">{formatTime(item.updated_at || item.created_at)}</span>
               <ChevronRight size={16} />
@@ -2863,6 +2865,7 @@ function MaintenancePanel(props: {
           : null}
         {pendingProposals.length > 0 ? <StatusBadge text={`${pendingProposals.length} 条待确认提案`} /> : null}
       </div>
+      <DreamDecisionLog entries={dreamDecisionLog(props.dreamStatus)} />
       {props.advancedMode ? <DreamReviewReasons items={dreamStatusReviewReasons(props.dreamStatus)} /> : null}
       {props.advancedMode ? (
         <>
@@ -2979,6 +2982,38 @@ function DreamReviewReasons({ items }: { items: DreamReviewResult[] }) {
           <div className="dream-reject-row" key={`${item.action_id || item.candidate_id || "reject"}:${i}`}>
             <code>{auditReviewLabel(item)} · {item.candidate_id || item.page_id || item.action_id || "unknown candidate"}</code>
             <p>{item.reason || "unspecified"}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Plain-language "为什么融入 / 为什么拒绝" log from the latest Dream run, shown in
+// both default and advanced modes so the full-auto decisions stay transparent.
+function DreamDecisionLog({ entries }: { entries: DreamDecisionEntry[] }) {
+  if (entries.length === 0) return null;
+  const promoted = entries.filter((e) => e.tone === "good").length;
+  const rejected = entries.filter((e) => e.tone === "bad").length;
+  return (
+    <div className="decision-log">
+      <div className="decision-log-header">
+        <h3>本轮整理决策</h3>
+        <div className="decision-log-counts">
+          {promoted > 0 ? <StatusBadge text={`融入 ${promoted}`} /> : null}
+          {rejected > 0 ? <StatusBadge text={`拒绝 ${rejected}`} /> : null}
+        </div>
+      </div>
+      <p className="decision-log-hint">每条记忆为什么被融入或拒绝（全自动整理的决策依据）。</p>
+      <div className="decision-log-list">
+        {entries.map((entry, i) => (
+          <div className={`decision-log-row ${entry.tone}`} key={`${entry.id}:${i}`}>
+            <div className="decision-log-top">
+              <span className={`audit-result ${entry.tone}`}><strong>{entry.label}</strong></span>
+              {entry.pageTitle ? <strong className="decision-log-title">{entry.pageTitle}</strong> : null}
+              <code>{entry.id}</code>
+            </div>
+            <p>{entry.reason}</p>
           </div>
         ))}
       </div>
