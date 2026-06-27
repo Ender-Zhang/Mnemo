@@ -31,15 +31,19 @@ class MemoryClient:
     def context(self, intent: str = "", *, limit: int = 8, scope: str = "memory", uid: str | None = None) -> dict[str, Any]:
         engine = self._engine()
         query = intent.strip() or "memory context"
-        cards = [_api_card(card) for card in engine.context_cards(query, limit=_limit(limit), search_scope=scope, uid=_optional_text(uid))]
+        clean_uid = _optional_text(uid)
+        cards = [_api_card(card) for card in engine.context_cards(query, limit=_limit(limit), search_scope=scope, uid=clean_uid)]
+        snapshot = engine.load_l1_snapshot()
+        if clean_uid and isinstance(snapshot, dict):
+            snapshot = _scope_l1_snapshot(snapshot, clean_uid)
         return {
             "kind": "memory_context",
             "version": "mnemo_memory.context.v1",
             "intent": intent,
-            "uid": _optional_text(uid),
+            "uid": clean_uid,
             "cards": cards,
-            "profile": engine.compile_l0(),
-            "snapshot": engine.load_l1_snapshot(),
+            "profile": engine.compile_l0(uid=clean_uid),
+            "snapshot": snapshot,
         }
 
     def recall(self, seed: str, *, context: str = "", depth: int = 2, limit: int = 8, uid: str | None = None) -> dict[str, Any]:
@@ -1332,6 +1336,40 @@ def _attach_conflict_context(store: Any, candidate: dict[str, Any]) -> dict[str,
         "page_status": page.get("status"),
     }
     return candidate
+
+
+def _scope_matches_uid(scope: Any, uid: str) -> bool:
+    """Mirror storage._uid_scope_clause matching for in-memory snapshot filtering."""
+    clean_uid = str(uid or "").strip()
+    if not clean_uid:
+        return True
+    scope_text = str(scope or "")
+    candidates = {clean_uid}
+    if clean_uid.casefold().startswith("user:"):
+        suffix = clean_uid.split(":", 1)[1].strip()
+        if suffix:
+            candidates.add(suffix)
+    else:
+        candidates.add(f"user:{clean_uid}")
+    if scope_text in candidates:
+        return True
+    return clean_uid in scope_text
+
+
+def _scope_l1_snapshot(snapshot: dict[str, Any], uid: str) -> dict[str, Any]:
+    """Filter a global L1 snapshot down to one user's pages for the preview."""
+    items = [item for item in snapshot.get("items", []) if isinstance(item, dict) and _scope_matches_uid(item.get("scope"), uid)]
+    allowed_ids = {str(item.get("id")) for item in items if item.get("id")}
+    scoped = dict(snapshot)
+    scoped["items"] = items
+    scoped["page_count"] = len(items)
+    pointers = snapshot.get("pointers")
+    if isinstance(pointers, list):
+        scoped["pointers"] = [p for p in pointers if isinstance(p, dict) and str(p.get("page_id")) in allowed_ids]
+    hubs = snapshot.get("association_hubs")
+    if isinstance(hubs, list):
+        scoped["association_hubs"] = [h for h in hubs if isinstance(h, dict) and str(h.get("page_id")) in allowed_ids]
+    return scoped
 
 
 def _propose_dream_actions_batched(

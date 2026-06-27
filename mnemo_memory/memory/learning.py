@@ -179,8 +179,8 @@ class MemoryLearningMixin:
 
         return {"created": created, "skipped": skipped}
 
-    def compile_l0(self, *, limit: int = 50) -> dict[str, Any]:
-        pages = self.store.list_memory_pages(status="active", limit=max(1, int(limit)))
+    def compile_l0(self, *, limit: int = 50, uid: str | None = None) -> dict[str, Any]:
+        pages = self.store.list_memory_pages(status="active", limit=max(1, int(limit)), uid=uid)
         return compile_l0_profile(pages)
 
     def compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any]:

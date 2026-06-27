@@ -2394,11 +2394,17 @@ pre {
   white-space: nowrap;
 }
 
-.preview-scope select {
+.preview-scope select,
+.preview-scope input {
   padding: 8px 10px;
   border: 1px solid var(--border-3);
   border-radius: 8px;
   background: var(--surface);
+  color: var(--text);
+}
+
+.preview-scope input {
+  width: 150px;
 }
 
 .preview-token-strip {

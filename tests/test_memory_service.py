@@ -58,6 +58,33 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(context["kind"], "memory_context")
             self.assertEqual(context["cards"][0]["type"], "memory_page")
 
+    def test_context_scopes_profile_and_snapshot_by_uid(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.save_auto_dream_config(local_fallback=True)
+            client.update(facts=[{"claim": "User prefers dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.9}], source="t")
+            client.update(facts=[{"claim": "User prefers concise status updates.", "dimension": "preferences", "scope": "user:bob", "confidence": 0.9}], source="t")
+            client.dream_run(use_provider=False)
+
+            all_ctx = client.context("", uid=None)
+            alice_ctx = client.context("", uid="user:alice")
+            bob_ctx = client.context("", uid="bob")
+
+            # L0 profile is filtered to the selected user
+            self.assertIn("dark mode", all_ctx["profile"]["summary"])
+            self.assertIn("concise", all_ctx["profile"]["summary"])
+            self.assertIn("dark mode", alice_ctx["profile"]["summary"])
+            self.assertNotIn("concise", alice_ctx["profile"]["summary"])
+            self.assertIn("concise", bob_ctx["profile"]["summary"])
+            self.assertNotIn("dark mode", bob_ctx["profile"]["summary"])
+
+            # L1 snapshot is filtered too
+            self.assertEqual(all_ctx["snapshot"]["page_count"], 2)
+            self.assertEqual(alice_ctx["snapshot"]["page_count"], 1)
+            self.assertTrue(all("alice" in item["scope"] for item in alice_ctx["snapshot"]["items"]))
+
     def test_client_lists_candidates_and_pages_for_admin_ui(self) -> None:
         from mnemo_memory import MemoryClient
 
@@ -1346,6 +1373,14 @@ class MemoryServiceTests(unittest.TestCase):
             plain_items = client.list(kind="candidate", status=None, limit=50)["items"]
             plain_candidate = next(c for c in plain_items if c["id"] == plain_id)
             self.assertNotIn("conflict_card", plain_candidate)
+
+    def test_webui_preview_has_inline_uid_selector(self) -> None:
+        app = _webui_source()
+
+        # the memory preview lets you pick the user whose agent-view to inspect
+        self.assertIn("preview-uid-options", app)
+        self.assertIn("setUid={setUidFilter}", app)
+        self.assertIn("knownUids={knownUids}", app)
 
     def test_webui_shows_detailed_decision_reasons(self) -> None:
         app = _webui_source()

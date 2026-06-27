@@ -1233,6 +1233,8 @@ function App() {
                 recall={previewRecall}
                 loading={previewLoading}
                 uid={uidFilter.trim()}
+                setUid={setUidFilter}
+                knownUids={knownUids}
                 onRun={runPreview}
               />
             ) : null}
@@ -1572,6 +1574,8 @@ function PreviewPanel(props: {
   recall: RecallPreviewResult | null;
   loading: boolean;
   uid: string;
+  setUid: (v: string) => void;
+  knownUids: string[];
   onRun: () => void;
 }) {
   const profileSummary = props.context?.profile?.summary || "";
@@ -1597,6 +1601,14 @@ function PreviewPanel(props: {
             placeholder="例如：用户偏好怎样的进度更新？（留空查看默认上下文）"
             onKeyDown={(e) => { if (e.key === "Enter") props.onRun(); }} />
         </div>
+        <label className="preview-scope">
+          当前用户
+          <input list="preview-uid-options" value={props.uid} onChange={(e) => props.setUid(e.target.value)}
+            placeholder="user_123 · 留空=全部" />
+          <datalist id="preview-uid-options">
+            {props.knownUids.map((uid) => <option value={uid} key={uid} />)}
+          </datalist>
+        </label>
         <label className="preview-scope">
           范围
           <select value={props.scope} onChange={(e) => props.setScope(e.target.value)}>
