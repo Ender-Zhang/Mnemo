@@ -109,8 +109,9 @@ import type {
   DreamReviewResult,
   DreamStatusResult,
   EffectiveConfigResult,
-  EventFlowEntry,
-  EventFlowResult,
+  MemoryFlowEntry,
+  MemoryFlowResult,
+  FlowPage,
   L0Profile,
   MemoryGraphResult,
   MemoryHealthResult,
@@ -159,9 +160,9 @@ const advancedNavKeys = new Set<NavKey>(["workspace", "preview", "maintenance", 
 const WORKSPACE_TABS: Array<{ key: TabKey; label: string; icon: LucideIcon }> = [
   { key: "memories", label: "记忆", icon: Home },
   { key: "plans", label: "计划", icon: ListTodo },
-  { key: "events", label: "事件流", icon: FileClock }
+  { key: "flow", label: "记忆流程", icon: FileClock }
 ];
-const WORKSPACE_KEYS = new Set<TabKey>(["memories", "plans", "events"]);
+const WORKSPACE_KEYS = new Set<TabKey>(["memories", "plans", "flow"]);
 // Tabs whose right-hand 记忆详情 pane is useful (you pick an item → see its detail).
 const DETAIL_TABS = new Set<TabKey>(["memories", "candidates", "tombstones", "maintenance"]);
 
@@ -209,8 +210,9 @@ function App() {
   const [searchMode, setSearchMode] = useState(false);
   const [inventory, setInventory] = useState<MemoryItem[]>([]);
   const [knownUids, setKnownUids] = useState<string[]>([]);
-  const [eventFlow, setEventFlow] = useState<EventFlowEntry[]>([]);
+  const [eventFlow, setEventFlow] = useState<MemoryFlowEntry[]>([]);
   const [eventFlowLoading, setEventFlowLoading] = useState(false);
+  const [flowMeta, setFlowMeta] = useState<{ l0: number; l1: number }>({ l0: 0, l1: 0 });
   const [searchItems, setSearchItems] = useState<MemoryItem[]>([]);
   const [candidates, setCandidates] = useState<MemoryItem[]>([]);
   const [selected, setSelected] = useState<MemoryItem | null>(null);
@@ -390,8 +392,9 @@ function App() {
     setEventFlowLoading(true);
     try {
       const cleanUid = uidFilter.trim();
-      const result = await callMemory<EventFlowResult>("event-flow", { uid: cleanUid || undefined, limit: 80 });
+      const result = await callMemory<MemoryFlowResult>("memory-flow", { uid: cleanUid || undefined, limit: 80 });
       setEventFlow(result.flows || []);
+      setFlowMeta({ l0: result.l0_count || 0, l1: result.l1_count || 0 });
     } catch (error) {
       setError(error);
     } finally {
@@ -403,7 +406,7 @@ function App() {
     if (WORKSPACE_KEYS.has(activeTab)) setWorkspaceSub(activeTab);
   }, [activeTab]);
   useEffect(() => {
-    if (activeTab === "events") void loadEventFlow();
+    if (activeTab === "flow") void loadEventFlow();
   }, [activeTab, loadEventFlow]);
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -1253,15 +1256,16 @@ function App() {
                 onRun={runPreview}
               />
             ) : null}
-            {activeTab === "events" ? (
-              <EventFlowPanel
+            {activeTab === "flow" ? (
+              <MemoryFlowPanel
                 flows={eventFlow}
+                meta={flowMeta}
                 loading={eventFlowLoading}
                 uid={uidFilter.trim()}
                 onRefresh={loadEventFlow}
                 onSelectCandidate={(id) => readMemory({ id, type: "candidate" } as MemoryItem)}
                 onSelectPage={(id) => readMemory({ id, type: "page" } as MemoryItem)}
-                onOpenPlans={() => setActiveTab("plans")}
+                onOpenPreview={() => setActiveTab("preview")}
               />
             ) : null}
             {activeTab === "plans" ? (
@@ -1488,24 +1492,48 @@ function candidateStatusLabel(status?: string): string {
   return map[s] || status || "候选";
 }
 
-function EventFlowPanel(props: {
-  flows: EventFlowEntry[];
+function FlowPageChip({ page, onSelect }: { page: FlowPage; onSelect: (id: string) => void }) {
+  const tombstoned = String(page.status || "").includes("tombstone");
+  return (
+    <div className="flow-page">
+      <button className={`chip chip-page${tombstoned ? " chip-muted" : ""}`} onClick={() => onSelect(page.id)} title={page.title || page.id}>
+        <BookOpen size={13} />
+        <span className="chip-text">{page.title || page.id}</span>
+      </button>
+      <div className="flow-inject">
+        {page.in_l0 ? <span className="badge blue" title="每轮注入的画像">L0</span> : null}
+        {page.in_l1 ? <span className="badge good" title="默认注入的快照">L1</span> : null}
+        {!page.in_l0 && !page.in_l1 ? <span className="badge neutral" title={tombstoned ? "已删除，不再注入" : "尚未进入注入上下文"}>{tombstoned ? "已删除" : "未注入"}</span> : null}
+      </div>
+    </div>
+  );
+}
+
+// Full lifecycle: 事件 → 候选 → 稳定页 → 注入(L0/L1). Replaces the old event-flow
+// tab and folds the recall/injection leg in so an admin sees the whole pipeline.
+function MemoryFlowPanel(props: {
+  flows: MemoryFlowEntry[];
+  meta: { l0: number; l1: number };
   loading: boolean;
   uid: string;
   onRefresh: () => void;
   onSelectCandidate: (id: string) => void;
   onSelectPage: (id: string) => void;
-  onOpenPlans: () => void;
+  onOpenPreview: () => void;
 }) {
   return (
     <section className="panel event-flow-panel">
       <div className="panel-header">
         <div>
-          <h2>事件流 · 事件 → 记忆</h2>
-          <p>按时间倒序展示原始事件，以及它们沿管线派生出的候选、已固化页面与计划。点击候选或页面查看详情与溯源。</p>
+          <h2>记忆流程 · 事件 → 候选 → 稳定记忆 → 注入</h2>
+          <p>追踪每条记忆的完整生命周期：原始事件如何派生候选、固化为稳定页，以及是否进入 agent 每轮注入的 L0 画像 / L1 快照。点击任意节点查看详情与溯源。</p>
         </div>
         <div className="event-flow-actions">
           <StatusBadge text={props.uid ? `用户 ${props.uid}` : "全部用户"} />
+          <StatusBadge text={`L0 ${props.meta.l0} · L1 ${props.meta.l1}`} />
+          <button className="ghost-button" onClick={props.onOpenPreview} title="查看 agent 实际注入的上下文">
+            <Eye size={16} /> 预览注入
+          </button>
           <button className="ghost-button" onClick={props.onRefresh} disabled={props.loading}>
             {props.loading ? <Loader2 className="spin" size={16} /> : <RefreshCcw size={16} />}
             刷新
@@ -1513,8 +1541,15 @@ function EventFlowPanel(props: {
         </div>
       </div>
 
+      <div className="flow-legend">
+        <span className="badge blue">事件</span><span className="flow-arrow" aria-hidden>→</span>
+        <span className="badge green">候选</span><span className="flow-arrow" aria-hidden>→</span>
+        <span className="badge">稳定页</span><span className="flow-arrow" aria-hidden>→</span>
+        <span className="badge blue">L0</span><span className="badge good">L1</span><span className="flow-legend-note">每轮/默认注入</span>
+      </div>
+
       {props.flows.length === 0 ? (
-        <EmptyState text={props.loading ? "加载中…" : "暂无事件。写入一条记忆或摄取一个事件后，这里会显示它的完整流转。"} />
+        <EmptyState text={props.loading ? "加载中…" : "暂无事件。写入一条记忆或摄取一个事件后，这里会显示它从事件到注入的完整流转。"} />
       ) : (
         <ol className="event-flow-list">
           {props.flows.map((flow) => {
@@ -1549,20 +1584,21 @@ function EventFlowPanel(props: {
                         <span className="chip-text">{candidate.claim || candidate.id}</span>
                         {candidate.dimension ? <span className="chip-dim">{candidate.dimension}</span> : null}
                       </button>
-                      {candidate.page_ids.length > 0 ? (
-                        <div className="event-flow-pages">
-                          {candidate.page_ids.map((pageId) => (
-                            <button className="chip chip-page" key={pageId} onClick={() => props.onSelectPage(pageId)} title={pageId}>
-                              <BookOpen size={13} /> 页面 {pageId}
-                            </button>
-                          ))}
-                        </div>
+                      {(candidate.pages || []).length > 0 ? (
+                        <>
+                          <span className="flow-step-arrow" aria-hidden>→</span>
+                          <div className="event-flow-pages">
+                            {(candidate.pages || []).map((page) => (
+                              <FlowPageChip key={page.id} page={page} onSelect={props.onSelectPage} />
+                            ))}
+                          </div>
+                        </>
                       ) : null}
                     </div>
                   ))}
 
                   {flow.plans.map((plan, index) => (
-                    <button className="chip chip-plan" key={`${plan.id || "plan"}-${index}`} onClick={props.onOpenPlans} title={plan.title || plan.id}>
+                    <button className="chip chip-plan" key={`${plan.id || "plan"}-${index}`} title={plan.title || plan.id}>
                       <ListTodo size={13} />
                       <span className="chip-text">{plan.kind === "goal" ? "目标" : plan.kind === "todo" ? "待办" : "计划"} · {plan.title || plan.id}</span>
                       {plan.type === "plan_proposal" ? <span className="badge neutral">提案</span> : null}

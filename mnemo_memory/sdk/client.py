@@ -839,6 +839,52 @@ class MemoryClient:
                 break
         return {"kind": "memory_event_flow", "uid": uid_clean, "flows": flows}
 
+    def memory_flow(self, *, uid: str | None = None, limit: int = 50) -> dict[str, Any]:
+        """End-to-end lineage for an admin: event -> candidate -> stable page ->
+        injection (L0 每轮 / L1 快照). Builds on event_flow and marks, per page,
+        whether it currently feeds the agent's L0 profile and L1 snapshot.
+        """
+        store = self._store()
+        engine = self._engine()
+        clean_uid = _optional_text(uid)
+        base = self.event_flow(uid=clean_uid, limit=limit)
+
+        profile = engine.compile_l0(uid=clean_uid)
+        l0_ids = {str(e.get("page_id")) for e in (profile.get("entries") or []) if e.get("page_id")}
+        snapshot = engine.load_l1_snapshot()
+        l1_ids: set[str] = set()
+        if isinstance(snapshot, dict):
+            l1_ids = {str(i.get("id")) for i in (snapshot.get("items") or []) if isinstance(i, dict) and i.get("id")}
+        pages_by_id = {str(p.get("id")): p for p in store.list_memory_pages(status=None, limit=2000)}
+
+        flows: list[dict[str, Any]] = []
+        for flow in base.get("flows", []):
+            candidates = []
+            for cand in flow.get("candidates", []):
+                pages = []
+                for page_id in cand.get("page_ids", []):
+                    page = pages_by_id.get(str(page_id))
+                    if not page:
+                        continue
+                    pages.append({
+                        "id": str(page_id),
+                        "title": page.get("title"),
+                        "status": page.get("status"),
+                        "in_l0": str(page_id) in l0_ids,
+                        "in_l1": str(page_id) in l1_ids,
+                    })
+                candidates.append({**cand, "pages": pages})
+            flows.append({**flow, "candidates": candidates})
+
+        return {
+            "kind": "memory_flow",
+            "version": "mnemo_memory.flow.v1",
+            "uid": clean_uid,
+            "l0_count": len(l0_ids),
+            "l1_count": len(l1_ids),
+            "flows": flows,
+        }
+
     def memory_graph(self, *, limit: int = 200) -> dict[str, Any]:
         """Aggregate active pages into dimension counts + an association graph."""
         from ..memory.wiki import memory_page_dimension

@@ -3341,9 +3341,36 @@ pre {
 .event-flow-pages {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   padding-left: 16px;
 }
+.flow-step-arrow {
+  padding-left: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.flow-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.flow-inject {
+  display: inline-flex;
+  gap: 4px;
+}
+.chip-muted { opacity: 0.6; text-decoration: line-through; }
+.flow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.flow-arrow { color: var(--muted); }
+.flow-legend-note { margin-left: 4px; }
 .chip {
   display: inline-flex;
   align-items: center;

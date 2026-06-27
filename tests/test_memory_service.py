@@ -1470,6 +1470,28 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIn("prefers dark mode", joined)
             self.assertIn("does not like dark mode", joined)
 
+    def test_memory_flow_traces_event_to_injection(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.ingest_event(
+                text="User prefers dark mode in the editor for late-night coding sessions.",
+                scope="user:alice",
+            )
+            candidates = client.list(kind="candidate", status=None, uid="alice")["items"]
+            self.assertTrue(candidates)
+            client.force_promote_candidate(candidates[0]["id"])
+
+            flow = client.memory_flow(uid="alice")
+            self.assertEqual(flow["kind"], "memory_flow")
+            # the whole chain is present: event -> candidate -> page (with injection flags)
+            pages = [p for f in flow["flows"] for c in f["candidates"] for p in c.get("pages", [])]
+            self.assertTrue(pages, "event->candidate->page chain should appear in the flow")
+            self.assertTrue(pages[0]["in_l0"], "an active page feeds the L0 profile")
+            self.assertIn("in_l1", pages[0])
+            self.assertEqual(flow["l0_count"], 1)
+
     def test_webui_preview_has_inline_uid_selector(self) -> None:
         app = _webui_source()
 
@@ -1526,19 +1548,24 @@ class MemoryServiceTests(unittest.TestCase):
         # activeTab is still the single source of truth (one of the leaf views)
         self.assertIn('useState<TabKey>("memories")', app)
 
-    def test_webui_exposes_event_flow_tab(self) -> None:
+    def test_webui_exposes_memory_flow_tab(self) -> None:
         app = _webui_source()
 
-        # a dedicated view + panel for the event -> memory pipeline (now a workspace sub-tab)
-        self.assertIn('{ key: "events"', app)
-        self.assertIn("function EventFlowPanel", app)
-        self.assertIn('activeTab === "events"', app)
-        # the flow is fetched from the backend and scoped to the current uid
-        self.assertIn('callMemory<EventFlowResult>("event-flow"', app)
+        # the end-to-end pipeline view (event -> candidate -> page -> L0/L1 injection)
+        # replaces the old plain event-flow tab to cut redundancy
+        self.assertIn('{ key: "flow"', app)
+        self.assertIn("function MemoryFlowPanel", app)
+        self.assertIn('activeTab === "flow"', app)
+        # fetched from the backend memory-flow endpoint, scoped to the current uid
+        self.assertIn('callMemory<MemoryFlowResult>("memory-flow"', app)
         self.assertIn("uid: cleanUid || undefined", app)
-        # each event chains to its derived candidate and promoted page (clickable -> detail)
+        # each event chains to its candidate and promoted page (clickable -> detail)
         self.assertIn("onSelectCandidate", app)
         self.assertIn("onSelectPage", app)
+        # the injection leg (L0/L1) is shown per page — the previously missing last step
+        self.assertIn("FlowPageChip", app)
+        self.assertIn("in_l0", app)
+        self.assertIn("in_l1", app)
 
     def test_webui_compacts_long_status_badges(self) -> None:
         root = Path(__file__).resolve().parents[1]

@@ -335,7 +335,7 @@ export type PlanFormState = {
   dueAt: string;
 };
 
-export type TabKey = "memories" | "preview" | "events" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
+export type TabKey = "memories" | "preview" | "flow" | "events" | "plans" | "candidates" | "tombstones" | "maintenance" | "settings";
 
 export type EventFlowCandidate = {
   id: string;
@@ -375,6 +375,33 @@ export type EventFlowResult = {
   kind: "memory_event_flow";
   uid: string | null;
   flows: EventFlowEntry[];
+};
+
+// memory_flow extends event flow with the injection leg (L0/L1) per page.
+export type FlowPage = {
+  id: string;
+  title?: string;
+  status?: string;
+  in_l0?: boolean;
+  in_l1?: boolean;
+};
+
+export type FlowCandidate = EventFlowCandidate & {
+  pages?: FlowPage[];
+};
+
+export type MemoryFlowEntry = {
+  event: EventFlowEvent;
+  candidates: FlowCandidate[];
+  plans: EventFlowPlan[];
+};
+
+export type MemoryFlowResult = {
+  kind: "memory_flow";
+  uid: string | null;
+  l0_count?: number;
+  l1_count?: number;
+  flows: MemoryFlowEntry[];
 };
 
 export type Notice = {

@@ -404,6 +404,8 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
         return client.known_uids()
     if method in {"event-flow", "event_flow"}:
         return client.event_flow(uid=body.get("uid"), limit=int(body.get("limit") or 50))
+    if method in {"memory-flow", "memory_flow"}:
+        return client.memory_flow(uid=body.get("uid"), limit=int(body.get("limit") or 50))
     raise KeyError(method)
 
 
