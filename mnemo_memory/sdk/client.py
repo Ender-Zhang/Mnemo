@@ -1364,12 +1364,23 @@ def _attach_conflict_context(store: Any, candidate: dict[str, Any]) -> dict[str,
     if not callable(list_links) or not callable(get_page):
         return candidate
     page: dict[str, Any] | None = None
+    stale_link_ids: list[str] = []
     for link in list_links(candidate.get("id")):
-        if link.get("relation") == "conflicts_with":
-            page = get_page(str(link.get("target_id") or ""))
-            if page:
-                break
+        if link.get("relation") != "conflicts_with":
+            continue
+        linked = get_page(str(link.get("target_id") or ""))
+        if linked and str(linked.get("status") or "") == "active":
+            page = linked
+            break
+        # The page is gone or no longer active: this conflict link is dead.
+        if link.get("id"):
+            stale_link_ids.append(str(link.get("id")))
     if not page:
+        # The memory this candidate clashed with no longer exists (or was
+        # tombstoned), so the conflict is not real anymore. Self-heal on read:
+        # release the candidate back to draft and drop the dead links so it
+        # stops surfacing as an unresolvable conflict the user can't clear.
+        _release_stranded_conflict(store, candidate, stale_link_ids)
         return candidate
     candidate["conflict_page_id"] = page.get("id")
     candidate["conflict_card"] = {
@@ -1385,6 +1396,22 @@ def _attach_conflict_context(store: Any, candidate: dict[str, Any]) -> dict[str,
         "page_status": page.get("status"),
     }
     return candidate
+
+
+def _release_stranded_conflict(store: Any, candidate: dict[str, Any], stale_link_ids: list[str]) -> None:
+    """Reset a conflict candidate whose conflicting page is gone back to draft and
+    drop the dead ``conflicts_with`` links, mutating ``candidate`` in place so the
+    healed status is reflected to the caller."""
+    update_status = getattr(store, "update_memory_candidate_status", None)
+    if callable(update_status):
+        update_status(str(candidate.get("id") or ""), "draft")
+        candidate["status"] = "draft"
+    candidate.pop("conflict_page_id", None)
+    candidate.pop("conflict_card", None)
+    delete_link = getattr(store, "delete_memory_link", None)
+    if callable(delete_link):
+        for link_id in stale_link_ids:
+            delete_link(link_id)
 
 
 def _scope_matches_uid(scope: Any, uid: str) -> bool:

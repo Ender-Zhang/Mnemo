@@ -1504,6 +1504,56 @@ class MemoryServiceTests(unittest.TestCase):
             joined = " ".join(p.get("content", "") for p in pages)
             self.assertIn("does not like dark mode", joined)
 
+    def test_list_self_heals_conflict_when_page_hard_deleted_directly(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            page_id, candidate_id = self._seed_conflict(client)
+
+            # Simulate the page vanishing *without* going through curation (e.g. an
+            # older deletion before the release fix, or a raw store delete). The
+            # candidate is now stranded in needs_review:conflict pointing at nothing.
+            client._store().delete_memory_page(page_id)
+
+            # Reading the candidate list self-heals it: the dead conflict is
+            # released to draft and never shows as an unresolvable conflict.
+            items = client.list(kind="candidate", status=None, limit=50)["items"]
+            healed = next(c for c in items if c["id"] == candidate_id)
+            self.assertEqual(healed["status"], "draft")
+            self.assertNotIn("conflict_card", healed)
+            self.assertFalse(
+                any(str(c.get("status", "")).startswith("needs_review:conflict") for c in items)
+            )
+            # And the DB really changed (not just the response).
+            self.assertEqual(client.read(candidate_id)["item"]["status"], "draft")
+
+    def test_list_self_heals_conflict_when_page_tombstoned(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            page_id, candidate_id = self._seed_conflict(client)
+            # A tombstoned page is no longer a live memory, so the conflict is not
+            # real. (tombstone() already releases via curation; also assert the
+            # read path stays consistent and shows no lingering conflict.)
+            client.tombstone(page_id, "outdated", target_type="page")
+            items = client.list(kind="candidate", status=None, limit=50)["items"]
+            self.assertFalse(
+                any(str(c.get("status", "")).startswith("needs_review:conflict") for c in items)
+            )
+
+    def test_resolve_conflict_on_deleted_candidate_is_noop(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            # Resolving a candidate that no longer exists (stale UI click after a
+            # bulk delete) must not raise — return a no-op the UI can refresh away.
+            result = client.resolve_conflict("mem_does_not_exist", resolution="keep_new")
+            self.assertEqual(result["resolution"], "not_found")
+            self.assertEqual(result["kind"], "conflict_resolution")
+
     def test_full_auto_resolves_conflicts_without_human(self) -> None:
         from mnemo_memory import MemoryClient
 

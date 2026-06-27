@@ -530,6 +530,10 @@ class MemoryLearningMixin:
         for candidate in conflict_candidates[: max(1, int(limit))]:
             conflict_page = self._conflict_page_for_candidate(candidate)
             if not conflict_page:
+                # The page this candidate conflicted with is gone/inactive — the
+                # conflict is stale. Release it to draft instead of skipping it
+                # forever, so it re-enters the pipeline and stops haunting review.
+                self._release_stranded_conflict(candidate)
                 continue
             resolution, reason, merged_content = self._decide_conflict_resolution(candidate, conflict_page, resolver)
             try:
@@ -765,7 +769,15 @@ class MemoryLearningMixin:
     ) -> dict[str, Any]:
         candidate = self._get_candidate(candidate_id)
         if not candidate:
-            raise ValueError(f"candidate not found: {candidate_id}")
+            # The candidate was deleted out from under a stale UI: treat the
+            # resolve as a no-op success so the caller just refreshes it away.
+            return {
+                "kind": "conflict_resolution",
+                "resolution": "not_found",
+                "candidate_id": candidate_id,
+                "status": "missing",
+                "page_action": "none",
+            }
         current_status = str(candidate.get("status") or "")
         if not current_status.startswith("needs_review:conflict"):
             # Already resolved (by dream, auto-release, or a prior manual action).
@@ -869,6 +881,21 @@ class MemoryLearningMixin:
                     if page and page.get("status") == "active":
                         return page
         return None
+
+    def _release_stranded_conflict(self, candidate: dict[str, Any]) -> None:
+        """Reset a conflict candidate whose conflicting page is gone/inactive back
+        to draft and drop the dead ``conflicts_with`` links."""
+        candidate_id = str(candidate.get("id") or "")
+        if not candidate_id:
+            return
+        self.store.update_memory_candidate_status(candidate_id, "draft")
+        list_links = getattr(self.store, "list_memory_links", None)
+        delete_link = getattr(self.store, "delete_memory_link", None)
+        if callable(list_links) and callable(delete_link):
+            for link in list_links(candidate_id):
+                if link.get("relation") == "conflicts_with" and link.get("id"):
+                    delete_link(str(link.get("id")))
+        log_event(_LOG, "conflict_released", candidate_id=candidate_id, reason="page_missing")
 
 
 def _build_conflict_card(candidate: dict[str, Any], page: dict[str, Any]) -> dict[str, Any]:
