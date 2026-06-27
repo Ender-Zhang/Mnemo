@@ -397,7 +397,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             limit=int(body.get("limit") or 20),
         )
     if method == "profile":
-        return client.profile(limit=int(body.get("limit") or 50))
+        return client.profile(limit=int(body.get("limit") or 50), uid=_optional(body.get("uid")))
     if method in {"memory-graph", "memory_graph"}:
         return client.memory_graph(limit=int(body.get("limit") or 200))
     if method in {"known-uids", "known_uids"}:

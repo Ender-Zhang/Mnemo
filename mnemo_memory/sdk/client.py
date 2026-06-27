@@ -747,8 +747,8 @@ class MemoryClient:
             "events": events,
         }
 
-    def profile(self, *, limit: int = 50) -> dict[str, Any]:
-        return self._engine().compile_l0(limit=limit)
+    def profile(self, *, limit: int = 50, uid: str | None = None) -> dict[str, Any]:
+        return self._engine().compile_l0(limit=limit, uid=_optional_text(uid))
 
     def known_uids(self, *, limit: int = 2000) -> dict[str, Any]:
         """Distinct uids seen across stored pages/candidates (scope=user:<uid>)."""
@@ -1343,7 +1343,10 @@ def _scope_matches_uid(scope: Any, uid: str) -> bool:
     clean_uid = str(uid or "").strip()
     if not clean_uid:
         return True
-    scope_text = str(scope or "")
+    scope_text = str(scope or "").strip()
+    # global / unscoped memories apply to every user
+    if scope_text in ("", "global"):
+        return True
     candidates = {clean_uid}
     if clean_uid.casefold().startswith("user:"):
         suffix = clean_uid.split(":", 1)[1].strip()

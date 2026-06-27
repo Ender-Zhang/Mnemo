@@ -1620,7 +1620,9 @@ def _uid_scope_clause(uid: str | None) -> tuple[str, list[Any]]:
     clean_uid = str(uid or "").strip()
     if not clean_uid:
         return "", []
-    candidates = {clean_uid}
+    # A user's view = that user's scoped memories PLUS global/unscoped memories,
+    # because global memories apply to (and are injected for) every user.
+    candidates = {clean_uid, "global"}
     if clean_uid.casefold().startswith("user:"):
         suffix = clean_uid.split(":", 1)[1].strip()
         if suffix:
@@ -1633,6 +1635,7 @@ def _uid_scope_clause(uid: str | None) -> tuple[str, list[Any]]:
     params: list[Any] = [*exact_values]
     clauses.append("scope LIKE ? ESCAPE '!'")
     params.append(_scope_like_pattern(clean_uid))
+    clauses.append("scope IS NULL OR scope = ''")
     return "(" + " OR ".join(clauses) + ")", params
 
 

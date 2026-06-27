@@ -85,6 +85,33 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(alice_ctx["snapshot"]["page_count"], 1)
             self.assertTrue(all("alice" in item["scope"] for item in alice_ctx["snapshot"]["items"]))
 
+    def test_uid_filter_includes_global_memories(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.stable_create(title="Global", content="Everyone likes concise answers.", scope="global", confidence=0.9)
+            client.stable_create(title="Alice", content="Alice likes dark mode.", scope="user:alice", confidence=0.9)
+            client.stable_create(title="Bob", content="Bob likes verbose logs.", scope="user:bob", confidence=0.9)
+
+            scopes = {item["scope"] for item in client.list(kind="page", status="active", uid="alice")["items"]}
+            # alice's view = her own scope + global, but never another user's
+            self.assertIn("user:alice", scopes)
+            self.assertIn("global", scopes)
+            self.assertNotIn("user:bob", scopes)
+
+            # the agent-view preview matches the same scoping
+            profile = client.context("", uid="alice")["profile"]["summary"]
+            self.assertIn("dark mode", profile)
+            self.assertIn("concise", profile)
+            self.assertNotIn("verbose", profile)
+
+            # the workbench L0 profile card (profile endpoint) scopes the same way
+            card = client.profile(uid="alice")["summary"]
+            self.assertIn("dark mode", card)
+            self.assertIn("concise", card)
+            self.assertNotIn("verbose", card)
+
     def test_client_lists_candidates_and_pages_for_admin_ui(self) -> None:
         from mnemo_memory import MemoryClient
 

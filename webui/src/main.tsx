@@ -363,7 +363,7 @@ function App() {
         tasks.push(callMemory<PlanProposalsResult>("plan-proposals", { status: null, uid: scopedUid, limit: 100 }).then((r) => setPlanProposals(r.proposals || [])));
       }
       if (parts.has("profile")) {
-        tasks.push(callMemory<L0Profile>("profile", {}).then(setProfile).catch(() => setProfile(null)));
+        tasks.push(callMemory<L0Profile>("profile", { uid: scopedUid }).then(setProfile).catch(() => setProfile(null)));
       }
       if (parts.has("health")) {
         tasks.push(callMemory<MemoryHealthResult>("health", { limit: 20 }).then(setHealth).catch(() => setHealth(null)));
