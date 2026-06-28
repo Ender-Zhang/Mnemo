@@ -1106,6 +1106,7 @@ class MemoryClient:
             "quality_write_threshold": config.quality_write_threshold,
             "quality_draft_threshold": config.quality_draft_threshold,
             "promote_min_confidence": config.promote_min_confidence,
+            "consolidate_lossy_summary": bool(config.consolidate_lossy_summary),
             "save_path": str(default_config_path(self.state_dir)),
         }
 
@@ -1115,6 +1116,7 @@ class MemoryClient:
         quality_write_threshold: float | int | str | None = None,
         quality_draft_threshold: float | int | str | None = None,
         promote_min_confidence: float | int | str | None = None,
+        consolidate_lossy_summary: bool | int | str | None = None,
     ) -> dict[str, Any]:
         path = default_config_path(self.state_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1129,6 +1131,7 @@ class MemoryClient:
                     config[key] = max(0.0, min(1.0, float(value)))
                 except (TypeError, ValueError) as exc:
                     raise ValueError(f"{key} must be a number between 0 and 1") from exc
+        _set_optional_config_bool(config, "consolidate_lossy_summary", consolidate_lossy_summary)
         path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.tuning_config()
 
@@ -1249,11 +1252,13 @@ class MemoryClient:
         model_calls: int | None = None
         conflict_resolver = None
         page_summarizer = None
+        allow_lossy_summary = False
         if use_provider and actions is None:
             try:
                 from ..providers.openai import OpenAICompatibleMemoryMaintainer
 
                 resolved = resolve_memory_config(config or ConfigOverrides(state_dir=self.state_dir))
+                allow_lossy_summary = bool(resolved.consolidate_lossy_summary)
                 maintainer = OpenAICompatibleMemoryMaintainer(resolved)
                 delta = engine.collect_dream_delta(limit=limit)
                 actions, model_calls = _propose_dream_actions_batched(
@@ -1281,6 +1286,7 @@ class MemoryClient:
             model_calls=model_calls,
             conflict_resolver=conflict_resolver,
             page_summarizer=page_summarizer,
+            allow_lossy_summary=allow_lossy_summary,
         )
 
     def dream_status(self, *, limit: int = 20) -> dict[str, Any]:

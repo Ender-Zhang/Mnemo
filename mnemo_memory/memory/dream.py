@@ -266,6 +266,7 @@ class MemoryDreamMixin:
         model_calls: int | None = None,
         conflict_resolver: Any | None = None,
         page_summarizer: Any | None = None,
+        allow_lossy_summary: bool = False,
     ) -> dict[str, Any]:
         started_at = time.time()
         if since is None:
@@ -328,7 +329,9 @@ class MemoryDreamMixin:
         # Keep stable pages compact on every dream: dedupe near-duplicate facts
         # (always) and, when a summarizer is wired, rewrite bloated pages into a
         # concise statement. Runs for both model and deterministic paths.
-        page_consolidations = self.consolidate_memory_pages(limit, summarizer=page_summarizer)
+        page_consolidations = self.consolidate_memory_pages(
+            limit, summarizer=page_summarizer, allow_lossy=allow_lossy_summary
+        )
         snapshot = self.compile_l1_snapshot(limit=50)
         execution = {
             "actions": action_execution or {

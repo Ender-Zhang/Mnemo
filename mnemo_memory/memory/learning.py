@@ -326,17 +326,20 @@ class MemoryLearningMixin:
             "wiki": wiki,
         }
 
-    def consolidate_memory_pages(self, limit: int = 50, *, summarizer: Any | None = None) -> list[dict[str, Any]]:
+    def consolidate_memory_pages(
+        self, limit: int = 50, *, summarizer: Any | None = None, allow_lossy: bool = False
+    ) -> list[dict[str, Any]]:
         """Keep stable pages compact and precise.
 
         Two passes, both safe to run on every dream:
-        - Deterministic dedupe: collapse near-duplicate facts within a page,
-          keeping the most informative phrasing (no model needed).
+        - Deterministic dedupe (always, lossless): drop a fact only when another
+          retained fact already states it verbatim.
         - Model summarization (when ``summarizer`` is wired and a page is still
-          bloated): rewrite the page into a concise, non-redundant statement.
+          bloated): rewrite the page into a concise statement. Lossless by
+          default (rejected unless it preserves every fact); set ``allow_lossy``
+          to permit true rephrasing/compression (best-effort, snapshotted).
 
-        Every distinct fact is preserved; only redundancy is removed. Returns one
-        entry per page actually rewritten.
+        Returns one entry per page actually rewritten.
         """
         pages = self.store.list_memory_pages(status="active", limit=max(1, int(limit)))
         results: list[dict[str, Any]] = []
@@ -351,7 +354,7 @@ class MemoryLearningMixin:
             new_content = "\n".join(f"- {fact}" for fact in compacted)
 
             if summarizer is not None and len(compacted) >= CONSOLIDATE_MIN_FACTS:
-                summary = _summarize_with(summarizer, page, compacted)
+                summary = _summarize_with(summarizer, page, compacted, allow_lossy=allow_lossy)
                 if summary and _fingerprint(summary) != _fingerprint("\n".join(compacted)):
                     new_content = summary
                     action = "summarized"
@@ -1171,17 +1174,23 @@ def _summary_preserves_facts(summary: str, facts: list[str]) -> bool:
     return all(_fact_subsumed_by(fact, summary) for fact in facts)
 
 
-def _summarize_with(summarizer: Any, page: dict[str, Any], facts: list[str]) -> str | None:
-    """Call a page summarizer and return its output only if it provably preserves
-    every fact. A flaky/unavailable model, or any rewrite that would drop a fact,
-    returns None so the deterministic lossless dedupe stands.
+def _summarize_with(summarizer: Any, page: dict[str, Any], facts: list[str], *, allow_lossy: bool = False) -> str | None:
+    """Call a page summarizer and return its rewrite.
+
+    By default (``allow_lossy=False``) the rewrite is accepted only if it
+    provably preserves every fact, so consolidation stays lossless. When
+    ``allow_lossy`` is on, a non-empty rewrite is accepted as-is (best-effort
+    semantic compression; the page is version-snapshotted before mutation so it
+    is still recoverable). A flaky/unavailable model always returns None.
     """
     try:
         result = summarizer(page, facts)
     except Exception:
         return None
     text = _normalize_space(str(result or ""))
-    if not text or not _summary_preserves_facts(text, facts):
+    if not text:
+        return None
+    if not allow_lossy and not _summary_preserves_facts(text, facts):
         return None
     return text
 

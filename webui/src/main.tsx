@@ -3238,6 +3238,14 @@ function SettingsPanel(props: {
         <label>质量草稿阈值 <input type="number" min="0" max="1" step="0.01" value={props.tuningForm.draftThreshold} onChange={(e) => setTuningField("draftThreshold", e.target.value)} /></label>
         <label>Promote 默认置信度 <input type="number" min="0" max="1" step="0.05" value={props.tuningForm.minConfidence} onChange={(e) => setTuningField("minConfidence", e.target.value)} /></label>
       </div>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
+          checked={props.tuningForm.lossySummary}
+          onChange={(e) => props.setTuningForm({ ...props.tuningForm, lossySummary: e.target.checked })}
+        />
+        <span><strong>允许模型语义压缩记忆页（可能损失信息）</strong><small>关闭（默认）：整理只做可证明无损的去重，模型重写若丢任何一条事实即作废。开启：允许模型真正改写/浓缩记忆页 —— best-effort，不保证无损（改写前会留版本快照，可回溯）。仅在配置了 provider 时生效。</small></span>
+      </label>
       <div className="settings-hint">≥ 写入阈值推荐进稳定记忆；草稿阈值~写入阈值之间留候选复核；低于草稿阈值视为可丢弃。Promote 默认置信度是手动 promote 未显式传参时的门槛。</div>
       <div className="settings-actions">
         <button className="primary-button" onClick={props.onSaveTuningConfig} disabled={props.loading}>

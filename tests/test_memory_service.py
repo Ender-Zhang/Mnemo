@@ -1777,6 +1777,44 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIsInstance(consolidations, list)
             self.assertTrue(any(c.get("action") == "deduped" for c in consolidations))
 
+    def test_consolidate_lossy_switch_allows_model_rephrase(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        facts = [f"用户事实{i}：第{i}条独立信息。" for i in range(1, 8)]
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            created = client.stable_create(
+                title="identity: profile",
+                content="\n".join(f"- {fact}" for fact in facts),
+                scope="user:alice",
+                dimension="identity",
+            )
+            page_id = created["memory_id"]
+            engine = client._engine()
+
+            def rephrase(page, given):
+                return "用户档案：已被模型重写压缩。"  # drops verbatim facts
+
+            # default (lossless): the rephrase is rejected
+            engine.consolidate_memory_pages(limit=50, summarizer=rephrase, allow_lossy=False)
+            self.assertNotIn("已被模型重写压缩", client.read(page_id)["item"]["content"])
+
+            # opt-in lossy: the model rewrite is accepted as-is
+            engine.consolidate_memory_pages(limit=50, summarizer=rephrase, allow_lossy=True)
+            self.assertEqual(client.read(page_id)["item"]["content"], "用户档案：已被模型重写压缩。")
+
+    def test_tuning_config_persists_lossy_summary_switch(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            # off by default
+            self.assertFalse(client.tuning_config()["consolidate_lossy_summary"])
+            saved = client.save_tuning_config(consolidate_lossy_summary=True)
+            self.assertTrue(saved["consolidate_lossy_summary"])
+            # survives a fresh client (persisted to config.json)
+            self.assertTrue(MemoryClient(state_dir=tmp).tuning_config()["consolidate_lossy_summary"])
+
     def test_conflict_resolved_inline_not_parked_for_review(self) -> None:
         from mnemo_memory import MemoryClient
 

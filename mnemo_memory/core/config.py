@@ -24,6 +24,10 @@ DEFAULT_EMBEDDINGS_ENABLED = False
 # instead of dumping the whole inventory into a single request.
 DEFAULT_DREAM_BATCH_SIZE = 8
 DEFAULT_DREAM_MAX_BATCHES = 6
+# Page consolidation is lossless by default (only literal redundancy removed).
+# Opt in to let the model truly rephrase/compress a page — best-effort, NOT
+# guaranteed lossless (the verbatim-preservation gate is dropped).
+DEFAULT_CONSOLIDATE_LOSSY_SUMMARY = False
 DEFAULT_QUALITY_WRITE_THRESHOLD = 0.68
 DEFAULT_QUALITY_DRAFT_THRESHOLD = 0.5
 DEFAULT_PROMOTE_MIN_CONFIDENCE = 0.7
@@ -52,6 +56,7 @@ class MemoryConfig:
     auto_dream_local_fallback: bool = DEFAULT_AUTO_DREAM_LOCAL_FALLBACK
     dream_batch_size: int = DEFAULT_DREAM_BATCH_SIZE
     dream_max_batches: int = DEFAULT_DREAM_MAX_BATCHES
+    consolidate_lossy_summary: bool = DEFAULT_CONSOLIDATE_LOSSY_SUMMARY
     quality_write_threshold: float = DEFAULT_QUALITY_WRITE_THRESHOLD
     quality_draft_threshold: float = DEFAULT_QUALITY_DRAFT_THRESHOLD
     promote_min_confidence: float = DEFAULT_PROMOTE_MIN_CONFIDENCE
@@ -88,6 +93,7 @@ class ConfigOverrides:
     auto_dream_local_fallback: bool | None = None
     dream_batch_size: int | None = None
     dream_max_batches: int | None = None
+    consolidate_lossy_summary: bool | None = None
     quality_write_threshold: float | None = None
     quality_draft_threshold: float | None = None
     promote_min_confidence: float | None = None
@@ -238,6 +244,12 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_DREAM_MAX_BATCHES"),
         DEFAULT_DREAM_MAX_BATCHES,
     )
+    consolidate_lossy_summary = _first_bool(
+        overrides.consolidate_lossy_summary,
+        file_config.get("consolidate_lossy_summary"),
+        env.get("MNEMO_MEMORY_CONSOLIDATE_LOSSY_SUMMARY"),
+        DEFAULT_CONSOLIDATE_LOSSY_SUMMARY,
+    )
     quality_write_threshold = max(0.0, min(1.0, quality_write_threshold))
     quality_draft_threshold = max(0.0, min(quality_write_threshold, quality_draft_threshold))
     return MemoryConfig(
@@ -261,6 +273,7 @@ def resolve_memory_config(
         auto_dream_local_fallback=auto_dream_local_fallback,
         dream_batch_size=max(1, min(50, dream_batch_size)),
         dream_max_batches=max(1, min(20, dream_max_batches)),
+        consolidate_lossy_summary=consolidate_lossy_summary,
         quality_write_threshold=quality_write_threshold,
         quality_draft_threshold=quality_draft_threshold,
         promote_min_confidence=max(0.0, min(1.0, promote_min_confidence)),

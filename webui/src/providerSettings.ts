@@ -200,6 +200,7 @@ export type TuningConfigResult = {
   quality_write_threshold?: number;
   quality_draft_threshold?: number;
   promote_min_confidence?: number;
+  consolidate_lossy_summary?: boolean;
   save_path?: string;
 };
 
@@ -207,17 +208,19 @@ export type TuningFormState = {
   writeThreshold: string;
   draftThreshold: string;
   minConfidence: string;
+  lossySummary: boolean;
 };
 
 export function emptyTuningForm(): TuningFormState {
-  return { writeThreshold: "0.68", draftThreshold: "0.5", minConfidence: "0.7" };
+  return { writeThreshold: "0.68", draftThreshold: "0.5", minConfidence: "0.7", lossySummary: false };
 }
 
 export function tuningFormFromConfig(result: TuningConfigResult | null): TuningFormState {
   return {
     writeThreshold: String(result?.quality_write_threshold ?? "0.68"),
     draftThreshold: String(result?.quality_draft_threshold ?? "0.5"),
-    minConfidence: String(result?.promote_min_confidence ?? "0.7")
+    minConfidence: String(result?.promote_min_confidence ?? "0.7"),
+    lossySummary: Boolean(result?.consolidate_lossy_summary ?? false)
   };
 }
 
@@ -234,6 +237,7 @@ export function tuningSavePayload(form: TuningFormState) {
       payload[apiKey] = Math.max(0, Math.min(1, value));
     }
   }
+  payload.consolidate_lossy_summary = form.lossySummary;
   return payload;
 }
 
