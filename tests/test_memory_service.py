@@ -316,6 +316,50 @@ class MemoryServiceTests(unittest.TestCase):
             rejected = client.reject_plan_proposal(other["plan_proposals"][0]["id"], reason="duplicate")
             self.assertEqual(rejected["proposal"]["proposal_status"], "rejected")
 
+    def test_ingest_event_routes_aspirational_and_preference_away_from_plans(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+
+            # A standing preference that also contains a soft goal word ("希望")
+            # stays a preference memory — it must NOT become a plan.
+            pref = client.ingest_event(
+                text="我喜欢简洁的代码风格，希望一直保持。",
+                source="unit-test",
+                scope="user:demo",
+            )
+            self.assertEqual(pref["plan_proposals"], [])
+            self.assertTrue(pref["memory_candidates"])
+            self.assertEqual(pref["memory_candidates"][0]["dimension"], "preferences")
+
+            # An aspirational goal is a goals-dimension *memory*, not a plan proposal.
+            goal = client.ingest_event(
+                text="我希望成为更好的工程师。",
+                source="unit-test",
+                scope="user:demo",
+            )
+            self.assertEqual(goal["plan_proposals"], [])
+            self.assertTrue(goal["memory_candidates"])
+            self.assertEqual(goal["memory_candidates"][0]["dimension"], "goals")
+
+            # "学习" (matches topic names like 机器学习) no longer forces a plan.
+            topic = client.ingest_event(
+                text="我最近在研究机器学习的推荐系统。",
+                source="unit-test",
+                scope="user:demo",
+            )
+            self.assertEqual(topic["plan_proposals"], [])
+
+            # An explicit, actionable plan is still a plan proposal.
+            plan = client.ingest_event(
+                text="我计划下周完成数据迁移。",
+                source="unit-test",
+                scope="user:demo",
+            )
+            self.assertTrue(plan["plan_proposals"])
+            self.assertEqual(plan["memory_candidates"], [])
+
     def test_client_traces_promoted_memory_to_source_event(self) -> None:
         from mnemo_memory import MemoryClient
 

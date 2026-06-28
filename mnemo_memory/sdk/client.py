@@ -1706,6 +1706,18 @@ def _extract_event_memory(
     scope: str,
     mission_id: str,
 ) -> dict[str, Any]:
+    # 1. A standing preference is a fact about the user, never a plan — even when
+    #    the sentence also mentions a soft goal word like "希望".
+    preference = _heuristic_event_preference(text, scope=scope)
+    if preference:
+        return {
+            "kind": "event_memory_extraction",
+            "strategy": "heuristic",
+            "facts": [preference],
+            "observations": [],
+            "plan_proposals": [],
+        }
+    # 2. An explicit, actionable plan / todo becomes a plan proposal.
     plan_proposal = _heuristic_event_plan_proposal(text, scope=scope)
     if plan_proposal:
         return {
@@ -1715,12 +1727,14 @@ def _extract_event_memory(
             "observations": [],
             "plan_proposals": [plan_proposal],
         }
-    fact = _heuristic_event_fact(text, scope=scope)
-    if fact:
+    # 3. An aspirational/standing goal is a durable goals-dimension memory, not a
+    #    plan the user has to act on.
+    goal_fact = _heuristic_event_goal_fact(text, scope=scope)
+    if goal_fact:
         return {
             "kind": "event_memory_extraction",
             "strategy": "heuristic",
-            "facts": [fact],
+            "facts": [goal_fact],
             "observations": [],
             "plan_proposals": [],
         }
@@ -1759,7 +1773,7 @@ def _merge_event_extractions(local: dict[str, Any], provider: dict[str, Any]) ->
     }
 
 
-def _heuristic_event_fact(text: str, *, scope: str) -> dict[str, Any] | None:
+def _heuristic_event_preference(text: str, *, scope: str) -> dict[str, Any] | None:
     if _has_preference_memory_marker(text) or (_has_future_memory_marker(text) and _known_preference_subject(text)):
         return {
             "claim": _preference_claim(text),
@@ -1767,6 +1781,10 @@ def _heuristic_event_fact(text: str, *, scope: str) -> dict[str, Any] | None:
             "scope": scope,
             "confidence": 0.88,
         }
+    return None
+
+
+def _heuristic_event_goal_fact(text: str, *, scope: str) -> dict[str, Any] | None:
     if _has_goal_memory_marker(text):
         return {
             "claim": f"用户 目标：{_goal_subject(text)}。",
@@ -1811,7 +1829,7 @@ def _has_goal_memory_marker(text: str) -> bool:
 
 def _has_plan_memory_marker(text: str) -> bool:
     lowered = f" {text.casefold()} "
-    return any(marker in lowered for marker in (*_GOAL_EVENT_MARKERS, *_TODO_EVENT_MARKERS))
+    return any(marker in lowered for marker in (*_PLAN_EVENT_MARKERS, *_TODO_EVENT_MARKERS))
 
 
 def _has_todo_memory_marker(text: str) -> bool:
@@ -2080,21 +2098,28 @@ _FUTURE_EVENT_MARKERS = (
     " from now on ",
 )
 
+# Actionable plan markers → a plan proposal (something to do). Kept narrow and
+# explicit so everyday words don't pull ordinary memories into the plan list.
+_PLAN_EVENT_MARKERS = (
+    "计划",
+    "打算",
+    " plan to ",
+    " plans to ",
+    " planning to ",
+)
+
+# Aspirational / standing goal markers → a goals-dimension *memory* (a fact about
+# the user), NOT a plan proposal. "想要 / 希望 / 目标" describe who the user is or
+# what they want long-term; they are not actionable todos.
 _GOAL_EVENT_MARKERS = (
     "目标",
-    "计划",
     "想要",
     "希望",
-    "学习",
     " goal ",
     " goals ",
-    " plan ",
-    " plans ",
     " want to ",
     " wants to ",
     " hope to ",
-    " learn ",
-    " learning ",
 )
 
 _TODO_EVENT_MARKERS = (

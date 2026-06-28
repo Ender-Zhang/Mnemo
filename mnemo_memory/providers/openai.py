@@ -80,8 +80,10 @@ class OpenAICompatibleMemoryMaintainer:
                     "content": (
                         "You classify one conversation event for long-term memory. Return JSON only with "
                         "facts, observations, and plan_proposals arrays. Facts are durable user preferences, "
-                        "identity, boundaries, or project context. Plan proposals are user goals, todos, "
-                        "follow-ups, reminders, or intended future work. Observations are task-local or uncertain context. "
+                        "identity, boundaries, project context, or standing aspirations/goals (who the user is "
+                        "or wants to be long-term) — use the 'goals' dimension for those. Plan proposals are only "
+                        "concrete, actionable todos, follow-ups, reminders, or time-bound intended work; do NOT turn "
+                        "a vague aspiration or a stated preference into a plan proposal. Observations are task-local or uncertain context. "
                         "Do not infer a durable preference from a single slot-filling answer such as a coffee "
                         "choice unless the user explicitly says it is a default, habit, usual preference, or "
                         "future instruction."
