@@ -183,11 +183,12 @@ class OpenAICompatibleMemoryMaintainer:
                 {
                     "role": "system",
                     "content": (
-                        "You consolidate one long-term memory page about a user. Rewrite the listed facts "
-                        "into the most concise, non-redundant form. Preserve every distinct fact, merge "
-                        "overlapping ones, and drop repetition. Never invent facts or drop information. "
-                        "Keep it first person about the user. Return JSON only: "
-                        "{\"content\": string (one fact per line, no bullet characters), \"rationale\": short string}."
+                        "You consolidate one long-term memory page about a user. Remove exact and redundant "
+                        "duplicates and tidy the ordering, but KEEP EACH DISTINCT FACT'S ORIGINAL WORDING "
+                        "verbatim — do not paraphrase, shorten, or drop any fact. A downstream check rejects "
+                        "your output if any input fact no longer appears in it. Return JSON only: "
+                        "{\"content\": string (one fact per line, original wording, no bullet characters), "
+                        "\"rationale\": short string}."
                     ),
                 },
                 {

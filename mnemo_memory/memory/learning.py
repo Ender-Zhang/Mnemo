@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import time
 from typing import Any
 
@@ -1118,41 +1119,71 @@ def _deterministic_conflict_resolution(
     return "keep_both", "confidence_tie_keep_both"
 
 
-def _compact_page_facts(facts: list[str]) -> list[str]:
-    """Collapse near-duplicate facts, keeping the most informative phrasing.
+def _fact_subsumed_by(inner: str, outer: str) -> bool:
+    """True when ``inner`` is fully contained in ``outer`` as a phrase, so dropping
+    ``inner`` loses no information.
 
-    Opposite-polarity claims (``likes X`` vs ``does not like X``) are never
-    merged — ``_is_near_duplicate_claim`` treats them as distinct.
+    Word-boundary aware for latin text (so "cat" is NOT subsumed by "category");
+    for CJK (no spaces) the surrounding characters aren't ``[0-9a-z]`` so raw
+    containment applies.
+    """
+    inner_norm = _normalize_space(inner).casefold()
+    outer_norm = _normalize_space(outer).casefold()
+    if not inner_norm:
+        return True
+    if inner_norm == outer_norm:
+        return True
+    pattern = r"(?<![0-9a-z])" + re.escape(inner_norm) + r"(?![0-9a-z])"
+    return re.search(pattern, outer_norm) is not None
+
+
+def _compact_page_facts(facts: list[str]) -> list[str]:
+    """Losslessly drop redundant facts: a fact is removed only when it is exactly
+    equal to, or fully contained as a phrase within, another retained fact (then
+    the superset is kept). No information is ever discarded.
+
+    Opposite-polarity claims ("likes X" vs "does not like X") are never merged.
     """
     kept: list[str] = []
     for fact in facts:
         text = _normalize_space(fact)
         if not text:
             continue
-        merged_into_existing = False
+        drop = False
         for index, existing in enumerate(kept):
-            if _is_near_duplicate_claim(text, existing):
-                if len(text) > len(existing):
-                    kept[index] = text
-                merged_into_existing = True
+            if {_polarity(text), _polarity(existing)} == {"positive", "negative"}:
+                continue
+            if _fact_subsumed_by(text, existing):
+                drop = True  # this fact adds nothing the kept one doesn't already state
                 break
-        if not merged_into_existing:
+            if _fact_subsumed_by(existing, text):
+                kept[index] = text  # keep the strict superset
+                drop = True
+                break
+        if not drop:
             kept.append(text)
     return kept
 
 
-def _summarize_with(summarizer: Any, page: dict[str, Any], facts: list[str]) -> str | None:
-    """Call a page summarizer and normalize its output to clean page content.
+def _summary_preserves_facts(summary: str, facts: list[str]) -> bool:
+    """Lossless gate for a model rewrite: accept it only if every original fact
+    still appears verbatim (phrase-contained) in the summary."""
+    return all(_fact_subsumed_by(fact, summary) for fact in facts)
 
-    A flaky/unavailable model must never break consolidation, so any failure
-    returns None and the deterministic dedupe stands.
+
+def _summarize_with(summarizer: Any, page: dict[str, Any], facts: list[str]) -> str | None:
+    """Call a page summarizer and return its output only if it provably preserves
+    every fact. A flaky/unavailable model, or any rewrite that would drop a fact,
+    returns None so the deterministic lossless dedupe stands.
     """
     try:
         result = summarizer(page, facts)
     except Exception:
         return None
     text = _normalize_space(str(result or ""))
-    return text or None
+    if not text or not _summary_preserves_facts(text, facts):
+        return None
+    return text
 
 
 def _merged_page_content(existing_content: str, claim: str) -> str:

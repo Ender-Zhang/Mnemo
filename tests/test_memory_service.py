@@ -1706,34 +1706,60 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIn("likes dark mode", page["content"])
             self.assertIn("does not like dark mode", page["content"])
 
-    def test_consolidate_uses_model_summarizer_for_bloated_page(self) -> None:
+    def test_consolidate_accepts_only_lossless_model_summary(self) -> None:
         from mnemo_memory import MemoryClient
 
+        facts = [f"用户事实{i}：第{i}条独立信息。" for i in range(1, 8)]
         with tempfile.TemporaryDirectory() as tmp:
             client = MemoryClient(state_dir=tmp)
             created = client.stable_create(
                 title="identity: profile",
-                content="\n".join(f"- 用户事实 {i}：第 {i} 条独立信息。" for i in range(1, 8)),
+                content="\n".join(f"- {fact}" for fact in facts),
                 scope="user:alice",
                 dimension="identity",
             )
             page_id = created["memory_id"]
+            engine = client._engine()
 
+            # A faithful rewrite that still contains every fact verbatim is accepted.
             seen: dict[str, object] = {}
 
-            def summarizer(page, facts):
-                seen["title"] = page.get("title")
-                seen["facts"] = list(facts)
-                return "用户档案：已被模型压缩为一条精炼陈述。"
+            def faithful(page, given):
+                seen["facts"] = list(given)
+                return "用户档案 —— " + "；".join(given)
 
-            engine = client._engine()
-            results = engine.consolidate_memory_pages(limit=50, summarizer=summarizer)
-
+            results = engine.consolidate_memory_pages(limit=50, summarizer=faithful)
             self.assertTrue(results)
             self.assertEqual(results[0]["action"], "summarized")
             self.assertGreaterEqual(len(seen["facts"]), 6)  # only bloated pages go to the model
             page = client.read(page_id)["item"]
-            self.assertEqual(page["content"], "用户档案：已被模型压缩为一条精炼陈述。")
+            for fact in facts:
+                self.assertIn(fact, page["content"])  # nothing lost
+
+    def test_consolidate_rejects_lossy_model_summary(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        facts = [f"用户事实{i}：第{i}条独立信息。" for i in range(1, 8)]
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            created = client.stable_create(
+                title="identity: profile",
+                content="\n".join(f"- {fact}" for fact in facts),
+                scope="user:alice",
+                dimension="identity",
+            )
+            page_id = created["memory_id"]
+            engine = client._engine()
+
+            # A rewrite that drops facts is rejected — the page keeps every fact.
+            def lossy(page, given):
+                return "用户档案：已被压缩为一句话。"
+
+            engine.consolidate_memory_pages(limit=50, summarizer=lossy)
+            page = client.read(page_id)["item"]
+            self.assertNotIn("已被压缩为一句话", page["content"])
+            for fact in facts:
+                self.assertIn(fact, page["content"])  # all originals survive
 
     def test_dream_run_consolidates_pages(self) -> None:
         from mnemo_memory import MemoryClient
