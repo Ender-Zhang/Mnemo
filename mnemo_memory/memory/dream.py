@@ -265,6 +265,7 @@ class MemoryDreamMixin:
         deterministic_fallback: bool = False,
         model_calls: int | None = None,
         conflict_resolver: Any | None = None,
+        page_summarizer: Any | None = None,
     ) -> dict[str, Any]:
         started_at = time.time()
         if since is None:
@@ -324,6 +325,10 @@ class MemoryDreamMixin:
                         continue
             action_execution = _consolidation_as_action_result(consolidation, auto_links=auto_links)
             execution_mode = "deterministic_fallback"
+        # Keep stable pages compact on every dream: dedupe near-duplicate facts
+        # (always) and, when a summarizer is wired, rewrite bloated pages into a
+        # concise statement. Runs for both model and deterministic paths.
+        page_consolidations = self.consolidate_memory_pages(limit, summarizer=page_summarizer)
         snapshot = self.compile_l1_snapshot(limit=50)
         execution = {
             "actions": action_execution or {
@@ -332,6 +337,7 @@ class MemoryDreamMixin:
                 "applied": [],
                 "skipped": [],
             },
+            "page_consolidations": page_consolidations,
             "snapshot": snapshot,
         }
         completed_at = time.time()

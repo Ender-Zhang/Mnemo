@@ -39,6 +39,10 @@ _LOG = get_logger("learning")
 NEAR_DUPLICATE_JACCARD_THRESHOLD = 0.72
 NEAR_DUPLICATE_CONTAINMENT_THRESHOLD = 0.82
 
+# A page with at least this many distinct facts is bloated enough to hand to the
+# model for a concise rewrite (deterministic dedupe runs regardless of count).
+CONSOLIDATE_MIN_FACTS = 6
+
 _DIMENSION_DEFAULT_TOPICS = {
     "identity": "个人资料",
     "cognition": "知识与技能",
@@ -320,6 +324,66 @@ class MemoryLearningMixin:
             "page": page,
             "wiki": wiki,
         }
+
+    def consolidate_memory_pages(self, limit: int = 50, *, summarizer: Any | None = None) -> list[dict[str, Any]]:
+        """Keep stable pages compact and precise.
+
+        Two passes, both safe to run on every dream:
+        - Deterministic dedupe: collapse near-duplicate facts within a page,
+          keeping the most informative phrasing (no model needed).
+        - Model summarization (when ``summarizer`` is wired and a page is still
+          bloated): rewrite the page into a concise, non-redundant statement.
+
+        Every distinct fact is preserved; only redundancy is removed. Returns one
+        entry per page actually rewritten.
+        """
+        pages = self.store.list_memory_pages(status="active", limit=max(1, int(limit)))
+        results: list[dict[str, Any]] = []
+        for page in pages:
+            page_id = str(page.get("id") or "")
+            original = str(page.get("content") or "")
+            facts = _memory_fact_texts(original)
+            if len(facts) < 2:
+                continue
+            compacted = _compact_page_facts(facts)
+            action = "deduped" if len(compacted) < len(facts) else None
+            new_content = "\n".join(f"- {fact}" for fact in compacted)
+
+            if summarizer is not None and len(compacted) >= CONSOLIDATE_MIN_FACTS:
+                summary = _summarize_with(summarizer, page, compacted)
+                if summary and _fingerprint(summary) != _fingerprint("\n".join(compacted)):
+                    new_content = summary
+                    action = "summarized"
+
+            if action is None or _normalize_space(new_content) == _normalize_space(original):
+                continue
+
+            self._snapshot_page_before_mutation(
+                page, change_reason=f"consolidate:{action}", changed_by="dream_consolidate"
+            )
+            update_page = getattr(self.store, "update_memory_page", None)
+            if update_page:
+                update_page(
+                    page_id,
+                    title=str(page.get("title") or ""),
+                    content=new_content,
+                    scope=str(page.get("scope") or "global"),
+                    confidence=float(page.get("confidence") or 0.7),
+                    status=str(page.get("status") or "active"),
+                    metadata=page.get("metadata") if isinstance(page.get("metadata"), dict) else None,
+                )
+            self._maybe_index_page_embedding(self._get_page(page_id))
+            log_event(_LOG, "page_consolidated", page_id=page_id, action=action, facts_before=len(facts), facts_after=len(compacted))
+            results.append(
+                {
+                    "kind": "page_consolidation",
+                    "page_id": page_id,
+                    "action": action,
+                    "facts_before": len(facts),
+                    "facts_after": len(compacted),
+                }
+            )
+        return results
 
     def _promotion_page_route(self, candidate: dict[str, Any]) -> dict[str, Any]:
         claim = _normalize_space(candidate.get("claim", ""))
@@ -1052,6 +1116,43 @@ def _deterministic_conflict_resolution(
     if page_conf - candidate_conf >= margin:
         return "keep_old", "existing_confidence_advantage"
     return "keep_both", "confidence_tie_keep_both"
+
+
+def _compact_page_facts(facts: list[str]) -> list[str]:
+    """Collapse near-duplicate facts, keeping the most informative phrasing.
+
+    Opposite-polarity claims (``likes X`` vs ``does not like X``) are never
+    merged — ``_is_near_duplicate_claim`` treats them as distinct.
+    """
+    kept: list[str] = []
+    for fact in facts:
+        text = _normalize_space(fact)
+        if not text:
+            continue
+        merged_into_existing = False
+        for index, existing in enumerate(kept):
+            if _is_near_duplicate_claim(text, existing):
+                if len(text) > len(existing):
+                    kept[index] = text
+                merged_into_existing = True
+                break
+        if not merged_into_existing:
+            kept.append(text)
+    return kept
+
+
+def _summarize_with(summarizer: Any, page: dict[str, Any], facts: list[str]) -> str | None:
+    """Call a page summarizer and normalize its output to clean page content.
+
+    A flaky/unavailable model must never break consolidation, so any failure
+    returns None and the deterministic dedupe stands.
+    """
+    try:
+        result = summarizer(page, facts)
+    except Exception:
+        return None
+    text = _normalize_space(str(result or ""))
+    return text or None
 
 
 def _merged_page_content(existing_content: str, claim: str) -> str:

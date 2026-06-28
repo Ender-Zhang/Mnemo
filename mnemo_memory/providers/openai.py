@@ -171,6 +171,41 @@ class OpenAICompatibleMemoryMaintainer:
         parsed = _parse_message_json_object(response)
         return parsed if isinstance(parsed, dict) else {}
 
+    def consolidate_page(self, *, page: dict[str, Any], facts: list[str]) -> str | None:
+        """Rewrite an accumulated memory page into a concise, non-redundant form.
+
+        Preserves every distinct fact, merges overlapping ones, drops repetition.
+        Returns the consolidated body text (plain lines), or None on failure.
+        """
+        payload = _chat_payload(
+            self.config,
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "You consolidate one long-term memory page about a user. Rewrite the listed facts "
+                        "into the most concise, non-redundant form. Preserve every distinct fact, merge "
+                        "overlapping ones, and drop repetition. Never invent facts or drop information. "
+                        "Keep it first person about the user. Return JSON only: "
+                        "{\"content\": string (one fact per line, no bullet characters), \"rationale\": short string}."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": dumps({
+                        "title": page.get("title"),
+                        "dimension": (page.get("metadata") or {}).get("dimension") if isinstance(page.get("metadata"), dict) else None,
+                        "facts": facts,
+                    }),
+                },
+            ],
+        )
+        response = self._post_json("/chat/completions", payload)
+        parsed = _parse_message_json_object(response)
+        content = parsed.get("content") if isinstance(parsed, dict) else None
+        text = str(content or "").strip()
+        return text or None
+
     def ping(self) -> dict[str, Any]:
         """Minimal request to verify the chat endpoint is reachable and authorized."""
         payload = _chat_payload(self.config, [{"role": "user", "content": "ping"}])

@@ -1248,6 +1248,7 @@ class MemoryClient:
         deterministic_fallback = False
         model_calls: int | None = None
         conflict_resolver = None
+        page_summarizer = None
         if use_provider and actions is None:
             try:
                 from ..providers.openai import OpenAICompatibleMemoryMaintainer
@@ -1265,6 +1266,7 @@ class MemoryClient:
                     max_batches=resolved.dream_max_batches,
                 )
                 conflict_resolver = _make_conflict_resolver(maintainer)
+                page_summarizer = _make_page_summarizer(maintainer)
             except (ValueError, OSError):
                 deterministic_fallback = True
         elif not use_provider and actions is None:
@@ -1278,6 +1280,7 @@ class MemoryClient:
             deterministic_fallback=deterministic_fallback,
             model_calls=model_calls,
             conflict_resolver=conflict_resolver,
+            page_summarizer=page_summarizer,
         )
 
     def dream_status(self, *, limit: int = 20) -> dict[str, Any]:
@@ -1466,6 +1469,23 @@ def _make_conflict_resolver(maintainer: Any) -> Any:
             return None
 
     return _resolver
+
+
+def _make_page_summarizer(maintainer: Any) -> Any:
+    """Adapt a maintenance provider into a (page, facts) -> concise content string
+    callback for the engine's page consolidation. Returns None if the provider
+    can't summarize, so consolidation falls back to deterministic dedupe."""
+    summarize = getattr(maintainer, "consolidate_page", None)
+    if not callable(summarize):
+        return None
+
+    def _summarizer(page: dict[str, Any], facts: list[str]) -> str | None:
+        try:
+            return summarize(page=page, facts=facts)
+        except (ValueError, OSError, KeyError):
+            return None
+
+    return _summarizer
 
 
 def _propose_dream_actions_batched(

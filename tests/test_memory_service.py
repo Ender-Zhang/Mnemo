@@ -1658,6 +1658,99 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIn("prefers dark mode", joined)
             self.assertIn("does not like dark mode", joined)
 
+    def test_consolidate_dedupes_near_duplicate_facts_deterministically(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            created = client.stable_create(
+                title="preferences: editor",
+                content=(
+                    "- User likes dark mode\n"
+                    "- User likes dark mode in the editor\n"
+                    "- User lives in Berlin"
+                ),
+                scope="user:alice",
+                dimension="preferences",
+            )
+            page_id = created["memory_id"]
+
+            engine = client._engine()
+            results = engine.consolidate_memory_pages(limit=50)
+
+            self.assertTrue(results)
+            self.assertEqual(results[0]["action"], "deduped")
+            page = client.read(page_id)["item"]
+            # the two near-duplicate dark-mode facts collapse to the most specific
+            # phrasing; the unrelated fact survives.
+            self.assertIn("User likes dark mode in the editor", page["content"])
+            self.assertNotIn("- User likes dark mode\n", page["content"])
+            self.assertIn("Berlin", page["content"])
+
+    def test_consolidate_preserves_opposite_polarity_facts(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            created = client.stable_create(
+                title="preferences: editor",
+                content="- User likes dark mode\n- User does not like dark mode",
+                scope="user:alice",
+                dimension="preferences",
+            )
+            page_id = created["memory_id"]
+            engine = client._engine()
+            engine.consolidate_memory_pages(limit=50)
+            page = client.read(page_id)["item"]
+            # contradictory claims are never merged away by dedupe
+            self.assertIn("likes dark mode", page["content"])
+            self.assertIn("does not like dark mode", page["content"])
+
+    def test_consolidate_uses_model_summarizer_for_bloated_page(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            created = client.stable_create(
+                title="identity: profile",
+                content="\n".join(f"- 用户事实 {i}：第 {i} 条独立信息。" for i in range(1, 8)),
+                scope="user:alice",
+                dimension="identity",
+            )
+            page_id = created["memory_id"]
+
+            seen: dict[str, object] = {}
+
+            def summarizer(page, facts):
+                seen["title"] = page.get("title")
+                seen["facts"] = list(facts)
+                return "用户档案：已被模型压缩为一条精炼陈述。"
+
+            engine = client._engine()
+            results = engine.consolidate_memory_pages(limit=50, summarizer=summarizer)
+
+            self.assertTrue(results)
+            self.assertEqual(results[0]["action"], "summarized")
+            self.assertGreaterEqual(len(seen["facts"]), 6)  # only bloated pages go to the model
+            page = client.read(page_id)["item"]
+            self.assertEqual(page["content"], "用户档案：已被模型压缩为一条精炼陈述。")
+
+    def test_dream_run_consolidates_pages(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.stable_create(
+                title="preferences: editor",
+                content="- User likes dark mode\n- User likes dark mode in the editor",
+                scope="user:alice",
+                dimension="preferences",
+            )
+            report = client.dream_run(use_provider=False)
+            consolidations = report["execution"]["result"].get("page_consolidations")
+            self.assertIsInstance(consolidations, list)
+            self.assertTrue(any(c.get("action") == "deduped" for c in consolidations))
+
     def test_conflict_resolved_inline_not_parked_for_review(self) -> None:
         from mnemo_memory import MemoryClient
 
