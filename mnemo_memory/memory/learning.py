@@ -389,6 +389,9 @@ class MemoryLearningMixin:
             candidate,
             min_confidence=min_confidence,
             seen_claims=set(),
+            # A single explicit review surfaces the conflict; full-auto resolution
+            # is the dream's job (and runs on every tick).
+            auto_resolve=False,
         )
         result.setdefault("kind", "memory_promotion_review")
         result["snapshot"] = self.compile_l1_snapshot(limit=50)
@@ -475,6 +478,7 @@ class MemoryLearningMixin:
         rejected: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
         conflicts: list[dict[str, Any]] = []
+        resolved: list[dict[str, Any]] = []
         seen_claims: set[str] = set()
 
         for candidate in sorted(
@@ -485,6 +489,8 @@ class MemoryLearningMixin:
                 candidate,
                 min_confidence=min_confidence,
                 seen_claims=seen_claims,
+                conflict_resolver=conflict_resolver,
+                auto_resolve=auto_resolve_conflicts,
             )
             decision = result.get("decision")
             if decision == "promoted":
@@ -495,14 +501,18 @@ class MemoryLearningMixin:
                 conflicts.append(result)
             else:
                 skipped.append(result)
+            # A conflict resolved inline (full-auto, at detection) also belongs in
+            # the resolved log so the dream report reflects it.
+            if result.get("kind") == "conflict_resolution":
+                resolved.append(result)
 
-        # Full-auto: resolve every pending conflict deterministically so nothing
-        # stalls in needs_review.
-        resolved: list[dict[str, Any]] = []
+        # Backstop: clean up any conflict still parked (pre-existing data, or a
+        # page deleted out from under a candidate) so nothing stalls in review.
         if auto_resolve_conflicts:
-            resolved = self._auto_resolve_pending_conflicts(limit, resolver=conflict_resolver)
-            for result in resolved:
+            backstop = self._auto_resolve_pending_conflicts(limit, resolver=conflict_resolver)
+            for result in backstop:
                 (rejected if result.get("resolution") == "keep_old" else promoted).append(result)
+            resolved.extend(backstop)
 
         return {
             "w0": w0,
@@ -584,6 +594,8 @@ class MemoryLearningMixin:
         *,
         min_confidence: float,
         seen_claims: set[str],
+        conflict_resolver: Any | None = None,
+        auto_resolve: bool = True,
     ) -> dict[str, Any]:
         claim = _normalize_space(candidate.get("claim", ""))
         fingerprint = _fingerprint(claim)
@@ -623,8 +635,32 @@ class MemoryLearningMixin:
         confidence = float(candidate.get("confidence", 0.0))
         conflict_page = self._find_conflicting_page(candidate)
         if conflict_page:
-            result = self._mark_conflict(candidate, conflict_page)
-            result["decision"] = "conflict"
+            if not auto_resolve:
+                result = self._mark_conflict(candidate, conflict_page)
+                result["decision"] = "conflict"
+                return result
+            # Full-auto: resolve the conflict the instant it's detected rather
+            # than parking it in needs_review until the next dream tick (which
+            # is what made conflicts feel like they needed a manual click).
+            # Model-first when a resolver is wired, deterministic rule otherwise.
+            self._mark_conflict(candidate, conflict_page)
+            resolution, reason, merged_content = self._decide_conflict_resolution(
+                candidate, conflict_page, conflict_resolver
+            )
+            try:
+                result = self.resolve_conflict(
+                    candidate["id"], resolution=resolution, merged_content=merged_content
+                )
+            except ValueError:
+                # If resolution somehow fails, leave it parked for the dream-level
+                # backstop / self-heal rather than crashing the promote review.
+                marked = self._mark_conflict(candidate, conflict_page)
+                marked["decision"] = "conflict"
+                return marked
+            result["decision"] = "rejected" if resolution == "keep_old" else "promoted"
+            result["resolution"] = resolution
+            result["auto_reason"] = reason
+            result.setdefault("reason", f"conflict_resolved:{resolution}")
             return result
 
         if confidence < min_confidence:

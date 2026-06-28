@@ -1614,6 +1614,36 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertIn("prefers dark mode", joined)
             self.assertIn("does not like dark mode", joined)
 
+    def test_conflict_resolved_inline_not_parked_for_review(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.stable_create(
+                title="preferences: editor theme",
+                content="User prefers dark mode in the editor.",
+                scope="user:alice",
+                dimension="preferences",
+                confidence=0.6,
+            )
+            client.update(
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.9}],
+                source="unit-test",
+            )
+
+            engine = client._engine()
+            result = engine.dream_consolidate(limit=10)
+
+            # The conflict is resolved within this single pass — it is NOT left
+            # parked in the conflicts bucket waiting for a manual click.
+            self.assertEqual(result["conflicts"], [])
+            self.assertTrue(result["resolved"])
+            self.assertEqual(result["resolved"][0]["resolution"], "keep_new")
+            candidates = client.list(kind="candidate", status=None, limit=50)["items"]
+            self.assertFalse(
+                any(str(c.get("status", "")).startswith("needs_review:conflict") for c in candidates)
+            )
+
     def test_memory_flow_traces_event_to_injection(self) -> None:
         from mnemo_memory import MemoryClient
 
