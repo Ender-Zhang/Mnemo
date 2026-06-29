@@ -688,6 +688,7 @@ class StateStore:
         limit: int | None = 50,
         *,
         uid: str | None = None,
+        strict_uid: bool = False,
     ) -> list[dict[str, Any]]:
         sql = """
             SELECT id, title, content, scope, confidence, status, source_candidate_id, metadata_json, created_at, updated_at
@@ -698,7 +699,7 @@ class StateStore:
         if status:
             clauses.append("status = ?")
             params.append(status)
-        scope_clause, scope_params = _uid_scope_clause(uid)
+        scope_clause, scope_params = _uid_scope_clause(uid, include_global=not strict_uid)
         if scope_clause:
             clauses.append(scope_clause)
             params.extend(scope_params)
@@ -1623,13 +1624,17 @@ def _apply_limit(sql: str, params: list[Any], limit: int | None) -> str:
     return sql + " LIMIT ?"
 
 
-def _uid_scope_clause(uid: str | None) -> tuple[str, list[Any]]:
+def _uid_scope_clause(uid: str | None, *, include_global: bool = True) -> tuple[str, list[Any]]:
     clean_uid = str(uid or "").strip()
     if not clean_uid:
         return "", []
-    # A user's view = that user's scoped memories PLUS global/unscoped memories,
-    # because global memories apply to (and are injected for) every user.
-    candidates = {clean_uid, "global"}
+    # A user's view normally = that user's scoped memories PLUS global/unscoped
+    # ones (global applies to every user). With ``include_global=False`` it is
+    # STRICTLY that user's own memories — used for the per-user identity profile,
+    # so a global fact never masquerades as a specific user's.
+    candidates = {clean_uid}
+    if include_global:
+        candidates.add("global")
     if clean_uid.casefold().startswith("user:"):
         suffix = clean_uid.split(":", 1)[1].strip()
         if suffix:
@@ -1642,7 +1647,8 @@ def _uid_scope_clause(uid: str | None) -> tuple[str, list[Any]]:
     params: list[Any] = [*exact_values]
     clauses.append("scope LIKE ? ESCAPE '!'")
     params.append(_scope_like_pattern(clean_uid))
-    clauses.append("scope IS NULL OR scope = ''")
+    if include_global:
+        clauses.append("scope IS NULL OR scope = ''")
     return "(" + " OR ".join(clauses) + ")", params
 
 

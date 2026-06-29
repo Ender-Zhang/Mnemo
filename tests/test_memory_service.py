@@ -95,22 +95,29 @@ class MemoryServiceTests(unittest.TestCase):
             client.stable_create(title="Bob", content="Bob likes verbose logs.", scope="user:bob", confidence=0.9)
 
             scopes = {item["scope"] for item in client.list(kind="page", status="active", uid="alice")["items"]}
-            # alice's view = her own scope + global, but never another user's
+            # alice's inventory view = her own scope + global, but never another user's
             self.assertIn("user:alice", scopes)
             self.assertIn("global", scopes)
             self.assertNotIn("user:bob", scopes)
 
-            # the agent-view preview matches the same scoping
+            # the L0 profile is alice's OWN identity only: global facts are shared
+            # infrastructure, not part of who *this* user is, so they must not make
+            # every user's profile look identical.
             profile = client.context("", uid="alice")["profile"]["summary"]
             self.assertIn("dark mode", profile)
-            self.assertIn("concise", profile)
-            self.assertNotIn("verbose", profile)
+            self.assertNotIn("concise", profile)  # global excluded from the per-user profile
+            self.assertNotIn("verbose", profile)  # and never another user's
 
-            # the workbench L0 profile card (profile endpoint) scopes the same way
             card = client.profile(uid="alice")["summary"]
             self.assertIn("dark mode", card)
-            self.assertIn("concise", card)
+            self.assertNotIn("concise", card)
             self.assertNotIn("verbose", card)
+
+            # switching users yields a different profile (the reported bug)
+            bob_profile = client.context("", uid="bob")["profile"]["summary"]
+            self.assertIn("verbose", bob_profile)
+            self.assertNotIn("dark mode", bob_profile)
+            self.assertNotEqual(profile, bob_profile)
 
     def test_client_lists_candidates_and_pages_for_admin_ui(self) -> None:
         from mnemo_memory import MemoryClient

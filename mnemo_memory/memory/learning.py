@@ -185,7 +185,13 @@ class MemoryLearningMixin:
         return {"created": created, "skipped": skipped}
 
     def compile_l0(self, *, limit: int = 50, uid: str | None = None) -> dict[str, Any]:
-        pages = self.store.list_memory_pages(status="active", limit=max(1, int(limit)), uid=uid)
+        # The L0 profile is a specific user's identity/preferences view, so scope
+        # it STRICTLY to that user — global facts must not leak into (and look
+        # identical across) every user's profile. Global memories still reach the
+        # agent via the L1 snapshot and recall cards.
+        pages = self.store.list_memory_pages(
+            status="active", limit=max(1, int(limit)), uid=uid, strict_uid=bool(uid)
+        )
         return compile_l0_profile(pages)
 
     def compile_l1_snapshot(self, limit: int = 50) -> dict[str, Any]:
