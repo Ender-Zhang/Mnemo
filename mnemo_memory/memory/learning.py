@@ -394,8 +394,14 @@ class MemoryLearningMixin:
         dimension = normalize_memory_dimension(candidate.get("dimension"), fallback="context")
         topic = _candidate_page_topic(dimension, claim)
         title = f"{dimension}: {topic}"
+        scope_key = _scope_key(candidate.get("scope"))
+        same_scope_pages = [
+            page
+            for page in self.store.list_memory_pages(status="active", limit=200)
+            if _scope_key(page.get("scope")) == scope_key
+        ]
         target_page = _select_existing_topic_page(
-            self.store.list_memory_pages(status="active", limit=200),
+            same_scope_pages,
             state_dir=self.store.state_dir,
             dimension=dimension,
             topic=topic,
@@ -771,7 +777,12 @@ class MemoryLearningMixin:
 
     def _find_duplicate_page(self, candidate: dict[str, Any]) -> dict[str, Any] | None:
         claim = _normalize_space(candidate.get("claim", ""))
-        matches = self.store.search_memory_pages(claim, limit=1)
+        scope_key = _scope_key(candidate.get("scope"))
+        matches = [
+            page
+            for page in self.store.search_memory_pages(claim, limit=8)
+            if _scope_key(page.get("scope")) == scope_key
+        ]
         exact_match = next(
             (
                 page
@@ -789,7 +800,8 @@ class MemoryLearningMixin:
             (
                 page
                 for page in candidates
-                if _same_memory_dimension(candidate_dimension, page)
+                if _scope_key(page.get("scope")) == scope_key
+                and _same_memory_dimension(candidate_dimension, page)
                 and _page_has_near_duplicate_claim(page, claim)
             ),
             None,
@@ -830,6 +842,7 @@ class MemoryLearningMixin:
         polarity = _polarity(claim)
         if polarity == "neutral":
             return None
+        scope_key = _scope_key(candidate.get("scope"))
         queries = [
             candidate.get("dimension") or "",
             *_keywords(claim)[:4],
@@ -843,6 +856,8 @@ class MemoryLearningMixin:
                 if page_id in seen:
                     continue
                 seen.add(page_id)
+                if _scope_key(page.get("scope")) != scope_key:
+                    continue  # never conflict across users / scopes
                 if _is_conflict(claim, page.get("content", "")):
                     return page
         return None
@@ -1138,6 +1153,13 @@ def _fact_subsumed_by(inner: str, outer: str) -> bool:
         return True
     pattern = r"(?<![0-9a-z])" + re.escape(inner_norm) + r"(?![0-9a-z])"
     return re.search(pattern, outer_norm) is not None
+
+
+def _scope_key(value: Any) -> str:
+    """Canonical scope bucket for cross-scope isolation. A candidate must only
+    merge into / dedupe against / conflict with a page of the *same* scope, so
+    one user's facts never land on another user's (or a global) page."""
+    return str(value or "global").strip() or "global"
 
 
 def _compact_page_facts(facts: list[str]) -> list[str]:

@@ -360,6 +360,39 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertTrue(plan["plan_proposals"])
             self.assertEqual(plan["memory_candidates"], [])
 
+    def test_promotion_isolates_pages_by_user_scope(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            # Two users with the SAME dimension+topic (identity → 个人资料). They
+            # must not be merged into one shared page.
+            a = client.update(
+                facts=[{"claim": "用户住在北京。", "dimension": "identity", "scope": "user:alice", "confidence": 0.9}],
+                source="unit-test",
+            )
+            b = client.update(
+                facts=[{"claim": "用户住在上海。", "dimension": "identity", "scope": "user:bob", "confidence": 0.9}],
+                source="unit-test",
+            )
+            client.force_promote_candidate(a["memory_candidates"][0]["candidate_id"])
+            client.force_promote_candidate(b["memory_candidates"][0]["candidate_id"])
+
+            pages = client.list(kind="page", status="active", limit=50)["items"]
+            alice_pages = [p for p in pages if p.get("scope") == "user:alice"]
+            bob_pages = [p for p in pages if p.get("scope") == "user:bob"]
+            self.assertEqual(len(alice_pages), 1)
+            self.assertEqual(len(bob_pages), 1)
+            # neither user's page is contaminated with the other's fact
+            self.assertIn("北京", alice_pages[0]["content"])
+            self.assertNotIn("上海", alice_pages[0]["content"])
+            self.assertIn("上海", bob_pages[0]["content"])
+            self.assertNotIn("北京", bob_pages[0]["content"])
+
+            # and the scoped agent view for alice never sees bob's memory
+            ctx = client.context("用户住在哪", uid="alice")
+            self.assertNotIn("上海", json.dumps(ctx, ensure_ascii=False))
+
     def test_client_traces_promoted_memory_to_source_event(self) -> None:
         from mnemo_memory import MemoryClient
 
