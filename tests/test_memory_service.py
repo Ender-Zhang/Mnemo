@@ -400,6 +400,41 @@ class MemoryServiceTests(unittest.TestCase):
             ctx = client.context("用户住在哪", uid="alice")
             self.assertNotIn("上海", json.dumps(ctx, ensure_ascii=False))
 
+    def test_wipe_memory_clears_data_but_keeps_config(self) -> None:
+        import importlib.util
+        from pathlib import Path
+
+        from mnemo_memory import MemoryClient
+
+        spec = importlib.util.spec_from_file_location(
+            "wipe_memory", str(Path(__file__).resolve().parents[1] / "scripts" / "wipe_memory.py")
+        )
+        wipe = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(wipe)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.stable_create(title="t", content="用户a 喜欢咖啡。", scope="user:alice", dimension="preferences")
+            client.update(facts=[{"claim": "用户b 喜欢茶。", "dimension": "preferences", "scope": "user:bob", "confidence": 0.9}], source="t")
+            client.save_tuning_config(promote_min_confidence=0.66)
+            state = Path(tmp)
+            self.assertTrue((state / "state.db").exists())
+
+            report = wipe.wipe_memory_state(tmp, backup=True)
+
+            # the database is gone (backed up), config.json is untouched
+            self.assertFalse((state / "state.db").exists())
+            self.assertTrue((state / "config.json").exists())
+            self.assertIsNotNone(report["backup"])
+            self.assertTrue(Path(report["backup"]).exists())
+
+            # a fresh client sees no memories, but kept the saved tuning
+            fresh = MemoryClient(state_dir=tmp)
+            self.assertEqual(fresh.list(kind="page", status=None, limit=100)["count"], 0)
+            self.assertEqual(fresh.list(kind="candidate", status=None, limit=100)["count"], 0)
+            self.assertEqual(fresh.tuning_config()["promote_min_confidence"], 0.66)
+
     def test_repair_cross_scope_pages_detects_and_fixes_contamination(self) -> None:
         from mnemo_memory import MemoryClient
 
