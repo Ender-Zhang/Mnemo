@@ -482,6 +482,40 @@ class MemoryServiceTests(unittest.TestCase):
                 if page.get("scope") == "user:bob":
                     self.assertNotIn("北京", page["content"])
 
+    def test_require_user_scope_rejects_unbound_writes(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            client.save_tuning_config(require_user_scope=True)
+            self.assertTrue(client.tuning_config()["require_user_scope"])
+
+            # global / unscoped durable writes are rejected
+            with self.assertRaises(ValueError):
+                client.stable_create(title="t", content="用户a 喜欢咖啡。", scope="global")
+            with self.assertRaises(ValueError):
+                client.update(facts=[{"claim": "用户a 喜欢咖啡。", "dimension": "preferences"}], source="t")
+            with self.assertRaises(ValueError):
+                client.ingest_event(text="用户a 以后默认都喝冰美式。", scope="global", source="t")
+
+            # user-bound writes go through
+            created = client.stable_create(title="t", content="用户a 喜欢咖啡。", scope="user:alice", dimension="preferences")
+            self.assertEqual(created["item"]["scope"], "user:alice")
+            ok = client.update(facts=[{"claim": "用户a 住在北京。", "dimension": "identity", "scope": "user:alice"}], source="t")
+            self.assertEqual(ok["memory_candidates"][0]["scope"], "user:alice")
+            ev = client.ingest_event(text="用户a 以后默认都喝冰美式。", scope="user:alice", source="t")
+            self.assertEqual(ev["kind"], "memory_event_ingest")
+
+    def test_require_user_scope_off_by_default(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            self.assertFalse(client.tuning_config()["require_user_scope"])
+            # default behaviour unchanged: a global stable memory is allowed
+            created = client.stable_create(title="t", content="Shared fact.", scope="global")
+            self.assertEqual(created["item"]["scope"], "global")
+
     def test_client_traces_promoted_memory_to_source_event(self) -> None:
         from mnemo_memory import MemoryClient
 

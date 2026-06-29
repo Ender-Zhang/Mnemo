@@ -3241,6 +3241,14 @@ function SettingsPanel(props: {
       <label className="checkbox-row">
         <input
           type="checkbox"
+          checked={props.tuningForm.requireUserScope}
+          onChange={(e) => props.setTuningForm({ ...props.tuningForm, requireUserScope: e.target.checked })}
+        />
+        <span><strong>要求记忆绑定用户（拒绝无 user scope 的写入）</strong><small>开启后，写入事实/稳定记忆/摄入事件时必须选定用户（scope 形如 <code>user:xxx</code>），否则直接拒绝，不再悄悄变成所有人共享的 global 记忆。这能从源头杜绝跨用户串记忆。</small></span>
+      </label>
+      <label className="checkbox-row">
+        <input
+          type="checkbox"
           checked={props.tuningForm.lossySummary}
           onChange={(e) => props.setTuningForm({ ...props.tuningForm, lossySummary: e.target.checked })}
         />

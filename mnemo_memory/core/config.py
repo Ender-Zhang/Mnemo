@@ -28,6 +28,10 @@ DEFAULT_DREAM_MAX_BATCHES = 6
 # Opt in to let the model truly rephrase/compress a page — best-effort, NOT
 # guaranteed lossless (the verbatim-preservation gate is dropped).
 DEFAULT_CONSOLIDATE_LOSSY_SUMMARY = False
+# When on, durable memory writes (facts, stable pages, ingested events) must be
+# bound to a user (scope like "user:<id>"); unscoped/global writes are rejected
+# instead of silently becoming shared global memory.
+DEFAULT_REQUIRE_USER_SCOPE = False
 DEFAULT_QUALITY_WRITE_THRESHOLD = 0.68
 DEFAULT_QUALITY_DRAFT_THRESHOLD = 0.5
 DEFAULT_PROMOTE_MIN_CONFIDENCE = 0.7
@@ -57,6 +61,7 @@ class MemoryConfig:
     dream_batch_size: int = DEFAULT_DREAM_BATCH_SIZE
     dream_max_batches: int = DEFAULT_DREAM_MAX_BATCHES
     consolidate_lossy_summary: bool = DEFAULT_CONSOLIDATE_LOSSY_SUMMARY
+    require_user_scope: bool = DEFAULT_REQUIRE_USER_SCOPE
     quality_write_threshold: float = DEFAULT_QUALITY_WRITE_THRESHOLD
     quality_draft_threshold: float = DEFAULT_QUALITY_DRAFT_THRESHOLD
     promote_min_confidence: float = DEFAULT_PROMOTE_MIN_CONFIDENCE
@@ -94,6 +99,7 @@ class ConfigOverrides:
     dream_batch_size: int | None = None
     dream_max_batches: int | None = None
     consolidate_lossy_summary: bool | None = None
+    require_user_scope: bool | None = None
     quality_write_threshold: float | None = None
     quality_draft_threshold: float | None = None
     promote_min_confidence: float | None = None
@@ -250,6 +256,12 @@ def resolve_memory_config(
         env.get("MNEMO_MEMORY_CONSOLIDATE_LOSSY_SUMMARY"),
         DEFAULT_CONSOLIDATE_LOSSY_SUMMARY,
     )
+    require_user_scope = _first_bool(
+        overrides.require_user_scope,
+        file_config.get("require_user_scope"),
+        env.get("MNEMO_MEMORY_REQUIRE_USER_SCOPE"),
+        DEFAULT_REQUIRE_USER_SCOPE,
+    )
     quality_write_threshold = max(0.0, min(1.0, quality_write_threshold))
     quality_draft_threshold = max(0.0, min(quality_write_threshold, quality_draft_threshold))
     return MemoryConfig(
@@ -274,6 +286,7 @@ def resolve_memory_config(
         dream_batch_size=max(1, min(50, dream_batch_size)),
         dream_max_batches=max(1, min(20, dream_max_batches)),
         consolidate_lossy_summary=consolidate_lossy_summary,
+        require_user_scope=require_user_scope,
         quality_write_threshold=quality_write_threshold,
         quality_draft_threshold=quality_draft_threshold,
         promote_min_confidence=max(0.0, min(1.0, promote_min_confidence)),

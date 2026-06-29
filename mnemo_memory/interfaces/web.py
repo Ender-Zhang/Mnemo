@@ -328,6 +328,7 @@ def dispatch_memory_api(client: MemoryClient, method: str, body: dict[str, Any])
             quality_draft_threshold=body.get("quality_draft_threshold"),
             promote_min_confidence=body.get("promote_min_confidence"),
             consolidate_lossy_summary=body.get("consolidate_lossy_summary"),
+            require_user_scope=body.get("require_user_scope"),
         )
     if method == "force-promote-candidate":
         return client.force_promote_candidate(_required(body, "candidate_id"))

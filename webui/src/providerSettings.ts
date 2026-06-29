@@ -201,6 +201,7 @@ export type TuningConfigResult = {
   quality_draft_threshold?: number;
   promote_min_confidence?: number;
   consolidate_lossy_summary?: boolean;
+  require_user_scope?: boolean;
   save_path?: string;
 };
 
@@ -209,10 +210,11 @@ export type TuningFormState = {
   draftThreshold: string;
   minConfidence: string;
   lossySummary: boolean;
+  requireUserScope: boolean;
 };
 
 export function emptyTuningForm(): TuningFormState {
-  return { writeThreshold: "0.68", draftThreshold: "0.5", minConfidence: "0.7", lossySummary: false };
+  return { writeThreshold: "0.68", draftThreshold: "0.5", minConfidence: "0.7", lossySummary: false, requireUserScope: false };
 }
 
 export function tuningFormFromConfig(result: TuningConfigResult | null): TuningFormState {
@@ -220,7 +222,8 @@ export function tuningFormFromConfig(result: TuningConfigResult | null): TuningF
     writeThreshold: String(result?.quality_write_threshold ?? "0.68"),
     draftThreshold: String(result?.quality_draft_threshold ?? "0.5"),
     minConfidence: String(result?.promote_min_confidence ?? "0.7"),
-    lossySummary: Boolean(result?.consolidate_lossy_summary ?? false)
+    lossySummary: Boolean(result?.consolidate_lossy_summary ?? false),
+    requireUserScope: Boolean(result?.require_user_scope ?? false)
   };
 }
 
@@ -238,6 +241,7 @@ export function tuningSavePayload(form: TuningFormState) {
     }
   }
   payload.consolidate_lossy_summary = form.lossySummary;
+  payload.require_user_scope = form.requireUserScope;
   return payload;
 }
 

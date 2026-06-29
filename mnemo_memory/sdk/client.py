@@ -138,6 +138,7 @@ class MemoryClient:
         metadata: dict[str, Any] | None = None,
         dimension: str | None = None,
     ) -> dict[str, Any]:
+        self._assert_user_scope(scope, what="stable memory")
         store = self._store()
         page_id = store.create_memory_page(
             _required_text(title, "title"),
@@ -433,6 +434,11 @@ class MemoryClient:
         run_id: str | None = None,
         mission_id: str | None = None,
     ) -> dict[str, Any]:
+        # Validate every fact's scope up front so the policy rejects the call
+        # without writing a partial batch.
+        if self._require_user_scope():
+            for fact in facts or []:
+                self._assert_user_scope(_normalize_fact(fact)["scope"], what="memory fact")
         store = self._store()
         engine = self._engine()
         effective_run_id = run_id or new_id("memrun")
@@ -531,6 +537,7 @@ class MemoryClient:
         effective_mission_id = mission_id or "memory-service"
         normalized_context = _normalize_context(context)
         effective_scope = str(scope or "").strip() or "global"
+        self._assert_user_scope(effective_scope, what="ingested event")
 
         event = store.add_memory_event(
             source=source,
@@ -1107,6 +1114,7 @@ class MemoryClient:
             "quality_draft_threshold": config.quality_draft_threshold,
             "promote_min_confidence": config.promote_min_confidence,
             "consolidate_lossy_summary": bool(config.consolidate_lossy_summary),
+            "require_user_scope": bool(config.require_user_scope),
             "save_path": str(default_config_path(self.state_dir)),
         }
 
@@ -1117,6 +1125,7 @@ class MemoryClient:
         quality_draft_threshold: float | int | str | None = None,
         promote_min_confidence: float | int | str | None = None,
         consolidate_lossy_summary: bool | int | str | None = None,
+        require_user_scope: bool | int | str | None = None,
     ) -> dict[str, Any]:
         path = default_config_path(self.state_dir)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1132,6 +1141,7 @@ class MemoryClient:
                 except (TypeError, ValueError) as exc:
                     raise ValueError(f"{key} must be a number between 0 and 1") from exc
         _set_optional_config_bool(config, "consolidate_lossy_summary", consolidate_lossy_summary)
+        _set_optional_config_bool(config, "require_user_scope", require_user_scope)
         path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return self.tuning_config()
 
@@ -1368,6 +1378,21 @@ class MemoryClient:
         store = StateStore(self.state_dir)
         store.initialize()
         return store
+
+    def _require_user_scope(self) -> bool:
+        return bool(resolve_memory_config(ConfigOverrides(state_dir=self.state_dir)).require_user_scope)
+
+    def _assert_user_scope(self, scope: Any, *, what: str) -> None:
+        """Enforce the require_user_scope policy: durable writes must target a
+        specific user (scope ``user:<id>``), not global/unscoped memory."""
+        if not self._require_user_scope():
+            return
+        if not _is_user_scope(scope):
+            raise ValueError(
+                f"{what} must be bound to a user (scope like 'user:<id>'); got scope="
+                f"{str(scope or '') or 'global'!r}. Select a user before writing, or turn off "
+                "require_user_scope in tuning settings."
+            )
 
     def _engine(self) -> MemoryEngine:
         config = resolve_memory_config(ConfigOverrides(state_dir=self.state_dir))
@@ -1720,6 +1745,11 @@ def _stable_delete_mode(value: Any) -> str:
 
 def _scope_bucket(value: Any) -> str:
     return str(value or "global").strip() or "global"
+
+
+def _is_user_scope(scope: Any) -> bool:
+    """A memory is 'bound to a user' when its scope is ``user:<id>``."""
+    return str(scope or "").strip().casefold().startswith("user:")
 
 
 def _is_tombstoned_status(status: Any) -> bool:
