@@ -1760,17 +1760,17 @@ class MemoryServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             client = MemoryClient(state_dir=tmp)
             client.save_auto_dream_config(local_fallback=True)
-            # existing stable memory with lower confidence
+            # existing stable memory with low confidence
             client.stable_create(
                 title="preferences: editor theme",
                 content="User prefers dark mode in the editor.",
                 scope="user:alice",
                 dimension="preferences",
-                confidence=0.6,
+                confidence=0.5,
             )
-            # a directly conflicting candidate with a clear confidence advantage
+            # a directly conflicting candidate with a decisive confidence advantage (>= 0.35)
             client.update(
-                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.9}],
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.95}],
                 source="unit-test",
             )
 
@@ -1813,6 +1813,42 @@ class MemoryServiceTests(unittest.TestCase):
             joined = " ".join(p.get("content", "") for p in pages)
             self.assertIn("prefers dark mode", joined)
             self.assertIn("does not like dark mode", joined)
+
+    def test_thin_margin_conflict_does_not_evict_and_marks_disputed(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            # an established memory; a contradicting candidate only slightly more
+            # confident (gap 0.15 < 0.35) must NOT evict it on a single observation.
+            client.stable_create(
+                title="preferences: editor theme",
+                content="User prefers dark mode in the editor.",
+                scope="user:alice",
+                dimension="preferences",
+                confidence=0.7,
+            )
+            client.update(
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.85}],
+                source="unit-test",
+            )
+            engine = client._engine()
+            result = engine.dream_consolidate(limit=10)
+
+            # within the decisive margin -> keep_both + disputed, not keep_new
+            self.assertTrue(result["resolved"])
+            self.assertEqual(result["resolved"][0]["resolution"], "keep_both")
+            self.assertTrue(result["resolved"][0]["disputed"])
+
+            # the established claim was not tombstoned; both survive and a page is flagged
+            pages = client.list(kind="page", status="active", limit=50)["items"]
+            joined = " ".join(p.get("content", "") for p in pages)
+            self.assertIn("prefers dark mode", joined)
+            self.assertIn("does not like dark mode", joined)
+            self.assertTrue(
+                any((p.get("metadata") or {}).get("disputed") for p in pages),
+                "a kept-both contradiction should flag a page disputed",
+            )
 
     def test_consolidate_dedupes_near_duplicate_facts_deterministically(self) -> None:
         from mnemo_memory import MemoryClient
@@ -1976,15 +2012,16 @@ class MemoryServiceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             client = MemoryClient(state_dir=tmp)
+            # a decisive confidence gap (>= 0.35) so the new claim supersedes
             client.stable_create(
                 title="preferences: editor theme",
                 content="User prefers dark mode in the editor.",
                 scope="user:alice",
                 dimension="preferences",
-                confidence=0.6,
+                confidence=0.5,
             )
             client.update(
-                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.9}],
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.95}],
                 source="unit-test",
             )
 
@@ -2071,15 +2108,16 @@ class MemoryServiceTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             client = MemoryClient(state_dir=tmp)
+            # a decisive confidence gap (>= 0.35) so the rule fallback is keep_new
             client.stable_create(
                 title="preferences: editor theme",
                 content="User prefers dark mode in the editor.",
                 scope="user:alice",
                 dimension="preferences",
-                confidence=0.6,
+                confidence=0.5,
             )
             client.update(
-                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.9}],
+                facts=[{"claim": "User does not like dark mode in the editor.", "dimension": "preferences", "scope": "user:alice", "confidence": 0.95}],
                 source="unit-test",
             )
 
@@ -2101,6 +2139,15 @@ class MemoryServiceTests(unittest.TestCase):
         self.assertIn("preview-uid-options", app)
         self.assertIn("setUid={setUidFilter}", app)
         self.assertIn("knownUids={knownUids}", app)
+
+    def test_webui_surfaces_disputed_memories(self) -> None:
+        app = _webui_source()
+
+        # a kept-both conflict is surfaced as 存疑 (disputed), driven by page metadata
+        self.assertIn("isDisputed", app)
+        self.assertIn("metadata?.disputed", app)
+        self.assertIn("存疑", app)
+        self.assertIn("disputed-note", app)
 
     def test_webui_shows_detailed_decision_reasons(self) -> None:
         app = _webui_source()

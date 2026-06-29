@@ -931,6 +931,9 @@ class MemoryLearningMixin:
                 update_page = getattr(self.store, "update_memory_page", None)
                 merged_text = _normalize_space(merged_content or "")
                 if update_page:
+                    # A merge reconciles the contradiction, so drop any disputed
+                    # flag a prior keep_both left on this page.
+                    merged_metadata = _without_disputed_flags(conflict_page.get("metadata"))
                     update_page(
                         page_id,
                         title=str(conflict_page.get("title") or ""),
@@ -938,7 +941,7 @@ class MemoryLearningMixin:
                         scope=str(conflict_page.get("scope") or "global"),
                         confidence=_merged_page_confidence(conflict_page, candidate),
                         status="active",
-                        metadata=conflict_page.get("metadata") if isinstance(conflict_page.get("metadata"), dict) else None,
+                        metadata=merged_metadata,
                     )
                 self.store.update_memory_candidate_status(candidate_id, "promoted")
                 self.store.add_memory_link(candidate_id, page_id, "promoted_to", weight=1.0)
@@ -982,16 +985,19 @@ class MemoryLearningMixin:
             }
         elif resolution == "keep_both":
             self.store.update_memory_candidate_status(candidate_id, "draft")
-            self.store.update_memory_candidate_status(
-                candidate_id,
-                "draft",
-            )
             promoted = self._promote_candidate_unchecked(candidate_id)
+            # Both claims survive, but a contradiction is held open rather than
+            # silently coexisting — flag the page(s) disputed so it surfaces in
+            # the preview / graph and can be reconciled by the model or the user.
+            disputed = self._mark_pages_disputed(
+                conflict_page, promoted.get("page_id"), reason=f"conflict_keep_both:{candidate_id}"
+            )
             return {
                 "kind": "conflict_resolution",
                 "resolution": "keep_both",
                 "candidate_id": candidate_id,
                 "existing_page_id": conflict_page["id"] if conflict_page else None,
+                "disputed": disputed,
                 **promoted,
             }
         else:
@@ -1006,6 +1012,53 @@ class MemoryLearningMixin:
                     if page and page.get("status") == "active":
                         return page
         return None
+
+    def _mark_pages_disputed(
+        self, old_page: dict[str, Any] | None, new_page_id: str | None, *, reason: str
+    ) -> bool:
+        """Flag the pages of a kept-both conflict as disputed.
+
+        A keep_both outcome means two contradicting claims now coexist. Rather
+        than let that sit silently, annotate the page metadata (``disputed``)
+        and, when the claims live on two distinct pages, cross-link them with a
+        ``disputes`` relation so the contradiction is visible and reconcilable.
+        Best-effort: a flag write must never break conflict resolution.
+        """
+        page_ids: list[str] = []
+        if old_page and old_page.get("id"):
+            page_ids.append(str(old_page["id"]))
+        if new_page_id and str(new_page_id) not in page_ids:
+            page_ids.append(str(new_page_id))
+        if not page_ids:
+            return False
+        update_page = getattr(self.store, "update_memory_page", None)
+        if not callable(update_page):
+            return False
+        for pid in page_ids:
+            page = self._get_page(pid)
+            if not page:
+                continue
+            metadata = dict(page["metadata"]) if isinstance(page.get("metadata"), dict) else {}
+            metadata["disputed"] = True
+            metadata["disputed_reason"] = reason
+            others = [p for p in page_ids if p != pid]
+            if others:
+                metadata["disputed_with"] = others
+            update_page(
+                pid,
+                title=str(page.get("title") or ""),
+                content=str(page.get("content") or ""),
+                scope=str(page.get("scope") or "global"),
+                confidence=float(page.get("confidence") or 0.7),
+                status=str(page.get("status") or "active"),
+                metadata=metadata,
+            )
+        if len(page_ids) == 2:
+            add_link = getattr(self.store, "add_memory_link", None)
+            if callable(add_link):
+                add_link(page_ids[0], page_ids[1], "disputes", weight=1.0)
+        log_event(_LOG, "conflict_disputed", page_ids=",".join(page_ids), reason=reason)
+        return True
 
     def _release_stranded_conflict(self, candidate: dict[str, Any]) -> None:
         """Reset a conflict candidate whose conflicting page is gone/inactive back
@@ -1123,16 +1176,35 @@ def _topic_key(value: str) -> str:
     return "".join(ch for ch in _normalize_space(value).casefold() if ch.isalnum())
 
 
+# Tombstoning an established memory is the costly, hard-to-undo mistake, so a
+# single contradicting observation must not evict a page on a thin confidence
+# edge. We only act on a *decisive* gap; anything inside the band is left as a
+# disputed keep_both for the model / more evidence to reconcile later. A page
+# that has been reinforced (confidence >= ~0.65) is effectively unevictable by a
+# lone candidate — exactly the "don't overturn memory on one event" stance.
+_CONFLICT_DECISIVE_MARGIN = 0.35
+
+
+def _without_disputed_flags(metadata: Any) -> dict[str, Any] | None:
+    """Strip the disputed annotations from page metadata (used when a dispute is
+    reconciled). Returns None when there is nothing left to carry."""
+    if not isinstance(metadata, dict):
+        return None
+    cleaned = {k: v for k, v in metadata.items() if k not in {"disputed", "disputed_reason", "disputed_with"}}
+    return cleaned or None
+
+
 def _deterministic_conflict_resolution(
     candidate: dict[str, Any],
     page: dict[str, Any],
     *,
-    margin: float = 0.15,
+    margin: float = _CONFLICT_DECISIVE_MARGIN,
 ) -> tuple[str, str]:
     """Pick a conflict resolution from confidence alone (model-free fallback).
 
-    Clear winner by confidence supersedes; within ``margin`` it is a tie and we
-    keep both so no claim is dropped without a model to disambiguate.
+    A *decisive* confidence gap supersedes (keep_new) or rejects (keep_old);
+    within ``margin`` it is treated as disputed and we keep both so no claim is
+    dropped and no established page is evicted on a thin edge.
     """
     candidate_conf = float(candidate.get("confidence") or 0.0)
     page_conf = float(page.get("confidence") or 0.0)

@@ -60,6 +60,10 @@ export function tombstoneTargetItem(t: MemoryTombstone): MemoryItem {
 
 export function itemTitle(item: MemoryItem) { return item.title || item.claim || item.content || item.id; }
 
+// A page kept-both out of a conflict is flagged disputed in its metadata until
+// the contradiction is reconciled (by the model or the user).
+export function isDisputed(item: MemoryItem) { return item.type === "page" && Boolean(item.metadata?.disputed); }
+
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
 export function formatConfidence(value?: number) { if (typeof value !== "number") return "-"; return value.toFixed(2); }

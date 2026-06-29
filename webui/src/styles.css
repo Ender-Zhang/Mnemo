@@ -1909,6 +1909,20 @@ pre {
   line-height: 1.45;
 }
 
+.disputed-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 14px 0;
+  padding: 8px 12px;
+  border: 1px solid #f6dfa8;
+  border-radius: 8px;
+  background: var(--tint-amber);
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
 /* ─── Conflict Section ──────────────────────────────────────────────────── */
 
 .conflict-section {

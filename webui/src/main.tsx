@@ -83,6 +83,7 @@ import {
   isSemanticHit,
   itemMatchesQuery,
   itemTitle,
+  isDisputed,
   latestDreamDurationS,
   memoryFactPayload,
   memoryObservationPayload,
@@ -1858,7 +1859,10 @@ function MemoryTable({
             <button className="table-row-main" onClick={() => onSelect(item)}>
               <span className="score">{formatConfidence(item.confidence)}</span>
               <span>
-                <strong>{itemTitle(item)}</strong>
+                <strong>
+                  {itemTitle(item)}
+                  {isDisputed(item) ? <span className="badge warn" style={{marginLeft: 6, fontSize: 11}} title="与另一条记忆矛盾，已保留双方等待和解">存疑</span> : null}
+                </strong>
                 <small>{item.dimension ? `[${item.dimension}] ` : ""}{item.scope || item.id}</small>
               </span>
               <StatusBadge text={item.type} />
@@ -1923,6 +1927,12 @@ function MemoryDetail(props: {
             <label>更新时间</label><strong>{formatDate(item.updated_at || item.created_at)}</strong>
           </div>
           <div className="content-box">{item.content || item.claim || item.title || "-"}</div>
+          {isDisputed(item) ? (
+            <div className="disputed-note">
+              <span className="badge warn">存疑</span>
+              <span>与另一条记忆存在矛盾。系统保留了双方而非删除其一，等待更多证据、模型或你来和解。</span>
+            </div>
+          ) : null}
           {props.relatedPlans.length > 0 ? (
             <div className="related-plans">
               <div className="related-plans-head">
