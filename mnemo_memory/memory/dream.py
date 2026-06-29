@@ -562,9 +562,13 @@ class MemoryDreamMixin:
         )
         if not candidate_id:
             raise ValueError("missing candidate_id")
+        # This promote was proposed by the model (with a rationale), so trust its
+        # value judgment over the brittle deterministic quality heuristic. Safety,
+        # dedup and conflict gates still apply inside the review.
         result = self.review_candidate_for_promotion(
             candidate_id,
             min_confidence=_bounded_confidence(arguments.get("min_confidence"), min_confidence),
+            trust_model_quality=True,
         )
         action_reason = _normalize_space(
             str(arguments.get("reason") or arguments.get("rationale") or arguments.get("why") or "")
@@ -1493,6 +1497,8 @@ def _compact_dream_promote_result(action_id: str, result: dict[str, Any]) -> dic
         compact["conflict_page_id"] = result.get("conflict_page_id")
     if result.get("quality"):
         compact["quality"] = result.get("quality")
+    if result.get("quality_gate"):
+        compact["quality_gate"] = result.get("quality_gate")
     snapshot = result.get("snapshot") if isinstance(result.get("snapshot"), dict) else {}
     if snapshot:
         compact["snapshot_items"] = snapshot.get("page_count", 0)

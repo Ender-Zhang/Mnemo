@@ -450,7 +450,13 @@ class MemoryLearningMixin:
             )
         return result
 
-    def review_candidate_for_promotion(self, candidate_id: str, min_confidence: float | None = None) -> dict[str, Any]:
+    def review_candidate_for_promotion(
+        self,
+        candidate_id: str,
+        min_confidence: float | None = None,
+        *,
+        trust_model_quality: bool = False,
+    ) -> dict[str, Any]:
         if min_confidence is None:
             min_confidence = float(getattr(self, "_promote_min_confidence", None) or 0.7)
         candidate = self._get_candidate(candidate_id)
@@ -472,6 +478,7 @@ class MemoryLearningMixin:
             # A single explicit review surfaces the conflict; full-auto resolution
             # is the dream's job (and runs on every tick).
             auto_resolve=False,
+            trust_model_quality=trust_model_quality,
         )
         result.setdefault("kind", "memory_promotion_review")
         result["snapshot"] = self.compile_l1_snapshot(limit=50)
@@ -676,6 +683,7 @@ class MemoryLearningMixin:
         seen_claims: set[str],
         conflict_resolver: Any | None = None,
         auto_resolve: bool = True,
+        trust_model_quality: bool = False,
     ) -> dict[str, Any]:
         claim = _normalize_space(candidate.get("claim", ""))
         fingerprint = _fingerprint(claim)
@@ -685,14 +693,20 @@ class MemoryLearningMixin:
             result["decision"] = "rejected"
             return result
 
+        # Quality is a deterministic *heuristic* (specificity/persistence/… markers)
+        # and is demonstrably brittle across languages. When the model is driving
+        # the promotion (it proposed this candidate with a rationale) we trust its
+        # value judgment and skip the heuristic veto — safety, dedup and conflict
+        # checks below still apply. The heuristic stays authoritative only on the
+        # unattended/local path (trust_model_quality=False).
         quality = candidate_quality_signal(candidate)
         quality_status = low_quality_status(quality)
-        if quality_status == "rejected":
+        if quality_status == "rejected" and not trust_model_quality:
             result = self.reject_candidate(candidate["id"], "low_quality")
             result["decision"] = "rejected"
             result["quality"] = compact_quality_signal(quality)
             return result
-        if quality_status == "needs_review":
+        if quality_status == "needs_review" and not trust_model_quality:
             status = "needs_review:low_quality"
             self.store.update_memory_candidate_status(candidate["id"], status)
             return {
@@ -761,7 +775,7 @@ class MemoryLearningMixin:
             page_action=str(promoted.get("page_action") or ""),
             page=page,
         )
-        return {
+        result = {
             "kind": "memory_promotion_review",
             "candidate_id": candidate["id"],
             "status": "promoted",
@@ -777,6 +791,12 @@ class MemoryLearningMixin:
             },
             "wiki": wiki,
         }
+        # Audit trail: record when the model promoted past a heuristic the local
+        # rule would have vetoed, so it is visible why a "low score" still landed.
+        if trust_model_quality and quality_status:
+            result["quality"] = compact_quality_signal(quality)
+            result["quality_gate"] = "model_trusted"
+        return result
 
     def _l1_snapshot_path(self) -> Path:
         return self.store.state_dir / "wiki" / L1_SNAPSHOT_FILENAME

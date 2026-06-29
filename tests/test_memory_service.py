@@ -670,6 +670,28 @@ class MemoryServiceTests(unittest.TestCase):
         chatter = score_memory_quality("今天天气挺好的", evidence=evidence)
         self.assertEqual(chatter["recommendation"], "discard")
 
+    def test_model_driven_promote_trusts_model_over_quality_heuristic(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            engine = client._engine()
+
+            # A claim the deterministic heuristic scores as low quality (discard).
+            low = client.update(facts=[{"claim": "stuff", "scope": "user:demo", "confidence": 0.9}], source="t")
+            baseline = engine.review_candidate_for_promotion(low["memory_candidates"][0]["candidate_id"])
+            self.assertEqual(baseline["decision"], "rejected")
+            self.assertEqual(baseline["reason"], "low_quality")
+
+            # When the model drives the promotion we trust its value judgment over
+            # the brittle heuristic — it promotes, with an audit marker recorded.
+            low2 = client.update(facts=[{"claim": "stuff", "scope": "user:demo", "confidence": 0.9}], source="t")
+            trusted = engine.review_candidate_for_promotion(
+                low2["memory_candidates"][0]["candidate_id"], trust_model_quality=True
+            )
+            self.assertEqual(trusted["decision"], "promoted")
+            self.assertEqual(trusted["quality_gate"], "model_trusted")
+
     def test_force_promote_candidate_is_admin_override(self) -> None:
         from mnemo_memory import MemoryClient
 
