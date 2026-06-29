@@ -4,15 +4,38 @@ import { describe, it } from "node:test";
 import {
   humanizeDecisionReason,
   reasonFromStatus,
-  dreamDecisionLog
+  dreamDecisionLog,
+  qualityWeaknessReason,
+  auditResultForItem
 } from "../src/format.ts";
 
 describe("decision reason humanizer", () => {
   it("maps terse codes to detailed Chinese explanations", () => {
-    assert.match(humanizeDecisionReason("low_quality"), /质量分过低/);
+    assert.match(humanizeDecisionReason("low_quality"), /质量分/);
     assert.match(humanizeDecisionReason("duplicate"), /重复/);
     assert.match(humanizeDecisionReason("below_confidence_threshold"), /置信度低于/);
     assert.match(humanizeDecisionReason("conflicts_with_active_memory"), /冲突/);
+  });
+
+  it("names the weak quality dimensions instead of a fixed generic string", () => {
+    const signal = { weighted_avg: 0.51, scores: { specificity: 0.35, actionability: 0.3, persistence: 0.8, personalization: 0.7, verifiability: 0.9 } };
+    const text = qualityWeaknessReason(signal);
+    assert.match(text, /可执行度偏弱\(0\.30\)/);
+    assert.match(text, /具体度偏弱\(0\.35\)/);
+    assert.match(text, /总分 0\.51/);
+    assert.equal(qualityWeaknessReason(null), "");
+  });
+
+  it("surfaces the weak dimensions on a low-quality candidate via its evidence", () => {
+    const item = {
+      id: "mem_1",
+      type: "candidate" as const,
+      status: "needs_review:low_quality",
+      evidence: [{ kind: "memory_quality", weighted_avg: 0.51, scores: { specificity: 0.35, actionability: 0.3, persistence: 0.8 } }]
+    };
+    const audit = auditResultForItem(item);
+    assert.equal(audit.label, "待复核");
+    assert.match(audit.detail, /具体度偏弱|可执行度偏弱/);
   });
 
   it("explains auto-resolved conflicts (full-auto)", () => {

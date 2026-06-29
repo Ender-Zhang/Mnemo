@@ -655,6 +655,21 @@ class MemoryServiceTests(unittest.TestCase):
             self.assertEqual(page["metadata"]["dimension"], "identity")
             self.assertIn("private address", page["content"])
 
+    def test_quality_scoring_is_language_fair_for_chinese_identity_facts(self) -> None:
+        from mnemo_memory.memory.quality import score_memory_quality
+
+        evidence = [{"kind": "memory_event", "text": "x", "run_id": "r1"}]
+        # A concrete Chinese identity fact must not be scored as a single vague
+        # word just because CJK has no spaces (the old tokenizer bug), and an
+        # origin/hometown marker should be recognized as a durable profile fact.
+        hometown = score_memory_quality("用户的老家是安徽安庆", evidence=evidence)
+        self.assertGreater(hometown["scores"]["specificity"], 0.6)
+        self.assertEqual(hometown["recommendation"], "write")
+
+        # vague/ephemeral chatter is still rejected (the CJK boost is not a free pass)
+        chatter = score_memory_quality("今天天气挺好的", evidence=evidence)
+        self.assertEqual(chatter["recommendation"], "discard")
+
     def test_force_promote_candidate_is_admin_override(self) -> None:
         from mnemo_memory import MemoryClient
 

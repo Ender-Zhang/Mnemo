@@ -12,7 +12,8 @@ import type {
   PlanFormState,
   PlanItem,
   PlanProposal,
-  PlanUserGroup
+  PlanUserGroup,
+  QualitySignal
 } from "./types";
 
 // ─── Item mapping / search ─────────────────────────────────────────────────
@@ -129,7 +130,7 @@ export function reviewForItem(item: MemoryItem, results: Map<string, DreamReview
 // Maps terse decision codes (low_quality / duplicate / ...) to a detailed,
 // human-readable Chinese explanation of why a memory was kept or dropped.
 const DECISION_REASON_LABELS: Array<[RegExp, string]> = [
-  [/^low_quality/, "质量分过低：内容太笼统或缺乏具体信息，被判为低价值，未融入。"],
+  [/^low_quality/, "质量分低于融入门槛（具体度 / 个人相关度 / 持久度 / 可执行度 / 可验证度综合评估），未融入。"],
   [/^below_quality_threshold/, "质量分低于阈值，暂缓融入、留待复核。"],
   [/^below_confidence_threshold/, "置信度低于融入门槛，暂不固化为稳定记忆。"],
   [/^duplicate/, "与已有稳定记忆重复，已并入原记忆、不重复保存。"],
@@ -162,14 +163,52 @@ export function humanizeDecisionReason(reason?: string): string {
   return raw;
 }
 
+const QUALITY_DIMENSION_LABELS: Record<string, string> = {
+  specificity: "具体度",
+  personalization: "个人相关度",
+  persistence: "持久度",
+  actionability: "可执行度",
+  verifiability: "可验证度"
+};
+
+// Pull the quality signal a candidate carries in its evidence trail.
+export function qualitySignalOf(item: MemoryItem): QualitySignal | null {
+  const evidence = Array.isArray(item.evidence) ? item.evidence : [];
+  for (let i = evidence.length - 1; i >= 0; i -= 1) {
+    const e = evidence[i] as Record<string, unknown> | null;
+    if (e && typeof e === "object" && e.kind === "memory_quality") return e as QualitySignal;
+  }
+  return null;
+}
+
+// Name the weak quality dimensions + score, so a "low quality" verdict is
+// explained ("具体度偏弱(0.35)…") instead of shown as a fixed generic string.
+export function qualityWeaknessReason(signal: QualitySignal | null | undefined): string {
+  if (!signal || !signal.scores) return "";
+  const weak = Object.entries(signal.scores)
+    .filter(([, v]) => typeof v === "number" && v < 0.55)
+    .sort((a, b) => (a[1] as number) - (b[1] as number))
+    .slice(0, 2)
+    .map(([k, v]) => `${QUALITY_DIMENSION_LABELS[k] || k}偏弱(${Number(v).toFixed(2)})`);
+  if (weak.length === 0) return "";
+  const total = typeof signal.weighted_avg === "number" ? `，总分 ${signal.weighted_avg.toFixed(2)}` : "";
+  return `质量评估：${weak.join("、")}${total}。`;
+}
+
+function lowQualityDetail(status: string, signal: QualitySignal | null | undefined): string {
+  const s = status.toLowerCase();
+  if (!s.includes("low_quality") && !s.includes("quality_threshold")) return "";
+  return qualityWeaknessReason(signal);
+}
+
 export function auditResultForItem(item: MemoryItem, review?: DreamReviewResult) {
-  if (review) return auditResultFromDreamReview(review);
+  if (review) return auditResultFromDreamReview(review, item);
   const status = String(item.status || "").trim();
   const n = status.toLowerCase();
   if (n === "promoted") return auditResult("审核通过", "候选已进入稳定记忆", "good");
   if (n === "draft") return auditResult("待审核", "等待模型或人工审核", "blue");
-  if (n.startsWith("rejected")) return auditResult("审核拒绝", reasonFromStatus(status), "bad");
-  if (n.startsWith("needs_review")) return auditResult("待复核", reasonFromStatus(status), "warn");
+  if (n.startsWith("rejected")) return auditResult("审核拒绝", lowQualityDetail(status, qualitySignalOf(item)) || reasonFromStatus(status), "bad");
+  if (n.startsWith("needs_review")) return auditResult("待复核", lowQualityDetail(status, qualitySignalOf(item)) || reasonFromStatus(status), "warn");
   if (n.startsWith("skipped")) return auditResult("已跳过", reasonFromStatus(status), "neutral");
   if (item.type === "page" && n === "active") return auditResult("稳定记忆", stableMemoryFallbackReason(item), "good");
   if (n.includes("tombstone") || n.includes("delete")) return auditResult("已删除", reasonFromStatus(status), "bad");
@@ -177,25 +216,33 @@ export function auditResultForItem(item: MemoryItem, review?: DreamReviewResult)
   return auditResult("未审核", status || "unknown", "neutral");
 }
 
-export function auditResultFromDreamReview(review: DreamReviewResult) {
+export function auditResultFromDreamReview(review: DreamReviewResult, item?: MemoryItem) {
   const decision = String(review.decision || "").toLowerCase();
   const status = String(review.status || "");
   const n = status.toLowerCase();
+  const signal = review.quality || (item ? qualitySignalOf(item) : null);
+  const qualityDetail = lowQualityDetail(`${status} ${review.reason || ""}`, signal);
   if (decision === "promoted" || n === "promoted") return auditResult("已融入", humanizeDecisionReason(review.reason) || promotedReviewFallbackReason(review), "good");
-  if (decision === "rejected" || n.startsWith("rejected")) return auditResult("已拒绝", humanizeDecisionReason(review.reason) || reasonFromStatus(status), "bad");
-  if (decision === "skipped") return auditResult("已跳过", humanizeDecisionReason(review.reason) || reasonFromStatus(status), "neutral");
+  if (decision === "rejected" || n.startsWith("rejected")) return auditResult("已拒绝", qualityDetail || humanizeDecisionReason(review.reason) || reasonFromStatus(status), "bad");
+  if (decision === "skipped") return auditResult("已跳过", qualityDetail || humanizeDecisionReason(review.reason) || reasonFromStatus(status), "neutral");
   if (decision === "conflict" || n.includes("conflict")) return auditResult("需复核", humanizeDecisionReason(review.reason) || "与现有记忆冲突，需要复核。", "warn");
-  return auditResult("已处理", humanizeDecisionReason(review.reason) || status || decision, "blue");
+  return auditResult("已处理", qualityDetail || humanizeDecisionReason(review.reason) || status || decision, "blue");
 }
 
 export function detailedAuditReason(item: MemoryItem, review: DreamReviewResult | undefined, fallback: string) {
   if (review) {
+    const signal = review.quality || qualitySignalOf(item);
+    const qualityDetail = lowQualityDetail(`${review.status || ""} ${review.reason || ""}`, signal);
+    if (qualityDetail) return qualityDetail;
     if (review.reason) return humanizeDecisionReason(review.reason);
     if (String(review.decision || "").toLowerCase() === "promoted" || String(review.status || "").toLowerCase() === "promoted") return promotedReviewFallbackReason(review);
     return fallback || reasonFromStatus(review.status || "") || review.decision || "审核结果没有附带详细原因。";
   }
-  if (item.type === "page" && String(item.status || "").toLowerCase() === "active") return stableMemoryFallbackReason(item);
-  return fallback || reasonFromStatus(String(item.status || "")) || "暂无详细审核原因。";
+  const itemStatus = String(item.status || "");
+  const qualityDetail = lowQualityDetail(itemStatus, qualitySignalOf(item));
+  if (qualityDetail) return qualityDetail;
+  if (item.type === "page" && itemStatus.toLowerCase() === "active") return stableMemoryFallbackReason(item);
+  return fallback || reasonFromStatus(itemStatus) || "暂无详细审核原因。";
 }
 
 export function promotedReviewFallbackReason(review: DreamReviewResult) {
@@ -252,7 +299,7 @@ export function dreamDecisionLog(status: DreamStatusResult | null): DreamDecisio
       decision: String(r.decision || r.status || ""),
       label: audit.label,
       tone: audit.tone,
-      reason: humanizeDecisionReason(r.reason) || audit.detail,
+      reason: audit.detail || humanizeDecisionReason(r.reason),
       pageTitle: r.page_title
     };
   });

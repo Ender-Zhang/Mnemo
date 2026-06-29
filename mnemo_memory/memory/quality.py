@@ -107,10 +107,16 @@ def _quality_reason(scores: dict[str, float], weighted_avg: float) -> str:
 
 
 def _specificity_score(text: str) -> float:
-    terms = _terms(text)
     if not text:
         return 0.0
-    score = min(1.0, 0.22 + (len(set(terms)) / 8.0))
+    # CJK has no word delimiters, so the latin tokenizer collapses a whole
+    # sentence into one "term" and scores a concrete fact (e.g. 老家是安徽安庆)
+    # as if it were a single vague word. Count distinct CJK characters as
+    # term-equivalents (~2 chars per word) so specificity is language-fair.
+    latin_terms = [term for term in _terms(text) if not _is_all_cjk(term)]
+    cjk_units = len(set(_cjk_chars(text))) / 2.0
+    diversity = len(set(latin_terms)) + cjk_units
+    score = min(1.0, 0.22 + (diversity / 8.0))
     if _has_specific_marker(text):
         score += 0.18
     if _has_generic_marker(text):
@@ -177,6 +183,22 @@ def _terms(text: str) -> list[str]:
         for token in re.findall(r"[\w][\w.-]*", text, flags=re.UNICODE)
         if len(token) >= 2 and token.casefold() not in _QUALITY_STOPWORDS
     ]
+
+
+def _is_cjk(ch: str) -> bool:
+    return (
+        "一" <= ch <= "鿿"  # CJK Unified Ideographs
+        or "぀" <= ch <= "ヿ"  # Hiragana + Katakana
+        or "가" <= ch <= "힯"  # Hangul syllables
+    )
+
+
+def _cjk_chars(text: str) -> list[str]:
+    return [ch for ch in text if _is_cjk(ch)]
+
+
+def _is_all_cjk(token: str) -> bool:
+    return bool(token) and all(_is_cjk(ch) for ch in token)
 
 
 def _has_specific_marker(text: str) -> bool:
@@ -297,6 +319,10 @@ _PROFILE_MARKERS = {
     "real name",
     "passport",
     "ssn",
+    "hometown",
+    "birthplace",
+    "born in",
+    "grew up in",
     "地址",
     "住址",
     "家庭住址",
@@ -309,6 +335,12 @@ _PROFILE_MARKERS = {
     "真实姓名",
     "身份证",
     "护照",
+    "老家",
+    "家乡",
+    "籍贯",
+    "祖籍",
+    "出生地",
+    "出生于",
 }
 
 _ACTION_MARKERS = {

@@ -112,6 +112,13 @@ export type DreamStatusResult = {
   [key: string]: unknown;
 };
 
+export type QualitySignal = {
+  weighted_avg?: number;
+  recommendation?: string;
+  reason?: string;
+  scores?: Record<string, number>;
+};
+
 export type DreamRejectReason = {
   action_id?: string;
   candidate_id?: string;
@@ -123,6 +130,7 @@ export type DreamRejectReason = {
   decision?: string;
   reason?: string;
   gate_reason?: string;
+  quality?: QualitySignal | null;
 };
 
 export type DreamReviewResult = DreamRejectReason;
