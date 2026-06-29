@@ -10,8 +10,28 @@ scope). By default it only reports. With --apply it resets each such page's
 source candidates back to draft and deletes the contaminated page, so the next
 dream re-promotes them into clean per-user pages.
 
-Usage:
-    python scripts/repair_cross_user_pages.py [--state-dir DIR] [--apply] [--redream]
+Recommended workflow:
+
+  # 1) Dry run — report only, changes nothing. See how many pages are affected.
+  python scripts/repair_cross_user_pages.py
+
+  # 2) Repair — reset the offending pages' source candidates to draft and delete
+  #    the contaminated pages. They will re-form on the next dream tick.
+  python scripts/repair_cross_user_pages.py --apply
+
+  # 3) Repair and re-form immediately, instead of waiting for the next auto-dream.
+  python scripts/repair_cross_user_pages.py --apply --redream
+
+Options:
+  --state-dir DIR   Memory state dir to repair. Omit to use the configured one
+                    (the same state dir your `mnemo-memory serve` process uses).
+  --apply           Actually repair. Without it the script only reports.
+  --redream         After --apply, run one local (no-provider) dream so the
+                    clean per-user pages re-form right away.
+
+Safe to run repeatedly: once repaired, a second run reports 0 contaminated.
+After repairing, open the memory preview and check each user — pages should now
+contain only that user's facts.
 """
 from __future__ import annotations
 
