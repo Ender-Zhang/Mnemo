@@ -1236,6 +1236,63 @@ class MemoryClient:
             delete_related=delete_related,
         )
 
+    def repair_cross_scope_pages(self, *, apply: bool = False, limit: int = 10000) -> dict[str, Any]:
+        """Find (and optionally repair) stable pages contaminated with more than
+        one user's facts — the legacy result of unscoped promotion merging.
+
+        Contamination is detected by provenance: a page whose source candidates
+        span more than one distinct scope. With ``apply=True`` each such page's
+        source candidates are reset to ``draft`` and the page is deleted, so the
+        next dream re-promotes them into correctly per-user pages.
+        """
+        store = self._store()
+        pages = store.list_memory_pages(status="active", limit=_limit(limit))
+        contaminated: list[dict[str, Any]] = []
+        for page in pages:
+            page_id = str(page.get("id") or "")
+            page_scope = _scope_bucket(page.get("scope"))
+            source_ids = _page_source_candidate_ids(store, page)
+            scope_to_sources: dict[str, list[str]] = {}
+            for candidate_id in source_ids:
+                candidate = store.get_memory_candidate(candidate_id)
+                if not candidate:
+                    continue
+                scope_to_sources.setdefault(_scope_bucket(candidate.get("scope")), []).append(candidate_id)
+            if len(scope_to_sources) <= 1:
+                continue  # single-scope provenance → not cross-user contaminated
+            entry = {
+                "page_id": page_id,
+                "page_scope": page_scope,
+                "scopes": sorted(scope_to_sources),
+                "source_candidate_ids": source_ids,
+                "title": page.get("title"),
+                "content_preview": str(page.get("content") or "")[:200],
+                "repaired": False,
+                "reset_candidates": [],
+            }
+            if apply:
+                reset: list[str] = []
+                for candidate_ids in scope_to_sources.values():
+                    for candidate_id in candidate_ids:
+                        candidate = store.get_memory_candidate(candidate_id)
+                        if candidate and str(candidate.get("status") or "").startswith("promoted"):
+                            store.update_memory_candidate_status(candidate_id, "draft")
+                            reset.append(candidate_id)
+                # delete only the contaminated page; keep the candidates so they
+                # re-promote into clean per-user pages on the next dream.
+                self._engine().hard_delete_memory(page_id, target_type="page", delete_related=False)
+                entry["repaired"] = True
+                entry["reset_candidates"] = reset
+            contaminated.append(entry)
+        return {
+            "kind": "memory_cross_scope_repair",
+            "version": "mnemo_memory.repair.v1",
+            "applied": bool(apply),
+            "scanned_pages": len(pages),
+            "contaminated_count": len(contaminated),
+            "pages": contaminated,
+        }
+
     def dream_run(
         self,
         *,
@@ -1659,6 +1716,10 @@ def _stable_delete_mode(value: Any) -> str:
     if normalized not in {"tombstone", "forget", "hard-delete"}:
         raise ValueError(f"invalid stable memory delete mode: {value}")
     return normalized
+
+
+def _scope_bucket(value: Any) -> str:
+    return str(value or "global").strip() or "global"
 
 
 def _is_tombstoned_status(status: Any) -> bool:

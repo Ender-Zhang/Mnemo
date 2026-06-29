@@ -393,6 +393,53 @@ class MemoryServiceTests(unittest.TestCase):
             ctx = client.context("用户住在哪", uid="alice")
             self.assertNotIn("上海", json.dumps(ctx, ensure_ascii=False))
 
+    def test_repair_cross_scope_pages_detects_and_fixes_contamination(self) -> None:
+        from mnemo_memory import MemoryClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            client = MemoryClient(state_dir=tmp)
+            store = client._store()
+            # two users' candidates
+            a = client.update(facts=[{"claim": "用户住在北京。", "dimension": "identity", "scope": "user:alice", "confidence": 0.9}], source="t")
+            b = client.update(facts=[{"claim": "用户住在上海。", "dimension": "identity", "scope": "user:bob", "confidence": 0.9}], source="t")
+            cid_a = a["memory_candidates"][0]["candidate_id"]
+            cid_b = b["memory_candidates"][0]["candidate_id"]
+            # fabricate a legacy contaminated page: one scope, but provenance from both users
+            page_id = store.create_memory_page(
+                "identity: 个人资料",
+                "- 用户住在北京。\n- 用户住在上海。",
+                scope="user:alice",
+                metadata={"dimension": "identity", "source_candidate_ids": [cid_a, cid_b]},
+            )
+            store.update_memory_candidate_status(cid_a, "promoted")
+            store.update_memory_candidate_status(cid_b, "promoted")
+
+            # dry run reports it, changes nothing
+            found = client.repair_cross_scope_pages(apply=False)
+            self.assertEqual(found["contaminated_count"], 1)
+            self.assertEqual(found["pages"][0]["page_id"], page_id)
+            self.assertFalse(found["pages"][0]["repaired"])
+            self.assertIsNotNone(client.read(page_id))
+
+            # apply: page deleted, both candidates reset to draft for re-promotion
+            fixed = client.repair_cross_scope_pages(apply=True)
+            self.assertEqual(fixed["contaminated_count"], 1)
+            self.assertTrue(fixed["pages"][0]["repaired"])
+            self.assertCountEqual(fixed["pages"][0]["reset_candidates"], [cid_a, cid_b])
+            with self.assertRaises(ValueError):
+                client.read(page_id)
+            self.assertEqual(client.read(cid_a)["item"]["status"], "draft")
+            self.assertEqual(client.read(cid_b)["item"]["status"], "draft")
+
+            # re-forming yields clean, separate per-user pages
+            client.dream_run(use_provider=False)
+            pages = client.list(kind="page", status="active", limit=50)["items"]
+            for page in pages:
+                if page.get("scope") == "user:alice":
+                    self.assertNotIn("上海", page["content"])
+                if page.get("scope") == "user:bob":
+                    self.assertNotIn("北京", page["content"])
+
     def test_client_traces_promoted_memory_to_source_event(self) -> None:
         from mnemo_memory import MemoryClient
 
