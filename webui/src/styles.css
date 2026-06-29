@@ -1893,11 +1893,7 @@ pre {
   }
 }
 
-/* ─── Profile Card ──────────────────────────────────────────────────────── */
-
-.profile-card {
-  padding-bottom: 14px;
-}
+/* ─── Profile Summary (preview L0 layer) ────────────────────────────────── */
 
 .profile-summary {
   display: grid;
@@ -1911,46 +1907,6 @@ pre {
   color: var(--text-strong);
   font-size: 13px;
   line-height: 1.45;
-}
-
-.profile-entries {
-  display: grid;
-  gap: 4px;
-  padding: 8px 14px;
-}
-
-.profile-entry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  text-align: left;
-  padding: 6px 8px;
-  border: 1px solid var(--border-2);
-  border-radius: 8px;
-  background: var(--surface);
-  color: var(--text-2);
-  font-size: 13px;
-}
-
-.profile-entry:hover {
-  border-color: var(--accent);
-}
-
-.profile-entry-dim {
-  flex: none;
-  font-size: 11px;
-  color: var(--accent);
-  background: var(--tint-blue);
-  padding: 1px 7px;
-  border-radius: 999px;
-}
-
-.profile-entry-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ─── Conflict Section ──────────────────────────────────────────────────── */

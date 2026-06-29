@@ -112,7 +112,6 @@ import type {
   MemoryFlowEntry,
   MemoryFlowResult,
   FlowPage,
-  L0Profile,
   MemoryGraphResult,
   MemoryHealthResult,
   MemoryItem,
@@ -173,8 +172,8 @@ const DIMENSIONS = [
 
 // Granular refresh slices so a single mutation only refetches what it affects,
 // instead of firing every endpoint on every action.
-type RefreshPart = "service" | "inventory" | "candidates" | "maintenance" | "tombstones" | "config" | "plans" | "profile" | "health";
-const ALL_REFRESH_PARTS: RefreshPart[] = ["service", "inventory", "candidates", "maintenance", "tombstones", "config", "plans", "profile", "health"];
+type RefreshPart = "service" | "inventory" | "candidates" | "maintenance" | "tombstones" | "config" | "plans" | "health";
+const ALL_REFRESH_PARTS: RefreshPart[] = ["service", "inventory", "candidates", "maintenance", "tombstones", "config", "plans", "health"];
 
 const defaultApiBase = window.location.origin;
 
@@ -248,7 +247,6 @@ function App() {
   const [tombstoneReason, setTombstoneReason] = useState("manual_curation");
   const [dreamStartedAtMs, setDreamStartedAtMs] = useState<number | null>(null);
   const [clockNowMs, setClockNowMs] = useState(() => Date.now());
-  const [profile, setProfile] = useState<L0Profile | null>(null);
   const [versions, setVersions] = useState<PageVersion[]>([]);
   const [showVersions, setShowVersions] = useState(false);
   // memory preview (agent view)
@@ -363,9 +361,6 @@ function App() {
       if (parts.has("plans")) {
         tasks.push(callMemory<PlanListResult>("plan-list", { uid: scopedUid, include_archived: false, limit: 100 }).then((r) => setPlanItems(r.items || [])));
         tasks.push(callMemory<PlanProposalsResult>("plan-proposals", { status: null, uid: scopedUid, limit: 100 }).then((r) => setPlanProposals(r.proposals || [])));
-      }
-      if (parts.has("profile")) {
-        tasks.push(callMemory<L0Profile>("profile", { uid: scopedUid }).then(setProfile).catch(() => setProfile(null)));
       }
       if (parts.has("health")) {
         tasks.push(callMemory<MemoryHealthResult>("health", { limit: 20 }).then(setHealth).catch(() => setHealth(null)));
@@ -636,7 +631,7 @@ function App() {
       setEditorOpen(false);
       setEditorItem(null);
       setOk("稳定记忆页已创建");
-      await refresh({ parts: ["inventory", "profile", "maintenance"], clearNotice: false });
+      await refresh({ parts: ["inventory", "maintenance"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -658,7 +653,7 @@ function App() {
       setEditorOpen(false);
       setEditorItem(null);
       setOk("稳定记忆页已更新");
-      await refresh({ parts: ["inventory", "profile", "maintenance"], clearNotice: false });
+      await refresh({ parts: ["inventory", "maintenance"], clearNotice: false });
       // reload detail
       if (selected?.id === memoryId) {
         await readMemory({ ...selected, id: memoryId } as MemoryItem);
@@ -675,7 +670,7 @@ function App() {
     try {
       await callMemory("resolve-conflict", { candidate_id: candidateId, resolution });
       setOk(`冲突已解决：${resolution}`);
-      await refresh({ parts: ["candidates", "inventory", "profile"], clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -690,7 +685,7 @@ function App() {
       // quality/confidence/conflict gates (no "low_quality" rejection).
       const result = await callMemory<PromotionReviewResult>("force-promote-candidate", { candidate_id: candidateId });
       setOk(promotionReviewMessage(result));
-      await refresh({ parts: ["candidates", "inventory", "profile", "maintenance", "tombstones"], clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "maintenance", "tombstones"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -724,7 +719,7 @@ function App() {
           failed++;
         }
       }
-      await refresh({ parts: ["candidates", "inventory", "profile", "maintenance", "tombstones"], clearNotice: false });
+      await refresh({ parts: ["candidates", "inventory", "maintenance", "tombstones"], clearNotice: false });
       setOk(`批量审核完成：通过 ${promoted} 条${failed ? `，失败 ${failed} 条` : ""}`);
     } finally {
       setLoading(false);
@@ -766,7 +761,7 @@ function App() {
       setSelected(null);
       // deleting a page also releases any candidate parked in conflict against
       // it, so refresh candidates too — otherwise a stale conflict lingers.
-      await refresh({ parts: ["inventory", "tombstones", "profile", "candidates"], clearNotice: false });
+      await refresh({ parts: ["inventory", "tombstones", "candidates"], clearNotice: false });
     } catch (error) {
       setError(error);
     } finally {
@@ -779,7 +774,7 @@ function App() {
     try {
       await callMemory("forget", { memory_id: tombstone.target_id, target_type: tombstone.target_type, reason: "private_delete" });
       setOk("目标记忆已 Forget 擦除，删除痕迹仍会保留");
-      await refresh({ parts: ["tombstones", "inventory", "profile", "candidates"], clearNotice: false });
+      await refresh({ parts: ["tombstones", "inventory", "candidates"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -859,7 +854,7 @@ function App() {
     try {
       await callMemory("apply-dream-proposal", { proposal_id: proposalId });
       setOk("整理提案已应用");
-      await refresh({ parts: ["maintenance", "inventory", "profile"], clearNotice: false });
+      await refresh({ parts: ["maintenance", "inventory"], clearNotice: false });
     } catch (error) { setError(error); }
     finally { setLoading(false); }
   };
@@ -1213,11 +1208,6 @@ function App() {
                 onDismiss={() => { setOnboardingDismissed(true); localStorage.setItem("mnemo.onboardingDismissed", "true"); }}
               />
             ) : null}
-            {/* L0 Profile Card */}
-            {activeTab === "memories" && profile?.summary ? (
-              <ProfileCard profile={profile} onSelectPage={(pageId) => readMemory({ id: pageId, type: "page" } as MemoryItem)} />
-            ) : null}
-
             {activeTab === "memories" ? (
               <SearchPanel
                 query={query}
@@ -1428,51 +1418,6 @@ function App() {
         <GlossaryDrawer open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
       </main>
     </div>
-  );
-}
-
-// ─── Profile Card ────────────────────────────────────────────────────────────
-
-function ProfileCard({ profile, onSelectPage }: { profile: L0Profile; onSelectPage: (pageId: string) => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const entries = profile.entries || [];
-  const summaryLines = (profile.summary || "").split("\n").filter(Boolean);
-  const hasEntries = entries.length > 0;
-  const shownEntries = expanded ? entries : entries.slice(0, 6);
-  const shownLines = expanded ? summaryLines : summaryLines.slice(0, 4);
-  const hasMore = hasEntries ? entries.length > 6 : summaryLines.length > 4;
-  return (
-    <section className="panel profile-card">
-      <div className="panel-header compact">
-        <div style={{display: "flex", alignItems: "center", gap: 8}}>
-          <User size={18} />
-          <h2>记忆画像</h2>
-          <span className="badge blue">{profile.page_count || 0} 页</span>
-        </div>
-        {hasMore ? (
-          <button className="ghost-button" onClick={() => setExpanded(!expanded)}>
-            {expanded ? "收起" : "展开"}
-          </button>
-        ) : null}
-      </div>
-      {hasEntries ? (
-        <div className="profile-entries">
-          {shownEntries.map((entry) => (
-            <button className="profile-entry" key={`${entry.page_id}:${entry.text}`} onClick={() => entry.page_id && onSelectPage(entry.page_id)} title="查看来源：事件 → 候选 → 稳定页">
-              <span className="profile-entry-dim">{entry.dimension}</span>
-              <span className="profile-entry-text">{entry.text}</span>
-              <ChevronRight size={13} />
-            </button>
-          ))}
-        </div>
-      ) : (
-        <div className="profile-summary">
-          {shownLines.map((line, i) => (
-            <div key={i} className="profile-line">{line}</div>
-          ))}
-        </div>
-      )}
-    </section>
   );
 }
 
